@@ -5,11 +5,23 @@ vars:
   COMPOSE_CORE: deploy/compose/core.yml
   COMPOSE_FULL: deploy/compose/full.yml
 
+  # Docker daemon hidup di dalam WSL. Perintah yang memakai bind mount
+  # WAJIB dijalankan dari dalam WSL juga.
+  #
+  # Terbukti di B0-08: CLI Windows yang diberi path /mnt/c menerima
+  # perintahnya, keluar dengan exit 0, lalu me-mount direktori KOSONG.
+  # Tidak ada pesan galat. Itu kegagalan senyap - `compose up` akan
+  # tampak berhasil sementara initdb tidak pernah dijalankan.
+  #
+  # Perintah tanpa bind mount (ps, logs, version) tetap aman dari Windows.
+  WSL_DISTRO: Ubuntu
+  PROJECT_WSL:
+    sh: wsl -d Ubuntu -- wslpath -a "$(pwd -W 2>/dev/null || pwd)" 2>/dev/null | tr -d '\r'
+
 tasks:
   default:
     desc: Show available tasks
-    cmds:
-      - task --list
+    cmds: [task --list]
     silent: true
 
   # ---------------------------------------------------------------- quality
@@ -21,29 +33,30 @@ tasks:
 
   lint:
     desc: Run golangci-lint over the whole module
-    cmds:
-      - golangci-lint run ./...
+    cmds: [golangci-lint run ./...]
 
   vet:
     desc: Run go vet
+    cmds: [go vet ./...]
+
+  tidy:
+    desc: Tidy and verify go.mod
     cmds:
-      - go vet ./...
+      - go mod tidy
+      - go mod verify
 
   # ---------------------------------------------------------------- contract
   proto:lint:
     desc: Lint protobuf definitions
-    cmds:
-      - buf lint
+    cmds: [buf lint]
 
   proto:breaking:
-    desc: Detect breaking changes against the committed contract
-    cmds:
-      - buf breaking --against '.git#branch=develop,subdir=.'
+    desc: Detect breaking changes against develop
+    cmds: ["buf breaking --against '.git#branch=develop'"]
 
   proto:gen:
     desc: Generate Go code from protobuf
-    cmds:
-      - buf generate
+    cmds: [buf generate]
 
   proto:
     desc: Lint then generate protobuf
@@ -53,53 +66,58 @@ tasks:
 
   openapi:lint:
     desc: Lint the public REST contract
-    cmds:
-      - vacuum lint -d api/openapi/edge-v1.yaml
+    cmds: [vacuum lint -d api/openapi/edge-v1.yaml]
 
   # ---------------------------------------------------------------- build
   build:
     desc: Build every unit into bin/
-    cmds:
-      - go build -o bin/ ./cmd/...
+    cmds: [go build -o bin/ ./cmd/...]
 
   # ---------------------------------------------------------------- test
   test:
     desc: Run unit tests
-    cmds:
-      - go test ./... -race -count=1
+    cmds: [go test ./... -race -count=1]
 
   test:integration:
     desc: Run integration tests (requires Docker)
-    cmds:
-      - go test ./... -race -count=1 -tags=integration
+    cmds: [go test ./... -race -count=1 -tags=integration]
 
   test:cover:
-    desc: Run tests with a coverage report
+    desc: Run tests with a coverage summary
     cmds:
       - go test ./... -race -count=1 -coverprofile=coverage.out
-      - go tool cover -func=coverage.out | tail -1
+      - go tool cover -func=coverage.out
 
   # ---------------------------------------------------------------- runtime
+  # Dijalankan lewat WSL karena bind mount. Lihat catatan di vars.
   up:
-    desc: Start core dependencies (postgres, kafka)
+    desc: Start core dependencies (postgres, kafka, redis)
     cmds:
-      - docker compose -f {{.COMPOSE_CORE}} up -d
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} up -d"
 
   up:full:
     desc: Start everything including the observability stack
     cmds:
-      - docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
 
   down:
     desc: Stop local dependencies
     cmds:
-      - docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down"
+
+  logs:
+    desc: Tail dependency logs
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} logs -f --tail=100"
+
+  ps:
+    desc: List running containers
+    cmds: [docker ps]
 
   # ---------------------------------------------------------------- security
   security:
     desc: Scan the repository for leaked secrets
-    cmds:
-      - gitleaks detect --no-banner --redact
+    cmds: [gitleaks detect --no-banner --redact]
 
   # ---------------------------------------------------------------- gate
   ci:
