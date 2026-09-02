@@ -129,6 +129,7 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 	token, err := l.tokens.Issue(domain.Claims{
 		UserID:        user.ID(),
 		UserProfileID: profileID,
+		Email:         user.Email().String(),
 		Role:          user.Role(),
 		Generation:    user.TokenGeneration(),
 	})

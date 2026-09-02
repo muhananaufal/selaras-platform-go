@@ -3,6 +3,7 @@ version: "3"
 vars:
   MODULE: github.com/muhananaufal/selaras-platform-go
   COMPOSE_CORE: deploy/compose/core.yml
+  COMPOSE_APPS: deploy/compose/apps.yml
   COMPOSE_FULL: deploy/compose/full.yml
 
   # Docker daemon hidup di dalam WSL. Perintah yang memakai bind mount
@@ -121,3 +122,17 @@ tasks:
         TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=profile"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
         go test ./... -count=1 -p 1
+
+  up:apps:
+    desc: Start the dependencies and the application units
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} up -d --build"
+
+  down:apps:
+    desc: Stop the application units, leaving the dependencies running
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc edge-gateway"
+
+  keygen:
+    desc: Print a matching pair of token signing and verification keys
+    cmds: [go run ./cmd/keygen]

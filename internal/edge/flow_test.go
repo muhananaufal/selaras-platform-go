@@ -314,3 +314,32 @@ func TestRegisteringTheSameAddressTwiceIsAConflict(t *testing.T) {
 		t.Errorf("status = %d; want 409 (%v)", status, body)
 	}
 }
+
+// Kontrak menjanjikan email di profil dan di /me. Ia data identity, bukan
+// demografis, jadi profile-svc tidak memilikinya - dan menanyakannya ke
+// identity-svc di setiap request adalah persis yang dihapus ADR-007. Ia
+// dibawa di klaim, sehingga kedua endpoint mengisinya tanpa memanggil siapa
+// pun.
+func TestTheEmailReachesTheClientWithoutAnExtraCall(t *testing.T) {
+	s := newStack(t)
+	email := uniqueEmail()
+	token := s.registerUser(t, email)
+
+	status, body := s.do(t, http.MethodGet, "/api/v1/profile", token, nil)
+	if status != http.StatusOK {
+		t.Fatalf("profile status = %d; want 200", status)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data["email"] != email {
+		t.Errorf("profile email = %v; want %q", data["email"], email)
+	}
+
+	status, body = s.do(t, http.MethodGet, "/api/v1/me", token, nil)
+	if status != http.StatusOK {
+		t.Fatalf("me status = %d; want 200", status)
+	}
+	data, _ = body["data"].(map[string]any)
+	if data["email"] != email {
+		t.Errorf("me email = %v; want %q", data["email"], email)
+	}
+}

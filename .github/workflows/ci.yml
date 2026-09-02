@@ -22,6 +22,36 @@ jobs:
   build:
     name: build and test
     runs-on: ubuntu-latest
+
+    # Postgres dan Redis sungguhan, bukan mock. Repository diuji terhadap
+    # basis data karena mock hanya membuktikan mock-nya berperilaku seperti
+    # yang ditulis - ia tidak tahu apa-apa tentang batasan CHECK, indeks unik
+    # parsial, atau perilaku NULL, dan justru di situlah kekeliruan bersembunyi.
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: selaras_admin
+          POSTGRES_PASSWORD: ci-not-a-secret
+          POSTGRES_DB: selaras
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U selaras_admin -d selaras"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+      redis:
+        image: redis:8.8.2-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: selaras_admin
+      PGPASSWORD: ci-not-a-secret
+      PGDATABASE: selaras
+
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -44,10 +74,55 @@ jobs:
 
       - run: go vet ./...
       - run: go build ./...
+
+      # Skema dan peran dibuat dengan skrip yang sama seperti di lokal, bukan
+      # dengan salinan terpisah. Dua salinan berarti CI dan mesin pengembang
+      # bisa berbeda diam-diam, dan yang ketahuan belakangan adalah yang
+      # paling mahal.
+      - name: Create schemas and service roles
+        env:
+          SVC_IDENTITY_PASSWORD: ci-not-a-secret
+          SVC_PROFILE_PASSWORD: ci-not-a-secret
+          SVC_ASSESSMENT_PASSWORD: ci-not-a-secret
+          SVC_COACHING_PASSWORD: ci-not-a-secret
+          SVC_CHAT_PASSWORD: ci-not-a-secret
+          SVC_NUTRITION_PASSWORD: ci-not-a-secret
+          SVC_DASHBOARD_PASSWORD: ci-not-a-secret
+          SVC_LLM_PASSWORD: ci-not-a-secret
+          POSTGRES_USER: selaras_admin
+          POSTGRES_DB: selaras
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+          # PGHOST sudah ditetapkan di tingkat job, dan psql menghormatinya.
+          # Membungkus psql dengan fungsi shell akan rapuh: skripnya berjalan
+          # di proses bash terpisah dan fungsi tidak ikut terbawa.
+          bash deploy/compose/initdb/01-schemas.sh
+
+      - name: Apply migrations
+        env:
+          SVC_IDENTITY_PASSWORD: ci-not-a-secret
+          SVC_PROFILE_PASSWORD: ci-not-a-secret
+        run: |
+          go run ./cmd/migrate -service identity -direction up \
+            -dsn "pgx5://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
+          go run ./cmd/migrate -service profile -direction up \
+            -dsn "pgx5://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
       # -p 1: beberapa paket test berbagi satu skema Postgres dan
       # mengosongkan tabel yang sama, jadi menjalankannya bersamaan membuat
       # keduanya saling menghapus data.
-      - run: go test ./... -race -count=1 -p 1
+      # CI menetapkan CI=true, dan pgtest MENGGAGALKAN test integrasi yang
+      # DSN-nya tidak ada alih-alih melewatinya. Test integrasi yang
+      # diam-diam melewati dirinya sendiri di CI lebih buruk daripada tidak
+      # ada test sama sekali: pipeline-nya hijau dan tidak ada yang diperiksa.
+      - name: Test
+        env:
+          SVC_IDENTITY_PASSWORD: ci-not-a-secret
+          SVC_PROFILE_PASSWORD: ci-not-a-secret
+          TEST_REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          export TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
+          export TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
+          go test ./... -race -count=1 -p 1
 
   lint:
     name: lint

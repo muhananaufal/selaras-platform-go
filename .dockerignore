@@ -1,7 +1,9 @@
+# gen/ TIDAK dikecualikan. Ia kode Go yang dihasilkan buf dan ikut
+# di-commit, jadi tanpa itu build gagal - dan gagalnya baru terlihat saat
+# ada cmd yang benar-benar memakainya, bukan saat berkasnya ditulis.
 .git
 .github
 bin
-gen
 deploy
 docs
 test

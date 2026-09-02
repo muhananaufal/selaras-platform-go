@@ -79,7 +79,7 @@ func (h *Profile) Show(c *gin.Context) {
 		return
 	}
 
-	writeData(c, http.StatusOK, h.view(resp.GetProfile()))
+	writeData(c, http.StatusOK, h.view(resp.GetProfile(), claims.Email))
 }
 
 type updateProfileRequest struct {
@@ -128,11 +128,17 @@ func (h *Profile) Update(c *gin.Context) {
 		return
 	}
 
-	writeDataWithMessage(c, http.StatusOK, "Profile updated successfully!", h.view(resp.GetProfile()))
+	writeDataWithMessage(c, http.StatusOK, "Profile updated successfully!", h.view(resp.GetProfile(), claims.Email))
 }
 
-func (h *Profile) view(p *profilev1.UserProfile) profileView {
+// view menerima email dari klaim, bukan dari profile-svc.
+//
+// Email adalah data identity, bukan demografis (ADR-002), jadi profile-svc
+// memang tidak memilikinya. Ia sampai ke sini lewat klaim token, sehingga
+// endpoint ini tetap tidak memanggil siapa pun untuk mengisinya.
+func (h *Profile) view(p *profilev1.UserProfile, email string) profileView {
 	view := profileView{
+		Email:              emptyToNil(email),
 		FirstName:          p.FirstName,
 		LastName:           p.LastName,
 		CountryOfResidence: p.CountryOfResidence,
@@ -205,6 +211,7 @@ func Me(c *gin.Context) {
 
 	writeData(c, http.StatusOK, gin.H{
 		"user_id":         claims.UserID.String(),
+		"email":           emptyToNil(claims.Email),
 		"user_profile_id": emptyToNil(claims.UserProfileID),
 		"role":            claims.Role.String(),
 	})

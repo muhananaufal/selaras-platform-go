@@ -30,10 +30,19 @@ var (
 type Claims struct {
 	UserID        UserID
 	UserProfileID string
-	Role          Role
-	Generation    int64
-	IssuedAt      time.Time
-	ExpiresAt     time.Time
+
+	// Email ikut dibawa karena kontrak REST menjanjikannya di dua tempat,
+	// dan alternatifnya adalah bertanya ke identity-svc di setiap request -
+	// persis yang dihapus ADR-007.
+	//
+	// Ia bukan rahasia bagi pemegang token: itu alamatnya sendiri.
+	// Harganya token yang sedikit lebih besar, dan alamat yang berubah baru
+	// tercermin setelah token diperbarui.
+	Email      string
+	Role       Role
+	Generation int64
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
 }
 
 // TokenIssuer menandatangani klaim menjadi token akses. Implementasinya

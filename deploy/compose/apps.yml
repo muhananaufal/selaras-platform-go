@@ -1,0 +1,100 @@
+# Unit aplikasi. Dipakai BERSAMA core.yml, bukan menggantikannya:
+#   docker compose -f core.yml -f apps.yml up -d
+#
+# Dipisah dari core.yml karena keduanya punya siklus hidup yang berbeda:
+# dependensi menyala sekali dan dibiarkan, sementara unit aplikasi dibangun
+# ulang setiap kali kodenya berubah.
+name: selaras-core
+
+services:
+  identity-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: identity-svc
+    restart: unless-stopped
+    container_name: selaras-identity
+    environment:
+      # Nama host berasal dari jaringan compose, bukan localhost: di dalam
+      # container, localhost adalah container itu sendiri.
+      IDENTITY_DATABASE_DSN: >-
+        postgres://svc_identity:${SVC_IDENTITY_PASSWORD:?set SVC_IDENTITY_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=identity
+      REDIS_URL: redis://redis:6379/0
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-3600}
+      PROFILE_GRPC_TARGET: profile-svc:9201
+      IDENTITY_GRPC_ADDR: ":9101"
+      IDENTITY_HEALTH_ADDR: ":9102"
+    ports:
+      - "127.0.0.1:19101:9101"
+      - "127.0.0.1:19102:9102"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Image-nya distroless dan tidak punya shell, curl, atau wget. Probe
+      # HTTP dikerjakan dari luar oleh siapa pun yang memerlukannya; di sini
+      # yang bisa diperiksa hanyalah apakah prosesnya masih hidup, dan itu
+      # sudah dilakukan Docker sendiri.
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  profile-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: profile-svc
+    restart: unless-stopped
+    container_name: selaras-profile
+    environment:
+      PROFILE_DATABASE_DSN: >-
+        postgres://svc_profile:${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=profile
+      PROFILE_GRPC_ADDR: ":9201"
+      PROFILE_HEALTH_ADDR: ":9202"
+    ports:
+      - "127.0.0.1:19201:9201"
+      - "127.0.0.1:19202:9202"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  edge-gateway:
+    build:
+      context: ../..
+      args:
+        UNIT: edge-gateway
+    restart: unless-stopped
+    container_name: selaras-edge
+    environment:
+      # Gateway memegang kunci PUBLIK saja. Itu inti ADR-020: ia bisa
+      # memverifikasi token dan tidak bisa menerbitkan satu pun.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
+      IDENTITY_GRPC_TARGET: identity-svc:9101
+      PROFILE_GRPC_TARGET: profile-svc:9201
+      REDIS_URL: redis://redis:6379/0
+      EDGE_HTTP_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      # Tidak menunggu identity-svc dan profile-svc siap: koneksi gRPC
+      # dibuka malas, dan gateway yang menolak menyala karena tetangganya
+      # belum siap akan membuat urutan start-up menjadi rantai yang rapuh.
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M

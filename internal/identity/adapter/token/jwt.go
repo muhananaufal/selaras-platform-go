@@ -33,6 +33,7 @@ var algorithm = jwt.SigningMethodEdDSA
 type claims struct {
 	jwt.RegisteredClaims
 	UserProfileID string `json:"upid,omitempty"`
+	Email         string `json:"email,omitempty"`
 	Role          string `json:"role"`
 	Generation    int64  `json:"gen"`
 }
@@ -83,6 +84,7 @@ func (i *Issuer) Issue(c domain.Claims) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(issuedAt.Add(i.lifetime)),
 		},
 		UserProfileID: c.UserProfileID,
+		Email:         c.Email,
 		Role:          c.Role.String(),
 		Generation:    c.Generation,
 	})
@@ -171,6 +173,7 @@ func (v *Verifier) Verify(raw string) (domain.Claims, error) {
 	return domain.Claims{
 		UserID:        userID,
 		UserProfileID: c.UserProfileID,
+		Email:         c.Email,
 		Role:          role,
 		Generation:    c.Generation,
 		IssuedAt:      c.IssuedAt.Time,

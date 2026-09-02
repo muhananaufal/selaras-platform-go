@@ -105,6 +105,7 @@ func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult
 	token, err := r.tokens.Issue(domain.Claims{
 		UserID:        user.ID(),
 		UserProfileID: profileID,
+		Email:         user.Email().String(),
 		Role:          user.Role(),
 		Generation:    user.TokenGeneration(),
 	})

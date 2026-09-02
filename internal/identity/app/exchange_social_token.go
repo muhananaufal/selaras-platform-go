@@ -146,6 +146,7 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 	token, err := e.tokens.Issue(domain.Claims{
 		UserID:        user.ID(),
 		UserProfileID: profileID,
+		Email:         user.Email().String(),
 		Role:          user.Role(),
 		Generation:    user.TokenGeneration(),
 	})
