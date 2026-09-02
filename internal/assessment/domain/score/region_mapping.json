@@ -1,0 +1,52 @@
+{
+    "source_file": "config/region_mapping.php",
+    "source_sha256": "0980644aff5610f4683a4f231f3923fe48060016ffc39d640596981284bee4f5",
+    "regions": {
+        "very_high": [
+            "afghanistan",
+            "east timor",
+            "indonesia",
+            "iraq",
+            "kyrgyzstan",
+            "laos",
+            "mongolia",
+            "myanmar",
+            "north korea",
+            "oman",
+            "pakistan",
+            "philippines",
+            "saudi arabia",
+            "tajikistan",
+            "turkmenistan",
+            "uzbekistan",
+            "yemen"
+        ],
+        "high": [
+            "bahrain",
+            "bangladesh",
+            "bhutan",
+            "brunei",
+            "cambodia",
+            "china",
+            "india",
+            "iran",
+            "jordan",
+            "kuwait",
+            "malaysia",
+            "nepal",
+            "qatar",
+            "taiwan",
+            "united arab emirates",
+            "vietnam"
+        ],
+        "moderate": [
+            "sri lanka",
+            "thailand"
+        ],
+        "low": [
+            "japan",
+            "singapore",
+            "south korea"
+        ]
+    }
+}
