@@ -16,7 +16,7 @@ vars:
   # Perintah tanpa bind mount (ps, logs, version) tetap aman dari Windows.
   WSL_DISTRO: Ubuntu
   PROJECT_WSL:
-    sh: wsl -d Ubuntu -- wslpath -a "$(pwd -W 2>/dev/null || pwd)" 2>/dev/null | tr -d '\r'
+    sh: wsl -d Ubuntu -- wslpath -a '{{.ROOT_DIR}}'
 
 tasks:
   default:
@@ -93,22 +93,22 @@ tasks:
   up:
     desc: Start core dependencies (postgres, kafka, redis)
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} up -d"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} up -d"
 
   up:full:
     desc: Start everything including the observability stack
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
 
   down:
     desc: Stop local dependencies
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down"
 
   logs:
     desc: Tail dependency logs
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose -f {{.COMPOSE_CORE}} logs -f --tail=100"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} logs -f --tail=100"
 
   ps:
     desc: List running containers

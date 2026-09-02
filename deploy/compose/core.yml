@@ -14,10 +14,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-selaras}
+      # initdb membuat satu role per service; tanpa ini script menolak jalan.
+      SVC_IDENTITY_PASSWORD: ${SVC_IDENTITY_PASSWORD:?set SVC_IDENTITY_PASSWORD}
+      SVC_PROFILE_PASSWORD: ${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}
+      SVC_ASSESSMENT_PASSWORD: ${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}
+      SVC_COACHING_PASSWORD: ${SVC_COACHING_PASSWORD:?set SVC_COACHING_PASSWORD}
+      SVC_CHAT_PASSWORD: ${SVC_CHAT_PASSWORD:?set SVC_CHAT_PASSWORD}
+      SVC_NUTRITION_PASSWORD: ${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}
+      SVC_DASHBOARD_PASSWORD: ${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}
+      SVC_LLM_PASSWORD: ${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}
     ports:
       - "127.0.0.1:15432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
