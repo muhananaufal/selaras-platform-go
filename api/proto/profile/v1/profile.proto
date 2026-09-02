@@ -52,16 +52,31 @@ message UserProfile {
   common.v1.Timestamps timestamps = 9;
 }
 
+// Berkunci user_id, bukan user_profile_id.
+//
+// Pemanggilnya selalu punya user_id dari klaim token, sementara
+// user_profile_id bisa kosong - dan justru pengguna yang profilnya belum
+// ada adalah yang paling butuh endpoint ini. Biayanya sama: satu lewat
+// kunci primer, satu lewat indeks unik.
+//
+// Klaim user_profile_id di token tetap berguna, tetapi bukan untuk
+// service ini: ia dipakai unit lain yang meng-FK user_profiles supaya
+// tidak perlu bertanya ke profile-svc lebih dulu (ADR-007).
 message GetProfileRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
 }
 
 message GetProfileResponse {
   UserProfile profile = 1;
 }
 
+// Membuat profil bila belum ada, seperti updateOrCreate di sistem lama.
+//
+// Tanpa itu, pengguna yang pembuatan profilnya gagal saat mendaftar tidak
+// akan pernah bisa punya profil - padahal ADR-002 aturan 1 menyatakan
+// keadaan itu memang boleh terjadi dan harus bisa dipulihkan.
 message UpdateProfileRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   optional string first_name = 2;
   optional string last_name = 3;
   optional string date_of_birth = 4;

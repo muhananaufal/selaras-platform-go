@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
@@ -24,6 +26,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/crypto"
 	identitygrpc "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/grpc"
 	identitypg "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/profileclient"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/social"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
@@ -91,7 +94,13 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	server, err := buildServer(cfg, pool, issuer, revocations, log)
+	profiles, closeProfiles, err := dialProfiles(cfg.ProfileAddr, log)
+	if err != nil {
+		return err
+	}
+	defer closeProfiles()
+
+	server, err := buildServer(cfg, pool, issuer, revocations, profiles, log)
 	if err != nil {
 		return err
 	}
@@ -177,6 +186,7 @@ func buildServer(
 	pool *pgxpool.Pool,
 	issuer *token.Issuer,
 	revocations domain.RevocationPublisher,
+	profiles profileClient,
 	log *slog.Logger,
 ) (*identitygrpc.Server, error) {
 	uow := identitypg.NewUnitOfWork(pool)
@@ -184,10 +194,8 @@ func buildServer(
 	hasher := crypto.NewArgon2idHasher(crypto.DefaultParams())
 	now := time.Now
 
-	// profile-svc dan pengiriman surel belum ada. Keduanya diwakili
-	// implementasi yang menolak dengan alasan yang jelas, bukan yang
-	// berpura-pura berhasil - lihat F1-31 dan F1-33.
-	profiles := unavailableProfiles{}
+	// Pengiriman surel belum ada; ia diwakili implementasi yang menolak
+	// dengan menyebut nomor task-nya, bukan yang berpura-pura berhasil.
 	links := unavailableLinks{}
 
 	if cfg.GoogleClientID == "" {
@@ -251,4 +259,39 @@ func healthEndpoint(addr string, probes *httpx.Health) *http.Server {
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+}
+
+// dialProfiles membuka koneksi ke profile-svc, atau mengembalikan penopang
+// yang menolak bila alamatnya tidak dikonfigurasi.
+//
+// Koneksi gRPC dibuka malas, jadi tidak ada yang gagal di sini kalau
+// profile-svc sedang mati - dan itu justru yang diinginkan: identity-svc
+// TIDAK boleh menolak menyala karena tetangganya belum siap. Kegagalannya
+// muncul per panggilan, dan setiap pemanggilnya sudah dirancang menghadapi
+// kegagalan itu (ADR-002 aturan 1 dan 2).
+func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error) {
+	if target == "" {
+		log.Warn("profile-svc is not configured; profiles will not be created",
+			"variable", "PROFILE_GRPC_TARGET", "task", "F1-31")
+		return unavailableProfiles{}, func() {}, nil
+	}
+
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating the profile-svc client: %w", err)
+	}
+
+	client, err := profileclient.New(conn)
+	if err != nil {
+		if closeErr := conn.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		return nil, nil, err
+	}
+
+	return client, func() {
+		if err := conn.Close(); err != nil {
+			log.Error("closing the profile-svc connection", "error", err)
+		}
+	}, nil
 }

@@ -58,3 +58,11 @@ func (s localGenerationSource) CurrentGeneration(ctx context.Context, userID dom
 	}
 	return user.TokenGeneration(), nil
 }
+
+// profileClient adalah yang dibutuhkan identity-svc dari profile-svc:
+// membuat profil kosong, dan mencari id profil. Keduanya dipakai
+// best-effort, dan antarmuka sesempit ini membuat penopangnya sepele.
+type profileClient interface {
+	CreateEmptyProfile(ctx context.Context, userID domain.UserID) (string, error)
+	FindProfileID(ctx context.Context, userID domain.UserID) (string, error)
+}

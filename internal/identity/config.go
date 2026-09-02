@@ -22,6 +22,12 @@ type Config struct {
 	AccessTTL     time.Duration
 	RevocationTTL time.Duration
 
+	// ProfileAddr kosong berarti profile-svc belum dipasang di lingkungan
+	// ini. Pendaftaran dan login tetap berjalan - profil yang gagal dibuat
+	// adalah keadaan yang memang sah (ADR-002 aturan 1) - jadi ini mode
+	// penyebaran, bukan kekeliruan konfigurasi.
+	ProfileAddr string
+
 	// GoogleClientID kosong berarti masuk lewat Google tidak dipasang di
 	// lingkungan ini. Itu mode penyebaran yang sah, bukan kekeliruan
 	// konfigurasi - dan service-nya tetap menyala, hanya RPC-nya yang
@@ -42,6 +48,7 @@ func LoadConfig() (Config, error) {
 		DatabaseDSN:    os.Getenv("IDENTITY_DATABASE_DSN"),
 		RedisURL:       os.Getenv("REDIS_URL"),
 		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
+		ProfileAddr:    os.Getenv("PROFILE_GRPC_TARGET"),
 		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
 	}
 

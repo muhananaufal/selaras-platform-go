@@ -185,9 +185,19 @@ func (x *UserProfile) GetTimestamps() *v1.Timestamps {
 	return nil
 }
 
+// Berkunci user_id, bukan user_profile_id.
+//
+// Pemanggilnya selalu punya user_id dari klaim token, sementara
+// user_profile_id bisa kosong - dan justru pengguna yang profilnya belum
+// ada adalah yang paling butuh endpoint ini. Biayanya sama: satu lewat
+// kunci primer, satu lewat indeks unik.
+//
+// Klaim user_profile_id di token tetap berguna, tetapi bukan untuk
+// service ini: ia dipakai unit lain yang meng-FK user_profiles supaya
+// tidak perlu bertanya ke profile-svc lebih dulu (ADR-007).
 type GetProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -222,9 +232,9 @@ func (*GetProfileRequest) Descriptor() ([]byte, []int) {
 	return file_profile_v1_profile_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GetProfileRequest) GetUserProfileId() string {
+func (x *GetProfileRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -273,9 +283,14 @@ func (x *GetProfileResponse) GetProfile() *UserProfile {
 	return nil
 }
 
+// Membuat profil bila belum ada, seperti updateOrCreate di sistem lama.
+//
+// Tanpa itu, pengguna yang pembuatan profilnya gagal saat mendaftar tidak
+// akan pernah bisa punya profil - padahal ADR-002 aturan 1 menyatakan
+// keadaan itu memang boleh terjadi dan harus bisa dipulihkan.
 type UpdateProfileRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId      string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId             string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	FirstName          *string                `protobuf:"bytes,2,opt,name=first_name,json=firstName,proto3,oneof" json:"first_name,omitempty"`
 	LastName           *string                `protobuf:"bytes,3,opt,name=last_name,json=lastName,proto3,oneof" json:"last_name,omitempty"`
 	DateOfBirth        *string                `protobuf:"bytes,4,opt,name=date_of_birth,json=dateOfBirth,proto3,oneof" json:"date_of_birth,omitempty"`
@@ -316,9 +331,9 @@ func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
 	return file_profile_v1_profile_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *UpdateProfileRequest) GetUserProfileId() string {
+func (x *UpdateProfileRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -609,13 +624,13 @@ const file_profile_v1_profile_proto_rawDesc = "" +
 	"\n" +
 	"_last_nameB\x10\n" +
 	"\x0e_date_of_birthB\x17\n" +
-	"\x15_country_of_residence\";\n" +
-	"\x11GetProfileRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\"G\n" +
+	"\x15_country_of_residence\",\n" +
+	"\x11GetProfileRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"G\n" +
 	"\x12GetProfileResponse\x121\n" +
-	"\aprofile\x18\x01 \x01(\v2\x17.profile.v1.UserProfileR\aprofile\"\xfd\x02\n" +
-	"\x14UpdateProfileRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12\"\n" +
+	"\aprofile\x18\x01 \x01(\v2\x17.profile.v1.UserProfileR\aprofile\"\xee\x02\n" +
+	"\x14UpdateProfileRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\"\n" +
 	"\n" +
 	"first_name\x18\x02 \x01(\tH\x00R\tfirstName\x88\x01\x01\x12 \n" +
 	"\tlast_name\x18\x03 \x01(\tH\x01R\blastName\x88\x01\x01\x12'\n" +
