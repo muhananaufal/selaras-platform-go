@@ -1,0 +1,3 @@
+Konfigurasi tiap komponen observability diisi pada fase F9-06.
+Berkas yang akan berada di sini: otel-collector.yaml, prometheus.yml,
+tempo.yaml, loki.yaml, grafana-datasources.yaml.
