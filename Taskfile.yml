@@ -1,0 +1,112 @@
+version: "3"
+
+vars:
+  MODULE: github.com/muhananaufal/selaras-platform-go
+  COMPOSE_CORE: deploy/compose/core.yml
+  COMPOSE_FULL: deploy/compose/full.yml
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  # ---------------------------------------------------------------- quality
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -l -w .
+      - goimports -local {{.MODULE}} -w .
+
+  lint:
+    desc: Run golangci-lint over the whole module
+    cmds:
+      - golangci-lint run ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  # ---------------------------------------------------------------- contract
+  proto:lint:
+    desc: Lint protobuf definitions
+    cmds:
+      - buf lint
+
+  proto:breaking:
+    desc: Detect breaking changes against the committed contract
+    cmds:
+      - buf breaking --against '.git#branch=develop,subdir=.'
+
+  proto:gen:
+    desc: Generate Go code from protobuf
+    cmds:
+      - buf generate
+
+  proto:
+    desc: Lint then generate protobuf
+    cmds:
+      - task: proto:lint
+      - task: proto:gen
+
+  openapi:lint:
+    desc: Lint the public REST contract
+    cmds:
+      - vacuum lint -d api/openapi/edge-v1.yaml
+
+  # ---------------------------------------------------------------- build
+  build:
+    desc: Build every unit into bin/
+    cmds:
+      - go build -o bin/ ./cmd/...
+
+  # ---------------------------------------------------------------- test
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./... -race -count=1
+
+  test:integration:
+    desc: Run integration tests (requires Docker)
+    cmds:
+      - go test ./... -race -count=1 -tags=integration
+
+  test:cover:
+    desc: Run tests with a coverage report
+    cmds:
+      - go test ./... -race -count=1 -coverprofile=coverage.out
+      - go tool cover -func=coverage.out | tail -1
+
+  # ---------------------------------------------------------------- runtime
+  up:
+    desc: Start core dependencies (postgres, kafka)
+    cmds:
+      - docker compose -f {{.COMPOSE_CORE}} up -d
+
+  up:full:
+    desc: Start everything including the observability stack
+    cmds:
+      - docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d
+
+  down:
+    desc: Stop local dependencies
+    cmds:
+      - docker compose -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down
+
+  # ---------------------------------------------------------------- security
+  security:
+    desc: Scan the repository for leaked secrets
+    cmds:
+      - gitleaks detect --no-banner --redact
+
+  # ---------------------------------------------------------------- gate
+  ci:
+    desc: Everything CI runs, in the same order
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: proto:lint
+      - task: test

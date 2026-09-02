@@ -1,0 +1,17 @@
+version: v2
+
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/muhananaufal/selaras-platform-go/gen
+
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: gen
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=true
