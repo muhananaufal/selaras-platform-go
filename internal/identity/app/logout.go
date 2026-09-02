@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
@@ -69,11 +68,7 @@ func (l *Logout) Execute(ctx context.Context, userID domain.UserID) error {
 	// Sebaliknya, publikasi yang gagal DILARANG membatalkan logout. Barisnya
 	// sudah tersimpan, jadi pencabutannya nyata; yang tertinggal hanya
 	// cache, dan pemeriksa yang meleset mengambilnya dari sumber aslinya.
-	if err := l.revocations.PublishGeneration(ctx, userID, generation); err != nil {
-		slog.ErrorContext(ctx, "logged out but could not publish the new generation; "+
-			"old tokens stay accepted until the checker reads from the source",
-			"user_id", userID.String(), "generation", generation, "error", err)
-	}
+	publishGenerationBestEffort(ctx, l.revocations, userID, generation)
 
 	return nil
 }

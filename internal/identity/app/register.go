@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
@@ -101,7 +100,7 @@ func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult
 		return AuthResult{}, fmt.Errorf("storing user: %w", err)
 	}
 
-	profileID := r.createProfileBestEffort(ctx, user.ID())
+	profileID := createProfileBestEffort(ctx, r.profiles, user.ID())
 
 	token, err := r.tokens.Issue(domain.Claims{
 		UserID:        user.ID(),
@@ -121,25 +120,4 @@ func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult
 		UserProfileID: profileID,
 		AccessToken:   token,
 	}, nil
-}
-
-// createProfileBestEffort meminta profile-svc membuat profil kosong dan
-// mengembalikan string kosong bila gagal.
-//
-// ADR-002 aturan 1: kegagalannya DILARANG menggagalkan registrasi. "Pengguna
-// tanpa profil" sudah menjadi keadaan yang sah hari ini (B7) - jalur
-// pendaftaran lewat Google di sistem lama tidak pernah membuat profil sama
-// sekali, dan sistemnya tetap berjalan.
-//
-// Kegagalannya dicatat, bukan ditelan diam-diam: tanpa catatan, profile-svc
-// bisa mati berhari-hari dan yang terlihat hanya pengguna yang profilnya
-// kosong tanpa sebab.
-func (r *Register) createProfileBestEffort(ctx context.Context, userID domain.UserID) string {
-	profileID, err := r.profiles.CreateEmptyProfile(ctx, userID)
-	if err != nil {
-		slog.WarnContext(ctx, "could not create an empty profile; registration continues",
-			"user_id", userID.String(), "error", err)
-		return ""
-	}
-	return profileID
 }

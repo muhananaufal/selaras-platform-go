@@ -237,10 +237,6 @@ func (c *ConfirmPasswordReset) Execute(ctx context.Context, cmd ConfirmPasswordR
 		return err
 	}
 
-	if err := c.revocations.PublishGeneration(ctx, userID, generation); err != nil {
-		slog.ErrorContext(ctx, "password reset but could not publish the new generation; "+
-			"old tokens stay accepted until the checker reads from the source",
-			"user_id", userID.String(), "generation", generation, "error", err)
-	}
+	publishGenerationBestEffort(ctx, c.revocations, userID, generation)
 	return nil
 }
