@@ -1,0 +1,60 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    # Kebenaran
+    - errcheck        # error yang ditelan = cacat B8 di sistem lama
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - bodyclose       # response body yang tidak ditutup = kebocoran fd
+    - rowserrcheck
+    - sqlclosecheck
+    - nilerr
+    - errorlint       # error wrapping yang benar, bukan perbandingan string
+    # Keamanan
+    - gosec
+    # Disiplin yang dituntut rencana
+    - goconst
+    - unconvert
+    - wastedassign
+    - copyloopvar
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gosec:
+      excludes:
+        - G115  # konversi integer; ditangani review, terlalu banyak positif palsu
+    staticcheck:
+      checks: ["all"]
+
+  exclusions:
+    generated: lax
+    rules:
+      # Kode hasil generate tidak diperiksa: ia bukan tulisan tangan
+      - path: (gen|\.pb)\.go
+        linters: [errcheck, gosec, staticcheck, unused, revive]
+      # Test boleh memakai pola yang di kode produksi terlarang
+      - path: _test\.go
+        linters: [gosec, goconst, errcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/muhananaufal/selaras-platform-go
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
