@@ -183,15 +183,16 @@ func inputMode(p *assessmentv1.ClinicalParameter) string {
 	return "proxy"
 }
 
-// answersFrom mengubah masukan kontrak menjadi bentuk yang dibaca mesin.
+// AnswersFrom mengubah masukan kontrak menjadi bentuk yang dibaca mesin.
 //
 // Nama kuncinya sama persis dengan yang dipakai sistem lama, karena golden
 // vector membuktikan paritasnya dalam nama-nama itu. Satu kunci yang berbeda
 // berarti estimator membaca nilai bawaannya dan menghitung terus, tanpa satu
 // pun galat.
-// AnswersFrom diekspor supaya test bisa membuktikan konversinya menghasilkan
-// angka yang sama dengan golden vector - pembuktian yang tidak bisa dilakukan
-// dari dalam paket tanpa mengimpor harness golden ke kode produksi.
+//
+// Ia diekspor supaya test bisa membuktikan konversinya menghasilkan angka yang
+// sama dengan golden vector - pembuktian yang tidak bisa dilakukan dari dalam
+// paket tanpa mengimpor harness golden ke kode produksi.
 func AnswersFrom(in *assessmentv1.AssessmentInput) map[string]any {
 	answers := map[string]any{
 		"has_diabetes":   in.GetHasDiabetes(),
