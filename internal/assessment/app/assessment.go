@@ -17,6 +17,10 @@ import (
 // perhitungan: nama dan bahasa tidak pernah masuk ke model, dan membawanya
 // hanya memperluas apa yang bocor bila cuplikan ini tercatat di suatu tempat.
 type ProfileSnapshot struct {
+	// UserProfileID diturunkan dari profil yang dibaca, bukan diterima dari
+	// pemanggil (ADR-023). Inilah yang disimpan sebagai pemilik penilaian.
+	UserProfileID string
+
 	Age                int
 	Sex                string
 	CountryOfResidence string
@@ -30,7 +34,7 @@ type ProfileSnapshot struct {
 // terlanggar. Cache dari event (F2-16) adalah optimasi yang menyusul, bukan
 // prasyarat.
 type ProfileSource interface {
-	Snapshot(ctx context.Context, userProfileID domain.ProfileID) (ProfileSnapshot, error)
+	Snapshot(ctx context.Context, userID string) (ProfileSnapshot, error)
 }
 
 var (
@@ -74,23 +78,29 @@ func NewService(
 }
 
 // StartCommand adalah masukan satu penilaian.
+//
+// Ia membawa user_id, bukan user_profile_id. Id profil diturunkan dari profil
+// yang dibaca, bukan diterima dari pemanggil (ADR-023).
 type StartCommand struct {
-	UserProfileID string
-	Answers       map[string]any
+	UserID  string
+	Answers map[string]any
 }
 
 // Start menghitung risiko dan menyimpan hasilnya.
 func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Assessment, error) {
-	profileID, err := domain.ParseProfileID(cmd.UserProfileID)
-	if err != nil {
-		return nil, err
-	}
-
-	profile, err := s.profiles.Snapshot(ctx, profileID)
+	profile, err := s.profiles.Snapshot(ctx, cmd.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("reading the profile: %w", err)
 	}
 	if err := validate(profile); err != nil {
+		return nil, err
+	}
+
+	// Id profil datang dari profil yang baru saja dibaca, bukan dari
+	// permintaan. Itu yang membuat penilaian tidak bisa ditulis ke profil
+	// orang lain oleh apa pun yang bisa menjangkau service ini.
+	profileID, err := domain.ParseProfileID(profile.UserProfileID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -129,6 +139,19 @@ func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Assessme
 	return assessment, nil
 }
 
+// resolveProfileID menanyakan id profil seorang pengguna.
+//
+// Dipakai jalur BACA. Ia satu panggilan tambahan pada setiap pembacaan, dan
+// itu harga yang dibayar sadar (ADR-023): tanpanya, id profil orang lain yang
+// dikirimkan akan membaca penilaian orang lain.
+func (s *Service) resolveProfileID(ctx context.Context, userID string) (domain.ProfileID, error) {
+	profile, err := s.profiles.Snapshot(ctx, userID)
+	if err != nil {
+		return domain.ProfileID{}, fmt.Errorf("reading the profile: %w", err)
+	}
+	return domain.ParseProfileID(profile.UserProfileID)
+}
+
 // Get mengambil penilaian lewat slug-nya, untuk pemilik yang menyebutkan
 // dirinya.
 //
@@ -137,8 +160,8 @@ func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Assessme
 // penanya bahwa slug itu ada - dan dengan itu berapa banyak penilaian yang
 // pernah dibuat, dan mana yang bisa ditebak berikutnya. Ini yang diminta
 // F2-14, dan ia menutup pola yang sama dengan temuan S9.
-func (s *Service) Get(ctx context.Context, slug, userProfileID string) (*domain.Assessment, error) {
-	profileID, err := domain.ParseProfileID(userProfileID)
+func (s *Service) Get(ctx context.Context, slug, userID string) (*domain.Assessment, error) {
+	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +177,8 @@ func (s *Service) Get(ctx context.Context, slug, userProfileID string) (*domain.
 }
 
 // History mengembalikan penilaian terbaru milik satu profil.
-func (s *Service) History(ctx context.Context, userProfileID string, limit int) ([]*domain.Assessment, error) {
-	profileID, err := domain.ParseProfileID(userProfileID)
+func (s *Service) History(ctx context.Context, userID string, limit int) ([]*domain.Assessment, error) {
+	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

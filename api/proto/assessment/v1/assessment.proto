@@ -23,6 +23,14 @@ service Assessment {
 
   rpc GetAssessment(GetAssessmentRequest) returns (GetAssessmentResponse);
   rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse);
+
+  // Memetakan negara tempat tinggal ke wilayah kalibrasi SCORE2.
+  //
+  // Ia ada di sini, bukan di profile-svc, karena risk_region adalah konsep
+  // KLINIS: ia bagian dari kalibrasi model, bukan data demografis
+  // (ADR-002 aturan 3). profile-svc menyimpan negaranya; yang tahu artinya
+  // bagi risiko adalah service ini.
+  rpc ResolveRiskRegion(ResolveRiskRegionRequest) returns (ResolveRiskRegionResponse);
 }
 
 enum InputMode {
@@ -243,8 +251,14 @@ message RiskAssessment {
   common.v1.Timestamps timestamps = 10;
 }
 
+// Berkunci user_id, bukan user_profile_id (ADR-023).
+//
+// Service ini TIDAK memakai identitas yang sekadar dikirimkan sebagai dasar
+// otorisasi: user_profile_id yang dipercaya begitu saja akan membiarkan
+// penilaian ditulis ke profil orang lain oleh apa pun yang bisa menjangkau
+// jaringan internal. Ia menanyakannya sendiri ke profile-svc.
 message StartAssessmentRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   AssessmentInput input = 2;
 }
 
@@ -254,7 +268,7 @@ message StartAssessmentResponse {
 
 message RequestPersonalizationRequest {
   string slug = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
   common.v1.IdempotencyKey idempotency_key = 3;
 }
 
@@ -266,7 +280,7 @@ message RequestPersonalizationResponse {
 
 message GetAssessmentRequest {
   string slug = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
 }
 
 message GetAssessmentResponse {
@@ -274,11 +288,23 @@ message GetAssessmentResponse {
 }
 
 message ListAssessmentsRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   common.v1.PageRequest page = 2;
 }
 
 message ListAssessmentsResponse {
   repeated RiskAssessment assessments = 1;
   common.v1.PageResponse page = 2;
+}
+
+message ResolveRiskRegionRequest {
+  string country_of_residence = 1;
+}
+
+// Negara yang tidak ada di tabel kalibrasi menghasilkan wilayah "high".
+// Itu pilihan konservatif yang dipertahankan dari sistem lama: menurunkannya
+// akan menggeser angka risiko setiap pengguna dari negara yang belum
+// terdaftar, ke arah yang lebih rendah dari yang bisa dibuktikan.
+message ResolveRiskRegionResponse {
+  string risk_region = 1;
 }

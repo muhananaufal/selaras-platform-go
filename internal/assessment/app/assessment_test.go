@@ -74,12 +74,23 @@ type fakeProfiles struct {
 	calls    int
 }
 
-func (f *fakeProfiles) Snapshot(context.Context, domain.ProfileID) (app.ProfileSnapshot, error) {
+func (f *fakeProfiles) Snapshot(_ context.Context, userID string) (app.ProfileSnapshot, error) {
+	snapshot := f.snapshot
+	snapshot.UserProfileID = profileIDFor(userID)
 	f.calls++
 	if f.err != nil {
 		return app.ProfileSnapshot{}, f.err
 	}
-	return f.snapshot, nil
+	return snapshot, nil
+}
+
+// profileIDFor memberi setiap pengguna satu id profil yang stabil, seperti
+// yang akan dilakukan profile-svc.
+func profileIDFor(userID string) string {
+	if userID == mineID {
+		return "018f4c1e-0000-7000-8000-0000000000a1"
+	}
+	return "018f4c1e-0000-7000-8000-0000000000b1"
 }
 
 func newService(t *testing.T) (*app.Service, *fakeRepo, *fakeProfiles) {
@@ -114,8 +125,8 @@ func TestStartCalculatesAndStores(t *testing.T) {
 	svc, repo, profiles := newService(t)
 
 	a, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: mineID,
-		Answers:       validAnswers(),
+		UserID:  mineID,
+		Answers: validAnswers(),
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -152,7 +163,7 @@ func TestStartStoresTheInputsBesideTheResult(t *testing.T) {
 	answers["an_answer_nothing_reads"] = "kept anyway"
 
 	a, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: mineID, Answers: answers,
+		UserID: mineID, Answers: answers,
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -176,7 +187,7 @@ func TestDiabetesValuesAppearOnlyOnTheDiabetesPath(t *testing.T) {
 	svc, _, _ := newService(t)
 
 	withoutDiabetes, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: mineID, Answers: validAnswers(),
+		UserID: mineID, Answers: validAnswers(),
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -196,7 +207,7 @@ func TestDiabetesValuesAppearOnlyOnTheDiabetesPath(t *testing.T) {
 	answers["scr_value"] = 0.9
 
 	withDiabetes, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: mineID, Answers: answers,
+		UserID: mineID, Answers: answers,
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -227,7 +238,7 @@ func TestAnIncompleteProfileIsRefusedWithItsMissingFields(t *testing.T) {
 			profiles.snapshot = snapshot
 
 			_, err := svc.Start(context.Background(), app.StartCommand{
-				UserProfileID: mineID, Answers: validAnswers(),
+				UserID: mineID, Answers: validAnswers(),
 			})
 			if !errors.Is(err, app.ErrProfileIncomplete) {
 				t.Fatalf("Start = %v; want ErrProfileIncomplete", err)
@@ -246,7 +257,7 @@ func TestAnEmptyCountryIsRefusedRatherThanDefaulted(t *testing.T) {
 	profiles.snapshot.CountryOfResidence = ""
 
 	_, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: mineID, Answers: validAnswers(),
+		UserID: mineID, Answers: validAnswers(),
 	})
 	if !errors.Is(err, app.ErrProfileIncomplete) {
 		t.Errorf("Start = %v; want it refused rather than silently treated as high risk", err)
@@ -260,7 +271,7 @@ func TestSomeoneElsesAssessmentIsNotFoundRatherThanForbidden(t *testing.T) {
 	svc, _, _ := newService(t)
 
 	theirs, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: theirsID, Answers: validAnswers(),
+		UserID: theirsID, Answers: validAnswers(),
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -286,7 +297,7 @@ func TestAMissingSlugAndSomeoneElsesLookIdentical(t *testing.T) {
 	svc, _, _ := newService(t)
 
 	theirs, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: theirsID, Answers: validAnswers(),
+		UserID: theirsID, Answers: validAnswers(),
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -304,7 +315,7 @@ func TestSlugLookupIgnoresCaseAndSpace(t *testing.T) {
 	svc, _, _ := newService(t)
 
 	mine, err := svc.Start(context.Background(), app.StartCommand{
-		UserProfileID: mineID, Answers: validAnswers(),
+		UserID: mineID, Answers: validAnswers(),
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -320,7 +331,7 @@ func TestHistoryIsCappedEvenWhenTheCallerAsksForMore(t *testing.T) {
 
 	for range 3 {
 		if _, err := svc.Start(context.Background(), app.StartCommand{
-			UserProfileID: mineID, Answers: validAnswers(),
+			UserID: mineID, Answers: validAnswers(),
 		}); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
@@ -352,5 +363,33 @@ func TestNewServiceRefusesMissingDependencies(t *testing.T) {
 	}
 	if _, err := app.NewService(repo, profiles, nil, time.Now); err == nil {
 		t.Error("accepted a nil engine")
+	}
+}
+
+// ADR-023. Id profil datang dari profil yang dibaca, bukan dari permintaan.
+//
+// Kalau ia diterima dari pemanggil, apa pun yang bisa menjangkau service ini
+// bisa menulis penilaian ke profil orang lain hanya dengan menyebut idnya.
+func TestTheProfileIdComesFromTheProfileNotTheRequest(t *testing.T) {
+	svc, _, _ := newService(t)
+
+	mine, err := svc.Start(context.Background(), app.StartCommand{
+		UserID: mineID, Answers: validAnswers(),
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	theirs, err := svc.Start(context.Background(), app.StartCommand{
+		UserID: theirsID, Answers: validAnswers(),
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if mine.UserProfileID == theirs.UserProfileID {
+		t.Fatal("two different users were given the same profile id")
+	}
+	if mine.UserProfileID.String() != profileIDFor(mineID) {
+		t.Errorf("profile id = %s; want the one profile-svc reported", mine.UserProfileID)
 	}
 }

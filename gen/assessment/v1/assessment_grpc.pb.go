@@ -23,6 +23,7 @@ const (
 	Assessment_RequestPersonalization_FullMethodName = "/assessment.v1.Assessment/RequestPersonalization"
 	Assessment_GetAssessment_FullMethodName          = "/assessment.v1.Assessment/GetAssessment"
 	Assessment_ListAssessments_FullMethodName        = "/assessment.v1.Assessment/ListAssessments"
+	Assessment_ResolveRiskRegion_FullMethodName      = "/assessment.v1.Assessment/ResolveRiskRegion"
 )
 
 // AssessmentClient is the client API for Assessment service.
@@ -46,6 +47,13 @@ type AssessmentClient interface {
 	RequestPersonalization(ctx context.Context, in *RequestPersonalizationRequest, opts ...grpc.CallOption) (*RequestPersonalizationResponse, error)
 	GetAssessment(ctx context.Context, in *GetAssessmentRequest, opts ...grpc.CallOption) (*GetAssessmentResponse, error)
 	ListAssessments(ctx context.Context, in *ListAssessmentsRequest, opts ...grpc.CallOption) (*ListAssessmentsResponse, error)
+	// Memetakan negara tempat tinggal ke wilayah kalibrasi SCORE2.
+	//
+	// Ia ada di sini, bukan di profile-svc, karena risk_region adalah konsep
+	// KLINIS: ia bagian dari kalibrasi model, bukan data demografis
+	// (ADR-002 aturan 3). profile-svc menyimpan negaranya; yang tahu artinya
+	// bagi risiko adalah service ini.
+	ResolveRiskRegion(ctx context.Context, in *ResolveRiskRegionRequest, opts ...grpc.CallOption) (*ResolveRiskRegionResponse, error)
 }
 
 type assessmentClient struct {
@@ -96,6 +104,16 @@ func (c *assessmentClient) ListAssessments(ctx context.Context, in *ListAssessme
 	return out, nil
 }
 
+func (c *assessmentClient) ResolveRiskRegion(ctx context.Context, in *ResolveRiskRegionRequest, opts ...grpc.CallOption) (*ResolveRiskRegionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveRiskRegionResponse)
+	err := c.cc.Invoke(ctx, Assessment_ResolveRiskRegion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AssessmentServer is the server API for Assessment service.
 // All implementations must embed UnimplementedAssessmentServer
 // for forward compatibility.
@@ -117,6 +135,13 @@ type AssessmentServer interface {
 	RequestPersonalization(context.Context, *RequestPersonalizationRequest) (*RequestPersonalizationResponse, error)
 	GetAssessment(context.Context, *GetAssessmentRequest) (*GetAssessmentResponse, error)
 	ListAssessments(context.Context, *ListAssessmentsRequest) (*ListAssessmentsResponse, error)
+	// Memetakan negara tempat tinggal ke wilayah kalibrasi SCORE2.
+	//
+	// Ia ada di sini, bukan di profile-svc, karena risk_region adalah konsep
+	// KLINIS: ia bagian dari kalibrasi model, bukan data demografis
+	// (ADR-002 aturan 3). profile-svc menyimpan negaranya; yang tahu artinya
+	// bagi risiko adalah service ini.
+	ResolveRiskRegion(context.Context, *ResolveRiskRegionRequest) (*ResolveRiskRegionResponse, error)
 	mustEmbedUnimplementedAssessmentServer()
 }
 
@@ -138,6 +163,9 @@ func (UnimplementedAssessmentServer) GetAssessment(context.Context, *GetAssessme
 }
 func (UnimplementedAssessmentServer) ListAssessments(context.Context, *ListAssessmentsRequest) (*ListAssessmentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAssessments not implemented")
+}
+func (UnimplementedAssessmentServer) ResolveRiskRegion(context.Context, *ResolveRiskRegionRequest) (*ResolveRiskRegionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveRiskRegion not implemented")
 }
 func (UnimplementedAssessmentServer) mustEmbedUnimplementedAssessmentServer() {}
 func (UnimplementedAssessmentServer) testEmbeddedByValue()                    {}
@@ -232,6 +260,24 @@ func _Assessment_ListAssessments_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Assessment_ResolveRiskRegion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveRiskRegionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssessmentServer).ResolveRiskRegion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Assessment_ResolveRiskRegion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssessmentServer).ResolveRiskRegion(ctx, req.(*ResolveRiskRegionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Assessment_ServiceDesc is the grpc.ServiceDesc for Assessment service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -254,6 +300,10 @@ var Assessment_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAssessments",
 			Handler:    _Assessment_ListAssessments_Handler,
+		},
+		{
+			MethodName: "ResolveRiskRegion",
+			Handler:    _Assessment_ResolveRiskRegion_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
