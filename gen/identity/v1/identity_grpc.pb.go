@@ -26,7 +26,7 @@ const (
 	Identity_ConfirmPasswordReset_FullMethodName = "/identity.v1.Identity/ConfirmPasswordReset"
 	Identity_DeleteAccount_FullMethodName        = "/identity.v1.Identity/DeleteAccount"
 	Identity_ExchangeSocialToken_FullMethodName  = "/identity.v1.Identity/ExchangeSocialToken"
-	Identity_VerifyToken_FullMethodName          = "/identity.v1.Identity/VerifyToken"
+	Identity_GetTokenGeneration_FullMethodName   = "/identity.v1.Identity/GetTokenGeneration"
 )
 
 // IdentityClient is the client API for Identity service.
@@ -48,9 +48,14 @@ type IdentityClient interface {
 	ConfirmPasswordReset(ctx context.Context, in *ConfirmPasswordResetRequest, opts ...grpc.CallOption) (*ConfirmPasswordResetResponse, error)
 	DeleteAccount(ctx context.Context, in *DeleteAccountRequest, opts ...grpc.CallOption) (*DeleteAccountResponse, error)
 	ExchangeSocialToken(ctx context.Context, in *ExchangeSocialTokenRequest, opts ...grpc.CallOption) (*ExchangeSocialTokenResponse, error)
-	// Dipanggil gateway pada setiap request terautentikasi. Hanya membaca
-	// dan memverifikasi tanda tangan token; tidak menyentuh database.
-	VerifyToken(ctx context.Context, in *VerifyTokenRequest, opts ...grpc.CallOption) (*VerifyTokenResponse, error)
+	// Dipanggil gateway HANYA saat cache pencabutan tidak tahu, bukan di
+	// setiap request. Gateway memverifikasi tanda tangan token sendiri
+	// dengan kunci publik (ADR-020); yang tidak bisa ia ketahui sendiri
+	// hanyalah generasi token yang sedang berlaku.
+	//
+	// Menggantikan VerifyToken, yang menempatkan identity-svc di jalur
+	// terpanas - persis panggilan jaringan wajib yang dihapus ADR-007.
+	GetTokenGeneration(ctx context.Context, in *GetTokenGenerationRequest, opts ...grpc.CallOption) (*GetTokenGenerationResponse, error)
 }
 
 type identityClient struct {
@@ -131,10 +136,10 @@ func (c *identityClient) ExchangeSocialToken(ctx context.Context, in *ExchangeSo
 	return out, nil
 }
 
-func (c *identityClient) VerifyToken(ctx context.Context, in *VerifyTokenRequest, opts ...grpc.CallOption) (*VerifyTokenResponse, error) {
+func (c *identityClient) GetTokenGeneration(ctx context.Context, in *GetTokenGenerationRequest, opts ...grpc.CallOption) (*GetTokenGenerationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(VerifyTokenResponse)
-	err := c.cc.Invoke(ctx, Identity_VerifyToken_FullMethodName, in, out, cOpts...)
+	out := new(GetTokenGenerationResponse)
+	err := c.cc.Invoke(ctx, Identity_GetTokenGeneration_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -160,9 +165,14 @@ type IdentityServer interface {
 	ConfirmPasswordReset(context.Context, *ConfirmPasswordResetRequest) (*ConfirmPasswordResetResponse, error)
 	DeleteAccount(context.Context, *DeleteAccountRequest) (*DeleteAccountResponse, error)
 	ExchangeSocialToken(context.Context, *ExchangeSocialTokenRequest) (*ExchangeSocialTokenResponse, error)
-	// Dipanggil gateway pada setiap request terautentikasi. Hanya membaca
-	// dan memverifikasi tanda tangan token; tidak menyentuh database.
-	VerifyToken(context.Context, *VerifyTokenRequest) (*VerifyTokenResponse, error)
+	// Dipanggil gateway HANYA saat cache pencabutan tidak tahu, bukan di
+	// setiap request. Gateway memverifikasi tanda tangan token sendiri
+	// dengan kunci publik (ADR-020); yang tidak bisa ia ketahui sendiri
+	// hanyalah generasi token yang sedang berlaku.
+	//
+	// Menggantikan VerifyToken, yang menempatkan identity-svc di jalur
+	// terpanas - persis panggilan jaringan wajib yang dihapus ADR-007.
+	GetTokenGeneration(context.Context, *GetTokenGenerationRequest) (*GetTokenGenerationResponse, error)
 	mustEmbedUnimplementedIdentityServer()
 }
 
@@ -194,8 +204,8 @@ func (UnimplementedIdentityServer) DeleteAccount(context.Context, *DeleteAccount
 func (UnimplementedIdentityServer) ExchangeSocialToken(context.Context, *ExchangeSocialTokenRequest) (*ExchangeSocialTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeSocialToken not implemented")
 }
-func (UnimplementedIdentityServer) VerifyToken(context.Context, *VerifyTokenRequest) (*VerifyTokenResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method VerifyToken not implemented")
+func (UnimplementedIdentityServer) GetTokenGeneration(context.Context, *GetTokenGenerationRequest) (*GetTokenGenerationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTokenGeneration not implemented")
 }
 func (UnimplementedIdentityServer) mustEmbedUnimplementedIdentityServer() {}
 func (UnimplementedIdentityServer) testEmbeddedByValue()                  {}
@@ -344,20 +354,20 @@ func _Identity_ExchangeSocialToken_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Identity_VerifyToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(VerifyTokenRequest)
+func _Identity_GetTokenGeneration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTokenGenerationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(IdentityServer).VerifyToken(ctx, in)
+		return srv.(IdentityServer).GetTokenGeneration(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Identity_VerifyToken_FullMethodName,
+		FullMethod: Identity_GetTokenGeneration_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IdentityServer).VerifyToken(ctx, req.(*VerifyTokenRequest))
+		return srv.(IdentityServer).GetTokenGeneration(ctx, req.(*GetTokenGenerationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -398,8 +408,8 @@ var Identity_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Identity_ExchangeSocialToken_Handler,
 		},
 		{
-			MethodName: "VerifyToken",
-			Handler:    _Identity_VerifyToken_Handler,
+			MethodName: "GetTokenGeneration",
+			Handler:    _Identity_GetTokenGeneration_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

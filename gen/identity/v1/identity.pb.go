@@ -154,7 +154,6 @@ type TokenPair struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	AccessToken      string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
 	ExpiresInSeconds int64                  `protobuf:"varint,2,opt,name=expires_in_seconds,json=expiresInSeconds,proto3" json:"expires_in_seconds,omitempty"`
-	RefreshToken     string                 `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -201,13 +200,6 @@ func (x *TokenPair) GetExpiresInSeconds() int64 {
 		return x.ExpiresInSeconds
 	}
 	return 0
-}
-
-func (x *TokenPair) GetRefreshToken() string {
-	if x != nil {
-		return x.RefreshToken
-	}
-	return ""
 }
 
 type RegisterRequest struct {
@@ -784,10 +776,14 @@ func (x *DeleteAccountResponse) GetSagaId() string {
 	return ""
 }
 
+// id_token adalah ID token OIDC dari penyedia, bukan access token-nya.
+// Ia ditandatangani penyedia, sehingga klaim email_verified sampai ke
+// identity-svc dengan tanda tangannya utuh - identity-svc tidak perlu
+// mempercayai pemanggilnya soal alamat siapa yang sudah terbukti.
 type ExchangeSocialTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
-	ProviderToken string                 `protobuf:"bytes,2,opt,name=provider_token,json=providerToken,proto3" json:"provider_token,omitempty"`
+	IdToken       string                 `protobuf:"bytes,2,opt,name=id_token,json=idToken,proto3" json:"id_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -829,9 +825,9 @@ func (x *ExchangeSocialTokenRequest) GetProvider() string {
 	return ""
 }
 
-func (x *ExchangeSocialTokenRequest) GetProviderToken() string {
+func (x *ExchangeSocialTokenRequest) GetIdToken() string {
 	if x != nil {
-		return x.ProviderToken
+		return x.IdToken
 	}
 	return ""
 }
@@ -907,27 +903,27 @@ func (x *ExchangeSocialTokenResponse) GetAccountWasLinked() bool {
 	return false
 }
 
-type VerifyTokenRequest struct {
+type GetTokenGenerationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AccessToken   string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *VerifyTokenRequest) Reset() {
-	*x = VerifyTokenRequest{}
+func (x *GetTokenGenerationRequest) Reset() {
+	*x = GetTokenGenerationRequest{}
 	mi := &file_identity_v1_identity_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *VerifyTokenRequest) String() string {
+func (x *GetTokenGenerationRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*VerifyTokenRequest) ProtoMessage() {}
+func (*GetTokenGenerationRequest) ProtoMessage() {}
 
-func (x *VerifyTokenRequest) ProtoReflect() protoreflect.Message {
+func (x *GetTokenGenerationRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_identity_v1_identity_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -939,40 +935,39 @@ func (x *VerifyTokenRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use VerifyTokenRequest.ProtoReflect.Descriptor instead.
-func (*VerifyTokenRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetTokenGenerationRequest.ProtoReflect.Descriptor instead.
+func (*GetTokenGenerationRequest) Descriptor() ([]byte, []int) {
 	return file_identity_v1_identity_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *VerifyTokenRequest) GetAccessToken() string {
+func (x *GetTokenGenerationRequest) GetUserId() string {
 	if x != nil {
-		return x.AccessToken
+		return x.UserId
 	}
 	return ""
 }
 
-type VerifyTokenResponse struct {
+type GetTokenGenerationResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Identity      *v1.Identity           `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
-	Role          Role                   `protobuf:"varint,2,opt,name=role,proto3,enum=identity.v1.Role" json:"role,omitempty"`
+	Generation    int64                  `protobuf:"varint,1,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *VerifyTokenResponse) Reset() {
-	*x = VerifyTokenResponse{}
+func (x *GetTokenGenerationResponse) Reset() {
+	*x = GetTokenGenerationResponse{}
 	mi := &file_identity_v1_identity_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *VerifyTokenResponse) String() string {
+func (x *GetTokenGenerationResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*VerifyTokenResponse) ProtoMessage() {}
+func (*GetTokenGenerationResponse) ProtoMessage() {}
 
-func (x *VerifyTokenResponse) ProtoReflect() protoreflect.Message {
+func (x *GetTokenGenerationResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_identity_v1_identity_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -984,23 +979,16 @@ func (x *VerifyTokenResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use VerifyTokenResponse.ProtoReflect.Descriptor instead.
-func (*VerifyTokenResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetTokenGenerationResponse.ProtoReflect.Descriptor instead.
+func (*GetTokenGenerationResponse) Descriptor() ([]byte, []int) {
 	return file_identity_v1_identity_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *VerifyTokenResponse) GetIdentity() *v1.Identity {
+func (x *GetTokenGenerationResponse) GetGeneration() int64 {
 	if x != nil {
-		return x.Identity
+		return x.Generation
 	}
-	return nil
-}
-
-func (x *VerifyTokenResponse) GetRole() Role {
-	if x != nil {
-		return x.Role
-	}
-	return Role_ROLE_UNSPECIFIED
+	return 0
 }
 
 var File_identity_v1_identity_proto protoreflect.FileDescriptor
@@ -1015,11 +1003,10 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\x0eemail_verified\x18\x04 \x01(\bR\remailVerified\x125\n" +
 	"\n" +
 	"timestamps\x18\x05 \x01(\v2\x15.common.v1.TimestampsR\n" +
-	"timestamps\"\x81\x01\n" +
+	"timestamps\"\\\n" +
 	"\tTokenPair\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12,\n" +
-	"\x12expires_in_seconds\x18\x02 \x01(\x03R\x10expiresInSeconds\x12#\n" +
-	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\"C\n" +
+	"\x12expires_in_seconds\x18\x02 \x01(\x03R\x10expiresInSeconds\"C\n" +
 	"\x0fRegisterRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"\x98\x01\n" +
@@ -1048,25 +1035,26 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"0\n" +
 	"\x15DeleteAccountResponse\x12\x17\n" +
-	"\asaga_id\x18\x01 \x01(\tR\x06sagaId\"_\n" +
+	"\asaga_id\x18\x01 \x01(\tR\x06sagaId\"S\n" +
 	"\x1aExchangeSocialTokenRequest\x12\x1a\n" +
-	"\bprovider\x18\x01 \x01(\tR\bprovider\x12%\n" +
-	"\x0eprovider_token\x18\x02 \x01(\tR\rproviderToken\"\xd1\x01\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x19\n" +
+	"\bid_token\x18\x02 \x01(\tR\aidToken\"\xd1\x01\n" +
 	"\x1bExchangeSocialTokenResponse\x12%\n" +
 	"\x04user\x18\x01 \x01(\v2\x11.identity.v1.UserR\x04user\x12,\n" +
 	"\x05token\x18\x02 \x01(\v2\x16.identity.v1.TokenPairR\x05token\x12/\n" +
 	"\bidentity\x18\x03 \x01(\v2\x13.common.v1.IdentityR\bidentity\x12,\n" +
-	"\x12account_was_linked\x18\x04 \x01(\bR\x10accountWasLinked\"7\n" +
-	"\x12VerifyTokenRequest\x12!\n" +
-	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\"m\n" +
-	"\x13VerifyTokenResponse\x12/\n" +
-	"\bidentity\x18\x01 \x01(\v2\x13.common.v1.IdentityR\bidentity\x12%\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x11.identity.v1.RoleR\x04role*;\n" +
+	"\x12account_was_linked\x18\x04 \x01(\bR\x10accountWasLinked\"4\n" +
+	"\x19GetTokenGenerationRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"<\n" +
+	"\x1aGetTokenGenerationResponse\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x01 \x01(\x03R\n" +
+	"generation*;\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tROLE_USER\x10\x01\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x022\xc4\x05\n" +
+	"ROLE_ADMIN\x10\x022\xd9\x05\n" +
 	"\bIdentity\x12G\n" +
 	"\bRegister\x12\x1c.identity.v1.RegisterRequest\x1a\x1d.identity.v1.RegisterResponse\x12>\n" +
 	"\x05Login\x12\x19.identity.v1.LoginRequest\x1a\x1a.identity.v1.LoginResponse\x12A\n" +
@@ -1074,8 +1062,8 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\x14RequestPasswordReset\x12(.identity.v1.RequestPasswordResetRequest\x1a).identity.v1.RequestPasswordResetResponse\x12k\n" +
 	"\x14ConfirmPasswordReset\x12(.identity.v1.ConfirmPasswordResetRequest\x1a).identity.v1.ConfirmPasswordResetResponse\x12V\n" +
 	"\rDeleteAccount\x12!.identity.v1.DeleteAccountRequest\x1a\".identity.v1.DeleteAccountResponse\x12h\n" +
-	"\x13ExchangeSocialToken\x12'.identity.v1.ExchangeSocialTokenRequest\x1a(.identity.v1.ExchangeSocialTokenResponse\x12P\n" +
-	"\vVerifyToken\x12\x1f.identity.v1.VerifyTokenRequest\x1a .identity.v1.VerifyTokenResponseB\xb5\x01\n" +
+	"\x13ExchangeSocialToken\x12'.identity.v1.ExchangeSocialTokenRequest\x1a(.identity.v1.ExchangeSocialTokenResponse\x12e\n" +
+	"\x12GetTokenGeneration\x12&.identity.v1.GetTokenGenerationRequest\x1a'.identity.v1.GetTokenGenerationResponseB\xb5\x01\n" +
 	"\x0fcom.identity.v1B\rIdentityProtoP\x01ZFgithub.com/muhananaufal/selaras-platform-go/gen/identity/v1;identityv1\xa2\x02\x03IXX\xaa\x02\vIdentity.V1\xca\x02\vIdentity\\V1\xe2\x02\x17Identity\\V1\\GPBMetadata\xea\x02\fIdentity::V1b\x06proto3"
 
 var (
@@ -1110,8 +1098,8 @@ var file_identity_v1_identity_proto_goTypes = []any{
 	(*DeleteAccountResponse)(nil),        // 14: identity.v1.DeleteAccountResponse
 	(*ExchangeSocialTokenRequest)(nil),   // 15: identity.v1.ExchangeSocialTokenRequest
 	(*ExchangeSocialTokenResponse)(nil),  // 16: identity.v1.ExchangeSocialTokenResponse
-	(*VerifyTokenRequest)(nil),           // 17: identity.v1.VerifyTokenRequest
-	(*VerifyTokenResponse)(nil),          // 18: identity.v1.VerifyTokenResponse
+	(*GetTokenGenerationRequest)(nil),    // 17: identity.v1.GetTokenGenerationRequest
+	(*GetTokenGenerationResponse)(nil),   // 18: identity.v1.GetTokenGenerationResponse
 	(*v1.Timestamps)(nil),                // 19: common.v1.Timestamps
 	(*v1.Identity)(nil),                  // 20: common.v1.Identity
 }
@@ -1127,29 +1115,27 @@ var file_identity_v1_identity_proto_depIdxs = []int32{
 	1,  // 8: identity.v1.ExchangeSocialTokenResponse.user:type_name -> identity.v1.User
 	2,  // 9: identity.v1.ExchangeSocialTokenResponse.token:type_name -> identity.v1.TokenPair
 	20, // 10: identity.v1.ExchangeSocialTokenResponse.identity:type_name -> common.v1.Identity
-	20, // 11: identity.v1.VerifyTokenResponse.identity:type_name -> common.v1.Identity
-	0,  // 12: identity.v1.VerifyTokenResponse.role:type_name -> identity.v1.Role
-	3,  // 13: identity.v1.Identity.Register:input_type -> identity.v1.RegisterRequest
-	5,  // 14: identity.v1.Identity.Login:input_type -> identity.v1.LoginRequest
-	7,  // 15: identity.v1.Identity.Logout:input_type -> identity.v1.LogoutRequest
-	9,  // 16: identity.v1.Identity.RequestPasswordReset:input_type -> identity.v1.RequestPasswordResetRequest
-	11, // 17: identity.v1.Identity.ConfirmPasswordReset:input_type -> identity.v1.ConfirmPasswordResetRequest
-	13, // 18: identity.v1.Identity.DeleteAccount:input_type -> identity.v1.DeleteAccountRequest
-	15, // 19: identity.v1.Identity.ExchangeSocialToken:input_type -> identity.v1.ExchangeSocialTokenRequest
-	17, // 20: identity.v1.Identity.VerifyToken:input_type -> identity.v1.VerifyTokenRequest
-	4,  // 21: identity.v1.Identity.Register:output_type -> identity.v1.RegisterResponse
-	6,  // 22: identity.v1.Identity.Login:output_type -> identity.v1.LoginResponse
-	8,  // 23: identity.v1.Identity.Logout:output_type -> identity.v1.LogoutResponse
-	10, // 24: identity.v1.Identity.RequestPasswordReset:output_type -> identity.v1.RequestPasswordResetResponse
-	12, // 25: identity.v1.Identity.ConfirmPasswordReset:output_type -> identity.v1.ConfirmPasswordResetResponse
-	14, // 26: identity.v1.Identity.DeleteAccount:output_type -> identity.v1.DeleteAccountResponse
-	16, // 27: identity.v1.Identity.ExchangeSocialToken:output_type -> identity.v1.ExchangeSocialTokenResponse
-	18, // 28: identity.v1.Identity.VerifyToken:output_type -> identity.v1.VerifyTokenResponse
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	3,  // 11: identity.v1.Identity.Register:input_type -> identity.v1.RegisterRequest
+	5,  // 12: identity.v1.Identity.Login:input_type -> identity.v1.LoginRequest
+	7,  // 13: identity.v1.Identity.Logout:input_type -> identity.v1.LogoutRequest
+	9,  // 14: identity.v1.Identity.RequestPasswordReset:input_type -> identity.v1.RequestPasswordResetRequest
+	11, // 15: identity.v1.Identity.ConfirmPasswordReset:input_type -> identity.v1.ConfirmPasswordResetRequest
+	13, // 16: identity.v1.Identity.DeleteAccount:input_type -> identity.v1.DeleteAccountRequest
+	15, // 17: identity.v1.Identity.ExchangeSocialToken:input_type -> identity.v1.ExchangeSocialTokenRequest
+	17, // 18: identity.v1.Identity.GetTokenGeneration:input_type -> identity.v1.GetTokenGenerationRequest
+	4,  // 19: identity.v1.Identity.Register:output_type -> identity.v1.RegisterResponse
+	6,  // 20: identity.v1.Identity.Login:output_type -> identity.v1.LoginResponse
+	8,  // 21: identity.v1.Identity.Logout:output_type -> identity.v1.LogoutResponse
+	10, // 22: identity.v1.Identity.RequestPasswordReset:output_type -> identity.v1.RequestPasswordResetResponse
+	12, // 23: identity.v1.Identity.ConfirmPasswordReset:output_type -> identity.v1.ConfirmPasswordResetResponse
+	14, // 24: identity.v1.Identity.DeleteAccount:output_type -> identity.v1.DeleteAccountResponse
+	16, // 25: identity.v1.Identity.ExchangeSocialToken:output_type -> identity.v1.ExchangeSocialTokenResponse
+	18, // 26: identity.v1.Identity.GetTokenGeneration:output_type -> identity.v1.GetTokenGenerationResponse
+	19, // [19:27] is the sub-list for method output_type
+	11, // [11:19] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_identity_v1_identity_proto_init() }

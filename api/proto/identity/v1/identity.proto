@@ -22,9 +22,14 @@ service Identity {
   rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
   rpc ExchangeSocialToken(ExchangeSocialTokenRequest) returns (ExchangeSocialTokenResponse);
 
-  // Dipanggil gateway pada setiap request terautentikasi. Hanya membaca
-  // dan memverifikasi tanda tangan token; tidak menyentuh database.
-  rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
+  // Dipanggil gateway HANYA saat cache pencabutan tidak tahu, bukan di
+  // setiap request. Gateway memverifikasi tanda tangan token sendiri
+  // dengan kunci publik (ADR-020); yang tidak bisa ia ketahui sendiri
+  // hanyalah generasi token yang sedang berlaku.
+  //
+  // Menggantikan VerifyToken, yang menempatkan identity-svc di jalur
+  // terpanas - persis panggilan jaringan wajib yang dihapus ADR-007.
+  rpc GetTokenGeneration(GetTokenGenerationRequest) returns (GetTokenGenerationResponse);
 }
 
 enum Role {
@@ -47,7 +52,6 @@ message User {
 message TokenPair {
   string access_token = 1;
   int64 expires_in_seconds = 2;
-  string refresh_token = 3;
 }
 
 message RegisterRequest {
@@ -106,9 +110,13 @@ message DeleteAccountResponse {
   string saga_id = 1;
 }
 
+// id_token adalah ID token OIDC dari penyedia, bukan access token-nya.
+// Ia ditandatangani penyedia, sehingga klaim email_verified sampai ke
+// identity-svc dengan tanda tangannya utuh - identity-svc tidak perlu
+// mempercayai pemanggilnya soal alamat siapa yang sudah terbukti.
 message ExchangeSocialTokenRequest {
   string provider = 1;
-  string provider_token = 2;
+  string id_token = 2;
 }
 
 // Menautkan akun, tidak pernah menimpanya. Sistem lama memakai
@@ -121,11 +129,10 @@ message ExchangeSocialTokenResponse {
   bool account_was_linked = 4;
 }
 
-message VerifyTokenRequest {
-  string access_token = 1;
+message GetTokenGenerationRequest {
+  string user_id = 1;
 }
 
-message VerifyTokenResponse {
-  common.v1.Identity identity = 1;
-  Role role = 2;
+message GetTokenGenerationResponse {
+  int64 generation = 1;
 }
