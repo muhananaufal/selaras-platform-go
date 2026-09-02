@@ -1,6 +1,9 @@
 # Dependensi minimum untuk pengembangan sehari-hari.
 # Profil ini sengaja tidak memuat stack observability: sebagian besar
 # pekerjaan tidak membutuhkannya, dan WSL punya plafon memori.
+# Seluruh port host digeser +10000 dari nilai bawaannya. Mesin ini sudah
+# menjalankan postgres di 5432 milik proyek lain; merebut port default
+# adalah cara termudah membuat dua proyek saling mematikan.
 name: selaras-core
 
 services:
@@ -12,7 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-selaras}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:15432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -47,7 +50,7 @@ services:
       # Heap ditahan rendah: WSL dibatasi 8GB untuk SELURUH Docker.
       KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
     ports:
-      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:19092:9092"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -66,7 +69,7 @@ services:
     container_name: selaras-redis
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:16379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
