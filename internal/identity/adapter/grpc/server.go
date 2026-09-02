@@ -37,7 +37,12 @@ type UseCases struct {
 	ConfirmReset   *app.ConfirmPasswordReset
 	ExchangeSocial *app.ExchangeSocialToken
 	Users          domain.UserRepository
-	Social         SocialIdentityVerifier
+
+	// Tokens dipakai Logout untuk memverifikasi tanda tangan token yang
+	// dikirim balik. Ia BUKAN untuk memverifikasi setiap permintaan - itu
+	// pekerjaan gateway dengan kunci publiknya sendiri (ADR-021 koreksi 1).
+	Tokens domain.TokenVerifier
+	Social SocialIdentityVerifier
 
 	// AccessTokenTTL diumumkan ke klien lewat expires_in_seconds.
 	//
@@ -70,6 +75,8 @@ func NewServer(uc UseCases) (*Server, error) {
 		return nil, errors.New("nil social exchange use case")
 	case uc.Users == nil:
 		return nil, errors.New("nil user repository")
+	case uc.Tokens == nil:
+		return nil, errors.New("nil token verifier")
 	case uc.Social == nil:
 		return nil, errors.New("nil social identity verifier")
 	case uc.AccessTokenTTLSeconds <= 0:
@@ -134,16 +141,27 @@ func (s *Server) Login(
 
 // Logout menerima access token, bukan user id.
 //
-// Pemanggilnya adalah gateway, yang sudah memverifikasi tanda tangannya -
-// tetapi identity-svc TIDAK boleh mempercayai user id yang sekadar
-// dikirimkan. Kalau ia mau, siapa pun yang bisa menjangkau service ini bisa
-// mengeluarkan pengguna mana pun dari sesinya hanya dengan menebak id.
+// Tanda tangannya diverifikasi DI SINI, bukan dipercaya dari pemanggil.
+// Gateway memang sudah memverifikasinya, tetapi identity-svc tidak boleh
+// bergantung pada itu: kalau ia menerima user id yang sekadar dikirimkan,
+// siapa pun yang bisa menjangkau service ini bisa mengeluarkan pengguna mana
+// pun dari sesinya hanya dengan menebak id.
+//
+// identity-svc memegang kunci penandatanganan, jadi ia bisa memverifikasi
+// sendiri tanpa meminta apa pun kepada siapa pun.
 func (s *Server) Logout(
 	ctx context.Context,
 	req *identityv1.LogoutRequest,
 ) (*identityv1.LogoutResponse, error) {
-	return nil, status.Error(codes.Unimplemented,
-		"Logout needs the token verifier that F1-15 introduces at the edge")
+	claims, err := s.uc.Tokens.Verify(req.GetAccessToken())
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid token")
+	}
+
+	if err := s.uc.Logout.Execute(ctx, claims.UserID); err != nil {
+		return nil, toStatus(ctx, "Logout", err)
+	}
+	return &identityv1.LogoutResponse{}, nil
 }
 
 func (s *Server) RequestPasswordReset(

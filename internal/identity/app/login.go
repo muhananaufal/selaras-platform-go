@@ -41,11 +41,12 @@ type LoginCommand struct {
 
 // Login menukar kredensial dengan token akses.
 type Login struct {
-	uow      UnitOfWork
-	hasher   domain.PasswordHasher
-	tokens   domain.TokenIssuer
-	profiles ProfileFinder
-	now      func() time.Time
+	uow         UnitOfWork
+	hasher      domain.PasswordHasher
+	tokens      domain.TokenIssuer
+	profiles    ProfileFinder
+	revocations domain.RevocationPublisher
+	now         func() time.Time
 
 	// Kandidat umpan dibangun sekali saat penyusunan, bukan di setiap
 	// permintaan yang gagal. Konstantanya memang sah hari ini, dan kalau
@@ -60,6 +61,7 @@ func NewLogin(
 	hasher domain.PasswordHasher,
 	tokens domain.TokenIssuer,
 	profiles ProfileFinder,
+	revocations domain.RevocationPublisher,
 	now func() time.Time,
 ) (*Login, error) {
 	switch {
@@ -71,6 +73,8 @@ func NewLogin(
 		return nil, errors.New("nil token issuer")
 	case profiles == nil:
 		return nil, errors.New("nil profile finder")
+	case revocations == nil:
+		return nil, errors.New("nil revocation publisher")
 	case now == nil:
 		return nil, errors.New("nil clock")
 	}
@@ -80,12 +84,13 @@ func NewLogin(
 	}
 
 	return &Login{
-		uow:      uow,
-		hasher:   hasher,
-		tokens:   tokens,
-		profiles: profiles,
-		now:      now,
-		decoy:    decoy,
+		uow:         uow,
+		hasher:      hasher,
+		tokens:      tokens,
+		profiles:    profiles,
+		revocations: revocations,
+		now:         now,
+		decoy:       decoy,
 	}, nil
 }
 
@@ -130,6 +135,14 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("issuing token: %w", err)
 	}
+
+	// Generasi yang baru diumumkan ke pemeriksa pencabutan.
+	//
+	// Tanpa ini, cache masih memegang generasi lama: token yang BARU saja
+	// diterbitkan ditolak, sementara token lama - yang justru dimaksudkan
+	// mati oleh login ini - tetap diterima sampai salinannya kedaluwarsa.
+	// Persis kebalikan dari yang seharusnya.
+	publishGenerationBestEffort(ctx, l.revocations, user.ID(), user.TokenGeneration())
 
 	return AuthResult{
 		UserID:        user.ID().String(),

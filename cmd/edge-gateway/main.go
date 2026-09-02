@@ -1,10 +1,11 @@
-// Command edge-gateway adalah satu-satunya unit yang menghadap publik.
-// Pada tahap ini ia baru menyediakan probe; rute REST menyusul di F1.
+// Command edge-gateway melayani kontrak REST publik dan meneruskannya ke
+// service di belakangnya lewat gRPC.
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,70 +13,166 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
+	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
+	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
 )
 
-func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
+const shutdownGrace = 15 * time.Second
 
-	if err := run(); err != nil {
-		slog.Error("shutting down after failure", "error", err)
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(log)
+
+	if err := run(log); err != nil {
+		log.Error("edge-gateway stopped", "error", err)
 		os.Exit(1)
 	}
+	log.Info("edge-gateway stopped cleanly")
 }
 
-func run() error {
-	addr := os.Getenv("HTTP_ADDR")
-	if addr == "" {
-		addr = ":8080"
+func run(log *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := edge.LoadConfig()
+	if err != nil {
+		return err
 	}
 
-	health := httpx.NewHealth()
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", health.Live)
-	mux.HandleFunc("GET /readyz", health.Ready)
+	verifier, err := token.NewVerifier(cfg.VerifyKey, cfg.TokenIssuer)
+	if err != nil {
+		return err
+	}
 
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
+	redisClient, err := rd.Open(ctx, cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Error("closing redis", "error", err)
+		}
+	}()
+
+	identityConn, err := dial(cfg.IdentityAddr)
+	if err != nil {
+		return fmt.Errorf("identity-svc: %w", err)
+	}
+	defer closeConn(identityConn, "identity-svc", log)
+
+	profileConn, err := dial(cfg.ProfileAddr)
+	if err != nil {
+		return fmt.Errorf("profile-svc: %w", err)
+	}
+	defer closeConn(profileConn, "profile-svc", log)
+
+	identityClient := identityv1.NewIdentityClient(identityConn)
+
+	// Sumber kebenaran pencabutan adalah identity-svc, dijangkau lewat gRPC.
+	// Ia BUKAN koneksi basis data: isolasi skema-per-service ditegakkan basis
+	// datanya sendiri, dan gateway tidak punya hak di skema identity.
+	revocations, err := revocation.NewRedisStore(
+		redisClient,
+		generationOverGRPC{identity: identityClient},
+		cfg.RevocationTTL,
+	)
+	if err != nil {
+		return err
+	}
+
+	probes := httpx.NewHealth()
+	router := edge.NewRouter(edge.Deps{
+		Identity:    identityClient,
+		Profiles:    profilev1.NewProfileClient(profileConn),
+		Tokens:      verifier,
+		Revocations: revocations,
+		Probes:      probes,
+		Now:         time.Now,
+	})
+
+	server := &http.Server{
+		Addr:    cfg.HTTPAddr,
+		Handler: router,
+		// Batas waktu ditetapkan eksplisit. Server HTTP Go tanpa batas waktu
+		// menahan koneksi yang menggantung selamanya, dan itu cara termurah
+		// menghabiskan sumber daya sebuah gateway.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// Sinyal ditangkap sebelum server menyala, supaya SIGTERM yang datang
-	// saat masih menyiapkan dependensi tidak terlewat.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	probes.SetReady(true)
 
-	errCh := make(chan error, 1)
+	errs := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+		log.Info("serving http", "addr", cfg.HTTPAddr)
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			errs <- err
 		}
 	}()
 
-	// Belum ada dependensi yang perlu ditunggu. Begitu ada, SetReady
-	// dipanggil setelah semuanya terhubung, bukan di sini.
-	health.SetReady(true)
-
 	select {
-	case err := <-errCh:
+	case err := <-errs:
 		return err
 	case <-ctx.Done():
-		slog.Info("signal received, draining")
+		log.Info("shutting down")
 	}
 
-	// Beri waktu request yang sedang berjalan untuk selesai. Tanpa ini,
-	// setiap deploy memutus koneksi yang sedang dilayani.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// Tidak siap dinyatakan lebih dulu, baru permintaan yang sedang berjalan
+	// diberi waktu selesai. Urutannya penting: load balancer berhenti
+	// mengirim yang baru sebelum yang lama dihentikan.
+	probes.SetReady(false)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return err
+
+	return server.Shutdown(shutdownCtx)
+}
+
+func dial(target string) (*grpc.ClientConn, error) {
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("creating the client for %s: %w", target, err)
 	}
-	slog.Info("stopped cleanly")
-	return nil
+	return conn, nil
+}
+
+func closeConn(conn *grpc.ClientConn, name string, log *slog.Logger) {
+	if err := conn.Close(); err != nil {
+		log.Error("closing connection", "service", name, "error", err)
+	}
+}
+
+// generationOverGRPC mengambil generasi token yang berlaku dari identity-svc.
+//
+// Dipanggil HANYA saat cache pencabutan tidak tahu, bukan di setiap request -
+// itulah yang membedakan rancangan ini dari token opaque yang ditolak ADR-012.
+type generationOverGRPC struct {
+	identity identityv1.IdentityClient
+}
+
+func (g generationOverGRPC) CurrentGeneration(ctx context.Context, userID domain.UserID) (int64, error) {
+	// Batas waktu pendek: pemeriksaan ini duduk di jalur setiap permintaan
+	// terautentikasi yang meleset dari cache, dan identity-svc yang lambat
+	// tidak boleh menahan seluruh gateway.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	resp, err := g.identity.GetTokenGeneration(ctx, &identityv1.GetTokenGenerationRequest{
+		UserId: userID.String(),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("asking identity-svc for the token generation: %w", err)
+	}
+	return resp.GetGeneration(), nil
 }

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -85,6 +86,21 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// Kunci publik diturunkan dari kunci privat yang sama, jadi identity-svc
+	// bisa memverifikasi tokennya sendiri tanpa konfigurasi tambahan - dan
+	// tanpa mempercayai siapa pun soal siapa pemilik token yang dikirim.
+	publicKey, ok := cfg.SigningKey.Public().(ed25519.PublicKey)
+	if !ok {
+		// Tidak bisa terjadi dari konfigurasi yang lolos LoadConfig, tetapi
+		// type assertion yang gagal tanpa diperiksa akan panik - dan panik
+		// saat start-up jauh lebih sulit dibaca daripada satu kalimat.
+		return errors.New("the signing key did not yield an ed25519 public key")
+	}
+	verifier, err := token.NewVerifier(publicKey, cfg.TokenIssuer)
+	if err != nil {
+		return err
+	}
+
 	revocations, err := revocation.NewRedisStore(
 		redisClient,
 		localGenerationSource{users: identitypg.NewUserRepository(pool)},
@@ -100,7 +116,7 @@ func run(log *slog.Logger) error {
 	}
 	defer closeProfiles()
 
-	server, err := buildServer(cfg, pool, issuer, revocations, profiles, log)
+	server, err := buildServer(cfg, pool, issuer, verifier, revocations, profiles, log)
 	if err != nil {
 		return err
 	}
@@ -185,6 +201,7 @@ func buildServer(
 	cfg identity.Config,
 	pool *pgxpool.Pool,
 	issuer *token.Issuer,
+	verifier *token.Verifier,
 	revocations domain.RevocationPublisher,
 	profiles profileClient,
 	log *slog.Logger,
@@ -206,7 +223,7 @@ func buildServer(
 	if err != nil {
 		return nil, err
 	}
-	login, err := app.NewLogin(uow, hasher, issuer, profiles, now)
+	login, err := app.NewLogin(uow, hasher, issuer, profiles, revocations, now)
 	if err != nil {
 		return nil, err
 	}
@@ -235,6 +252,7 @@ func buildServer(
 		ConfirmReset:          confirmReset,
 		ExchangeSocial:        exchange,
 		Users:                 users,
+		Tokens:                verifier,
 		Social:                social.Unconfigured{},
 		AccessTokenTTLSeconds: int64(cfg.AccessTTL.Seconds()),
 	})

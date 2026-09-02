@@ -108,7 +108,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("NewRegister: %v", err)
 	}
-	login, err := app.NewLogin(uow, hasher, issuer, profiles, now)
+	login, err := app.NewLogin(uow, hasher, issuer, profiles, stubRevocations{}, now)
 	if err != nil {
 		t.Fatalf("NewLogin: %v", err)
 	}
@@ -137,6 +137,7 @@ func newHarness(t *testing.T) *harness {
 		ConfirmReset:          confirmReset,
 		ExchangeSocial:        exchange,
 		Users:                 postgres.NewUserRepository(pool),
+		Tokens:                verifier,
 		Social:                social,
 		AccessTokenTTLSeconds: int64(accessTokenTTL.Seconds()),
 	})
@@ -405,17 +406,61 @@ func TestAnUnknownUserIdIsNotFound(t *testing.T) {
 // Yang belum ada menjawab Unimplemented, bukan berpura-pura berhasil.
 func TestUnbuiltOperationsSaySoPlainly(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
 
-	if _, err := h.client.DeleteAccount(ctx, &identityv1.DeleteAccountRequest{
+	if _, err := h.client.DeleteAccount(context.Background(), &identityv1.DeleteAccountRequest{
 		UserId: "018f4c1e-0000-7000-8000-000000000001", Password: "whatever",
 	}); status.Code(err) != codes.Unimplemented {
 		t.Errorf("DeleteAccount = %v; want Unimplemented", status.Code(err))
 	}
+}
+
+// Logout memverifikasi tanda tangan tokennya SENDIRI, bukan mempercayai
+// pemanggilnya. Token yang tidak sah ditolak sebelum apa pun dicabut -
+// kalau tidak, siapa pun yang bisa menjangkau service ini bisa mengeluarkan
+// pengguna mana pun dari sesinya.
+func TestLogoutRefusesATokenItDidNotIssue(t *testing.T) {
+	h := newHarness(t)
+
+	for name, raw := range map[string]string{
+		"garbage":     "not-a-token",
+		"empty":       "",
+		"three parts": "a.b.c",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := h.client.Logout(context.Background(), &identityv1.LogoutRequest{AccessToken: raw})
+			if status.Code(err) != codes.Unauthenticated {
+				t.Errorf("code = %v; want Unauthenticated", status.Code(err))
+			}
+		})
+	}
+}
+
+// Dan token yang sah benar-benar mencabut sesinya: generasi setelahnya naik.
+func TestLogoutAdvancesTheGenerationOverGrpc(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	reg, err := h.client.Register(ctx, &identityv1.RegisterRequest{
+		Email: "logout@user.co", Password: "a-long-enough-password",
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
 	if _, err := h.client.Logout(ctx, &identityv1.LogoutRequest{
-		AccessToken: "whatever",
-	}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("Logout = %v; want Unimplemented", status.Code(err))
+		AccessToken: reg.GetToken().GetAccessToken(),
+	}); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+
+	gen, err := h.client.GetTokenGeneration(ctx, &identityv1.GetTokenGenerationRequest{
+		UserId: reg.GetIdentity().GetUserId(),
+	})
+	if err != nil {
+		t.Fatalf("GetTokenGeneration: %v", err)
+	}
+	if gen.GetGeneration() != 2 {
+		t.Errorf("generation = %d after logout; want 2", gen.GetGeneration())
 	}
 }
 

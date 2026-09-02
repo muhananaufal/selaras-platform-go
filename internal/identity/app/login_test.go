@@ -11,12 +11,13 @@ import (
 )
 
 type loginFixture struct {
-	users    *fakeUsers
-	uow      *fakeUnitOfWork
-	profiles *fakeProfiles
-	tokens   *fakeTokens
-	hasher   *countingHasher
-	login    *app.Login
+	users       *fakeUsers
+	uow         *fakeUnitOfWork
+	profiles    *fakeProfiles
+	tokens      *fakeTokens
+	hasher      *countingHasher
+	revocations *fakeRevocations
+	login       *app.Login
 }
 
 func newLoginFixture(t *testing.T) *loginFixture {
@@ -27,12 +28,16 @@ func newLoginFixture(t *testing.T) *loginFixture {
 	profiles := &fakeProfiles{id: "profile-1"}
 	tokens := &fakeTokens{}
 	hasher := &countingHasher{}
+	revocations := &fakeRevocations{}
 
-	l, err := app.NewLogin(uow, hasher, tokens, profiles, fixedClock(time.Now()))
+	l, err := app.NewLogin(uow, hasher, tokens, profiles, revocations, fixedClock(time.Now()))
 	if err != nil {
 		t.Fatalf("NewLogin: %v", err)
 	}
-	return &loginFixture{users: users, uow: uow, profiles: profiles, tokens: tokens, hasher: hasher, login: l}
+	return &loginFixture{
+		users: users, uow: uow, profiles: profiles, tokens: tokens,
+		hasher: hasher, revocations: revocations, login: l,
+	}
 }
 
 // seed menaruh satu pengguna berkata sandi ke dalam penyimpanan palsu.
@@ -241,4 +246,50 @@ func mustPassword(t *testing.T, raw string) domain.Password {
 		t.Fatalf("NewPassword: %v", err)
 	}
 	return p
+}
+
+// Generasi yang baru WAJIB diumumkan ke pemeriksa pencabutan.
+//
+// Tanpa itu, cache masih memegang generasi lama: token yang BARU saja
+// diterbitkan ditolak, sementara token lama - yang justru dimaksudkan mati
+// oleh login ini - tetap diterima sampai salinannya kedaluwarsa. Persis
+// kebalikan dari yang seharusnya, dan hanya test end-to-end yang
+// menemukannya; test unit yang tidak memeriksa publikasi tetap hijau.
+func TestASuccessfulLoginPublishesTheNewGeneration(t *testing.T) {
+	f := newLoginFixture(t)
+	u := f.seed(t, "known@user.co", "a-long-enough-password")
+
+	if _, err := f.login.Execute(context.Background(), app.LoginCommand{
+		Email:    "known@user.co",
+		Password: "a-long-enough-password",
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(f.revocations.published) != 1 {
+		t.Fatalf("%d generations published; want 1", len(f.revocations.published))
+	}
+	got := f.revocations.published[0]
+	if got.userID != u.ID() {
+		t.Errorf("published for %s; want %s", got.userID, u.ID())
+	}
+	if got.generation != 2 {
+		t.Errorf("published generation %d; want 2, the one the new token carries", got.generation)
+	}
+}
+
+// Login yang gagal DILARANG mengumumkan apa pun: tidak ada yang berubah.
+func TestAFailedLoginPublishesNothing(t *testing.T) {
+	f := newLoginFixture(t)
+	f.seed(t, "known@user.co", "a-long-enough-password")
+
+	if _, err := f.login.Execute(context.Background(), app.LoginCommand{
+		Email:    "known@user.co",
+		Password: "the-wrong-password",
+	}); err == nil {
+		t.Fatal("Execute succeeded with a wrong password")
+	}
+	if len(f.revocations.published) != 0 {
+		t.Errorf("%d generations published for a failed login; want 0", len(f.revocations.published))
+	}
 }
