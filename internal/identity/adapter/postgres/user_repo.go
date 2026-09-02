@@ -25,7 +25,7 @@ const (
 // SELECT * ditentukan oleh basis data, jadi menambah satu kolom lewat
 // migrasi bisa menggeser hasil Scan tanpa satu pun error saat kompilasi.
 const userColumns = `id, email, role, password_hash, google_id,
-	email_verified_at, created_at, updated_at, deleted_at`
+	email_verified_at, token_generation, created_at, updated_at, deleted_at`
 
 // UserRepository memenuhi domain.UserRepository.
 type UserRepository struct {
@@ -50,12 +50,12 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 
 	const q = `
 		INSERT INTO users (` + userColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 
 	_, err := r.db.Exec(ctx, q,
 		s.ID.String(), s.Email.String(), s.Role.String(),
 		nullable(string(s.PasswordHash)), nullable(s.GoogleID),
-		s.EmailVerifiedAt, s.CreatedAt, s.UpdatedAt, s.DeletedAt,
+		s.EmailVerifiedAt, s.TokenGeneration, s.CreatedAt, s.UpdatedAt, s.DeletedAt,
 	)
 	if err != nil {
 		return translate(err)
@@ -69,13 +69,13 @@ func (r *UserRepository) Update(ctx context.Context, u *domain.User) error {
 	const q = `
 		UPDATE users SET
 			email = $2, role = $3, password_hash = $4, google_id = $5,
-			email_verified_at = $6, updated_at = $7, deleted_at = $8
+			email_verified_at = $6, token_generation = $7, updated_at = $8, deleted_at = $9
 		WHERE id = $1`
 
 	tag, err := r.db.Exec(ctx, q,
 		s.ID.String(), s.Email.String(), s.Role.String(),
 		nullable(string(s.PasswordHash)), nullable(s.GoogleID),
-		s.EmailVerifiedAt, s.UpdatedAt, s.DeletedAt,
+		s.EmailVerifiedAt, s.TokenGeneration, s.UpdatedAt, s.DeletedAt,
 	)
 	if err != nil {
 		return translate(err)
@@ -116,6 +116,7 @@ func (r *UserRepository) one(ctx context.Context, query string, arg any) (*domai
 		id, email, role string
 		hash, googleID  *string
 		verifiedAt      *time.Time
+		generation      int64
 		createdAt       time.Time
 		updatedAt       time.Time
 		deletedAt       *time.Time
@@ -123,7 +124,7 @@ func (r *UserRepository) one(ctx context.Context, query string, arg any) (*domai
 
 	err := r.db.QueryRow(ctx, query, arg).Scan(
 		&id, &email, &role, &hash, &googleID,
-		&verifiedAt, &createdAt, &updatedAt, &deletedAt,
+		&verifiedAt, &generation, &createdAt, &updatedAt, &deletedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrUserNotFound
@@ -132,13 +133,14 @@ func (r *UserRepository) one(ctx context.Context, query string, arg any) (*domai
 		return nil, fmt.Errorf("querying user: %w", err)
 	}
 
-	return hydrate(id, email, role, hash, googleID, verifiedAt, createdAt, updatedAt, deletedAt)
+	return hydrate(id, email, role, hash, googleID, verifiedAt, generation, createdAt, updatedAt, deletedAt)
 }
 
 func hydrate(
 	id, email, role string,
 	hash, googleID *string,
 	verifiedAt *time.Time,
+	generation int64,
 	createdAt, updatedAt time.Time,
 	deletedAt *time.Time,
 ) (*domain.User, error) {
@@ -165,6 +167,7 @@ func hydrate(
 		PasswordHash:    domain.PasswordHash(deref(hash)),
 		GoogleID:        deref(googleID),
 		EmailVerifiedAt: verifiedAt,
+		TokenGeneration: generation,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 		DeletedAt:       deletedAt,

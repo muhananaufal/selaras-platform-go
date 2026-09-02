@@ -252,3 +252,39 @@ func TestTwoUsersWithoutGoogleCanBothExist(t *testing.T) {
 		}
 	}
 }
+
+// Generasi token adalah satu-satunya hal yang membuat pencabutan bekerja,
+// dan ia hanya berguna kalau ia bertahan di penyimpanan. Generasi yang tidak
+// tersimpan berarti setiap logout dibatalkan oleh pembacaan berikutnya.
+func TestTokenGenerationSurvivesAndAdvances(t *testing.T) {
+	repo, ctx := newRepo(t)
+
+	u, err := domain.Register(mustEmail(t, "gen@eration.co"), "hash", time.Now())
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := repo.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	stored, err := repo.FindByID(ctx, u.ID())
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if stored.TokenGeneration() != 1 {
+		t.Fatalf("stored generation = %d; want 1", stored.TokenGeneration())
+	}
+
+	stored.RevokeAllTokens(time.Now())
+	if err := repo.Update(ctx, stored); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	reread, err := repo.FindByID(ctx, u.ID())
+	if err != nil {
+		t.Fatalf("FindByID after revocation: %v", err)
+	}
+	if reread.TokenGeneration() != 2 {
+		t.Errorf("generation after revocation = %d; want 2", reread.TokenGeneration())
+	}
+}

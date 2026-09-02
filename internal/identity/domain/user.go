@@ -73,6 +73,7 @@ type UserState struct {
 	EmailVerifiedAt *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	TokenGeneration int64
 	DeletedAt       *time.Time
 }
 
@@ -96,12 +97,13 @@ func Register(email Email, hash PasswordHash, now time.Time) (*User, error) {
 		return nil, err
 	}
 	return &User{state: UserState{
-		ID:           id,
-		Email:        email,
-		Role:         RoleUser,
-		PasswordHash: hash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:              id,
+		Email:           email,
+		Role:            RoleUser,
+		PasswordHash:    hash,
+		TokenGeneration: 1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}}, nil
 }
 
@@ -125,6 +127,7 @@ func RegisterWithGoogle(email Email, googleID string, now time.Time) (*User, err
 		Email:           email,
 		Role:            RoleUser,
 		GoogleID:        googleID,
+		TokenGeneration: 1,
 		EmailVerifiedAt: &verified,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -203,5 +206,21 @@ func (u *User) Delete(now time.Time) {
 	}
 	at := now
 	u.state.DeletedAt = &at
+	u.state.UpdatedAt = now
+}
+
+// TokenGeneration adalah generasi token yang sedang sah bagi pengguna ini.
+// Token yang membawa generasi lebih lama sudah dicabut.
+func (u *User) TokenGeneration() int64 { return u.state.TokenGeneration }
+
+// RevokeAllTokens membatalkan setiap token yang pernah diterbitkan untuk
+// pengguna ini dengan menaikkan generasinya.
+//
+// Bentuk inilah yang dituntut ADR-012 lewat D1: login berhasil membatalkan
+// seluruh sesi sebelumnya, dan logout membatalkan yang sedang berjalan.
+// Daftar per-token akan mengubah keduanya menjadi penghapusan sebanyak
+// jumlah token yang beredar; di sini keduanya satu kenaikan.
+func (u *User) RevokeAllTokens(now time.Time) {
+	u.state.TokenGeneration++
 	u.state.UpdatedAt = now
 }

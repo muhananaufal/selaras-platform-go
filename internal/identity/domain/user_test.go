@@ -184,3 +184,37 @@ func TestParseUserIDRejectsNonsense(t *testing.T) {
 		}
 	}
 }
+
+// ADR-012 lewat D1: satu login berhasil membatalkan seluruh token
+// sebelumnya. Itu berarti pencabutan harus mengenai semua token seorang
+// pengguna sekaligus, dan penghitung generasi melakukannya dengan satu
+// tulisan alih-alih menghapus sebanyak jumlah token yang beredar.
+func TestRevokingAllTokensAdvancesTheGeneration(t *testing.T) {
+	u, err := domain.Register(mustEmail(t, "a@b.co"), "hash", time.Now())
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if u.TokenGeneration() != 1 {
+		t.Fatalf("a fresh user starts at generation %d; want 1", u.TokenGeneration())
+	}
+
+	u.RevokeAllTokens(time.Now())
+	if u.TokenGeneration() != 2 {
+		t.Errorf("generation = %d after one revocation; want 2", u.TokenGeneration())
+	}
+
+	u.RevokeAllTokens(time.Now())
+	if u.TokenGeneration() != 3 {
+		t.Errorf("generation = %d after two revocations; want 3", u.TokenGeneration())
+	}
+}
+
+func TestGoogleUsersAlsoStartAtGenerationOne(t *testing.T) {
+	u, err := domain.RegisterWithGoogle(mustEmail(t, "a@b.co"), "google-1", time.Now())
+	if err != nil {
+		t.Fatalf("RegisterWithGoogle: %v", err)
+	}
+	if u.TokenGeneration() != 1 {
+		t.Errorf("generation = %d; want 1", u.TokenGeneration())
+	}
+}

@@ -22,21 +22,22 @@ import (
 func main() {
 	var (
 		service   = flag.String("service", "", "service whose migrations to run, e.g. identity")
-		direction = flag.String("direction", "up", "up, down, or drop")
+		direction = flag.String("direction", "up", "up, down, drop, or force")
+		forceTo   = flag.Int("force-version", -1, "with -direction force: the version to declare as cleanly applied")
 		dsn       = flag.String("dsn", os.Getenv("MIGRATE_DSN"), "postgres dsn; defaults to MIGRATE_DSN")
 	)
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	if err := run(*service, *direction, *dsn); err != nil {
+	if err := run(*service, *direction, *dsn, *forceTo); err != nil {
 		log.Error("migration failed", "service", *service, "direction", *direction, "error", err)
 		os.Exit(1)
 	}
 	log.Info("migration applied", "service", *service, "direction", *direction)
 }
 
-func run(service, direction, dsn string) error {
+func run(service, direction, dsn string, forceTo int) error {
 	if service == "" {
 		return errors.New("-service is required")
 	}
@@ -67,8 +68,19 @@ func run(service, direction, dsn string) error {
 		err = m.Down()
 	case "drop":
 		err = m.Drop()
+	case "force":
+		// Sebuah migrasi yang terputus di tengah - koneksi putus, proses
+		// dimatikan - meninggalkan versi bertanda kotor, dan golang-migrate
+		// menolak berjalan sampai seseorang menyatakan versi mana yang
+		// sebenarnya berlaku. Ia tidak mengubah skema sama sekali; ia hanya
+		// membetulkan catatan, dan karena itu versinya harus disebut
+		// dengan sadar, bukan ditebak.
+		if forceTo < 0 {
+			return errors.New("-direction force requires -force-version")
+		}
+		err = m.Force(forceTo)
 	default:
-		return fmt.Errorf("unknown direction %q: want up, down, or drop", direction)
+		return fmt.Errorf("unknown direction %q: want up, down, drop, or force", direction)
 	}
 
 	// Tidak ada yang perlu dikerjakan bukan kegagalan; itulah yang membuat

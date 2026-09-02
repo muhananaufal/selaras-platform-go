@@ -15,6 +15,17 @@ CREATE TABLE users (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at        TIMESTAMPTZ,
 
+    -- Pencabutan token berbentuk penghitung generasi per pengguna, bukan
+    -- daftar token yang dicabut. ADR-012 mensyaratkan pencabutan SELURUH
+    -- token seorang pengguna sekaligus (D1: satu sesi per pengguna), dan
+    -- daftar per-token membuat itu menjadi penghapusan sebanyak jumlah
+    -- token. Menaikkan satu angka membatalkan semuanya dalam satu tulisan.
+    --
+    -- Penghitung, bukan stempel waktu: iat pada JWT berpresisi detik,
+    -- sehingga token yang terbit pada detik yang sama dengan pencabutan
+    -- akan ambigu. Bilangan bulat tidak punya jam untuk salah.
+    token_generation  BIGINT      NOT NULL DEFAULT 1,
+
     CONSTRAINT users_role_known CHECK (role IN ('user', 'admin')),
     -- Sebuah akun WAJIB punya setidaknya satu cara untuk masuk. Tanpa
     -- batasan ini, baris tanpa kata sandi dan tanpa google_id adalah akun
@@ -48,14 +59,3 @@ CREATE TABLE password_reset_tokens (
 CREATE INDEX password_reset_tokens_user_id ON password_reset_tokens (user_id);
 CREATE INDEX password_reset_tokens_expires_at ON password_reset_tokens (expires_at);
 
--- Daftar cabut token akses (F1-09). Barisnya disapu setelah exp terlampaui;
--- setelah itu tanda tangannya sendiri yang menolak, jadi catatannya
--- tidak perlu disimpan selamanya.
-CREATE TABLE revoked_tokens (
-    jti        UUID        PRIMARY KEY,
-    user_id    UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    revoked_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX revoked_tokens_expires_at ON revoked_tokens (expires_at);
