@@ -33,6 +33,8 @@ type Config struct {
 	// konfigurasi - dan service-nya tetap menyala, hanya RPC-nya yang
 	// menolak dengan alasan yang jelas.
 	GoogleClientID string
+
+	Mail MailConfig
 }
 
 // LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
@@ -78,6 +80,9 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.RevocationTTL, err = envDuration("REVOCATION_CACHE_TTL", time.Minute); err != nil {
+		return Config{}, err
+	}
+	if cfg.Mail, err = loadMail(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -132,4 +137,63 @@ func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 		return 0, errors.New(name + " must be positive")
 	}
 	return d, nil
+}
+
+// MailConfig menampung yang dibutuhkan untuk mengirim tautan reset.
+//
+// Kosong seluruhnya adalah mode penyebaran: pendaftaran dan masuk tetap
+// berjalan, hanya reset kata sandi yang tidak bisa diselesaikan - dan
+// permintaannya menolak dengan menyebut apa yang kurang. Terisi SEBAGIAN
+// adalah kekeliruan, dan menggagalkan start-up.
+type MailConfig struct {
+	Host        string
+	Port        int
+	Username    string
+	Password    string
+	From        string
+	FrontendURL string
+}
+
+func (m MailConfig) Configured() bool {
+	return m.Host != "" && m.Port > 0 && m.From != "" && m.FrontendURL != ""
+}
+
+// Missing menyebut bagian mana yang kurang.
+//
+// Username dan Password sengaja TIDAK ikut: server surel pengembangan lokal
+// tidak menuntut autentikasi, dan mewajibkannya akan membuat alur ini tidak
+// bisa dicoba sama sekali di mesin sendiri.
+func (m MailConfig) Missing() []string {
+	var missing []string
+	if m.Host == "" {
+		missing = append(missing, "SMTP_HOST")
+	}
+	if m.Port <= 0 {
+		missing = append(missing, "SMTP_PORT")
+	}
+	if m.From == "" {
+		missing = append(missing, "MAIL_FROM")
+	}
+	if m.FrontendURL == "" {
+		missing = append(missing, "FRONTEND_URL")
+	}
+	return missing
+}
+
+func loadMail() (MailConfig, error) {
+	cfg := MailConfig{
+		Host:        os.Getenv("SMTP_HOST"),
+		Username:    os.Getenv("SMTP_USERNAME"),
+		Password:    os.Getenv("SMTP_PASSWORD"),
+		From:        os.Getenv("MAIL_FROM"),
+		FrontendURL: os.Getenv("FRONTEND_URL"),
+	}
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		port, err := strconv.Atoi(raw)
+		if err != nil {
+			return MailConfig{}, fmt.Errorf("SMTP_PORT is not a number: %w", err)
+		}
+		cfg.Port = port
+	}
+	return cfg, nil
 }

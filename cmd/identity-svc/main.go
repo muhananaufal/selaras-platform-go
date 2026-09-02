@@ -26,6 +26,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/crypto"
 	identitygrpc "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/grpc"
+	identitymail "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/mail"
 	identitypg "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/profileclient"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
@@ -34,6 +35,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/mail"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
 )
@@ -211,9 +213,10 @@ func buildServer(
 	hasher := crypto.NewArgon2idHasher(crypto.DefaultParams())
 	now := time.Now
 
-	// Pengiriman surel belum ada; ia diwakili implementasi yang menolak
-	// dengan menyebut nomor task-nya, bukan yang berpura-pura berhasil.
-	links := unavailableLinks{}
+	links, err := buildResetLinkSender(cfg.Mail, log)
+	if err != nil {
+		return nil, err
+	}
 
 	// Verifier sosial dipilih di sini, sekali, berdasarkan konfigurasi.
 	// Lingkungan tanpa kredensial penyedia tetap menyala dengan satu jalur
@@ -323,4 +326,40 @@ func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error
 			log.Error("closing the profile-svc connection", "error", err)
 		}
 	}, nil
+}
+
+// buildResetLinkSender merakit pengirim tautan reset, atau mengembalikan
+// penopang yang menolak bila lingkungan ini tidak punya server surel.
+//
+// Terisi SEBAGIAN menggagalkan start-up: host tanpa alamat pengirim akan
+// menyalakan service lalu gagal di permintaan reset pertama, jauh setelah
+// orang yang salah mengetiknya pergi.
+func buildResetLinkSender(cfg identity.MailConfig, log *slog.Logger) (app.ResetLinkSender, error) {
+	if !cfg.Configured() {
+		if missing := cfg.Missing(); len(missing) < 4 {
+			return nil, fmt.Errorf("mail is partly configured; missing: %v", missing)
+		}
+		log.Warn("no mail transport is configured; password reset cannot be completed",
+			"task", "F1-33")
+		return unavailableLinks{}, nil
+	}
+
+	sender, err := mail.NewSMTP(mail.Config{
+		Host:     cfg.Host,
+		Port:     cfg.Port,
+		Username: cfg.Username,
+		Password: cfg.Password,
+		From:     cfg.From,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	links, err := identitymail.NewResetLinkSender(sender, cfg.FrontendURL)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("mail transport is configured", "host", cfg.Host, "port", cfg.Port)
+	return links, nil
 }

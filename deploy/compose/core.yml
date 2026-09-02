@@ -94,6 +94,29 @@ services:
         limits:
           memory: 192M
 
+  # Mailpit menangkap seluruh surel keluar dan menyajikannya lewat HTTP.
+  #
+  # Ia ada supaya alur reset kata sandi bisa BENAR-BENAR dijalankan di mesin
+  # sendiri, bukan diandaikan bekerja. Alur yang tokennya tidak pernah
+  # terkirim adalah alur yang diam-diam tidak bekerja, dan satu-satunya cara
+  # mengetahuinya adalah dengan melihat surelnya.
+  mailpit:
+    image: axllent/mailpit:v1.28.2
+    restart: unless-stopped
+    container_name: selaras-mailpit
+    ports:
+      - "127.0.0.1:11025:1025"
+      - "127.0.0.1:18025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
 volumes:
   postgres-data:
   kafka-data:

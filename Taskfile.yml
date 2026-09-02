@@ -121,6 +121,9 @@ tasks:
         TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
         TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=profile"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
+        TEST_SMTP_HOST="127.0.0.1"
+        TEST_SMTP_PORT="11025"
+        TEST_MAILPIT_URL="http://127.0.0.1:18025"
         go test ./... -count=1 -p 1
 
   up:apps:
@@ -136,3 +139,57 @@ tasks:
   keygen:
     desc: Print a matching pair of token signing and verification keys
     cmds: [go run ./cmd/keygen]
+
+  up:
+    desc: Start core dependencies (postgres, kafka, redis)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} up -d"
+
+  up:full:
+    desc: Start everything including the observability stack
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
+
+  down:
+    desc: Stop local dependencies
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} -f {{.COMPOSE_FULL}} down"
+
+  logs:
+    desc: Tail dependency logs
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} logs -f --tail=100"
+
+  ps:
+    desc: List running containers
+    cmds: [docker ps]
+
+  # ---------------------------------------------------------------- security
+  security:
+    desc: Scan the repository for leaked secrets
+    cmds: [gitleaks detect --no-banner --redact]
+
+  # ---------------------------------------------------------------- gate
+  ci:
+    desc: Everything CI runs, in the same order
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: proto:lint
+      - task: openapi:lint
+      - task: test
+
+  migrate:
+    desc: 'Apply migrations for one service. Usage: task migrate -- identity'
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction up
+
+  migrate:down:
+    desc: 'Roll every migration back for one service. Usage: task migrate:down -- identity'
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction down

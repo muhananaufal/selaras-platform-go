@@ -24,6 +24,17 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-3600}
       PROFILE_GRPC_TARGET: profile-svc:9201
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+
+      # Mailpit di dalam jaringan compose. Alur reset karena itu bisa
+      # BENAR-BENAR dijalankan di mesin sendiri, dan surelnya dibaca di
+      # http://127.0.0.1:18025.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply.local}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+
       IDENTITY_GRPC_ADDR: ":9101"
       IDENTITY_HEALTH_ADDR: ":9102"
     ports:
@@ -33,6 +44,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     healthcheck:
       # Image-nya distroless dan tidak punya shell, curl, atau wget. Probe

@@ -46,6 +46,16 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
 
+      # Mailpit menangkap surel keluar dan menyajikannya lewat HTTP, sehingga
+      # test bisa membuktikan tautan resetnya benar-benar terkirim dengan
+      # tokennya - bukan mengandaikannya.
+      mailpit:
+        image: axllent/mailpit:v1.28.2
+        ports: ['1025:1025', '8025:8025']
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
     env:
       PGHOST: 127.0.0.1
       PGUSER: selaras_admin
@@ -119,6 +129,9 @@ jobs:
           SVC_IDENTITY_PASSWORD: ci-not-a-secret
           SVC_PROFILE_PASSWORD: ci-not-a-secret
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
+          TEST_SMTP_HOST: 127.0.0.1
+          TEST_SMTP_PORT: "1025"
+          TEST_MAILPIT_URL: http://127.0.0.1:8025
         run: |
           export TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
           export TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
