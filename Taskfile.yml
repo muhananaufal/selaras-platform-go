@@ -118,5 +118,6 @@ tasks:
     cmds:
       - >-
         TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
+        TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=profile"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
         go test ./... -count=1 -p 1
