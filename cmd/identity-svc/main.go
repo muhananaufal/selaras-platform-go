@@ -215,8 +215,19 @@ func buildServer(
 	// dengan menyebut nomor task-nya, bukan yang berpura-pura berhasil.
 	links := unavailableLinks{}
 
+	// Verifier sosial dipilih di sini, sekali, berdasarkan konfigurasi.
+	// Lingkungan tanpa kredensial penyedia tetap menyala dengan satu jalur
+	// masuk; yang DILARANG hanya berpura-pura berhasil.
+	var socialVerifier identitygrpc.SocialIdentityVerifier = social.Unconfigured{}
 	if cfg.GoogleClientID == "" {
 		log.Warn("social sign-in is not configured; GOOGLE_CLIENT_ID is unset")
+	} else {
+		google, err := social.NewGoogleVerifier(cfg.GoogleClientID, "", nil, time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		socialVerifier = google
+		log.Info("social sign-in is configured", "provider", "google")
 	}
 
 	register, err := app.NewRegister(uow, hasher, issuer, profiles, now)
@@ -253,7 +264,7 @@ func buildServer(
 		ExchangeSocial:        exchange,
 		Users:                 users,
 		Tokens:                verifier,
-		Social:                social.Unconfigured{},
+		Social:                socialVerifier,
 		AccessTokenTTLSeconds: int64(cfg.AccessTTL.Seconds()),
 	})
 }
