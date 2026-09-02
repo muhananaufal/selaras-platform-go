@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package chat.v1;
+
+import "common/v1/common.proto";
+
+// Percakapan dengan asisten umum, terpisah dari diskusi di dalam program
+// coaching. Agregatnya memang berbeda: percakapan berdiri sendiri,
+// sementara thread selalu milik sebuah program.
+service Chat {
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc CreateConversation(CreateConversationRequest) returns (CreateConversationResponse);
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse);
+  rpc UpdateConversationTitle(UpdateConversationTitleRequest) returns (UpdateConversationTitleResponse);
+  rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
+
+  // Menjawab segera; balasan tiba lewat worker.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+}
+
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_MODEL = 2;
+}
+
+message ChatMessage {
+  string id = 1;
+  MessageRole role = 2;
+  string content_json = 3;
+  common.v1.Timestamps timestamps = 4;
+}
+
+message Conversation {
+  string id = 1;
+  string slug = 2;
+  string user_profile_id = 3;
+  string title = 4;
+  optional string last_message_snippet = 5;
+  common.v1.Timestamps timestamps = 6;
+}
+
+message ListConversationsRequest {
+  string user_profile_id = 1;
+  common.v1.PageRequest page = 2;
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+  common.v1.PageResponse page = 2;
+}
+
+message CreateConversationRequest {
+  string user_profile_id = 1;
+  string message = 2;
+  common.v1.IdempotencyKey idempotency_key = 3;
+}
+
+message CreateConversationResponse {
+  Conversation conversation = 1;
+  string job_id = 2;
+}
+
+message GetConversationRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+  common.v1.PageRequest page = 3;
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+  repeated ChatMessage messages = 2;
+  common.v1.PageResponse page = 3;
+}
+
+message UpdateConversationTitleRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+  string title = 3;
+}
+
+message UpdateConversationTitleResponse {
+  Conversation conversation = 1;
+}
+
+message DeleteConversationRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message DeleteConversationResponse {}
+
+message SendMessageRequest {
+  string conversation_slug = 1;
+  string user_profile_id = 2;
+  string message = 3;
+  common.v1.IdempotencyKey idempotency_key = 4;
+}
+
+message SendMessageResponse {
+  ChatMessage message = 1;
+  string job_id = 2;
+}

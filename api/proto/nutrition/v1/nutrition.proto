@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package nutrition.v1;
+
+import "common/v1/common.proto";
+
+// Preferensi kuliner dan panduan menu harian.
+//
+// Preferensi dipisah menjadi tabel sendiri lewat expand-contract. Di
+// sistem lama ia menumpang sebagai satu kolom JSON di user_profiles -
+// gejala batas agregat yang bocor.
+service Nutrition {
+  rpc GetHubData(GetHubDataRequest) returns (GetHubDataResponse);
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
+
+  // Menjawab segera; panduan tiba lewat worker.
+  rpc GenerateDailyGuide(GenerateDailyGuideRequest) returns (GenerateDailyGuideResponse);
+}
+
+enum BudgetLevel {
+  BUDGET_LEVEL_UNSPECIFIED = 0;
+  BUDGET_LEVEL_THRIFTY = 1;
+  BUDGET_LEVEL_STANDARD = 2;
+  BUDGET_LEVEL_FLEXIBLE = 3;
+}
+
+enum CookingStyle {
+  COOKING_STYLE_UNSPECIFIED = 0;
+  COOKING_STYLE_QUICK_EVERY_TIME = 1;
+  COOKING_STYLE_BATCH_MEAL_PREP = 2;
+}
+
+enum PlanType {
+  PLAN_TYPE_UNSPECIFIED = 0;
+  PLAN_TYPE_COOK_AT_HOME = 1;
+  PLAN_TYPE_EAT_OUT = 2;
+}
+
+enum TimeAvailability {
+  TIME_AVAILABILITY_UNSPECIFIED = 0;
+  TIME_AVAILABILITY_QUICK = 1;
+  TIME_AVAILABILITY_RELAXED = 2;
+}
+
+enum EnergyLevel {
+  ENERGY_LEVEL_UNSPECIFIED = 0;
+  ENERGY_LEVEL_ENERGETIC = 1;
+  ENERGY_LEVEL_ORDINARY = 2;
+  ENERGY_LEVEL_TIRED = 3;
+}
+
+enum CravingType {
+  CRAVING_TYPE_UNSPECIFIED = 0;
+  CRAVING_TYPE_SOUPY_AND_WARM = 1;
+  CRAVING_TYPE_GRILLED = 2;
+  CRAVING_TYPE_FRESH_AND_LIGHT = 3;
+  CRAVING_TYPE_QUICK_STIR_FRY = 4;
+}
+
+enum SocialContext {
+  SOCIAL_CONTEXT_UNSPECIFIED = 0;
+  SOCIAL_CONTEXT_ALONE = 1;
+  SOCIAL_CONTEXT_WITH_FRIENDS = 2;
+  SOCIAL_CONTEXT_WITH_PARTNER = 3;
+  SOCIAL_CONTEXT_WITH_FAMILY = 4;
+}
+
+enum MealTime {
+  MEAL_TIME_UNSPECIFIED = 0;
+  MEAL_TIME_BREAKFAST = 1;
+  MEAL_TIME_LUNCH = 2;
+  MEAL_TIME_AFTERNOON_SNACK = 3;
+  MEAL_TIME_DINNER = 4;
+}
+
+message CulinaryPreferences {
+  string user_profile_id = 1;
+  optional string allergies = 2;
+  BudgetLevel budget_level = 3;
+  CookingStyle cooking_style = 4;
+  repeated string taste_profiles = 5;
+  repeated string kitchen_equipment = 6;
+  common.v1.Timestamps timestamps = 7;
+}
+
+message DailyGuideInput {
+  PlanType plan_type = 1;
+  TimeAvailability time_availability = 2;
+  EnergyLevel energy_level = 3;
+  string cuisine_preference = 4;
+  CravingType craving_type = 5;
+  SocialContext social_context = 6;
+}
+
+enum GuideStatus {
+  GUIDE_STATUS_UNSPECIFIED = 0;
+  GUIDE_STATUS_PENDING = 1;
+  GUIDE_STATUS_READY = 2;
+  GUIDE_STATUS_FAILED = 3;
+}
+
+message DailyMealGuide {
+  string id = 1;
+  string user_profile_id = 2;
+  string guide_date = 3;
+  DailyGuideInput input = 4;
+  // Waktu makan ditentukan jam server saat panduan diminta (D10).
+  MealTime meal_time = 5;
+  GuideStatus status = 6;
+  optional string guide_json = 7;
+  bool chosen = 8;
+  common.v1.Timestamps timestamps = 9;
+}
+
+message GetHubDataRequest {
+  string user_profile_id = 1;
+  common.v1.PageRequest page = 2;
+}
+
+message GetHubDataResponse {
+  CulinaryPreferences preferences = 1;
+  repeated DailyMealGuide history = 2;
+  common.v1.PageResponse page = 3;
+}
+
+message UpdatePreferencesRequest {
+  string user_profile_id = 1;
+  optional string allergies = 2;
+  BudgetLevel budget_level = 3;
+  CookingStyle cooking_style = 4;
+  repeated string taste_profiles = 5;
+  repeated string kitchen_equipment = 6;
+}
+
+message UpdatePreferencesResponse {
+  CulinaryPreferences preferences = 1;
+}
+
+message GenerateDailyGuideRequest {
+  string user_profile_id = 1;
+  DailyGuideInput input = 2;
+  common.v1.IdempotencyKey idempotency_key = 3;
+}
+
+message GenerateDailyGuideResponse {
+  string guide_id = 1;
+  string job_id = 2;
+  GuideStatus status = 3;
+}

@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package events.v1;
+
+import "common/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Amplop yang sama untuk setiap event yang melintasi broker.
+//
+// Pengiriman bersifat at-least-once, jadi setiap konsumen WAJIB idempoten
+// (ADR-004). event_id dan idempotency_key ada supaya konsumen bisa
+// mengenali pengulangan tanpa menebak dari isi payload.
+message Envelope {
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+
+  // Identitas dibawa di setiap event supaya konsumen tidak perlu
+  // memanggil identity atau profile untuk menafsirkannya (ADR-007).
+  common.v1.Identity identity = 3;
+
+  // Diisi bila event ini lahir dari permintaan yang membawa kunci
+  // idempotensi. Kosong untuk event yang dipicu sistem.
+  optional common.v1.IdempotencyKey idempotency_key = 4;
+
+  // Untuk menyambungkan event ke trace yang melahirkannya. Tanpa ini,
+  // jejak sebuah permintaan terputus begitu ia masuk broker.
+  optional string trace_id = 5;
+
+  // Versi skema payload. Konsumen menolak versi yang tidak dikenalnya
+  // alih-alih menafsirkannya sembarangan.
+  int32 schema_version = 6;
+
+  oneof payload {
+    ProfileUpdated profile_updated = 10;
+    AssessmentCompleted assessment_completed = 11;
+    PersonalizationRequested personalization_requested = 12;
+    PersonalizationCompleted personalization_completed = 13;
+    CoachingProgramUpdated coaching_program_updated = 14;
+    CurriculumRequested curriculum_requested = 15;
+    CurriculumCompleted curriculum_completed = 16;
+    ChatReplyRequested chat_reply_requested = 17;
+    ChatReplyCompleted chat_reply_completed = 18;
+    MealGuideRequested meal_guide_requested = 19;
+    MealGuideCompleted meal_guide_completed = 20;
+    UserDeletionRequested user_deletion_requested = 21;
+    UserDeletionConfirmed user_deletion_confirmed = 22;
+    LlmJobFailed llm_job_failed = 23;
+  }
+}
+
+// Disiarkan setiap kali demografi berubah. Assessment menyimpan salinannya
+// supaya tidak memanggil profile pada setiap kalkulasi.
+message ProfileUpdated {
+  string user_profile_id = 1;
+  optional string date_of_birth = 2;
+  string sex = 3;
+  optional string country_of_residence = 4;
+  string language = 5;
+}
+
+message AssessmentCompleted {
+  string assessment_id = 1;
+  string slug = 2;
+  double risk_percentage = 3;
+  string model_used = 4;
+}
+
+message PersonalizationRequested {
+  string assessment_id = 1;
+  string slug = 2;
+  string job_id = 3;
+}
+
+message PersonalizationCompleted {
+  string assessment_id = 1;
+  string job_id = 2;
+  string report_json = 3;
+  string prompt_version = 4;
+}
+
+message CoachingProgramUpdated {
+  string program_id = 1;
+  string slug = 2;
+  string status = 3;
+  double completion_percentage = 4;
+}
+
+message CurriculumRequested {
+  string program_id = 1;
+  string job_id = 2;
+  string difficulty = 3;
+  string source_assessment_slug = 4;
+}
+
+message CurriculumCompleted {
+  string program_id = 1;
+  string job_id = 2;
+  string curriculum_json = 3;
+  string prompt_version = 4;
+}
+
+message ChatReplyRequested {
+  string conversation_id = 1;
+  string message_id = 2;
+  string job_id = 3;
+  // Dipakai juga untuk thread coaching; kosong bila percakapan umum.
+  optional string coaching_thread_id = 4;
+}
+
+message ChatReplyCompleted {
+  string job_id = 1;
+  string reply_json = 2;
+  string prompt_version = 3;
+}
+
+message MealGuideRequested {
+  string guide_id = 1;
+  string job_id = 2;
+}
+
+message MealGuideCompleted {
+  string guide_id = 1;
+  string job_id = 2;
+  string guide_json = 3;
+  string prompt_version = 4;
+}
+
+// Awal saga penghapusan akun. Setiap unit domain mengonsumsinya, menghapus
+// datanya, lalu membalas dengan konfirmasi (ADR-011).
+message UserDeletionRequested {
+  string saga_id = 1;
+  string user_id = 2;
+  string user_profile_id = 3;
+}
+
+message UserDeletionConfirmed {
+  string saga_id = 1;
+  // Nama unit yang mengonfirmasi, supaya saga tahu siapa yang belum.
+  string service = 2;
+  bool succeeded = 3;
+  optional string failure_reason = 4;
+}
+
+// Diterbitkan setelah percobaan terakhir gagal. Pesan aslinya masuk
+// dead-letter; event ini yang membuat kegagalannya terlihat oleh domain.
+message LlmJobFailed {
+  string job_id = 1;
+  string kind = 2;
+  string reason = 3;
+  int32 attempts = 4;
+}
