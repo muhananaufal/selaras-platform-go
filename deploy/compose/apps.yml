@@ -83,6 +83,32 @@ services:
         limits:
           memory: 128M
 
+  assessment-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: assessment-svc
+    restart: unless-stopped
+    container_name: selaras-assessment
+    environment:
+      ASSESSMENT_DATABASE_DSN: >-
+        postgres://svc_assessment:${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=assessment
+      PROFILE_GRPC_TARGET: profile-svc:9201
+      ASSESSMENT_GRPC_ADDR: ":9301"
+      ASSESSMENT_HEALTH_ADDR: ":9302"
+    ports:
+      - "127.0.0.1:19301:9301"
+      - "127.0.0.1:19302:9302"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
   edge-gateway:
     build:
       context: ../..
@@ -103,6 +129,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-}
       FRONTEND_URL: ${FRONTEND_URL:-}
+      ASSESSMENT_GRPC_TARGET: assessment-svc:9301
       EDGE_HTTP_ADDR: ":8080"
     ports:
       - "127.0.0.1:18080:8080"

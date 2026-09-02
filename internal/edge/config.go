@@ -12,14 +12,18 @@ import (
 
 // Config adalah seluruh yang dibutuhkan edge-gateway untuk menyala.
 type Config struct {
-	HTTPAddr      string
-	IdentityAddr  string
-	ProfileAddr   string
-	RedisURL      string
-	VerifyKey     ed25519.PublicKey
-	TokenIssuer   string
-	RevocationTTL time.Duration
-	Social        SocialConfig
+	HTTPAddr     string
+	IdentityAddr string
+	ProfileAddr  string
+	RedisURL     string
+
+	// AssessmentAddr boleh kosong: lingkungan tanpa assessment-svc tetap
+	// melayani autentikasi dan profil.
+	AssessmentAddr string
+	VerifyKey      ed25519.PublicKey
+	TokenIssuer    string
+	RevocationTTL  time.Duration
+	Social         SocialConfig
 }
 
 // LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
@@ -29,11 +33,12 @@ type Config struct {
 // setiap unit yang memverifikasi juga bisa mencetak token admin.
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		HTTPAddr:     envOr("EDGE_HTTP_ADDR", ":8080"),
-		IdentityAddr: os.Getenv("IDENTITY_GRPC_TARGET"),
-		ProfileAddr:  os.Getenv("PROFILE_GRPC_TARGET"),
-		RedisURL:     os.Getenv("REDIS_URL"),
-		TokenIssuer:  envOr("JWT_ISSUER", "identity-svc"),
+		HTTPAddr:       envOr("EDGE_HTTP_ADDR", ":8080"),
+		IdentityAddr:   os.Getenv("IDENTITY_GRPC_TARGET"),
+		ProfileAddr:    os.Getenv("PROFILE_GRPC_TARGET"),
+		RedisURL:       os.Getenv("REDIS_URL"),
+		AssessmentAddr: os.Getenv("ASSESSMENT_GRPC_TARGET"),
+		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
 	}
 
 	var missing []string

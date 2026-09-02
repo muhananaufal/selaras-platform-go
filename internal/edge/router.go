@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
@@ -24,6 +25,14 @@ type Deps struct {
 	Revocations domain.RevocationChecker
 	Probes      *httpx.Health
 	Now         func() time.Time
+
+	// Assessments boleh nil: lingkungan tanpa assessment-svc tetap melayani
+	// autentikasi dan profil. Rutenya tidak dipasang, jadi jawabannya 404.
+	Assessments *handler.Assessment
+
+	// Regions memetakan negara ke wilayah risiko untuk tampilan profil
+	// (F1-12). Boleh nil.
+	Regions assessmentv1.AssessmentClient
 
 	// Social boleh nil: lingkungan tanpa kredensial penyedia tetap
 	// melayani pendaftaran lewat kata sandi. Rutenya tidak dipasang sama
@@ -59,7 +68,7 @@ func NewRouter(deps Deps) *gin.Engine {
 	router.GET("/readyz", gin.WrapF(deps.Probes.Ready))
 
 	auth := handler.NewAuth(deps.Identity)
-	profiles := handler.NewProfile(deps.Profiles, deps.Now)
+	profiles := handler.NewProfile(deps.Profiles, deps.Regions, deps.Now)
 
 	// Prefiks dipertahankan dari sistem lama; frontend memanggil /api/v1.
 	api := router.Group("/api/v1")
@@ -85,6 +94,12 @@ func NewRouter(deps Deps) *gin.Engine {
 		protected.GET("/me", handler.Me)
 		protected.GET("/profile", profiles.Show)
 		protected.PATCH("/profile", profiles.Update)
+
+		if deps.Assessments != nil {
+			protected.POST("/risk-assessments", deps.Assessments.Start)
+			protected.GET("/risk-assessments", deps.Assessments.Index)
+			protected.GET("/risk-assessments/:slug", deps.Assessments.Show)
+		}
 	}
 
 	return router

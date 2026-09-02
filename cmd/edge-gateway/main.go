@@ -18,6 +18,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
+	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
@@ -93,6 +94,27 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	var (
+		assessmentHandler *handler.Assessment
+		regions           assessmentv1.AssessmentClient
+	)
+	if cfg.AssessmentAddr != "" {
+		conn, err := dial(cfg.AssessmentAddr)
+		if err != nil {
+			return fmt.Errorf("assessment-svc: %w", err)
+		}
+		defer closeConn(conn, "assessment-svc", log)
+
+		regions = assessmentv1.NewAssessmentClient(conn)
+		assessmentHandler = handler.NewAssessment(regions)
+	} else {
+		// Tanpa assessment-svc, rute penilaian tidak dipasang dan risk_region
+		// dikirim null. Keduanya jujur: yang pertama 404, yang kedua nilai
+		// yang memang belum bisa dihitung.
+		log.Warn("assessment-svc is not configured; its routes are not mounted",
+			"variable", "ASSESSMENT_GRPC_TARGET")
+	}
+
 	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
 	if err != nil {
 		return err
@@ -107,6 +129,8 @@ func run(log *slog.Logger) error {
 		Probes:      probes,
 		Now:         time.Now,
 		Social:      socialHandler,
+		Assessments: assessmentHandler,
+		Regions:     regions,
 	})
 
 	server := &http.Server{

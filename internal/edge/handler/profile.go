@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/httperr"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/middleware"
@@ -17,11 +19,24 @@ import (
 // Profile melayani endpoint profil.
 type Profile struct {
 	profiles profilev1.ProfileClient
-	now      func() time.Time
+
+	// regions memetakan negara ke wilayah kalibrasi SCORE2.
+	//
+	// Ia milik assessment-svc, bukan profile-svc: risk_region adalah konsep
+	// klinis, bukan demografis (ADR-002 aturan 3). Boleh nil - lingkungan
+	// tanpa assessment-svc mengirim risk_region null, dan itu jawaban jujur
+	// untuk nilai yang belum bisa dihitung.
+	regions assessmentv1.AssessmentClient
+
+	now func() time.Time
 }
 
-func NewProfile(profiles profilev1.ProfileClient, now func() time.Time) *Profile {
-	return &Profile{profiles: profiles, now: now}
+func NewProfile(
+	profiles profilev1.ProfileClient,
+	regions assessmentv1.AssessmentClient,
+	now func() time.Time,
+) *Profile {
+	return &Profile{profiles: profiles, regions: regions, now: now}
 }
 
 // profileView adalah bentuk yang dijanjikan kontrak REST.
@@ -79,7 +94,7 @@ func (h *Profile) Show(c *gin.Context) {
 		return
 	}
 
-	writeData(c, http.StatusOK, h.view(resp.GetProfile(), claims.Email))
+	writeData(c, http.StatusOK, h.view(c, resp.GetProfile(), claims.Email))
 }
 
 type updateProfileRequest struct {
@@ -128,7 +143,7 @@ func (h *Profile) Update(c *gin.Context) {
 		return
 	}
 
-	writeDataWithMessage(c, http.StatusOK, "Profile updated successfully!", h.view(resp.GetProfile(), claims.Email))
+	writeDataWithMessage(c, http.StatusOK, "Profile updated successfully!", h.view(c, resp.GetProfile(), claims.Email))
 }
 
 // view menerima email dari klaim, bukan dari profile-svc.
@@ -136,7 +151,7 @@ func (h *Profile) Update(c *gin.Context) {
 // Email adalah data identity, bukan demografis (ADR-002), jadi profile-svc
 // memang tidak memilikinya. Ia sampai ke sini lewat klaim token, sehingga
 // endpoint ini tetap tidak memanggil siapa pun untuk mengisinya.
-func (h *Profile) view(p *profilev1.UserProfile, email string) profileView {
+func (h *Profile) view(c *gin.Context, p *profilev1.UserProfile, email string) profileView {
 	view := profileView{
 		Email:              emptyToNil(email),
 		FirstName:          p.FirstName,
@@ -154,7 +169,30 @@ func (h *Profile) view(p *profilev1.UserProfile, email string) profileView {
 			view.Age = &age
 		}
 	}
+
+	view.RiskRegion = h.riskRegion(c, p.GetCountryOfResidence())
 	return view
+}
+
+// riskRegion menanyakan wilayah kalibrasi ke assessment-svc.
+//
+// Kegagalannya menghasilkan null, bukan galat: wilayah risiko adalah
+// keterangan tambahan pada profil, dan menggagalkan seluruh pembacaan profil
+// karena satu service tetangga terganggu akan mengubah gangguan kecil menjadi
+// layar yang tidak bisa dibuka.
+func (h *Profile) riskRegion(c *gin.Context, country string) *string {
+	if h.regions == nil || country == "" {
+		return nil
+	}
+
+	resp, err := h.regions.ResolveRiskRegion(c.Request.Context(),
+		&assessmentv1.ResolveRiskRegionRequest{CountryOfResidence: country})
+	if err != nil {
+		slog.WarnContext(c.Request.Context(), "could not resolve the risk region",
+			"error", err)
+		return nil
+	}
+	return emptyToNil(resp.GetRiskRegion())
 }
 
 // ageOn menghitung umur dari tanggal ISO-8601.
