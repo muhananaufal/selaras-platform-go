@@ -18,9 +18,9 @@ coverage.*
 *.pem
 *.key
 
-# Generated protobuf (di-generate saat build, tidak di-commit)
-# Dikecualikan lewat buf.gen.yaml -> gen/
-/gen/
+# Kode hasil generate protobuf SENGAJA di-commit: `go build ./...` harus
+# bekerja tanpa toolchain proto, dan diff-nya membuat perubahan kontrak
+# terlihat saat review.
 
 # Tooling lokal
 .task/
