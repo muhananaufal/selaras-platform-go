@@ -160,3 +160,54 @@ func (f fakeHasher) Verify(h domain.PasswordHash, c domain.Password) (bool, bool
 var errStorage = errors.New("storage is unwell")
 
 func fixedClock(t time.Time) func() time.Time { return func() time.Time { return t } }
+
+// countingHasher mencatat berapa kali ia dipanggil, supaya test bisa
+// membuktikan verifikasi tetap berjalan pada jalur yang gagal - jalur cepat
+// yang melewatinya adalah orakel waktu untuk mencacah akun.
+type countingHasher struct {
+	hashes   int
+	verifies int
+	err      error
+}
+
+func (c *countingHasher) Hash(p domain.Password) (domain.PasswordHash, error) {
+	c.hashes++
+	if c.err != nil {
+		return "", c.err
+	}
+	return domain.PasswordHash("hashed:" + p.Expose()), nil
+}
+
+func (c *countingHasher) Verify(h domain.PasswordHash, cand domain.Password) (bool, bool, error) {
+	c.verifies++
+	if c.err != nil {
+		return false, false, c.err
+	}
+	return string(h) == "hashed:"+cand.Expose(), false, nil
+}
+
+func (f *fakeProfiles) FindProfileID(context.Context, domain.UserID) (string, error) {
+	f.called++
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.id, nil
+}
+
+type publishedGeneration struct {
+	userID     domain.UserID
+	generation int64
+}
+
+type fakeRevocations struct {
+	published []publishedGeneration
+	err       error
+}
+
+func (f *fakeRevocations) PublishGeneration(_ context.Context, userID domain.UserID, gen int64) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.published = append(f.published, publishedGeneration{userID: userID, generation: gen})
+	return nil
+}

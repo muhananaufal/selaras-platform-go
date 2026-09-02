@@ -39,3 +39,12 @@ type AuthResult struct {
 	UserProfileID string
 	AccessToken   string
 }
+
+// ProfileFinder mengambil id profil seorang pengguna dari profile-svc.
+//
+// ADR-002 aturan 2: dipanggil sekali per login, bukan sekali per request.
+// Profil yang belum ada menghasilkan string kosong tanpa galat - itu keadaan
+// yang sah (B7), dan setiap konsumen klaim wajib menanganinya.
+type ProfileFinder interface {
+	FindProfileID(ctx context.Context, userID domain.UserID) (string, error)
+}
