@@ -16,9 +16,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/oauth"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
@@ -89,6 +93,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
+	if err != nil {
+		return err
+	}
+
 	probes := httpx.NewHealth()
 	router := edge.NewRouter(edge.Deps{
 		Identity:    identityClient,
@@ -97,6 +106,7 @@ func run(log *slog.Logger) error {
 		Revocations: revocations,
 		Probes:      probes,
 		Now:         time.Now,
+		Social:      socialHandler,
 	})
 
 	server := &http.Server{
@@ -175,4 +185,51 @@ func (g generationOverGRPC) CurrentGeneration(ctx context.Context, userID domain
 		return 0, fmt.Errorf("asking identity-svc for the token generation: %w", err)
 	}
 	return resp.GetGeneration(), nil
+}
+
+// buildSocial merakit alur masuk sosial, atau mengembalikan nil bila
+// lingkungan ini tidak dikonfigurasi untuknya.
+//
+// nil berarti rutenya tidak dipasang sama sekali, sehingga jawabannya 404 -
+// bukan endpoint yang ada tetapi selalu gagal. Konfigurasi yang terisi
+// SEBAGIAN adalah kekeliruan, bukan mode penyebaran, dan karena itu
+// menggagalkan start-up: client id tanpa secret akan menyalakan rutenya lalu
+// gagal di pertukaran, jauh setelah orang yang salah mengetiknya pergi.
+func buildSocial(
+	cfg edge.Config,
+	identity identityv1.IdentityClient,
+	redisClient *goredis.Client,
+	log *slog.Logger,
+) (*handler.Social, error) {
+	social := cfg.Social
+
+	if !social.Configured() {
+		if missing := social.Missing(); len(missing) < 4 {
+			return nil, fmt.Errorf("social sign-in is partly configured; missing: %v", missing)
+		}
+		log.Warn("social sign-in is not configured; its routes are not mounted")
+		return nil, nil //nolint:nilnil // nil di sini berarti "tidak dipasang", dan itu keadaan yang sah
+	}
+
+	store, err := oauth.NewStore(redisClient, 10*time.Minute, time.Minute)
+	if err != nil {
+		return nil, err
+	}
+
+	google, err := oauth.NewGoogle(oauth.GoogleConfig{
+		ClientID:     social.GoogleClientID,
+		ClientSecret: social.GoogleClientSecret,
+		RedirectURL:  social.GoogleRedirectURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("social sign-in is configured", "provider", "google")
+	return handler.NewSocial(
+		identity,
+		map[string]handler.ProviderClient{"google": google},
+		store,
+		social.FrontendURL,
+	), nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -18,6 +19,7 @@ type Config struct {
 	VerifyKey     ed25519.PublicKey
 	TokenIssuer   string
 	RevocationTTL time.Duration
+	Social        SocialConfig
 }
 
 // LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
@@ -66,6 +68,7 @@ func LoadConfig() (Config, error) {
 	if cfg.RevocationTTL, err = envDuration("REVOCATION_CACHE_TTL", time.Minute); err != nil {
 		return Config{}, err
 	}
+	cfg.Social = loadSocial()
 	return cfg, nil
 }
 
@@ -95,4 +98,52 @@ func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be positive", name)
 	}
 	return d, nil
+}
+
+// SocialConfig menampung yang dibutuhkan alur masuk sosial.
+//
+// Ia terpisah dan boleh kosong seluruhnya: lingkungan tanpa kredensial
+// penyedia tetap melayani pendaftaran lewat kata sandi, dan rutenya tidak
+// dipasang sama sekali - bukan endpoint yang ada tetapi selalu gagal.
+type SocialConfig struct {
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+	FrontendURL        string
+}
+
+// Configured benar bila seluruh bagiannya terisi.
+//
+// Sebagian terisi adalah kekeliruan konfigurasi, bukan mode penyebaran:
+// client id tanpa secret akan menyalakan rutenya lalu gagal di pertukaran,
+// yang jauh lebih membingungkan daripada rute yang memang tidak ada.
+func (s SocialConfig) Configured() bool {
+	return s.GoogleClientID != "" && s.GoogleClientSecret != "" &&
+		s.GoogleRedirectURL != "" && s.FrontendURL != ""
+}
+
+// Missing menyebut bagian mana yang kurang, supaya pesannya menunjuk.
+func (s SocialConfig) Missing() []string {
+	var missing []string
+	for name, value := range map[string]string{
+		"GOOGLE_CLIENT_ID":     s.GoogleClientID,
+		"GOOGLE_CLIENT_SECRET": s.GoogleClientSecret,
+		"GOOGLE_REDIRECT_URL":  s.GoogleRedirectURL,
+		"FRONTEND_URL":         s.FrontendURL,
+	} {
+		if value == "" {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func loadSocial() SocialConfig {
+	return SocialConfig{
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		FrontendURL:        os.Getenv("FRONTEND_URL"),
+	}
 }

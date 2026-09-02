@@ -249,6 +249,40 @@ paths:
       responses:
         '302': { description: Dialihkan kembali ke frontend }
 
+  /auth/session:
+    post:
+      operationId: post_auth_session
+      tags: [auth]
+      summary: Tukar kode sekali pakai dari callback sosial dengan token
+      description: |
+        Pasangan dari `/auth/{provider}/callback`, yang menyerahkan kodenya
+        lewat fragment. Tanpa endpoint ini kodenya tidak punya tujuan.
+
+        Kodenya sekali pakai dan berumur sangat pendek: ia sempat melewati
+        peramban, dan satu-satunya yang menjaga jendela itu tetap sempit
+        adalah masa berlakunya.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: Berhasil masuk
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSuccess' }
+        '401':
+          description: Kode tidak dikenal, sudah dipakai, atau kedaluwarsa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /password-reset/request:
     post:
       operationId: post_password_reset_request

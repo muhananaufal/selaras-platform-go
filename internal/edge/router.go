@@ -24,6 +24,12 @@ type Deps struct {
 	Revocations domain.RevocationChecker
 	Probes      *httpx.Health
 	Now         func() time.Time
+
+	// Social boleh nil: lingkungan tanpa kredensial penyedia tetap
+	// melayani pendaftaran lewat kata sandi. Rutenya tidak dipasang sama
+	// sekali, sehingga jawabannya 404 - bukan endpoint yang ada tetapi
+	// selalu gagal.
+	Social *handler.Social
 }
 
 // NewRouter merakit seluruh rute.
@@ -64,6 +70,12 @@ func NewRouter(deps Deps) *gin.Engine {
 		public.POST("/login", auth.Login)
 		public.POST("/password-reset/request", auth.RequestPasswordReset)
 		public.POST("/password-reset/confirm", auth.ConfirmPasswordReset)
+
+		if deps.Social != nil {
+			public.GET("/auth/:provider/redirect", deps.Social.Redirect)
+			public.GET("/auth/:provider/callback", deps.Social.Callback)
+			public.POST("/auth/session", deps.Social.Session)
+		}
 	}
 
 	protected := api.Group("")
