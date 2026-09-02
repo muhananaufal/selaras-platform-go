@@ -1,0 +1,159 @@
+version: "3"
+
+vars:
+  MODULE: github.com/muhananaufal/selaras-platform-go
+  COMPOSE_CORE: deploy/compose/core.yml
+  COMPOSE_FULL: deploy/compose/full.yml
+
+  # Docker daemon hidup di dalam WSL. Perintah yang memakai bind mount
+  # WAJIB dijalankan dari dalam WSL juga.
+  #
+  # Terbukti di B0-08: CLI Windows yang diberi path /mnt/c menerima
+  # perintahnya, keluar dengan exit 0, lalu me-mount direktori KOSONG.
+  # Tidak ada pesan galat. Itu kegagalan senyap - `compose up` akan
+  # tampak berhasil sementara initdb tidak pernah dijalankan.
+  #
+  # Perintah tanpa bind mount (ps, logs, version) tetap aman dari Windows.
+  WSL_DISTRO: Ubuntu
+  PROJECT_WSL:
+    sh: wsl -d Ubuntu -- wslpath -a '{{.ROOT_DIR}}'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds: [task --list]
+    silent: true
+
+  # ---------------------------------------------------------------- quality
+  fmt:
+    desc: Format hand-written Go code
+    # gen/ sengaja dilewati. goimports mengelompokkan ulang import di sana,
+    # sementara buf generate mengembalikannya - hasilnya diff yang berayun
+    # bolak-balik setiap kali salah satunya dijalankan.
+    cmds:
+      - gofmt -l -w cmd internal
+      - goimports -local {{.MODULE}} -w cmd internal
+
+  lint:
+    desc: Run golangci-lint over the whole module
+    cmds: [golangci-lint run ./...]
+
+  vet:
+    desc: Run go vet
+    cmds: [go vet ./...]
+
+  tidy:
+    desc: Tidy and verify go.mod
+    cmds:
+      - go mod tidy
+      - go mod verify
+
+  # ---------------------------------------------------------------- contract
+  proto:lint:
+    desc: Lint protobuf definitions
+    cmds: [buf lint]
+
+  proto:breaking:
+    desc: Detect breaking changes against develop
+    cmds: ["buf breaking --against '.git#branch=develop'"]
+
+  proto:gen:
+    desc: Generate Go code from protobuf
+    cmds: [buf generate]
+
+  proto:
+    desc: Lint then generate protobuf
+    cmds:
+      - task: proto:lint
+      - task: openapi:lint
+      - task: proto:gen
+
+  openapi:lint:
+    desc: Lint the public REST contract
+    cmds: [vacuum lint -d api/openapi/edge-v1.yaml -r .vacuum-ruleset.yaml --fail-severity error]
+
+  # ---------------------------------------------------------------- build
+  build:
+    desc: Build every unit into bin/
+    cmds: [go build -o bin/ ./cmd/...]
+
+  image:build:
+    desc: Build a unit image (UNIT=edge-gateway task image:build)
+    # Lewat WSL: buildx tidak tersedia pada CLI statis Windows, sementara
+    # BuildKit dibutuhkan untuk cache mount pada layer dependensi.
+    vars:
+      UNIT: '{{.UNIT | default "edge-gateway"}}'
+      VERSION: '{{.VERSION | default "dev"}}'
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker build --build-arg UNIT={{.UNIT}} --build-arg VERSION={{.VERSION}} --build-arg REVISION=$(git rev-parse --short HEAD) -t selaras/{{.UNIT}}:{{.VERSION}} ."
+
+  image:run:
+    desc: Run a built unit image locally
+    vars:
+      UNIT: '{{.UNIT | default "edge-gateway"}}'
+    cmds:
+      - docker run --rm -p 127.0.0.1:18080:8080 selaras/{{.UNIT}}:dev
+
+  # ---------------------------------------------------------------- test
+  test:
+    desc: Run unit tests
+    # Tanpa -race: detektor itu menuntut cgo, dan mesin Windows ini tidak
+    # punya toolchain C. CI berjalan di Linux dan tetap memakai -race, jadi
+    # data race tetap tertangkap sebelum merge.
+    cmds: [go test ./... -count=1]
+
+  test:race:
+    desc: Run unit tests with the race detector (needs cgo)
+    cmds: [go test ./... -race -count=1]
+
+  test:integration:
+    desc: Run integration tests (requires Docker)
+    cmds: [go test ./... -race -count=1 -tags=integration]
+
+  test:cover:
+    desc: Run tests with a coverage summary
+    cmds:
+      - go test ./... -race -count=1 -coverprofile=coverage.out
+      - go tool cover -func=coverage.out
+
+  # ---------------------------------------------------------------- runtime
+  # Dijalankan lewat WSL karena bind mount. Lihat catatan di vars.
+  up:
+    desc: Start core dependencies (postgres, kafka, redis)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} up -d"
+
+  up:full:
+    desc: Start everything including the observability stack
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
+
+  down:
+    desc: Stop local dependencies
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down"
+
+  logs:
+    desc: Tail dependency logs
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} logs -f --tail=100"
+
+  ps:
+    desc: List running containers
+    cmds: [docker ps]
+
+  # ---------------------------------------------------------------- security
+  security:
+    desc: Scan the repository for leaked secrets
+    cmds: [gitleaks detect --no-banner --redact]
+
+  # ---------------------------------------------------------------- gate
+  ci:
+    desc: Everything CI runs, in the same order
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: proto:lint
+      - task: openapi:lint
+      - task: test

@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package profile.v1;
+
+import "common/v1/common.proto";
+
+// Data demografis pengguna. Berdiri sendiri karena user_profiles adalah
+// hub yang di-FK oleh seluruh domain, sementara users hanya gerbang
+// autentikasi (ADR-002).
+//
+// risk_region sengaja TIDAK ada di sini. Ia konsep klinis, bukan
+// demografis: profil menyimpan negara, assessment yang memetakannya lewat
+// tabel kalibrasi SCORE2, dan gateway yang menggabungkan keduanya untuk
+// kontrak REST (ADR-002 aturan 3).
+service Profile {
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+
+  // Dipanggil identity-svc setelah pendaftaran. Bersifat best-effort:
+  // kegagalannya tidak menggagalkan pendaftaran, karena pengguna tanpa
+  // profil adalah state yang memang sudah sah (ADR-002 aturan 1).
+  rpc CreateEmptyProfile(CreateEmptyProfileRequest) returns (CreateEmptyProfileResponse);
+
+  // Dipakai identity-svc saat menerbitkan token, sekali per login dan
+  // bukan sekali per request (ADR-007).
+  rpc ResolveProfileId(ResolveProfileIdRequest) returns (ResolveProfileIdResponse);
+}
+
+enum Sex {
+  SEX_UNSPECIFIED = 0;
+  SEX_MALE = 1;
+  SEX_FEMALE = 2;
+}
+
+// Seluruh field yang boleh kosong ditandai optional dan dipetakan apa
+// adanya. Sistem lama menjalankan Carbon::parse(null) pada tanggal lahir
+// yang belum diisi, sehingga umur tampil 0 dan tanggal lahir tampil hari
+// ini (temuan B6).
+message UserProfile {
+  string id = 1;
+  string user_id = 2;
+  optional string first_name = 3;
+  optional string last_name = 4;
+
+  // Format ISO-8601 tanggal saja: 1990-05-17. Bukan Timestamp, karena
+  // tanggal lahir tidak punya jam dan tidak punya zona waktu.
+  optional string date_of_birth = 5;
+
+  Sex sex = 6;
+  optional string country_of_residence = 7;
+  string language = 8;
+  common.v1.Timestamps timestamps = 9;
+}
+
+message GetProfileRequest {
+  string user_profile_id = 1;
+}
+
+message GetProfileResponse {
+  UserProfile profile = 1;
+}
+
+message UpdateProfileRequest {
+  string user_profile_id = 1;
+  optional string first_name = 2;
+  optional string last_name = 3;
+  optional string date_of_birth = 4;
+  Sex sex = 5;
+  optional string country_of_residence = 6;
+  optional string language = 7;
+}
+
+message UpdateProfileResponse {
+  UserProfile profile = 1;
+}
+
+message CreateEmptyProfileRequest {
+  string user_id = 1;
+}
+
+message CreateEmptyProfileResponse {
+  UserProfile profile = 1;
+}
+
+message ResolveProfileIdRequest {
+  string user_id = 1;
+}
+
+// Kosong bila profil belum ada. Bukan galat.
+message ResolveProfileIdResponse {
+  string user_profile_id = 1;
+}

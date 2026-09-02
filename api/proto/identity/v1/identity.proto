@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package identity.v1;
+
+import "common/v1/common.proto";
+
+// Autentikasi dan kredensial. Data demografis tinggal di profile.v1:
+// keduanya menjawab pertanyaan yang berbeda, dan user_profiles adalah hub
+// yang di-FK seluruh domain sementara users hampir tidak dipakai siapa pun
+// kecuali gateway (ADR-002).
+service Identity {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // Dua langkah, karena sistem lama tidak punya langkah pertama sama
+  // sekali: endpoint resetnya publik dan langsung mengganti kata sandi
+  // siapa pun yang emailnya diketahui (temuan S1).
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ConfirmPasswordReset(ConfirmPasswordResetRequest) returns (ConfirmPasswordResetResponse);
+
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+  rpc ExchangeSocialToken(ExchangeSocialTokenRequest) returns (ExchangeSocialTokenResponse);
+
+  // Dipanggil gateway pada setiap request terautentikasi. Hanya membaca
+  // dan memverifikasi tanda tangan token; tidak menyentuh database.
+  rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ADMIN = 2;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  Role role = 3;
+  bool email_verified = 4;
+  common.v1.Timestamps timestamps = 5;
+}
+
+// Token akses berumur pendek beserta klaimnya. Klaim membawa
+// user_profile_id supaya tidak ada lookup per request (ADR-007); nilainya
+// diambil sekali saat penerbitan.
+message TokenPair {
+  string access_token = 1;
+  int64 expires_in_seconds = 2;
+  string refresh_token = 3;
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message RegisterResponse {
+  User user = 1;
+  TokenPair token = 2;
+  common.v1.Identity identity = 3;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// Login mencabut seluruh token lama milik pengguna: satu sesi per
+// pengguna, sesuai perilaku sistem lama yang wajib dipertahankan (D1).
+message LoginResponse {
+  User user = 1;
+  TokenPair token = 2;
+  common.v1.Identity identity = 3;
+}
+
+message LogoutRequest {
+  string access_token = 1;
+}
+
+message LogoutResponse {}
+
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+// Sengaja tidak memberi tahu apakah emailnya terdaftar. Membedakan
+// keduanya mengubah endpoint ini menjadi alat enumerasi akun.
+message RequestPasswordResetResponse {}
+
+message ConfirmPasswordResetRequest {
+  string token = 1;
+  string new_password = 2;
+}
+
+message ConfirmPasswordResetResponse {}
+
+// Kata sandi wajib diverifikasi sebelum penghapusan dimulai. Sistem lama
+// memintanya di validasi lalu tidak pernah memeriksanya (temuan S2).
+message DeleteAccountRequest {
+  string user_id = 1;
+  string password = 2;
+}
+
+message DeleteAccountResponse {
+  string saga_id = 1;
+}
+
+message ExchangeSocialTokenRequest {
+  string provider = 1;
+  string provider_token = 2;
+}
+
+// Menautkan akun, tidak pernah menimpanya. Sistem lama memakai
+// updateOrCreate berdasarkan email, sehingga login sosial menimpa kata
+// sandi akun yang sudah ada (temuan S5).
+message ExchangeSocialTokenResponse {
+  User user = 1;
+  TokenPair token = 2;
+  common.v1.Identity identity = 3;
+  bool account_was_linked = 4;
+}
+
+message VerifyTokenRequest {
+  string access_token = 1;
+}
+
+message VerifyTokenResponse {
+  common.v1.Identity identity = 1;
+  Role role = 2;
+}

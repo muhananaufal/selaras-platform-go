@@ -1,0 +1,14 @@
+.git
+.github
+bin
+gen
+deploy
+docs
+test
+*.md
+.env
+.env.*
+!.env.example
+coverage.*
+Taskfile.yml
+.golangci.yml

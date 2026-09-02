@@ -1,0 +1,284 @@
+syntax = "proto3";
+
+package assessment.v1;
+
+import "common/v1/common.proto";
+
+// Penilaian risiko kardiovaskular berbasis SCORE2, SCORE2-OP, dan
+// SCORE2-Diabetes.
+//
+// Seluruh jawaban proksi dimodelkan sebagai enum bernilai semantik, bukan
+// string berbahasa Indonesia seperti di sistem lama. String itu detail
+// presentasi; memasukkannya ke kontrak berarti satu salah ketik diam-diam
+// menghasilkan skor yang berbeda. Pemetaan enum ke nilai lama hidup di
+// adapter dan diuji terhadap golden vector.
+service Assessment {
+  // Mengembalikan skor numerik dengan segera. Personalisasi naratif
+  // dikerjakan terpisah karena ia memanggil LLM.
+  rpc StartAssessment(StartAssessmentRequest) returns (StartAssessmentResponse);
+
+  // Menjawab segera: pekerjaan dititipkan lewat outbox, bukan dikerjakan
+  // di dalam request seperti sistem lama.
+  rpc RequestPersonalization(RequestPersonalizationRequest) returns (RequestPersonalizationResponse);
+
+  rpc GetAssessment(GetAssessmentRequest) returns (GetAssessmentResponse);
+  rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse);
+}
+
+enum InputMode {
+  INPUT_MODE_UNSPECIFIED = 0;
+  INPUT_MODE_MANUAL = 1;
+  INPUT_MODE_PROXY = 2;
+}
+
+enum SmokingStatus {
+  SMOKING_STATUS_UNSPECIFIED = 0;
+  SMOKING_STATUS_CURRENT = 1;
+  SMOKING_STATUS_NOT_CURRENT = 2;
+}
+
+enum ExerciseHabit {
+  EXERCISE_HABIT_UNSPECIFIED = 0;
+  EXERCISE_HABIT_RARELY = 1;
+  EXERCISE_HABIT_ROUTINE_INTENSE = 2;
+}
+
+enum ExerciseType {
+  EXERCISE_TYPE_UNSPECIFIED = 0;
+  EXERCISE_TYPE_ALMOST_NEVER = 1;
+  EXERCISE_TYPE_LIGHT_ROUTINE = 2;
+  EXERCISE_TYPE_WEIGHTS_OR_HIIT = 3;
+}
+
+enum FishIntake {
+  FISH_INTAKE_UNSPECIFIED = 0;
+  FISH_INTAKE_RARELY = 1;
+  FISH_INTAKE_TWICE_WEEKLY_OR_MORE = 2;
+}
+
+enum SleepPattern {
+  SLEEP_PATTERN_UNSPECIFIED = 0;
+  SLEEP_PATTERN_RESTFUL = 1;
+  SLEEP_PATTERN_INSOMNIA = 2;
+}
+
+enum StressResponse {
+  STRESS_RESPONSE_UNSPECIFIED = 0;
+  STRESS_RESPONSE_CALM = 1;
+  STRESS_RESPONSE_PALPITATIONS_AND_FLUSHING = 2;
+}
+
+enum BodyShape {
+  BODY_SHAPE_UNSPECIFIED = 0;
+  BODY_SHAPE_SLIM_OR_IDEAL = 1;
+  BODY_SHAPE_CENTRAL_OBESITY = 2;
+}
+
+enum SaltHabit {
+  SALT_HABIT_UNSPECIFIED = 0;
+  SALT_HABIT_ADDS_TABLE_SALT = 1;
+  SALT_HABIT_INSTANT_FOOD = 2;
+  SALT_HABIT_SALTED_SNACKS = 3;
+  SALT_HABIT_PROCESSED_MEAT = 4;
+}
+
+message SbpProxy {
+  bool family_hypertension = 1;
+  SleepPattern sleep_pattern = 2;
+  // Pilihan ganda; jumlah yang dipilih yang menentukan bobotnya.
+  repeated SaltHabit salt_habits = 3;
+  StressResponse stress_response = 4;
+  BodyShape body_shape = 5;
+  ExerciseHabit exercise = 6;
+}
+
+enum CookingOil {
+  COOKING_OIL_UNSPECIFIED = 0;
+  COOKING_OIL_PALM_OR_BULK = 1;
+  COOKING_OIL_OTHER = 2;
+}
+
+message TotalCholesterolProxy {
+  bool family_high_cholesterol_or_heart_attack = 1;
+  CookingOil cooking_oil = 2;
+  ExerciseType exercise_type = 3;
+  bool xanthoma = 4;
+  FishIntake fish_intake = 5;
+}
+
+message HdlProxy {
+  ExerciseType exercise_type = 1;
+  FishIntake fish_intake = 2;
+}
+
+enum BodyComposition {
+  BODY_COMPOSITION_UNSPECIFIED = 0;
+  BODY_COMPOSITION_LEAN = 1;
+  BODY_COMPOSITION_AVERAGE = 2;
+  BODY_COMPOSITION_ATHLETIC = 3;
+  BODY_COMPOSITION_VERY_MUSCULAR = 4;
+}
+
+enum DiabetesControl {
+  DIABETES_CONTROL_UNSPECIFIED = 0;
+  DIABETES_CONTROL_CONTROLLED = 1;
+  DIABETES_CONTROL_POORLY_CONTROLLED = 2;
+}
+
+enum NsaidUse {
+  NSAID_USE_UNSPECIFIED = 0;
+  NSAID_USE_RARELY = 1;
+  NSAID_USE_OFTEN = 2;
+}
+
+enum FoamyUrine {
+  FOAMY_URINE_UNSPECIFIED = 0;
+  FOAMY_URINE_NEVER = 1;
+  FOAMY_URINE_OFTEN = 2;
+}
+
+message SerumCreatinineProxy {
+  BodyComposition body_composition = 1;
+  DiabetesControl diabetes_control = 2;
+  bool retinopathy_or_neuropathy = 3;
+  NsaidUse nsaid_use = 4;
+  FoamyUrine foamy_urine = 5;
+}
+
+enum GlucoseMonitoring {
+  GLUCOSE_MONITORING_UNSPECIFIED = 0;
+  GLUCOSE_MONITORING_NEVER = 1;
+  GLUCOSE_MONITORING_USUALLY_ON_TARGET = 2;
+  GLUCOSE_MONITORING_USUALLY_ABOVE_TARGET = 3;
+}
+
+enum TreatmentAdherence {
+  TREATMENT_ADHERENCE_UNSPECIFIED = 0;
+  TREATMENT_ADHERENCE_BOTH_DISCIPLINED = 1;
+  TREATMENT_ADHERENCE_MEDICATION_OK_DIET_POOR = 2;
+  TREATMENT_ADHERENCE_MEDICATION_POOR_DIET_OK = 3;
+  TREATMENT_ADHERENCE_BOTH_POOR = 4;
+}
+
+message Hba1cProxy {
+  GlucoseMonitoring glucose_monitoring = 1;
+  TreatmentAdherence treatment_adherence = 2;
+}
+
+// Tiap parameter klinis punya dua mode. Bila MANUAL, nilai terukur yang
+// dipakai; bila PROXY, nilainya diestimasi dari kuesioner.
+message ClinicalParameter {
+  InputMode mode = 1;
+  optional double measured_value = 2;
+}
+
+message AssessmentInput {
+  bool has_diabetes = 1;
+  SmokingStatus smoking_status = 2;
+
+  ClinicalParameter systolic_blood_pressure = 3;
+  SbpProxy sbp_proxy = 4;
+
+  ClinicalParameter total_cholesterol = 5;
+  TotalCholesterolProxy total_cholesterol_proxy = 6;
+
+  ClinicalParameter hdl_cholesterol = 7;
+  HdlProxy hdl_proxy = 8;
+
+  // Empat field berikut hanya dibaca bila has_diabetes bernilai true.
+  optional int32 age_at_diabetes_diagnosis = 9;
+  ClinicalParameter hba1c = 10;
+  Hba1cProxy hba1c_proxy = 11;
+  ClinicalParameter serum_creatinine = 12;
+  SerumCreatinineProxy serum_creatinine_proxy = 13;
+
+  // Kebiasaan olahraga dipakai dua estimator sekaligus, dan di sini hanya
+  // ada SATU sumbernya. Sistem lama membacanya dari dua tempat berbeda
+  // dengan dua nilai berbeda, sehingga potongan pada HbA1c tidak pernah
+  // berlaku (temuan B12).
+  ExerciseHabit exercise = 14;
+}
+
+enum RiskModel {
+  RISK_MODEL_UNSPECIFIED = 0;
+  RISK_MODEL_SCORE2 = 1;
+  RISK_MODEL_SCORE2_OP = 2;
+  RISK_MODEL_SCORE2_DIABETES = 3;
+}
+
+enum PersonalizationStatus {
+  PERSONALIZATION_STATUS_UNSPECIFIED = 0;
+  PERSONALIZATION_STATUS_NOT_REQUESTED = 1;
+  PERSONALIZATION_STATUS_PENDING = 2;
+  PERSONALIZATION_STATUS_COMPLETED = 3;
+  PERSONALIZATION_STATUS_FAILED = 4;
+}
+
+// Nilai klinis yang benar-benar masuk ke kalkulator, baik terukur maupun
+// hasil estimasi. Disimpan apa adanya supaya sebuah skor lama tetap bisa
+// dijelaskan bertahun-tahun kemudian.
+message ResolvedClinicalValues {
+  int32 age = 1;
+  string sex = 2;
+  string risk_region = 3;
+  double systolic_blood_pressure = 4;
+  double total_cholesterol = 5;
+  double hdl_cholesterol = 6;
+  optional double hba1c = 7;
+  optional double serum_creatinine = 8;
+  optional double egfr = 9;
+}
+
+message RiskAssessment {
+  string id = 1;
+  string slug = 2;
+  string user_profile_id = 3;
+  RiskModel model_used = 4;
+  double risk_percentage = 5;
+  AssessmentInput input = 6;
+  ResolvedClinicalValues resolved_values = 7;
+  PersonalizationStatus personalization_status = 8;
+  // Laporan naratif hasil LLM. Kosong sampai personalisasi selesai.
+  optional string personalized_report_json = 9;
+  common.v1.Timestamps timestamps = 10;
+}
+
+message StartAssessmentRequest {
+  string user_profile_id = 1;
+  AssessmentInput input = 2;
+}
+
+message StartAssessmentResponse {
+  RiskAssessment assessment = 1;
+}
+
+message RequestPersonalizationRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+  common.v1.IdempotencyKey idempotency_key = 3;
+}
+
+// Dikembalikan segera; hasilnya diambil lewat GetAssessment.
+message RequestPersonalizationResponse {
+  string job_id = 1;
+  PersonalizationStatus status = 2;
+}
+
+message GetAssessmentRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message GetAssessmentResponse {
+  RiskAssessment assessment = 1;
+}
+
+message ListAssessmentsRequest {
+  string user_profile_id = 1;
+  common.v1.PageRequest page = 2;
+}
+
+message ListAssessmentsResponse {
+  repeated RiskAssessment assessments = 1;
+  common.v1.PageResponse page = 2;
+}

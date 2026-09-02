@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package dashboard.v1;
+
+import "common/v1/common.proto";
+
+// Read-model dasbor.
+//
+// Bukan service CRUD: ia tidak memiliki data sendiri, melainkan
+// memproyeksikan event dari domain lain menjadi satu baris per profil.
+// Di sistem lama, tempat ini ditempati repository-of-repositories dengan
+// cache 15 menit dan empat listener invalidasi manual - dan empat listener
+// itulah gejala yang read-model hapus (ADR-009).
+service Dashboard {
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse);
+}
+
+enum HealthTrend {
+  HEALTH_TREND_UNSPECIFIED = 0;
+  HEALTH_TREND_IMPROVING = 1;
+  HEALTH_TREND_STABLE = 2;
+  HEALTH_TREND_WORSENING = 3;
+  // Dipakai ketika baru ada satu analisis: arah belum bisa disimpulkan.
+  HEALTH_TREND_INSUFFICIENT_DATA = 4;
+}
+
+message AssessmentSummary {
+  string slug = 1;
+  string assessed_on = 2;
+  string model_used = 3;
+  double risk_percentage = 4;
+}
+
+message ProgramSummary {
+  string slug = 1;
+  string title = 2;
+  string status = 3;
+  int32 current_day = 4;
+  int32 total_days = 5;
+  double completion_percentage = 6;
+}
+
+message RiskTrendPoint {
+  string assessed_on = 1;
+  double risk_percentage = 2;
+}
+
+message DashboardView {
+  string user_profile_id = 1;
+
+  // Kosong bila pengguna belum pernah melakukan analisis. Gateway
+  // menerjemahkannya menjadi pesan sambutan, sebagaimana perilaku lama.
+  repeated AssessmentSummary assessment_history = 2;
+  optional AssessmentSummary latest_assessment = 3;
+
+  // Kosong bila tidak ada program berjalan. Itu state yang sah.
+  optional ProgramSummary program = 4;
+
+  repeated RiskTrendPoint risk_trend = 5;
+  HealthTrend health_trend = 6;
+  int32 total_assessments = 7;
+
+  // Kapan proyeksi ini terakhir diperbarui dari event. Dibuka apa adanya
+  // karena read-model bersifat eventually consistent; menyembunyikannya
+  // membuat lag tampak seperti bug.
+  common.v1.Timestamps timestamps = 8;
+}
+
+message GetDashboardRequest {
+  string user_profile_id = 1;
+}
+
+message GetDashboardResponse {
+  DashboardView dashboard = 1;
+}

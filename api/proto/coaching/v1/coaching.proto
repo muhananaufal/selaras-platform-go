@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package coaching.v1;
+
+import "common/v1/common.proto";
+
+// Program coaching: kurikulum mingguan, tugas harian, dan diskusi.
+//
+// Domain terberat di sistem lama, sekitar 1.227 baris. Aturan yang wajib
+// ikut menyeberang tercatat sebagai D2 sampai D5 dan D12.
+service Coaching {
+  // Membatalkan program aktif sebelumnya: satu program aktif per pengguna
+  // (D2). Kurikulum digenerasi LLM secara asinkron, jadi program lahir
+  // dalam keadaan menunggu.
+  rpc StartProgram(StartProgramRequest) returns (StartProgramResponse);
+
+  rpc GetProgram(GetProgramRequest) returns (GetProgramResponse);
+
+  // Hanya sah dari ACTIVE ke PAUSED dan sebaliknya. Status lain ditolak
+  // (D4).
+  rpc ToggleProgramStatus(ToggleProgramStatusRequest) returns (ToggleProgramStatusResponse);
+
+  rpc DeleteProgram(DeleteProgramRequest) returns (DeleteProgramResponse);
+
+  // Idempoten: menandai tugas yang sudah selesai tidak menerbitkan event
+  // kedua.
+  rpc ToggleTaskStatus(ToggleTaskStatusRequest) returns (ToggleTaskStatusResponse);
+
+  rpc GetGraduationReport(GetGraduationReportRequest) returns (GetGraduationReportResponse);
+
+  rpc StartThread(StartThreadRequest) returns (StartThreadResponse);
+  rpc GetThread(GetThreadRequest) returns (GetThreadResponse);
+  rpc UpdateThreadTitle(UpdateThreadTitleRequest) returns (UpdateThreadTitleResponse);
+  rpc DeleteThread(DeleteThreadRequest) returns (DeleteThreadResponse);
+
+  // Menjawab segera; balasan pelatih tiba lewat worker.
+  rpc SendThreadMessage(SendThreadMessageRequest) returns (SendThreadMessageResponse);
+}
+
+enum ProgramStatus {
+  PROGRAM_STATUS_UNSPECIFIED = 0;
+  PROGRAM_STATUS_ACTIVE = 1;
+  PROGRAM_STATUS_PAUSED = 2;
+  PROGRAM_STATUS_COMPLETED = 3;
+  PROGRAM_STATUS_CANCELLED = 4;
+}
+
+enum Difficulty {
+  DIFFICULTY_UNSPECIFIED = 0;
+  DIFFICULTY_GENTLE = 1;
+  DIFFICULTY_STANDARD = 2;
+  DIFFICULTY_INTENSE = 3;
+}
+
+enum CurriculumStatus {
+  CURRICULUM_STATUS_UNSPECIFIED = 0;
+  CURRICULUM_STATUS_PENDING = 1;
+  CURRICULUM_STATUS_READY = 2;
+  CURRICULUM_STATUS_FAILED = 3;
+}
+
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;
+  TASK_TYPE_MAIN_MISSION = 1;
+  TASK_TYPE_BONUS_CHALLENGE = 2;
+}
+
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_MODEL = 2;
+}
+
+message CoachingTask {
+  string id = 1;
+  string task_date = 2;
+  TaskType task_type = 3;
+  string title = 4;
+  string description = 5;
+  bool completed = 6;
+}
+
+message CoachingWeek {
+  string id = 1;
+  int32 week_number = 2;
+  string title = 3;
+  string description = 4;
+  repeated CoachingTask tasks = 5;
+}
+
+message CoachingThread {
+  string id = 1;
+  string slug = 2;
+  string title = 3;
+  common.v1.Timestamps timestamps = 4;
+}
+
+message CoachingMessage {
+  string id = 1;
+  MessageRole role = 2;
+  string content_json = 3;
+  common.v1.Timestamps timestamps = 4;
+}
+
+// Referensi ke assessment bersifat LUNAK. Foreign key lintas service tidak
+// bisa ditegakkan database, jadi keunikannya dijaga di sini dan datanya
+// disalin dari event (ADR-004).
+message SourceAssessment {
+  string assessment_id = 1;
+  string slug = 2;
+  double risk_percentage = 3;
+  string model_used = 4;
+}
+
+message CoachingProgram {
+  string id = 1;
+  string slug = 2;
+  string user_profile_id = 3;
+  SourceAssessment source_assessment = 4;
+  string title = 5;
+  string description = 6;
+  ProgramStatus status = 7;
+  Difficulty difficulty = 8;
+  string start_date = 9;
+  // Satu-satunya sumber kebenaran untuk akhir program. Sistem lama
+  // menghitungnya dari created_at ditambah 28 hari sambil menyimpan kolom
+  // ini tanpa memakainya (temuan B5).
+  string end_date = 10;
+  CurriculumStatus curriculum_status = 11;
+  repeated CoachingWeek weeks = 12;
+  repeated CoachingThread threads = 13;
+  optional string graduation_report_json = 14;
+  common.v1.Timestamps timestamps = 15;
+}
+
+message StartProgramRequest {
+  string user_profile_id = 1;
+  string risk_assessment_slug = 2;
+  Difficulty difficulty = 3;
+  common.v1.IdempotencyKey idempotency_key = 4;
+}
+
+message StartProgramResponse {
+  CoachingProgram program = 1;
+}
+
+message GetProgramRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message GetProgramResponse {
+  CoachingProgram program = 1;
+}
+
+message ToggleProgramStatusRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message ToggleProgramStatusResponse {
+  CoachingProgram program = 1;
+}
+
+message DeleteProgramRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message DeleteProgramResponse {}
+
+message ToggleTaskStatusRequest {
+  string task_id = 1;
+  string user_profile_id = 2;
+}
+
+message ToggleTaskStatusResponse {
+  CoachingTask task = 1;
+}
+
+message GetGraduationReportRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message GetGraduationReportResponse {
+  string report_json = 1;
+}
+
+message StartThreadRequest {
+  string program_slug = 1;
+  string user_profile_id = 2;
+  string message = 3;
+  // Bila kosong, judul diambil dari 45 karakter pertama pesan (D12).
+  optional string title = 4;
+  common.v1.IdempotencyKey idempotency_key = 5;
+}
+
+message StartThreadResponse {
+  CoachingThread thread = 1;
+  string job_id = 2;
+}
+
+message GetThreadRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+  common.v1.PageRequest page = 3;
+}
+
+message GetThreadResponse {
+  CoachingThread thread = 1;
+  repeated CoachingMessage messages = 2;
+  common.v1.PageResponse page = 3;
+}
+
+message UpdateThreadTitleRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+  string title = 3;
+}
+
+message UpdateThreadTitleResponse {
+  CoachingThread thread = 1;
+}
+
+message DeleteThreadRequest {
+  string slug = 1;
+  string user_profile_id = 2;
+}
+
+message DeleteThreadResponse {}
+
+message SendThreadMessageRequest {
+  string thread_slug = 1;
+  string user_profile_id = 2;
+  string message = 3;
+  common.v1.IdempotencyKey idempotency_key = 4;
+}
+
+message SendThreadMessageResponse {
+  CoachingMessage message = 1;
+  string job_id = 2;
+}

@@ -1,0 +1,909 @@
+openapi: 3.1.0
+
+info:
+  title: Selaras Edge API
+  version: "1.0.0"
+  description: |
+    Kontrak REST publik. Bentuknya mengikuti API Laravel yang sudah dipakai
+    frontend, sehingga migrasi tidak menuntut perubahan di sisi klien.
+
+    Empat hal sengaja BERBEDA dari sistem lama, dan semuanya perbaikan:
+
+    1. Reset kata sandi menjadi dua langkah. Endpoint lama bersifat publik
+       dan langsung mengganti kata sandi milik alamat email mana pun yang
+       diketahui pemanggil.
+    2. Operasi yang memanggil LLM menjawab `202 Accepted` dengan `job_id`,
+       bukan menahan koneksi sampai model selesai.
+    3. Sumber daya milik pengguna lain menjawab `404`, bukan `403`.
+       Membedakan keduanya membocorkan keberadaannya.
+    4. Penghapusan akun memverifikasi kata sandi. Sistem lama memintanya
+       lalu tidak pernah memeriksanya.
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: profile
+  - name: assessment
+  - name: dashboard
+  - name: chat
+  - name: coaching
+  - name: culinary
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema: { type: string, enum: [google] }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    PageToken:
+      name: page_token
+      in: query
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Mencegah pekerjaan ganda saat klien mengulang permintaan. Pengiriman
+        lewat broker bersifat at-least-once.
+      schema: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      required: [success, message]
+      properties:
+        success: { type: boolean, enum: [false] }
+        message: { type: string }
+        code:
+          type: string
+          enum: [INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, ALREADY_EXISTS, FAILED_PRECONDITION, RATE_LIMITED, INTERNAL, UNAVAILABLE]
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+
+    Accepted:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: { type: string }
+        status: { type: string, enum: [pending] }
+        poll_url: { type: string }
+
+    Page:
+      type: object
+      properties:
+        next_page_token: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [user, admin] }
+        created_at: { type: string, format: date-time }
+
+    AuthSuccess:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer }
+        user: { $ref: '#/components/schemas/User' }
+
+    Profile:
+      type: object
+      description: |
+        Seluruh bidang boleh kosong. Profil memang bisa belum terisi, dan
+        pendaftaran lewat penyedia sosial tidak membuatnya sama sekali.
+      properties:
+        email: { type: string, format: email }
+        first_name: { type: [string, 'null'] }
+        last_name: { type: [string, 'null'] }
+        sex: { type: [string, 'null'], enum: [male, female, null] }
+        country_of_residence: { type: [string, 'null'] }
+        date_of_birth: { type: [string, 'null'], format: date }
+        age: { type: [integer, 'null'] }
+        risk_region: { type: [string, 'null'] }
+        language: { type: string, enum: [id, en] }
+
+  responses:
+    Unauthorized:
+      description: Token tidak ada atau tidak berlaku
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: |
+        Tidak ditemukan. Dipakai juga untuk sumber daya milik pengguna lain.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Masukan tidak lolos validasi
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Bertentangan dengan keadaan sumber daya saat ini
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Melebihi batas laju
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+paths:
+  # ------------------------------------------------------------------ auth
+  /register:
+    post:
+      operationId: post_register
+      tags: [auth]
+      summary: Daftar akun baru
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, password_confirmation]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+                password: { type: string, minLength: 8 }
+                password_confirmation: { type: string }
+      responses:
+        '201':
+          description: Terdaftar dan langsung masuk
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSuccess' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /login:
+    post:
+      operationId: post_login
+      tags: [auth]
+      summary: Masuk
+      description: Mencabut seluruh token lama; satu sesi aktif per pengguna.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Berhasil masuk
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSuccess' }
+        '401':
+          description: Kredensial salah. Pesannya sengaja tidak membedakan email tidak terdaftar dari kata sandi keliru.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /logout:
+    post:
+      operationId: post_logout
+      tags: [auth]
+      summary: Keluar
+      responses:
+        '200': { description: Token dicabut }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/{provider}/redirect:
+    get:
+      operationId: get_auth_provider_redirect
+      tags: [auth]
+      summary: Mulai alur masuk lewat penyedia sosial
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '302': { description: Dialihkan ke penyedia }
+
+  /auth/{provider}/callback:
+    get:
+      operationId: get_auth_provider_callback
+      tags: [auth]
+      summary: Terima panggilan balik penyedia sosial
+      description: |
+        Menyerahkan kode pertukaran sekali pakai lewat fragment, bukan token
+        di query string. Query string masuk ke log server dan riwayat
+        peramban.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '302': { description: Dialihkan kembali ke frontend }
+
+  /password-reset/request:
+    post:
+      operationId: post_password_reset_request
+      tags: [auth]
+      summary: Minta tautan reset kata sandi
+      description: |
+        Selalu menjawab 202, terlepas dari apakah emailnya terdaftar.
+        Membedakan keduanya mengubah endpoint ini menjadi alat enumerasi.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202': { description: 'Bila email terdaftar, tautan dikirim' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /password-reset/confirm:
+    post:
+      operationId: post_password_reset_confirm
+      tags: [auth]
+      summary: Tetapkan kata sandi baru memakai token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password, password_confirmation]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+                password_confirmation: { type: string }
+      responses:
+        '200': { description: Kata sandi diganti }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /delete-account:
+    delete:
+      operationId: delete_delete_account
+      tags: [auth]
+      summary: Hapus akun secara permanen
+      description: |
+        Kata sandi diverifikasi sebelum saga dimulai. Penghapusan berjalan
+        lintas seluruh service, jadi jawabannya 202 dan bukan 204.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        '202':
+          description: Penghapusan dimulai
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Accepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # --------------------------------------------------------------- profile
+  /profile:
+    get:
+      operationId: get_profile
+      tags: [profile]
+      summary: Ambil profil sendiri
+      responses:
+        '200':
+          description: Profil. Seluruh bidang bisa null bila belum diisi.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      operationId: patch_profile
+      tags: [profile]
+      summary: Buat atau perbarui profil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name: { type: string, maxLength: 255 }
+                last_name: { type: string, maxLength: 255 }
+                date_of_birth: { type: string, format: date }
+                sex: { type: string, enum: [male, female] }
+                country_of_residence: { type: string, maxLength: 255 }
+                language: { type: string, enum: [id, en] }
+      responses:
+        '200':
+          description: Profil diperbarui
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ------------------------------------------------------------ assessment
+  /risk-assessments:
+    post:
+      operationId: post_risk_assessments
+      tags: [assessment]
+      summary: Jalankan analisis risiko dan dapatkan skor
+      description: |
+        Skor numerik dihitung langsung; ia deterministik dan tidak memanggil
+        LLM. Laporan naratif diminta terpisah.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [has_diabetes, smoking_status, sbp_input_type, tchol_input_type, hdl_input_type]
+              properties:
+                has_diabetes: { type: boolean }
+                smoking_status: { type: string, enum: [current, not_current] }
+                exercise: { type: string, enum: [rarely, routine_intense] }
+                sbp_input_type: { type: string, enum: [manual, proxy] }
+                sbp_value: { type: number, minimum: 50, maximum: 300 }
+                sbp_proxy: { type: object }
+                tchol_input_type: { type: string, enum: [manual, proxy] }
+                tchol_value: { type: number, minimum: 1, maximum: 20 }
+                tchol_proxy: { type: object }
+                hdl_input_type: { type: string, enum: [manual, proxy] }
+                hdl_value: { type: number, minimum: 0.1, maximum: 5 }
+                hdl_proxy: { type: object }
+                age_at_diabetes_diagnosis: { type: integer, minimum: 1 }
+                hba1c_input_type: { type: string, enum: [manual, proxy] }
+                hba1c_value: { type: number, minimum: 20, maximum: 200 }
+                hba1c_proxy: { type: object }
+                scr_input_type: { type: string, enum: [manual, proxy] }
+                scr_value: { type: number, minimum: 0.1, maximum: 15 }
+                scr_proxy: { type: object }
+      responses:
+        '201':
+          description: Analisis tersimpan beserta skornya
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assessment_slug: { type: string }
+                  risk_percentage: { type: number }
+                  model_used: { type: string, enum: [SCORE2, SCORE2-OP, SCORE2-Diabetes] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /risk-assessments/{slug}:
+    get:
+      operationId: get_risk_assessments_slug
+      tags: [assessment]
+      summary: Ambil satu analisis beserta status personalisasinya
+      description: |
+        Endpoint ini baru. Ia dibutuhkan karena personalisasi kini berjalan
+        asinkron, sehingga klien perlu tempat mengambil hasilnya.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Analisis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slug: { type: string }
+                  risk_percentage: { type: number }
+                  model_used: { type: string }
+                  personalization_status:
+                    type: string
+                    enum: [not_requested, pending, completed, failed]
+                  report: { type: [object, 'null'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /risk-assessments/{slug}/personalize:
+    patch:
+      operationId: patch_risk_assessments_slug_personalize
+      tags: [assessment]
+      summary: Minta laporan naratif dari model
+      description: |
+        Menjawab 202. Sistem lama menahan koneksi sampai model selesai,
+        dengan batas waktu 300 detik di dalam request HTTP.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Permintaan diterima
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Accepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- dashboard
+  /dashboard:
+    get:
+      operationId: get_dashboard
+      tags: [dashboard]
+      summary: Ringkasan untuk halaman utama
+      responses:
+        '200':
+          description: |
+            Bila pengguna belum pernah menganalisis, data bernilai null dan
+            message berisi sambutan. Perilaku ini dipertahankan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: [object, 'null'] }
+                  message: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ------------------------------------------------------------------ chat
+  /chat/conversations:
+    get:
+      operationId: get_chat_conversations
+      tags: [chat]
+      summary: Daftar percakapan
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Daftar percakapan milik pemanggil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { type: object } }
+                  page: { $ref: '#/components/schemas/Page' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: post_chat_conversations
+      tags: [chat]
+      summary: Mulai percakapan baru
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 2000 }
+      responses:
+        '202':
+          description: Percakapan dibuat; balasan sedang disiapkan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation: { type: object }
+                  job: { $ref: '#/components/schemas/Accepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /chat/conversations/{slug}:
+    get:
+      operationId: get_chat_conversations_slug
+      tags: [chat]
+      summary: Riwayat satu percakapan
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Percakapan beserta pesannya
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: patch_chat_conversations_slug
+      tags: [chat]
+      summary: Ubah judul percakapan
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 100 }
+      responses:
+        '200': { description: Judul diperbarui }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: delete_chat_conversations_slug
+      tags: [chat]
+      summary: Hapus percakapan
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '204': { description: Terhapus }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /chat/conversations/{slug}/messages:
+    post:
+      operationId: post_chat_conversations_slug_messages
+      tags: [chat]
+      summary: Kirim pesan ke percakapan
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 2000 }
+      responses:
+        '202':
+          description: Pesan tersimpan; balasan sedang disiapkan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Accepted' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # -------------------------------------------------------------- coaching
+  /coaching/programs:
+    post:
+      operationId: post_coaching_programs
+      tags: [coaching]
+      summary: Mulai program coaching
+      description: |
+        Membatalkan program aktif sebelumnya. Kurikulum digenerasi model,
+        jadi program lahir dengan curriculum_status pending.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [risk_assessment_slug, difficulty]
+              properties:
+                risk_assessment_slug: { type: string }
+                difficulty: { type: string, enum: [gentle, standard, intense] }
+      responses:
+        '202':
+          description: Program dibuat; kurikulum sedang disusun
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  program: { type: object }
+                  job: { $ref: '#/components/schemas/Accepted' }
+        '409':
+          description: Sudah ada program dari analisis yang sama
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /coaching/programs/{slug}:
+    get:
+      operationId: get_coaching_programs_slug
+      tags: [coaching]
+      summary: Detail program beserta kurikulumnya
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Program
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: delete_coaching_programs_slug
+      tags: [coaching]
+      summary: Hapus program
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '204': { description: Terhapus }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /coaching/programs/{slug}/toggle-program-status:
+    patch:
+      operationId: patch_coaching_programs_slug_toggle_program_status
+      tags: [coaching]
+      summary: Jeda atau lanjutkan program
+      description: Hanya sah dari active ke paused dan sebaliknya.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Status berubah
+          content:
+            application/json:
+              schema: { type: object }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /coaching/programs/{slug}/graduation-report:
+    get:
+      operationId: get_coaching_programs_slug_graduation_report
+      tags: [coaching]
+      summary: Laporan kelulusan
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Laporan
+          content:
+            application/json:
+              schema: { type: object }
+        '404':
+          description: Program belum selesai atau laporan belum ada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /coaching/programs/{slug}/threads:
+    post:
+      operationId: post_coaching_programs_slug_threads
+      tags: [coaching]
+      summary: Mulai diskusi baru di dalam program
+      description: Judul diambil dari 45 karakter pertama pesan bila tidak diberikan.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 2000 }
+                title: { type: string, maxLength: 100 }
+      responses:
+        '202':
+          description: Diskusi dibuat; balasan sedang disiapkan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread: { type: object }
+                  job: { $ref: '#/components/schemas/Accepted' }
+        '403':
+          description: Program tidak aktif
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /coaching/threads/{slug}:
+    get:
+      operationId: get_coaching_threads_slug
+      tags: [coaching]
+      summary: Riwayat satu diskusi
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Diskusi beserta pesannya
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: patch_coaching_threads_slug
+      tags: [coaching]
+      summary: Ubah judul diskusi
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 100 }
+      responses:
+        '200': { description: Judul diperbarui }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: delete_coaching_threads_slug
+      tags: [coaching]
+      summary: Hapus diskusi
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '204': { description: Terhapus }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /coaching/threads/{slug}/messages:
+    post:
+      operationId: post_coaching_threads_slug_messages
+      tags: [coaching]
+      summary: Kirim pesan ke diskusi
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 2000 }
+      responses:
+        '202':
+          description: Pesan tersimpan; balasan sedang disiapkan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Accepted' }
+        '403':
+          description: Program tidak aktif
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /coaching/tasks/{task_id}/toggle-task-status:
+    patch:
+      operationId: patch_coaching_tasks_task_id_toggle_task_status
+      tags: [coaching]
+      summary: Tandai tugas selesai atau belum
+      description: Idempoten; menandai ulang tidak menerbitkan event kedua.
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Status tugas berubah
+          content:
+            application/json:
+              schema: { type: object }
+        '403':
+          description: Program tidak aktif
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------- culinary
+  /culinary/hub-data:
+    get:
+      operationId: get_culinary_hub_data
+      tags: [culinary]
+      summary: Preferensi dan riwayat panduan dalam satu panggilan
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Data halaman hub
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      preferences: { type: object }
+                      history: { type: array, items: { type: object } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /culinary/preferences:
+    patch:
+      operationId: patch_culinary_preferences
+      tags: [culinary]
+      summary: Simpan preferensi kuliner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allergies: { type: string, maxLength: 1000 }
+                budget_level: { type: string, enum: [thrifty, standard, flexible] }
+                cooking_style: { type: string, enum: [quick_every_time, batch_meal_prep] }
+                taste_profiles: { type: array, items: { type: string, maxLength: 50 } }
+                kitchen_equipment: { type: array, items: { type: string, maxLength: 50 } }
+      responses:
+        '200': { description: Preferensi tersimpan }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /culinary/daily-guides:
+    post:
+      operationId: post_culinary_daily_guides
+      tags: [culinary]
+      summary: Minta panduan menu harian
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_type, time_availability, energy_level, cuisine_preference]
+              properties:
+                plan_type: { type: string, enum: [cook_at_home, eat_out] }
+                time_availability: { type: string, enum: [quick, relaxed] }
+                energy_level: { type: string, enum: [energetic, ordinary, tired] }
+                cuisine_preference: { type: string, maxLength: 100 }
+                craving_type: { type: string, enum: [soupy_and_warm, grilled, fresh_and_light, quick_stir_fry] }
+                social_context: { type: string, enum: [alone, with_friends, with_partner, with_family] }
+      responses:
+        '202':
+          description: Panduan sedang disusun
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Accepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
