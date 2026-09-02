@@ -157,3 +157,17 @@ tasks:
       - task: proto:lint
       - task: openapi:lint
       - task: test
+
+  migrate:
+    desc: 'Apply migrations for one service. Usage: task migrate -- identity'
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction up
+
+  migrate:down:
+    desc: 'Roll every migration back for one service. Usage: task migrate:down -- identity'
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction down
