@@ -50,11 +50,18 @@ services:
       # mendukung ZooKeeper sama sekali.
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      # Dua listener yang melayani klien, dan itu perlu.
+      #
+      # Kafka menjawab setiap sambungan dengan alamat yang harus dipakai klien
+      # selanjutnya, bukan alamat yang barusan dipakai untuk menyambung. Dengan
+      # satu listener yang mengumumkan "kafka:9092", klien di host berhasil
+      # menyambung ke port yang dipetakan lalu diarahkan ke nama yang tidak bisa
+      # ia resolusi - dan gagal setelah terlihat berhasil.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,HOST://:19092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://127.0.0.1:19092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -63,7 +70,7 @@ services:
       # Heap ditahan rendah: WSL dibatasi 8GB untuk SELURUH Docker.
       KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
     ports:
-      - "127.0.0.1:19092:9092"
+      - "127.0.0.1:19092:19092"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
