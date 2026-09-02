@@ -107,67 +107,11 @@ tasks:
     cmds: [go test ./... -race -count=1]
 
   test:integration:
-    desc: Run integration tests (requires Docker)
-    cmds: [go test ./... -race -count=1 -tags=integration]
-
-  test:cover:
-    desc: Run tests with a coverage summary
+    desc: Run every test against the running local stack, Postgres included
+    # dotenv memuat berkas ke environment proses, tetapi nilainya TIDAK
+    # tersedia untuk templating {{...}} - karena itu DSN dirakit oleh shell.
+    dotenv: ['.env']
     cmds:
-      - go test ./... -race -count=1 -coverprofile=coverage.out
-      - go tool cover -func=coverage.out
-
-  # ---------------------------------------------------------------- runtime
-  # Dijalankan lewat WSL karena bind mount. Lihat catatan di vars.
-  up:
-    desc: Start core dependencies (postgres, kafka, redis)
-    cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} up -d"
-
-  up:full:
-    desc: Start everything including the observability stack
-    cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
-
-  down:
-    desc: Stop local dependencies
-    cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} down"
-
-  logs:
-    desc: Tail dependency logs
-    cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} logs -f --tail=100"
-
-  ps:
-    desc: List running containers
-    cmds: [docker ps]
-
-  # ---------------------------------------------------------------- security
-  security:
-    desc: Scan the repository for leaked secrets
-    cmds: [gitleaks detect --no-banner --redact]
-
-  # ---------------------------------------------------------------- gate
-  ci:
-    desc: Everything CI runs, in the same order
-    cmds:
-      - task: fmt
-      - task: vet
-      - task: lint
-      - task: proto:lint
-      - task: openapi:lint
-      - task: test
-
-  migrate:
-    desc: 'Apply migrations for one service. Usage: task migrate -- identity'
-    requires:
-      vars: [CLI_ARGS]
-    cmds:
-      - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction up
-
-  migrate:down:
-    desc: 'Roll every migration back for one service. Usage: task migrate:down -- identity'
-    requires:
-      vars: [CLI_ARGS]
-    cmds:
-      - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction down
+      - >-
+        TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
+        go test ./... -count=1
