@@ -1,0 +1,37 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.out
+*.test
+coverage.*
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated protobuf (di-generate saat build, tidak di-commit)
+# Dikecualikan lewat buf.gen.yaml -> gen/
+/gen/
+
+# Tooling lokal
+.task/
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data lokal
+/tmp/
+/data/
