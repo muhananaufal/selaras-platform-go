@@ -26,10 +26,13 @@ tasks:
 
   # ---------------------------------------------------------------- quality
   fmt:
-    desc: Format Go code
+    desc: Format hand-written Go code
+    # gen/ sengaja dilewati. goimports mengelompokkan ulang import di sana,
+    # sementara buf generate mengembalikannya - hasilnya diff yang berayun
+    # bolak-balik setiap kali salah satunya dijalankan.
     cmds:
-      - gofmt -l -w .
-      - goimports -local {{.MODULE}} -w .
+      - gofmt -l -w cmd internal
+      - goimports -local {{.MODULE}} -w cmd internal
 
   lint:
     desc: Run golangci-lint over the whole module
