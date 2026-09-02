@@ -73,9 +73,33 @@ tasks:
     desc: Build every unit into bin/
     cmds: [go build -o bin/ ./cmd/...]
 
+  image:build:
+    desc: Build a unit image (UNIT=edge-gateway task image:build)
+    # Lewat WSL: buildx tidak tersedia pada CLI statis Windows, sementara
+    # BuildKit dibutuhkan untuk cache mount pada layer dependensi.
+    vars:
+      UNIT: '{{.UNIT | default "edge-gateway"}}'
+      VERSION: '{{.VERSION | default "dev"}}'
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker build --build-arg UNIT={{.UNIT}} --build-arg VERSION={{.VERSION}} --build-arg REVISION=$(git rev-parse --short HEAD) -t selaras/{{.UNIT}}:{{.VERSION}} ."
+
+  image:run:
+    desc: Run a built unit image locally
+    vars:
+      UNIT: '{{.UNIT | default "edge-gateway"}}'
+    cmds:
+      - docker run --rm -p 127.0.0.1:18080:8080 selaras/{{.UNIT}}:dev
+
   # ---------------------------------------------------------------- test
   test:
     desc: Run unit tests
+    # Tanpa -race: detektor itu menuntut cgo, dan mesin Windows ini tidak
+    # punya toolchain C. CI berjalan di Linux dan tetap memakai -race, jadi
+    # data race tetap tertangkap sebelum merge.
+    cmds: [go test ./... -count=1]
+
+  test:race:
+    desc: Run unit tests with the race detector (needs cgo)
     cmds: [go test ./... -race -count=1]
 
   test:integration:
