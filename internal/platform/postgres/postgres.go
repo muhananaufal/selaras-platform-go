@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -102,7 +103,12 @@ func InTx(ctx context.Context, db Beginner, fn func(Querier) error) (err error) 
 
 	defer func() {
 		if p := recover(); p != nil {
-			_ = tx.Rollback(ctx)
+			// Panik sudah dalam perjalanan; error rollback tidak boleh
+			// menggantikannya, tetapi juga tidak boleh hilang - transaksi
+			// yang gagal di-rollback memegang kunci sampai koneksinya mati.
+			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+				slog.Error("rolling back after panic", "error", rbErr)
+			}
 			panic(p)
 		}
 		if err != nil {
