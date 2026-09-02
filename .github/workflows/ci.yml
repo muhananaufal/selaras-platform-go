@@ -44,7 +44,10 @@ jobs:
 
       - run: go vet ./...
       - run: go build ./...
-      - run: go test ./... -race -count=1
+      # -p 1: beberapa paket test berbagi satu skema Postgres dan
+      # mengosongkan tabel yang sama, jadi menjalankannya bersamaan membuat
+      # keduanya saling menghapus data.
+      - run: go test ./... -race -count=1 -p 1
 
   lint:
     name: lint

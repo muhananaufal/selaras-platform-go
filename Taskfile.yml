@@ -108,6 +108,10 @@ tasks:
 
   test:integration:
     desc: Run every test against the running local stack, Postgres included
+    # -p 1 menjalankan paket satu per satu. Beberapa paket test berbagi satu
+    # skema Postgres dan mengosongkan tabel yang sama, jadi menjalankannya
+    # bersamaan membuat keduanya saling menghapus data - kegagalan yang
+    # bergantung pada penjadwalan, dan karena itu kadang lolos.
     # dotenv memuat berkas ke environment proses, tetapi nilainya TIDAK
     # tersedia untuk templating {{...}} - karena itu DSN dirakit oleh shell.
     dotenv: ['.env']
@@ -115,4 +119,4 @@ tasks:
       - >-
         TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
-        go test ./... -count=1
+        go test ./... -count=1 -p 1

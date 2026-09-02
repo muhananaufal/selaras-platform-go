@@ -1,0 +1,254 @@
+// Command identity-svc melayani kontrak identity.v1 di atas gRPC.
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/crypto"
+	identitygrpc "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/grpc"
+	identitypg "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/social"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
+	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
+)
+
+// shutdownGrace membatasi berapa lama permintaan yang sedang berjalan boleh
+// diselesaikan setelah sinyal berhenti diterima.
+const shutdownGrace = 15 * time.Second
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(log)
+
+	if err := run(log); err != nil {
+		log.Error("identity-svc stopped", "error", err)
+		os.Exit(1)
+	}
+	log.Info("identity-svc stopped cleanly")
+}
+
+func run(log *slog.Logger) error {
+	// Sinyal ditangkap SEBELUM apa pun dibuka, supaya Ctrl-C selama start-up
+	// yang lambat tetap ditangani alih-alih membunuh proses di tengah
+	// pembukaan koneksi.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := identity.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	pool, err := pg.Open(ctx, pg.DefaultConfig(cfg.DatabaseDSN))
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	redisClient, err := rd.Open(ctx, cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Error("closing redis", "error", err)
+		}
+	}()
+
+	issuer, err := token.NewIssuer(cfg.SigningKey, cfg.TokenIssuer, cfg.AccessTTL)
+	if err != nil {
+		return err
+	}
+
+	revocations, err := revocation.NewRedisStore(
+		redisClient,
+		localGenerationSource{users: identitypg.NewUserRepository(pool)},
+		cfg.RevocationTTL,
+	)
+	if err != nil {
+		return err
+	}
+
+	server, err := buildServer(cfg, pool, issuer, revocations, log)
+	if err != nil {
+		return err
+	}
+
+	probes := httpx.NewHealth()
+
+	grpcServer := grpc.NewServer()
+	identityv1.RegisterIdentityServer(grpcServer, server)
+
+	// Health check dan reflection keduanya dinyalakan. Reflection membuat
+	// grpcurl bisa dipakai tanpa membawa berkas proto - itu satu-satunya cara
+	// memeriksa service ini dari luar tanpa menulis klien lebih dulu.
+	healthServer := health.NewServer()
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
+	reflection.Register(grpcServer)
+	healthServer.SetServingStatus("identity.v1.Identity", healthpb.HealthCheckResponse_SERVING)
+
+	// Siap dinyatakan setelah seluruh dependensi terbuka dan terbukti
+	// terjangkau - kolam Postgres dan Redis keduanya sudah di-ping di atas.
+	// Menyatakannya lebih awal berarti trafik datang sebelum ada yang bisa
+	// melayaninya.
+	probes.SetReady(true)
+
+	listener, err := net.Listen("tcp", cfg.GRPCAddr)
+	if err != nil {
+		return err
+	}
+
+	httpServer := healthEndpoint(cfg.HealthAddr, probes)
+	errs := make(chan error, 2)
+
+	go func() {
+		log.Info("serving grpc", "addr", cfg.GRPCAddr)
+		errs <- grpcServer.Serve(listener)
+	}()
+	go func() {
+		log.Info("serving health probes", "addr", cfg.HealthAddr)
+		if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			errs <- err
+		}
+	}()
+
+	select {
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		log.Info("shutting down")
+	}
+
+	// Kubernetes menandai pod tidak siap lebih dulu, tetapi sinyal bisa
+	// sampai sebelum load balancer sempat berhenti mengirim. Statusnya
+	// diturunkan di sini juga supaya probe yang datang saat itu jujur.
+	healthServer.SetServingStatus("identity.v1.Identity", healthpb.HealthCheckResponse_NOT_SERVING)
+	probes.SetReady(false)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Error("shutting down health endpoint", "error", err)
+	}
+
+	// GracefulStop menunggu permintaan yang sedang berjalan selesai. Ia
+	// dibatasi waktu: satu permintaan yang menggantung tidak boleh menahan
+	// pod selamanya dan menghabiskan grace period milik orkestratornya.
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+	case <-shutdownCtx.Done():
+		log.Warn("grace period expired; dropping in-flight requests")
+		grpcServer.Stop()
+	}
+	return nil
+}
+
+func buildServer(
+	cfg identity.Config,
+	pool *pgxpool.Pool,
+	issuer *token.Issuer,
+	revocations domain.RevocationPublisher,
+	log *slog.Logger,
+) (*identitygrpc.Server, error) {
+	uow := identitypg.NewUnitOfWork(pool)
+	users := identitypg.NewUserRepository(pool)
+	hasher := crypto.NewArgon2idHasher(crypto.DefaultParams())
+	now := time.Now
+
+	// profile-svc dan pengiriman surel belum ada. Keduanya diwakili
+	// implementasi yang menolak dengan alasan yang jelas, bukan yang
+	// berpura-pura berhasil - lihat F1-31 dan F1-33.
+	profiles := unavailableProfiles{}
+	links := unavailableLinks{}
+
+	if cfg.GoogleClientID == "" {
+		log.Warn("social sign-in is not configured; GOOGLE_CLIENT_ID is unset")
+	}
+
+	register, err := app.NewRegister(uow, hasher, issuer, profiles, now)
+	if err != nil {
+		return nil, err
+	}
+	login, err := app.NewLogin(uow, hasher, issuer, profiles, now)
+	if err != nil {
+		return nil, err
+	}
+	logout, err := app.NewLogout(uow, revocations, now)
+	if err != nil {
+		return nil, err
+	}
+	requestReset, err := app.NewRequestPasswordReset(uow, links, now)
+	if err != nil {
+		return nil, err
+	}
+	confirmReset, err := app.NewConfirmPasswordReset(uow, hasher, revocations, now)
+	if err != nil {
+		return nil, err
+	}
+	exchange, err := app.NewExchangeSocialToken(uow, issuer, profiles, revocations, now)
+	if err != nil {
+		return nil, err
+	}
+
+	return identitygrpc.NewServer(identitygrpc.UseCases{
+		Register:              register,
+		Login:                 login,
+		Logout:                logout,
+		RequestReset:          requestReset,
+		ConfirmReset:          confirmReset,
+		ExchangeSocial:        exchange,
+		Users:                 users,
+		Social:                social.Unconfigured{},
+		AccessTokenTTLSeconds: int64(cfg.AccessTTL.Seconds()),
+	})
+}
+
+// healthEndpoint menerima probes dari luar, bukan membuatnya sendiri.
+//
+// Versi pertama membuatnya di dalam dan tidak mengembalikannya, sehingga
+// SetReady tidak mungkin dipanggil dan readyz menjawab 503 selamanya - pod
+// yang tidak pernah menerima trafik. Bentuk itu membuat kekeliruannya tak
+// terhindarkan; bentuk ini membuatnya mustahil.
+func healthEndpoint(addr string, probes *httpx.Health) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", probes.Live)
+	mux.HandleFunc("GET /readyz", probes.Ready)
+
+	return &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+}
