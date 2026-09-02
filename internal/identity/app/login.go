@@ -97,7 +97,8 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 	// dan dengan itu mengakhiri sesi sebelumnya (D1). Membaca lalu menulis di
 	// luar transaksi akan membuat dua login serempak sama-sama membaca
 	// generasi lama dan salah satunya hilang.
-	err := l.uow.WithUsers(ctx, func(users domain.UserRepository) error {
+	err := l.uow.Do(ctx, func(repos Repositories) error {
+		users := repos.Users()
 		found, err := l.authenticate(ctx, users, cmd)
 		if err != nil {
 			return err

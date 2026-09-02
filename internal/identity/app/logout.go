@@ -42,7 +42,8 @@ func NewLogout(
 func (l *Logout) Execute(ctx context.Context, userID domain.UserID) error {
 	var generation int64
 
-	if err := l.uow.WithUsers(ctx, func(users domain.UserRepository) error {
+	if err := l.uow.Do(ctx, func(repos Repositories) error {
+		users := repos.Users()
 		user, err := users.FindByID(ctx, userID)
 		if err != nil {
 			return err

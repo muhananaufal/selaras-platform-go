@@ -88,7 +88,8 @@ func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult
 	// hanya membungkus satu tulisan; nanti baris outbox `user.registered`
 	// menyusul ke dalam satuan yang sama (F3-03), dan use case ini tidak
 	// perlu berubah bentuk untuk menerimanya.
-	if err := r.uow.WithUsers(ctx, func(users domain.UserRepository) error {
+	if err := r.uow.Do(ctx, func(repos Repositories) error {
+		users := repos.Users()
 		return users.Create(ctx, user)
 	}); err != nil {
 		// ErrEmailTaken diteruskan apa adanya: pada registrasi, pemanggil

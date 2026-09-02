@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"testing"
 	"time"
 
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
@@ -96,13 +98,18 @@ func (f *fakeUsers) count() int {
 // transaksi: atomicity yang sesungguhnya dibuktikan oleh test integrasi
 // repository, bukan di sini.
 type fakeUnitOfWork struct {
-	users domain.UserRepository
-	calls int
+	users  domain.UserRepository
+	resets domain.PasswordResetRepository
+	calls  int
 }
 
-func (f *fakeUnitOfWork) WithUsers(ctx context.Context, fn func(domain.UserRepository) error) error {
+func (f *fakeUnitOfWork) Users() domain.UserRepository { return f.users }
+
+func (f *fakeUnitOfWork) PasswordResets() domain.PasswordResetRepository { return f.resets }
+
+func (f *fakeUnitOfWork) Do(_ context.Context, fn func(app.Repositories) error) error {
 	f.calls++
-	return fn(f.users)
+	return fn(f)
 }
 
 type fakeProfiles struct {
@@ -209,5 +216,98 @@ func (f *fakeRevocations) PublishGeneration(_ context.Context, userID domain.Use
 		return f.err
 	}
 	f.published = append(f.published, publishedGeneration{userID: userID, generation: gen})
+	return nil
+}
+
+// fakeResets menegakkan aturan yang sama seperti tabelnya: hash adalah kunci
+// primer, dan penandaan terpakai bertahan.
+type fakeResets struct {
+	mu     sync.Mutex
+	byHash map[domain.ResetTokenHash]domain.PasswordReset
+}
+
+func newFakeResets() *fakeResets {
+	return &fakeResets{byHash: map[domain.ResetTokenHash]domain.PasswordReset{}}
+}
+
+func (f *fakeResets) Create(_ context.Context, r domain.PasswordReset) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.byHash[r.TokenHash] = r
+	return nil
+}
+
+func (f *fakeResets) FindByTokenHash(_ context.Context, h domain.ResetTokenHash) (domain.PasswordReset, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.byHash[h]
+	if !ok {
+		return domain.PasswordReset{}, domain.ErrResetTokenInvalid
+	}
+	return r, nil
+}
+
+func (f *fakeResets) MarkUsed(_ context.Context, h domain.ResetTokenHash, at time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.byHash[h]
+	if !ok {
+		return domain.ErrResetTokenInvalid
+	}
+	used := at
+	r.UsedAt = &used
+	f.byHash[h] = r
+	return nil
+}
+
+func (f *fakeResets) InvalidateAllFor(_ context.Context, userID domain.UserID, at time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for h, r := range f.byHash {
+		if r.UserID == userID && r.UsedAt == nil {
+			used := at
+			r.UsedAt = &used
+			f.byHash[h] = r
+		}
+	}
+	return nil
+}
+
+func (f *fakeResets) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.byHash)
+}
+
+// only mengembalikan satu-satunya permintaan yang tersimpan, dan gagal bila
+// jumlahnya bukan satu.
+func (f *fakeResets) only(t *testing.T) domain.PasswordReset {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.byHash) != 1 {
+		t.Fatalf("%d reset requests stored; want exactly 1", len(f.byHash))
+	}
+	for _, r := range f.byHash {
+		return r
+	}
+	return domain.PasswordReset{}
+}
+
+type sentLink struct {
+	email string
+	token string
+}
+
+type fakeResetLinks struct {
+	sent []sentLink
+	err  error
+}
+
+func (f *fakeResetLinks) SendResetLink(_ context.Context, email domain.Email, token domain.ResetToken) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.sent = append(f.sent, sentLink{email: email.String(), token: token.Expose()})
 	return nil
 }

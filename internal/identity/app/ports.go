@@ -12,6 +12,19 @@ import (
 // ErrPasswordMismatch terjadi saat konfirmasi tidak sama dengan kata sandi.
 var ErrPasswordMismatch = errors.New("password confirmation does not match")
 
+// Repositories adalah kumpulan penyimpanan yang dilihat sebuah use case di
+// dalam satu satuan kerja.
+//
+// Ia dikumpulkan menjadi satu antarmuka, bukan diserahkan satu per satu,
+// karena alur seperti reset kata sandi menulis ke dua tempat sekaligus:
+// kata sandi pengguna, dan penandaan token yang baru saja dipakai. Bila
+// keduanya berada di transaksi yang berbeda, ada celah di mana kata sandi
+// sudah berganti sementara tokennya masih bisa dipakai lagi.
+type Repositories interface {
+	Users() domain.UserRepository
+	PasswordResets() domain.PasswordResetRepository
+}
+
 // UnitOfWork menjalankan beberapa tulisan sebagai satu satuan.
 //
 // Ia ada di sini, bukan di adapter, supaya use case bisa menuntut atomicity
@@ -19,7 +32,7 @@ var ErrPasswordMismatch = errors.New("password confirmation does not match")
 // masuk (F3-03), baris event ditulis lewat satuan yang sama - dan use
 // case-nya tidak perlu berubah.
 type UnitOfWork interface {
-	WithUsers(ctx context.Context, fn func(domain.UserRepository) error) error
+	Do(ctx context.Context, fn func(Repositories) error) error
 }
 
 // ProfileCreator meminta profile-svc membuat profil kosong bagi pengguna baru.
