@@ -73,6 +73,20 @@ jobs:
           # datang sebagai versi paket baru, bukan suntingan di tempat.
           breaking_against: ${{ github.event_name == 'pull_request' && format('{0}#branch={1}', github.repositoryUrl, github.base_ref) || '' }}
 
+  openapi:
+    name: rest contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install vacuum
+        run: go install github.com/daveshanley/vacuum@v0.30.1
+      - name: Lint the public REST contract
+        run: vacuum lint -d api/openapi/edge-v1.yaml -r .vacuum-ruleset.yaml --fail-severity error
+
   security:
     name: secret scan
     runs-on: ubuntu-latest

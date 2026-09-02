@@ -62,11 +62,12 @@ tasks:
     desc: Lint then generate protobuf
     cmds:
       - task: proto:lint
+      - task: openapi:lint
       - task: proto:gen
 
   openapi:lint:
     desc: Lint the public REST contract
-    cmds: [vacuum lint -d api/openapi/edge-v1.yaml]
+    cmds: [vacuum lint -d api/openapi/edge-v1.yaml -r .vacuum-ruleset.yaml --fail-severity error]
 
   # ---------------------------------------------------------------- build
   build:
@@ -151,4 +152,5 @@ tasks:
       - task: vet
       - task: lint
       - task: proto:lint
+      - task: openapi:lint
       - task: test

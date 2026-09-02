@@ -1,0 +1,13 @@
+# Ruleset untuk kontrak REST publik.
+extends: [[spectral:oas, recommended]]
+
+rules:
+  # DIMATIKAN. Kontrak ini memakai snake_case karena itulah bentuk yang
+  # sudah dipakai frontend Laravel. Mengubahnya menjadi camelCase adalah
+  # breaking change bagi setiap klien - persis yang migrasi ini hindari.
+  camel-case-properties: false
+
+  # Diturunkan ke info. Contoh berguna untuk dokumentasi, tetapi
+  # ketiadaannya bukan cacat kontrak, dan menjadikannya blocker mendorong
+  # orang menempelkan contoh asal-asalan.
+  oas3-missing-example: info
