@@ -43,6 +43,12 @@ func Topics() []Topic {
 				"diselesaikan orang, bukan pada kecepatan mesin - dan itu angka yang kecil.",
 		},
 		{
+			Name:       "coaching.program.updated",
+			Partitions: 3,
+			Why: "Perubahan program coaching. Selajur dengan profile.updated - dibaca " +
+				"pembaca yang sama dan lajunya ditentukan orang, bukan mesin.",
+		},
+		{
 			Name:       "llm.jobs",
 			Partitions: 12,
 			Why: "Satu-satunya topic yang butuh paralelisme sungguhan. Pekerjaannya menunggu " +
