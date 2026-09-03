@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -192,12 +193,11 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 	req, err := requestOf(&env)
 	if err != nil {
 		// Pesan yang jenisnya tidak dikenali tidak akan pernah bisa dikerjakan.
-		// Ia dilewati dan dicatat, bukan diulang selamanya - dan yang
-		// menunggunya akan menunggu selamanya, yang justru sebabnya ini harus
-		// terlihat di log.
+		// Ia dilewati, bukan diulang selamanya - tetapi yang menunggunya DIBERI
+		// TAHU, bukan dibiarkan menunggu tanpa akhir.
 		c.log.ErrorContext(ctx, "a message carried no usable LLM request",
 			"event_id", env.GetEventId(), "error", err)
-		return nil
+		return c.announceUnusable(ctx, &env, rec, err)
 	}
 
 	// Tahap satu: klaim. Kalau kuncinya sudah pernah dipakai, pekerjaannya
@@ -513,4 +513,62 @@ func idempotencyKeyOf(env *eventsv1.Envelope) string {
 		return key
 	}
 	return env.GetEventId()
+}
+
+// announceUnusable memberi tahu yang menunggu bahwa hasilnya tidak akan datang.
+//
+// Pesan yang jenisnya tidak dikenali tidak akan pernah bisa dikerjakan, dan
+// melewatinya saja membuat agregat yang menunggunya menunggu SELAMANYA - tanpa
+// galat, tanpa status yang berubah, tanpa apa pun selain satu baris log yang
+// harus kebetulan dibaca seseorang.
+//
+// Itu bukan kemungkinan teoretis: ia terjadi saat nutrition-svc dinyalakan
+// dengan llm-worker yang belum dibangun ulang. Worker lama tidak mengenal
+// MealGuideRequested, melewatinya, dan panduan itu tetap pending selamanya.
+// Kesenjangan versi seperti itu terjadi di setiap penggelaran bertahap.
+//
+// Yang diterbitkan adalah LlmJobFailed ke DLQ, dengan agregat diambil dari
+// header dan kunci partisi pesannya - persis yang sudah dibaca setiap konsumen
+// untuk mengenali kegagalan. Tanpa keduanya, tidak ada yang bisa diberi tahu,
+// dan pesannya hanya dicatat.
+func (c *Consumer) announceUnusable(
+	ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record, cause error,
+) error {
+	// Pesan yang tidak membawa agregat TIDAK diperiksa lagi di sini.
+	//
+	// outbox.Write sudah menolaknya dengan syarat yang sama persis, dan
+	// menyalinnya ke sini hanya menghasilkan cabang kedua yang tidak bisa
+	// dibedakan test mana pun - saya menulisnya, lalu mutasi membuktikan
+	// menghapusnya tidak mengubah apa-apa. Satu tempat penegakan, bukan dua
+	// yang akan menyimpang.
+	//
+	// Yang terjadi tanpa agregat: Write mengembalikan galat, galatnya dicatat
+	// beserta offset dan event_id, dan offset tetap MAJU - worker ini memang
+	// mengomit setelah setiap batch, karena percobaan ulangnya di dalam proses
+	// (F3-13), bukan lewat pengiriman ulang. Antreannya tidak tersumbat.
+	aggregateType := headerOf(rec, "aggregate_type")
+	aggregateID := string(rec.Key)
+
+	return pg.InTx(ctx, c.pool, func(q pg.Querier) error {
+		return outbox.NewWriter(q).Write(ctx, aggregateType, aggregateID, &eventsv1.Envelope{
+			EventId:       uuid.NewString(),
+			OccurredAt:    timestamppb.Now(),
+			SchemaVersion: 1,
+			Payload: &eventsv1.Envelope_LlmJobFailed{
+				LlmJobFailed: &eventsv1.LlmJobFailed{
+					Reason: truncate("this worker does not understand the request: "+cause.Error(), 500),
+				},
+			},
+		})
+	})
+}
+
+// headerOf membaca satu header pesan.
+func headerOf(rec *kgo.Record, key string) string {
+	for _, h := range rec.Headers {
+		if h.Key == key {
+			return string(h.Value)
+		}
+	}
+	return ""
 }
