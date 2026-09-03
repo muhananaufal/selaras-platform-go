@@ -146,3 +146,27 @@ func Sweep(ctx context.Context, db pg.Querier, olderThan time.Duration) (int64, 
 	}
 	return tag.RowsAffected(), nil
 }
+
+// Release menghapus klaim sebuah kunci.
+//
+// Ia SATU-SATUNYA cara pekerjaan yang gagal bisa dicoba lagi. Tanpa ini, klaim
+// yang sudah diambil menutup kuncinya selamanya: pengiriman berikutnya
+// dilewati sebagai duplikat, dan pekerjaan yang gagal sekali tidak akan pernah
+// dikerjakan lagi oleh siapa pun.
+//
+// Ia berbahaya kalau dipanggil di tempat yang salah, dan bahayanya persis
+// kebalikan dari gunanya: melepas klaim pekerjaan yang BERHASIL berarti
+// pekerjaan itu akan dikerjakan dua kali. Ia hanya boleh dipanggil pada jalur
+// kegagalan yang memang akan diulang, di dalam transaksi yang sama dengan
+// pencatatan kegagalannya.
+func (g *Guard) Release(ctx context.Context, key string) error {
+	if key == "" {
+		return errors.New("empty idempotency key")
+	}
+
+	const q = `DELETE FROM processed_messages WHERE key = $1`
+	if _, err := g.db.Exec(ctx, q, g.scopedKey(key)); err != nil {
+		return fmt.Errorf("releasing the idempotency key: %w", err)
+	}
+	return nil
+}
