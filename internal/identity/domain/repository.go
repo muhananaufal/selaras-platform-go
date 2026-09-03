@@ -45,4 +45,12 @@ type UserRepository interface {
 	FindByID(ctx context.Context, id UserID) (*User, error)
 	FindByEmail(ctx context.Context, email Email) (*User, error)
 	FindByGoogleID(ctx context.Context, googleID string) (*User, error)
+
+	// Delete menghapus akun secara PERMANEN.
+	//
+	// Dipanggil hanya di akhir saga penghapusan, setelah keenam unit
+	// mengonfirmasi datanya benar-benar hilang. Ia bukan penghapusan lunak:
+	// baris yang tertinggal setelah seseorang meminta akunnya dihapus adalah
+	// data pribadi yang tidak seorang pun tahu masih ada.
+	Delete(ctx context.Context, id UserID) error
 }

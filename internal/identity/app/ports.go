@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 
+	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
@@ -23,6 +24,20 @@ var ErrPasswordMismatch = errors.New("password confirmation does not match")
 type Repositories interface {
 	Users() domain.UserRepository
 	PasswordResets() domain.PasswordResetRepository
+
+	// Sagas dan Events dipakai penghapusan akun.
+	//
+	// Keduanya berada di satuan kerja yang SAMA dengan penulisan sagalnya:
+	// saga yang tercatat tanpa eventnya menggantung selamanya menunggu enam
+	// unit yang tidak pernah diberi tahu, dan event tanpa sagalnya menghapus
+	// data seseorang tanpa satu pun catatan bahwa itu diminta.
+	Sagas() SagaRepository
+	Events() EventWriter
+}
+
+// EventWriter menulis event ke outbox.
+type EventWriter interface {
+	Write(ctx context.Context, aggregateType, aggregateID string, envelope *eventsv1.Envelope) error
 }
 
 // UnitOfWork menjalankan beberapa tulisan sebagai satu satuan.

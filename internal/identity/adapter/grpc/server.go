@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,7 +37,11 @@ type UseCases struct {
 	RequestReset   *app.RequestPasswordReset
 	ConfirmReset   *app.ConfirmPasswordReset
 	ExchangeSocial *app.ExchangeSocialToken
-	Users          domain.UserRepository
+
+	// Deletion boleh nil: lingkungan tanpa outbox tetap melayani autentikasi.
+	// Penghapusan akun menjawab Unimplemented alih-alih menghapus sebagian.
+	Deletion *app.DeleteAccount
+	Users    domain.UserRepository
 
 	// Tokens dipakai Logout untuk memverifikasi tanda tangan token yang
 	// dikirim balik. Ia BUKAN untuk memverifikasi setiap permintaan - itu
@@ -226,12 +231,22 @@ func (s *Server) DeleteAccount(
 	ctx context.Context,
 	req *identityv1.DeleteAccountRequest,
 ) (*identityv1.DeleteAccountResponse, error) {
-	// Penghapusan akun adalah saga lintas enam unit, dan itu fase F8. Ia
-	// menjawab Unimplemented alih-alih menghapus sebagian: penghapusan yang
-	// berhenti di tengah meninggalkan data di unit yang tidak dituju siapa
-	// pun lagi, dan tidak ada yang tahu ia ada di sana.
-	return nil, status.Error(codes.Unimplemented,
-		"account deletion is the cross-service saga in F8-01")
+	if s.uc.Deletion == nil {
+		// Tanpa outbox, saga tidak bisa diumumkan. Ia menjawab Unimplemented
+		// alih-alih menghapus sebagian: penghapusan yang berhenti di tengah
+		// meninggalkan data di unit yang tidak dituju siapa pun lagi.
+		return nil, status.Error(codes.Unimplemented,
+			"account deletion needs the outbox, which is not configured here")
+	}
+
+	saga, err := s.uc.Deletion.Execute(ctx, app.DeleteAccountCommand{
+		UserID:   req.GetUserId(),
+		Password: req.GetPassword(),
+	})
+	if err != nil {
+		return nil, deletionStatus(ctx, err)
+	}
+	return &identityv1.DeleteAccountResponse{SagaId: saga.ID.String()}, nil
 }
 
 // GetTokenGeneration menjawab generasi token yang sedang berlaku.
@@ -302,5 +317,37 @@ func roleOf(r domain.Role) identityv1.Role {
 		return identityv1.Role_ROLE_ADMIN
 	default:
 		return identityv1.Role_ROLE_UNSPECIFIED
+	}
+}
+
+// deletionStatus menerjemahkan galat penghapusan akun.
+//
+// Kata sandi yang keliru menjawab PermissionDenied, bukan Unauthenticated:
+// pemanggilnya sudah terautentikasi, dan Unauthenticated akan membuat gateway
+// serta klien mengira tokennya kedaluwarsa lalu memintanya masuk lagi - untuk
+// kesalahan yang sebenarnya hanya salah ketik.
+func deletionStatus(ctx context.Context, err error) error {
+	switch {
+	case errors.Is(err, app.ErrWrongPassword):
+		return status.Error(codes.PermissionDenied, "the password does not match")
+
+	case errors.Is(err, app.ErrDeletionInProgress):
+		return status.Error(codes.FailedPrecondition,
+			"this account is already being deleted")
+
+	case errors.Is(err, domain.ErrUserNotFound):
+		return status.Error(codes.NotFound, "no such account")
+
+	case errors.Is(err, domain.ErrInvalidUserID):
+		return status.Error(codes.InvalidArgument, err.Error())
+
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "the caller went away")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "the deadline passed")
+
+	default:
+		slog.ErrorContext(ctx, "unhandled error", "operation", "DeleteAccount", "error", err)
+		return status.Error(codes.Internal, "internal error")
 	}
 }

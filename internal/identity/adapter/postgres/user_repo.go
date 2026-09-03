@@ -204,3 +204,18 @@ func translate(err error) error {
 		return fmt.Errorf("writing user: %w", err)
 	}
 }
+
+// Delete menghapus akun secara permanen.
+//
+// DELETE, bukan penandaan terhapus lunak. Kolom deleted_at yang dipakai di
+// tempat lain melayani audit, dan audit bukan alasan yang cukup untuk menahan
+// alamat surel serta hash kata sandi seseorang yang meminta akunnya dihapus.
+//
+// Baris yang tidak ada BUKAN galat: saga bisa mengulangi langkah terakhirnya
+// setelah proses mati, dan yang kedua menemukan akun itu memang sudah hilang.
+func (r *UserRepository) Delete(ctx context.Context, id domain.UserID) error {
+	if _, err := r.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id.String()); err != nil {
+		return fmt.Errorf("deleting the account: %w", err)
+	}
+	return nil
+}
