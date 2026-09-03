@@ -160,9 +160,28 @@ func (h *Nutrition) GenerateDailyGuide(c *gin.Context) {
 		return
 	}
 
-	// Nama yang tidak dikenali menjadi UNSPECIFIED, dan nutrition-svc
-	// menolaknya. Menolaknya di sini pula akan menggandakan aturan yang sama di
-	// dua tempat, dan dua salinan aturan adalah dua aturan yang akan menyimpang.
+	// Ketiga bidang WAJIB diteruskan apa adanya: nama yang tidak dikenali
+	// menjadi UNSPECIFIED, dan nutrition-svc menolaknya. Menolaknya di sini pula
+	// akan menggandakan aturan yang sama di dua tempat.
+	//
+	// Dua bidang OPSIONAL tidak bisa begitu: bagi keduanya UNSPECIFIED adalah
+	// nilai yang SAH, sehingga nama yang salah ketik akan lolos sebagai "tidak
+	// ada" - dan panduan mengabaikan hal yang justru diminta pengguna, tanpa satu
+	// pun tanda. Keduanya diperiksa di sini, satu-satunya tempat yang masih bisa
+	// membedakan "tidak dikirim" dari "dikirim salah".
+	craving, ok := cravingTypeFromName(body.CravingType)
+	if !ok {
+		httperr.Write(c, http.StatusUnprocessableEntity, httperr.CodeInvalidArgument,
+			"craving_type is not one of soupy_and_warm, grilled, fresh_and_light, quick_stir_fry.")
+		return
+	}
+	social, ok := socialContextFromName(body.SocialContext)
+	if !ok {
+		httperr.Write(c, http.StatusUnprocessableEntity, httperr.CodeInvalidArgument,
+			"social_context is not one of alone, with_friends, with_partner, with_family.")
+		return
+	}
+
 	req := &nutritionv1.GenerateDailyGuideRequest{
 		UserId: claims.UserID.String(),
 		Input: &nutritionv1.DailyGuideInput{
@@ -170,8 +189,8 @@ func (h *Nutrition) GenerateDailyGuide(c *gin.Context) {
 			TimeAvailability:  timeAvailabilityFromName(body.TimeAvailability),
 			EnergyLevel:       energyLevelFromName(body.EnergyLevel),
 			CuisinePreference: body.CuisinePreference,
-			CravingType:       cravingTypeFromName(body.CravingType),
-			SocialContext:     socialContextFromName(body.SocialContext),
+			CravingType:       craving,
+			SocialContext:     social,
 		},
 	}
 	if key := c.GetHeader("Idempotency-Key"); key != "" {
@@ -332,33 +351,45 @@ func energyLevelFromName(v string) nutritionv1.EnergyLevel {
 	}
 }
 
-func cravingTypeFromName(v string) nutritionv1.CravingType {
+// cravingTypeFromName menerjemahkan keinginan kuliner.
+//
+// Kosong SAH - tidak setiap orang sedang menginginkan sesuatu - tetapi nama
+// yang TIDAK dikenali ditolak, bukan diam-diam dijadikan "tidak ada". Nilai
+// yang salah ketik akan membuat panduan mengabaikan hal yang justru diminta
+// pengguna, tanpa satu pun tanda bahwa permintaannya hilang. Sistem lama pun
+// menolaknya (Rule::in), dan itu perilaku yang benar.
+func cravingTypeFromName(v string) (nutritionv1.CravingType, bool) {
 	switch v {
+	case "":
+		return nutritionv1.CravingType_CRAVING_TYPE_UNSPECIFIED, true
 	case "soupy_and_warm":
-		return nutritionv1.CravingType_CRAVING_TYPE_SOUPY_AND_WARM
+		return nutritionv1.CravingType_CRAVING_TYPE_SOUPY_AND_WARM, true
 	case "grilled":
-		return nutritionv1.CravingType_CRAVING_TYPE_GRILLED
+		return nutritionv1.CravingType_CRAVING_TYPE_GRILLED, true
 	case "fresh_and_light":
-		return nutritionv1.CravingType_CRAVING_TYPE_FRESH_AND_LIGHT
+		return nutritionv1.CravingType_CRAVING_TYPE_FRESH_AND_LIGHT, true
 	case "quick_stir_fry":
-		return nutritionv1.CravingType_CRAVING_TYPE_QUICK_STIR_FRY
+		return nutritionv1.CravingType_CRAVING_TYPE_QUICK_STIR_FRY, true
 	default:
-		return nutritionv1.CravingType_CRAVING_TYPE_UNSPECIFIED
+		return nutritionv1.CravingType_CRAVING_TYPE_UNSPECIFIED, false
 	}
 }
 
-func socialContextFromName(v string) nutritionv1.SocialContext {
+// socialContextFromName mengikuti aturan yang sama dengan cravingTypeFromName.
+func socialContextFromName(v string) (nutritionv1.SocialContext, bool) {
 	switch v {
+	case "":
+		return nutritionv1.SocialContext_SOCIAL_CONTEXT_UNSPECIFIED, true
 	case "alone":
-		return nutritionv1.SocialContext_SOCIAL_CONTEXT_ALONE
+		return nutritionv1.SocialContext_SOCIAL_CONTEXT_ALONE, true
 	case "with_friends":
-		return nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_FRIENDS
+		return nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_FRIENDS, true
 	case "with_partner":
-		return nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_PARTNER
+		return nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_PARTNER, true
 	case "with_family":
-		return nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_FAMILY
+		return nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_FAMILY, true
 	default:
-		return nutritionv1.SocialContext_SOCIAL_CONTEXT_UNSPECIFIED
+		return nutritionv1.SocialContext_SOCIAL_CONTEXT_UNSPECIFIED, false
 	}
 }
 
