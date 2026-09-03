@@ -136,11 +136,17 @@ jobs:
         env:
           SVC_IDENTITY_PASSWORD: ci-not-a-secret
           SVC_PROFILE_PASSWORD: ci-not-a-secret
+          SVC_ASSESSMENT_PASSWORD: ci-not-a-secret
+          SVC_LLM_PASSWORD: ci-not-a-secret
         run: |
           go run ./cmd/migrate -service identity -direction up \
             -dsn "pgx5://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
           go run ./cmd/migrate -service profile -direction up \
             -dsn "pgx5://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
+          go run ./cmd/migrate -service assessment -direction up \
+            -dsn "pgx5://svc_assessment:$SVC_ASSESSMENT_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=assessment"
+          go run ./cmd/migrate -service llm -direction up \
+            -dsn "pgx5://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=llm"
 
       # Topic dibuat lewat alat yang sama dengan yang dipakai di lokal, bukan
       # lewat skrip terpisah. Dua salinan akan menyimpang diam-diam.
@@ -157,6 +163,8 @@ jobs:
         env:
           SVC_IDENTITY_PASSWORD: ci-not-a-secret
           SVC_PROFILE_PASSWORD: ci-not-a-secret
+          SVC_ASSESSMENT_PASSWORD: ci-not-a-secret
+          SVC_LLM_PASSWORD: ci-not-a-secret
           TEST_KAFKA_BROKERS: 127.0.0.1:9092
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
           TEST_SMTP_HOST: 127.0.0.1
@@ -165,6 +173,8 @@ jobs:
         run: |
           export TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
           export TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
+          export TEST_DSN_ASSESSMENT="postgres://svc_assessment:$SVC_ASSESSMENT_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=assessment"
+          export TEST_DSN_LLM="postgres://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=llm"
           go test ./... -race -count=1 -p 1
 
   lint:
