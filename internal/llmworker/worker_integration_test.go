@@ -47,6 +47,7 @@ type harness struct {
 	producer  *kgo.Client
 	topic     string
 	group     string
+	brokers   string
 	ctx       context.Context
 }
 
@@ -108,7 +109,7 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 
 	h := &harness{
 		pool: pool, provider: provider, consumer: consumer, client: consumerClient,
-		producer: producer, topic: topic, group: group, ctx: ctx,
+		producer: producer, topic: topic, group: group, brokers: addr, ctx: ctx,
 	}
 	t.Cleanup(h.leaveGroup)
 	return h
@@ -215,6 +216,40 @@ func (h *harness) statusOf(t *testing.T, aggregateID string) string {
 		return ""
 	}
 	return status
+}
+
+// restart mengganti klien konsumen dengan yang baru di group yang sama.
+//
+// Ia meniru proses yang mati lalu dinyalakan lagi: anggota lama keluar dari
+// group, anggota baru masuk, dan pesan yang offsetnya belum dikomit dikirimkan
+// lagi kepadanya.
+func (h *harness) restart(t *testing.T) {
+	t.Helper()
+
+	h.leaveGroup()
+
+	client, err := kafka.NewConsumer(
+		kafka.Config{Brokers: h.brokers, ClientID: "worker-test-restarted"},
+		h.group, h.topic)
+	if err != nil {
+		t.Fatalf("restarting the consumer: %v", err)
+	}
+
+	prompts, err := prompt.Load()
+	if err != nil {
+		t.Fatalf("prompt.Load: %v", err)
+	}
+
+	consumer, err := llmworker.NewConsumer(client, h.pool, h.provider, prompts,
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+
+	h.client = client
+	h.consumer = consumer
+	h.closeOnce = sync.Once{}
+	t.Cleanup(h.leaveGroup)
 }
 
 // TestAJobIsDoneAndItsResultStored adalah jalur normal, ujung ke ujung lewat
@@ -434,4 +469,137 @@ func TestTheOffsetIsCommittedSoWorkIsNotRepeated(t *testing.T) {
 		t.Fatalf("a second consumer in the same group received %d messages again; "+
 			"the offset was never committed and every restart redoes paid work", replayed)
 	}
+}
+
+// TestAFailingJobIsRetriedAndThenDeadLettered adalah gate F3-13.
+//
+// Sebelum perbaikan ini, pekerjaan yang gagal SEKALI berhenti selamanya: klaim
+// idempotensinya sudah terpakai, offset-nya sudah dikomit, dan tidak ada yang
+// akan mengirim pesannya lagi. Batas tiga percobaan tidak pernah tercapai, dan
+// antrean surat mati tidak pernah menerima apa pun.
+//
+// Yang diperiksa di sini adalah tiga hal berurutan: pekerjaannya benar-benar
+// dicoba tiga kali, penghitungnya menumpuk di BARIS YANG SAMA, dan pada
+// percobaan ketiga ia menjadi dead beserta event kegagalannya.
+func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
+	h := newHarness(t)
+	h.provider.Err = llm.ErrRateLimited
+
+	assessmentID := uuid.NewString()
+	h.send(t, assessmentID, "key-"+assessmentID)
+
+	if err := h.runUntil(t, 90*time.Second, func() bool {
+		return h.statusOf(t, assessmentID) == llmworker.StatusDead
+	}); err != nil {
+		t.Fatalf("Run returned %v", err)
+	}
+
+	// Satu baris, bukan tiga: percobaan ulang memakai kembali pekerjaan yang
+	// sama, sehingga penghitungnya bermakna.
+	if got := h.countJobs(t, assessmentID); got != 1 {
+		t.Fatalf("three attempts produced %d job rows, want 1", got)
+	}
+
+	var attempts int
+	var lastError string
+	if err := h.pool.QueryRow(h.ctx,
+		`SELECT attempts, coalesce(last_error,'') FROM llm_jobs WHERE aggregate_id = $1`,
+		assessmentID).Scan(&attempts, &lastError); err != nil {
+		t.Fatalf("reading the job: %v", err)
+	}
+	if attempts != llmworker.MaxAttempts {
+		t.Fatalf("the job records %d attempts, want %d", attempts, llmworker.MaxAttempts)
+	}
+	if lastError == "" {
+		t.Fatal("the job gave up without recording why")
+	}
+
+	// Dan penyedia benar-benar dipanggil tiga kali - bukan sekadar penghitung
+	// yang naik tanpa pekerjaan yang terjadi.
+	if got := h.provider.CallCount(); got != llmworker.MaxAttempts {
+		t.Fatalf("the provider was called %d times, want %d", got, llmworker.MaxAttempts)
+	}
+
+	// Event kegagalan terbit SEKALI, dan hanya setelah menyerah.
+	var events int
+	var eventType string
+	if err := h.pool.QueryRow(h.ctx,
+		`SELECT count(*), coalesce(max(event_type),'') FROM outbox WHERE aggregate_id = $1`,
+		assessmentID).Scan(&events, &eventType); err != nil {
+		t.Fatalf("counting events: %v", err)
+	}
+	if events != 1 {
+		t.Fatalf("%d failure events were published, want exactly 1", events)
+	}
+	if eventType != outbox.EventLLMJobFailed {
+		t.Fatalf("the outbox holds %q, want llm.job.failed", eventType)
+	}
+}
+
+// TestAnAbandonedJobResumesAfterRestart menutup jalur yang paling sulit benar.
+//
+// Worker dimatikan di tengah rangkaian percobaan. Yang harus terjadi setelah
+// dinyalakan lagi ada tiga, dan ketiganya mudah salah:
+//
+//  1. Pesannya datang lagi - offsetnya memang belum dikomit.
+//  2. Ia TIDAK dilewati sebagai duplikat - klaimnya dilepas saat menyerah.
+//  3. Penghitung percobaannya MENUMPUK di baris yang sama, bukan mulai dari nol
+//     di baris baru. Kalau tidak, batas tiga kali tidak akan pernah tercapai
+//     dan pekerjaan yang selalu gagal akan dicoba selamanya.
+func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
+	h := newHarness(t)
+	h.provider.Err = llm.ErrRateLimited
+
+	assessmentID := uuid.NewString()
+	h.send(t, assessmentID, "key-"+assessmentID)
+
+	// Dihentikan segera setelah kegagalan pertama tercatat.
+	if err := h.runUntil(t, 60*time.Second, func() bool {
+		return h.attemptsOf(t, assessmentID) >= 1
+	}); err != nil {
+		t.Fatalf("Run returned %v", err)
+	}
+
+	if got := h.attemptsOf(t, assessmentID); got >= llmworker.MaxAttempts {
+		t.Skipf("the worker reached %d attempts before it could be stopped; the race is too tight to test here", got)
+	}
+
+	// Klaimnya harus sudah dilepas, kalau tidak pengiriman berikutnya akan
+	// dilewati sebagai duplikat dan pekerjaannya berhenti selamanya.
+	var claims int
+	if err := h.pool.QueryRow(h.ctx,
+		`SELECT count(*) FROM processed_messages`).Scan(&claims); err != nil {
+		t.Fatalf("counting claims: %v", err)
+	}
+	if claims != 0 {
+		t.Fatalf("%d claims survived the shutdown; the job can never be retried", claims)
+	}
+
+	// Dinyalakan lagi, dan kali ini dibiarkan sampai menyerah.
+	h.restart(t)
+	if err := h.runUntil(t, 90*time.Second, func() bool {
+		return h.statusOf(t, assessmentID) == llmworker.StatusDead
+	}); err != nil {
+		t.Fatalf("the restarted worker returned %v", err)
+	}
+
+	if got := h.countJobs(t, assessmentID); got != 1 {
+		t.Fatalf("the restart produced %d job rows, want 1 - the attempt counter is meaningless across rows", got)
+	}
+	if got := h.attemptsOf(t, assessmentID); got != llmworker.MaxAttempts {
+		t.Fatalf("the job records %d attempts, want %d", got, llmworker.MaxAttempts)
+	}
+}
+
+// attemptsOf membaca penghitung percobaan, atau -1 bila pekerjaannya belum ada.
+func (h *harness) attemptsOf(t *testing.T, aggregateID string) int {
+	t.Helper()
+
+	var attempts int
+	err := h.pool.QueryRow(h.ctx,
+		`SELECT attempts FROM llm_jobs WHERE aggregate_id = $1`, aggregateID).Scan(&attempts)
+	if err != nil {
+		return -1
+	}
+	return attempts
 }

@@ -193,14 +193,88 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 		return nil
 	}
 
-	// Tahap dua: kerjakan, di luar transaksi.
-	answer, genErr := c.generate(ctx, req)
+	// Tahap dua: kerjakan, dengan percobaan ulang DI DALAM PROSES.
+	//
+	// Pilihan ini disengaja, dan alternatifnya sudah dicoba lalu dibuang:
+	// membiarkan offset tidak terkomit TIDAK membuat broker mengirim pesannya
+	// lagi ke konsumen yang sama - ia hanya berpengaruh setelah rebalance atau
+	// restart. Pekerjaan yang gagal akan berhenti selamanya di status failed,
+	// batas tiga percobaan tidak pernah tercapai, dan antrean surat mati tidak
+	// pernah menerima apa pun.
+	//
+	// Memundurkan offset lewat SetOffsets bisa dilakukan, tetapi franz-go
+	// sendiri memperingatkan pemakaiannya di dalam loop PollFetches sebagai
+	// "prone to odd interactions" [franz-go@v1.21.6/pkg/kgo/consumer.go:763-778].
+	//
+	// Jadi pesannya ditahan di sini sampai selesai atau menyerah. Partisinya
+	// ikut tertahan selama itu - dan justru itu yang menjaga urutan per
+	// agregat.
+	return c.work(ctx, job, req)
+}
 
-	// Tahap tiga: simpan hasilnya beserta event keluarnya, dalam satu transaksi.
-	if genErr != nil {
-		return c.recordFailure(ctx, job, req, genErr)
+// work mencoba pekerjaan sampai berhasil atau menyerah.
+func (c *Consumer) work(
+	ctx context.Context, job *Job, req *eventsv1.PersonalizationRequested,
+) error {
+	for attempt := job.Attempts; attempt < MaxAttempts; attempt++ {
+		answer, genErr := c.generate(ctx, req)
+		if genErr == nil {
+			return c.recordSuccess(ctx, job, req, answer)
+		}
+
+		if ctx.Err() != nil {
+			// Dimatikan di tengah percobaan. Klaimnya dilepas supaya pengiriman
+			// berikutnya - setelah restart, dengan offset yang memang belum
+			// dikomit - benar-benar mengerjakannya alih-alih melewatinya
+			// sebagai duplikat.
+			return c.abandon(ctx, job, genErr)
+		}
+
+		dead := attempt+1 >= MaxAttempts
+		if err := c.recordFailure(ctx, job, req, genErr, dead); err != nil {
+			return err
+		}
+		if dead {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return c.abandon(ctx, job, genErr)
+		case <-time.After(retryDelay(attempt)):
+		}
 	}
-	return c.recordSuccess(ctx, job, req, answer)
+	return nil
+}
+
+// retryDelay adalah jeda sebelum percobaan berikutnya.
+//
+// Pendek, karena penyedianya sendiri sudah mencoba ulang dengan backoff yang
+// lebih panjang di dalam. Yang ditangani di sini adalah kegagalan yang lolos
+// dari lapisan itu - dan menunggu lama untuknya hanya menahan partisi.
+func retryDelay(attempt int) time.Duration {
+	return time.Duration(attempt+1) * 500 * time.Millisecond
+}
+
+// abandon melepas pekerjaan yang terhenti karena prosesnya dimatikan.
+//
+// Ia dijalankan dengan context terpisah: ctx pemanggil sudah dibatalkan, dan
+// memakainya berarti pelepasannya sendiri gagal - meninggalkan klaim yang
+// menutup kuncinya selamanya.
+func (c *Consumer) abandon(ctx context.Context, job *Job, cause error) error {
+	c.log.WarnContext(ctx, "a job was abandoned mid-flight and will be retried after restart",
+		"job_id", job.ID, "attempts", job.Attempts, "error", cause)
+
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	return pg.InTx(releaseCtx, c.pool, func(q pg.Querier) error {
+		guard, err := idempotency.NewGuard(q, Scope)
+		if err != nil {
+			return err
+		}
+		return guard.Release(releaseCtx, job.Key)
+	})
 }
 
 // claim membuat pekerjaan baru bila kuncinya belum pernah dipakai.
@@ -218,6 +292,21 @@ func (c *Consumer) claim(
 			return err
 		}
 		if !ok {
+			return nil
+		}
+
+		// Pekerjaan yang sudah ada dengan kunci ini dipakai kembali, bukan
+		// dibuat baru. Ia ada kalau percobaan sebelumnya terhenti di tengah -
+		// proses mati saat sedang mencoba ulang - dan penghitung percobaannya
+		// harus menumpuk di baris yang sama, kalau tidak batas tiga kali tidak
+		// akan pernah tercapai.
+		existing, found, err := c.jobs.ByKey(ctx, q, key)
+		if err != nil {
+			return err
+		}
+		if found {
+			job = existing
+			claimed = true
 			return nil
 		}
 
@@ -280,8 +369,10 @@ func (c *Consumer) recordSuccess(
 	if answer.Truncated() {
 		// Jawaban terpotong bukan jawaban. Menyimpannya sebagai laporan utuh
 		// akan menampilkan analisis setengah jadi seolah lengkap.
+		// Jawaban terpotong tidak akan membaik dengan diulang: promptnya sama,
+		// modelnya sama, batasnya sama. Ia langsung menyerah.
 		return c.recordFailure(ctx, job, req,
-			fmt.Errorf("%w: the provider stopped at %q", llm.ErrTruncated, answer.FinishReason))
+			fmt.Errorf("%w: the provider stopped at %q", llm.ErrTruncated, answer.FinishReason), true)
 	}
 
 	return pg.InTx(ctx, c.pool, func(q pg.Querier) error {
@@ -310,9 +401,8 @@ func (c *Consumer) recordSuccess(
 // itu sudah tidak akan dicoba lagi.
 func (c *Consumer) recordFailure(
 	ctx context.Context, job *Job,
-	req *eventsv1.PersonalizationRequested, cause error,
+	req *eventsv1.PersonalizationRequested, cause error, dead bool,
 ) error {
-	dead := job.Attempts+1 >= MaxAttempts
 
 	c.log.ErrorContext(ctx, "a job failed",
 		"job_id", job.ID, "attempts", job.Attempts+1, "dead", dead, "error", cause)
