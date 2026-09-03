@@ -81,6 +81,12 @@ func run(log *slog.Logger) error {
 	}
 	defer stopRelay()
 
+	stopResults, err := startResultConsumer(ctx, log, svc, cfg.KafkaBrokers)
+	if err != nil {
+		return err
+	}
+	defer stopResults()
+
 	server, err := coachinggrpc.NewServer(svc)
 	if err != nil {
 		return err

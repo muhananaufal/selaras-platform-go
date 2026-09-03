@@ -91,25 +91,44 @@ func TestTheIDCarriesNameAndVersion(t *testing.T) {
 // membuatnya selalu cocok dengan apa pun isinya, dan test-nya berhenti menguji
 // apa pun.
 func TestTheChecksumMatchesTheTemplateOnDisk(t *testing.T) {
-	const want = "2583db805e2f43b7464cc519bf32553e9ee60a22b8a12fd5715418f17ef7d91b"
-
-	tmpl, err := library(t).Latest("personalization")
-	if err != nil {
-		t.Fatalf("Latest: %v", err)
+	want := map[string]string{
+		"personalization": "2583db805e2f43b7464cc519bf32553e9ee60a22b8a12fd5715418f17ef7d91b",
+		"curriculum":      "9ca38ec5b6e333d34e7b6d9ba59fff7045d14d0f453330608ea5ef1f00544ef4",
+		"graduation":      "ea6c804edfbd1317b017ca4b6a7c2823fc1ff6c75af449daec8b51622006d566",
+		"chat_reply":      "7922962e69428a5940d6b261015395335d5c03b1e567e5516fedd5929015797a",
 	}
-	if tmpl.Checksum != want {
-		t.Fatalf("personalization.v1.tmpl has checksum\n  %s\nbut the test expects\n  %s\n"+
-			"If the change was deliberate, add personalization.v2.tmpl instead of editing v1 - "+
-			"results already stored refer to v1 and must stay explainable.",
-			tmpl.Checksum, want)
+
+	lib := library(t)
+	for name, sum := range want {
+		tmpl, err := lib.Latest(name)
+		if err != nil {
+			t.Errorf("Latest(%q): %v", name, err)
+			continue
+		}
+		if tmpl.Checksum != sum {
+			t.Errorf("%s.v1.tmpl has checksum\n  %s\nbut the test expects\n  %s\n"+
+				"If the change was deliberate, add %s.v2.tmpl instead of editing v1 - "+
+				"results already stored refer to v1 and must stay explainable.",
+				name, tmpl.Checksum, sum, name)
+		}
 	}
 }
 
 // TestOnlyKnownTemplatesExist menjaga daftar tetap disengaja.
+//
+// Templat yang menyelinap masuk tanpa lewat sini berarti ada prompt yang
+// dikirim ke model tanpa seorang pun pernah membacanya.
 func TestOnlyKnownTemplatesExist(t *testing.T) {
+	want := []string{"chat_reply", "curriculum", "graduation", "personalization"}
+
 	names := library(t).Names()
-	if len(names) != 1 || names[0] != "personalization" {
-		t.Fatalf("the library holds %v; add the new template to this test deliberately", names)
+	if len(names) != len(want) {
+		t.Fatalf("the library holds %v, want %v", names, want)
+	}
+	for i, name := range want {
+		if names[i] != name {
+			t.Fatalf("the library holds %v, want %v", names, want)
+		}
 	}
 }
 

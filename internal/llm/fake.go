@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 )
 
 // Fake adalah penyedia yang dipakai seluruh test.
@@ -106,17 +108,22 @@ func (f *Fake) CallCount() int {
 
 // deterministicAnswer menurunkan jawaban dari promptnya.
 //
-// Bentuknya JSON karena itu yang diminta jalur personalisasi, dan jawaban yang
-// bentuknya berbeda dari yang sesungguhnya akan membuat test lulus terhadap
-// sesuatu yang tidak pernah terjadi di produksi.
+// Bentuknya mengikuti BENTUK YANG DIMINTA promptnya, bukan satu bentuk untuk
+// semua. Alasannya ditemukan dengan menjalankannya: versi pertama selalu
+// mengembalikan bentuk yang sama, sehingga kurikulum yang diminta coaching-svc
+// tersimpan sebagai laporan kelulusan - konsumennya membedakan keduanya dari
+// ada tidaknya "weeks", dan jawaban palsu itu tidak punya keduanya.
+//
+// Jawaban palsu yang bentuknya berbeda dari yang sesungguhnya membuat test
+// lulus terhadap sesuatu yang tidak pernah terjadi di produksi.
 func deterministicAnswer(req Request) string {
 	sum := sha256.Sum256([]byte(req.System + "\x1f" + req.Prompt))
+	digest := hex.EncodeToString(sum[:])
 
-	payload := map[string]any{
-		"generated_by":   "fake",
-		"prompt_version": req.PromptVersion,
-		"digest":         hex.EncodeToString(sum[:]),
-	}
+	payload := shapeFor(req.PromptVersion, digest)
+	payload["generated_by"] = "fake"
+	payload["prompt_version"] = req.PromptVersion
+	payload["digest"] = digest
 
 	// Marshal map[string]any dengan kunci yang tetap tidak bisa gagal, tetapi
 	// galatnya tetap tidak diabaikan: mengabaikannya berarti jawaban kosong
@@ -126,4 +133,80 @@ func deterministicAnswer(req Request) string {
 		return fmt.Sprintf("{%q:%q}", "error", err.Error())
 	}
 	return string(encoded)
+}
+
+// shapeFor menghasilkan kerangka jawaban yang sesuai templat yang memintanya.
+//
+// Ia dikenali dari PromptVersion, yang berbentuk "<nama templat>@<versi>".
+// Isinya sengaja minimal tetapi BERBENTUK BENAR: yang diuji jalur ujung ke
+// ujung adalah apakah hasilnya bisa dibaca dan disimpan, bukan apakah isinya
+// bermakna secara klinis.
+func shapeFor(promptVersion, digest string) map[string]any {
+	name, _, _ := strings.Cut(promptVersion, "@")
+
+	switch name {
+	case "curriculum":
+		return map[string]any{
+			"program_title":       "Program Palsu untuk Pengujian",
+			"program_description": "Kurikulum yang dihasilkan penyedia palsu.",
+			"weeks":               fakeWeeks(),
+		}
+
+	case "graduation":
+		return map[string]any{
+			"headline": "Program selesai",
+			"summary":  "Ringkasan yang dihasilkan penyedia palsu.",
+			"completion": map[string]any{
+				"total": 0, "completed": 0, "note": "angka dari penyedia palsu",
+			},
+			"what_went_well":        []string{"memulai program"},
+			"what_to_carry_forward": []string{"kebiasaan harian"},
+			"next_step":             "lanjutkan pekan berikutnya",
+		}
+
+	case "chat_reply":
+		return map[string]any{
+			"text":        "Balasan yang dihasilkan penyedia palsu.",
+			"suggestions": []string{},
+		}
+
+	default:
+		// Personalisasi dan apa pun yang belum dikenali: bentuk lama, yang
+		// sudah cukup untuk membuktikan jawaban sampai dan tersimpan.
+		return map[string]any{}
+	}
+}
+
+// fakeWeeks menghasilkan empat pekan berisi satu misi utama per hari.
+//
+// Tanggalnya berurutan tanpa lompatan, seperti yang diminta prompt-nya: pembaca
+// kurikulum menolak tanggal yang tidak bisa dibaca, dan kerangka yang melanggar
+// aturannya sendiri tidak membuktikan apa pun.
+func fakeWeeks() []map[string]any {
+	start := time.Now().Truncate(24 * time.Hour)
+
+	weeks := make([]map[string]any, 0, 4)
+	day := 0
+	for w := 1; w <= 4; w++ {
+		tasks := make([]map[string]any, 0, 7)
+		for range 7 {
+			tasks = append(tasks, map[string]any{
+				"task_date": start.AddDate(0, 0, day).Format(time.DateOnly),
+				"main_mission": map[string]any{
+					"task_type":   "main_mission",
+					"title":       "Jalan kaki 20 menit",
+					"description": "Tugas yang dihasilkan penyedia palsu.",
+				},
+				"bonus_challenges": []any{},
+			})
+			day++
+		}
+		weeks = append(weeks, map[string]any{
+			"week_number": w,
+			"title":       fmt.Sprintf("Pekan %d", w),
+			"description": "Pekan yang dihasilkan penyedia palsu.",
+			"tasks":       tasks,
+		})
+	}
+	return weeks
 }
