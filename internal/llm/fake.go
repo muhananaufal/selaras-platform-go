@@ -164,6 +164,17 @@ func shapeFor(promptVersion, digest string) map[string]any {
 			"next_step":             "lanjutkan pekan berikutnya",
 		}
 
+	case "daily_guide":
+		return map[string]any{
+			"suggestions": []map[string]any{
+				{
+					"dish_name":     "Sayur asem dari penyedia palsu",
+					"pro_tip":       "Saran praktis yang dihasilkan penyedia palsu.",
+					"health_reason": "Alasan kesehatan yang dihasilkan penyedia palsu.",
+				},
+			},
+		}
+
 	case "chat_reply":
 		return map[string]any{
 			"text":        "Balasan yang dihasilkan penyedia palsu.",

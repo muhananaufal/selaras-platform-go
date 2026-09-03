@@ -1,8 +1,10 @@
 package llmworker
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 )
@@ -18,6 +20,7 @@ const fieldLanguage = "Language"
 const (
 	KindCurriculum = "curriculum"
 	KindChatReply  = "chat_reply"
+	KindMealGuide  = "daily_guide"
 
 	// KindGraduation menumpang topic dan pesan yang sama dengan kurikulum;
 	// pembedanya penanda di bidang difficulty. Lihat GraduationMarker.
@@ -66,6 +69,9 @@ func requestOf(env *eventsv1.Envelope) (*Request, error) {
 
 	case *eventsv1.Envelope_ChatReplyRequested:
 		return chatReplyRequest(payload.ChatReplyRequested)
+
+	case *eventsv1.Envelope_MealGuideRequested:
+		return mealGuideRequest(payload.MealGuideRequested)
 
 	default:
 		return nil, fmt.Errorf("this envelope carries no LLM request")
@@ -178,3 +184,112 @@ const defaultCurriculumWeeks = 4
 // Ia bawaan SEMENTARA dan disebut begitu: profil menyimpan bahasa, dan begitu
 // event membawanya, nilai inilah yang diganti - bukan ditambah cabang baru.
 const defaultLanguage = "Bahasa Indonesia"
+
+// mealGuideContext adalah bentuk konteks yang dibawa MealGuideRequested.
+//
+// Bidangnya diketahui, jadi ia struct dan bukan map[string]any: map memaksa
+// setiap pembacanya menebak tipe di tempat pemakaian, dan salah tebak di sini
+// akan sampai ke prompt sebagai teks yang salah bentuk.
+type mealGuideContext struct {
+	Language     string `json:"language"`
+	HealthFocus  string `json:"health_focus"`
+	DailyMission string `json:"daily_mission"`
+	MealTime     string `json:"meal_time"`
+
+	Preferences struct {
+		Allergies        string   `json:"allergies"`
+		BudgetLevel      string   `json:"budget_level"`
+		CookingStyle     string   `json:"cooking_style"`
+		TasteProfiles    []string `json:"taste_profiles"`
+		KitchenEquipment []string `json:"kitchen_equipment"`
+	} `json:"preferences"`
+
+	Input struct {
+		PlanType          string `json:"plan_type"`
+		TimeAvailability  string `json:"time_availability"`
+		EnergyLevel       string `json:"energy_level"`
+		CuisinePreference string `json:"cuisine_preference"`
+		CravingType       string `json:"craving_type"`
+		SocialContext     string `json:"social_context"`
+	} `json:"input"`
+
+	LearningHistory []string `json:"learning_history"`
+}
+
+// mealGuideRequest membaca permintaan panduan menu.
+//
+// Berbeda dari permintaan LLM lain di worker ini, konteksnya DIBACA dari event,
+// bukan diisi penanda "belum dibawa event". Itu bukan ketidakseragaman yang
+// kebetulan: konteks ini memuat catatan alergi, dan prompt tanpa catatan itu
+// meminta model menyarankan makanan kepada orang yang alergi terhadapnya.
+//
+// Konteks yang tidak bisa dibaca menjadi GALAT, bukan konteks kosong. Panduan
+// yang gagal dibuat terlihat sebagai gagal; panduan yang dibuat tanpa catatan
+// alergi terlihat seperti panduan biasa.
+func mealGuideRequest(req *eventsv1.MealGuideRequested) (*Request, error) {
+	if req.GetGuideId() == "" {
+		return nil, errors.New("the request names no guide")
+	}
+	var parsed mealGuideContext
+	if err := json.Unmarshal([]byte(req.GetContextJson()), &parsed); err != nil {
+		return nil, fmt.Errorf("reading the meal guide context: %w", err)
+	}
+	if parsed.MealTime == "" {
+		return nil, errors.New("the meal guide context names no meal time")
+	}
+
+	language := parsed.Language
+	if language == "" {
+		language = defaultLanguage
+	}
+
+	return &Request{
+		Kind:          KindMealGuide,
+		AggregateType: "meal_guide",
+		AggregateID:   req.GetGuideId(),
+		Template:      "daily_guide",
+		Data: map[string]any{
+			// Catatan alergi diserahkan APA ADANYA, termasuk saat kosong.
+			// Kalimatnya sudah disiapkan supaya "tidak ada" terbaca sebagai
+			// tidak ada, bukan sebagai bidang yang hilang.
+			"Allergies":    orNone(parsed.Preferences.Allergies, "tidak ada catatan alergi"),
+			"HealthFocus":  orNone(parsed.HealthFocus, "kesehatan jantung umum"),
+			"DailyMission": orNone(parsed.DailyMission, "menjaga pola hidup sehat"),
+
+			"BudgetLevel":      orNone(parsed.Preferences.BudgetLevel, "belum dipilih"),
+			"CookingStyle":     orNone(parsed.Preferences.CookingStyle, "belum dipilih"),
+			"TasteProfiles":    orNoneList(parsed.Preferences.TasteProfiles),
+			"KitchenEquipment": orNoneList(parsed.Preferences.KitchenEquipment),
+
+			"MealTime":          parsed.MealTime,
+			"PlanType":          parsed.Input.PlanType,
+			"TimeAvailability":  parsed.Input.TimeAvailability,
+			"EnergyLevel":       parsed.Input.EnergyLevel,
+			"CuisinePreference": parsed.Input.CuisinePreference,
+			"CravingType":       orNone(parsed.Input.CravingType, "tidak disebutkan"),
+			"SocialContext":     orNone(parsed.Input.SocialContext, "tidak disebutkan"),
+
+			"LearningHistory": orNoneList(parsed.LearningHistory),
+
+			fieldLanguage: language,
+		},
+	}, nil
+}
+
+// orNone mengganti kosong dengan kalimat yang bisa dibaca model.
+//
+// Bidang kosong di dalam prompt terbaca sebagai kekeliruan render, dan model
+// yang menemuinya cenderung mengarangnya sendiri.
+func orNone(v, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return v
+}
+
+func orNoneList(v []string) string {
+	if len(v) == 0 {
+		return "belum ada"
+	}
+	return strings.Join(v, ", ")
+}

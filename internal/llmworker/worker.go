@@ -435,6 +435,16 @@ func completionEvent(job *Job, req *Request, answer *llm.Response) *eventsv1.Env
 			},
 		}
 
+	case KindMealGuide:
+		env.Payload = &eventsv1.Envelope_MealGuideCompleted{
+			MealGuideCompleted: &eventsv1.MealGuideCompleted{
+				GuideId:       req.AggregateID,
+				JobId:         job.ID.String(),
+				GuideJson:     answer.Text,
+				PromptVersion: answer.PromptVersion,
+			},
+		}
+
 	case KindChatReply:
 		env.Payload = &eventsv1.Envelope_ChatReplyCompleted{
 			ChatReplyCompleted: &eventsv1.ChatReplyCompleted{
