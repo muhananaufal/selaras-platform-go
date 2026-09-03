@@ -10,6 +10,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
+	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
 const (
@@ -105,6 +106,11 @@ func newService(t *testing.T) (*app.Service, *fakeRepo, *fakeProfiles) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+
+	// Penulis status memakai repository palsu yang sama, sehingga perpindahan
+	// keadaan yang ditulis benar-benar terlihat oleh pembacaan berikutnya.
+	svc = svc.WithStatusWriter(func(pg.Querier) app.StatusWriter { return repo })
+
 	return svc, repo, profiles
 }
 
@@ -415,6 +421,43 @@ func (r *fakeRepo) SetResultDetails(
 			return false, nil
 		}
 		a.ResultDetails = report
+		return true, nil
+	}
+	return false, domain.ErrAssessmentNotFound
+}
+
+// SetPersonalizationStatus meniru sisi basis data, termasuk pembatasan
+// perpindahannya: perpindahan dari keadaan yang tidak diizinkan tidak terjadi
+// dan dilaporkan sebagai changed=false, bukan sebagai galat.
+func (r *fakeRepo) SetPersonalizationStatus(
+	_ context.Context, id domain.ID,
+	to domain.PersonalizationStatus, from []domain.PersonalizationStatus, failure string,
+) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.failNow != nil {
+		return false, r.failNow
+	}
+
+	for _, a := range r.bySlug {
+		if a.ID != id {
+			continue
+		}
+		if len(from) > 0 {
+			allowed := false
+			for _, s := range from {
+				if a.PersonalizationStatus == s {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return false, nil
+			}
+		}
+		a.PersonalizationStatus = to
+		a.PersonalizationError = failure
 		return true, nil
 	}
 	return false, domain.ErrAssessmentNotFound

@@ -104,12 +104,24 @@ func run(log *slog.Logger) error {
 	// bukan dari kolam koneksi. Yang kedua akan commit sendiri, dan eventnya
 	// bertahan meski perubahan bisnisnya batal.
 	events := func(q pg.Querier) app.EventWriter { return outbox.NewWriter(q) }
+	statuses := func(q pg.Querier) app.StatusWriter { return assessmentpg.NewRepository(q) }
+	svc = svc.WithStatusWriter(statuses)
 
 	server, err := assessmentgrpc.NewServer(svc, constants,
 		assessmentpg.NewUnitOfWork(pool), events)
 	if err != nil {
 		return err
 	}
+
+	// Kafka menyusul BILA dikonfigurasi. Tanpa KAFKA_BROKERS, service ini
+	// tetap melayani pembacaan dan perhitungan - yang tidak boleh terjadi
+	// adalah menerima permintaan personalisasi yang tidak akan pernah keluar
+	// dari outbox, dan itu ditolak di RequestPersonalization.
+	stopKafka, err := startEventing(ctx, log, pool, svc, statuses, events)
+	if err != nil {
+		return err
+	}
+	defer stopKafka()
 
 	probes := httpx.NewHealth()
 

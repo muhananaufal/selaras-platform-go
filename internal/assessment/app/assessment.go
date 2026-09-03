@@ -56,6 +56,12 @@ type Service struct {
 	profiles    ProfileSource
 	engine      *score.Engine
 	now         func() time.Time
+
+	// statusWriter dipasang belakangan lewat WithStatusWriter. Nil berarti
+	// service ini hanya melayani pembacaan dan perhitungan - bukan alasan
+	// untuk gagal, tetapi juga bukan alasan untuk berpura-pura menerima
+	// pekerjaan yang tidak akan tercatat.
+	statusWriter StatusWriterFor
 }
 
 func NewService(
@@ -214,4 +220,13 @@ func validate(p ProfileSnapshot) error {
 		return fmt.Errorf("%w: %v", ErrProfileIncomplete, missing)
 	}
 	return nil
+}
+
+// WithStatusWriter memasang penulis status personalisasi.
+//
+// Terpisah dari NewService supaya service yang hanya membaca - dan test yang
+// hanya menguji perhitungan - tidak perlu menyediakannya.
+func (s *Service) WithStatusWriter(w StatusWriterFor) *Service {
+	s.statusWriter = w
+	return s
 }
