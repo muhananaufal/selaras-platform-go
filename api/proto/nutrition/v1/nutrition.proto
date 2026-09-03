@@ -73,8 +73,20 @@ enum MealTime {
   MEAL_TIME_DINNER = 4;
 }
 
+// StringList membuat "tidak dikirim" bisa dibedakan dari "dikirim kosong".
+//
+// proto3 tidak mengenal `optional repeated`: daftar kosong dan daftar yang
+// tidak disertakan terlihat SAMA PERSIS di kawat. Tanpa pembungkus ini,
+// UpdatePreferences tidak punya cara menyatakan "jangan sentuh selera saya",
+// dan satu PATCH yang hanya mengirim alergi akan menghapus selera serta
+// peralatan dapur pengguna. Itu bug yang benar-benar ada di sistem lama (B16),
+// dan ia lahir dari KONTRAKNYA, bukan dari kodenya.
+message StringList {
+  repeated string values = 1;
+}
+
 message CulinaryPreferences {
-  string user_profile_id = 1;
+  string user_id = 1;
   optional string allergies = 2;
   BudgetLevel budget_level = 3;
   CookingStyle cooking_style = 4;
@@ -101,7 +113,7 @@ enum GuideStatus {
 
 message DailyMealGuide {
   string id = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
   string guide_date = 3;
   DailyGuideInput input = 4;
   // Waktu makan ditentukan jam server saat panduan diminta (D10).
@@ -113,7 +125,7 @@ message DailyMealGuide {
 }
 
 message GetHubDataRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   common.v1.PageRequest page = 2;
 }
 
@@ -123,13 +135,18 @@ message GetHubDataResponse {
   common.v1.PageResponse page = 3;
 }
 
+// UpdatePreferencesRequest adalah pembaruan PARSIAL.
+//
+// Bidang yang tidak disertakan DIBIARKAN apa adanya; yang disertakan diganti.
+// Tiap bidang memakai presence eksplisit supaya keduanya bisa dibedakan - lihat
+// StringList di atas untuk alasan lengkapnya.
 message UpdatePreferencesRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   optional string allergies = 2;
-  BudgetLevel budget_level = 3;
-  CookingStyle cooking_style = 4;
-  repeated string taste_profiles = 5;
-  repeated string kitchen_equipment = 6;
+  optional BudgetLevel budget_level = 3;
+  optional CookingStyle cooking_style = 4;
+  optional StringList taste_profiles = 5;
+  optional StringList kitchen_equipment = 6;
 }
 
 message UpdatePreferencesResponse {
@@ -137,7 +154,7 @@ message UpdatePreferencesResponse {
 }
 
 message GenerateDailyGuideRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   DailyGuideInput input = 2;
   common.v1.IdempotencyKey idempotency_key = 3;
 }
