@@ -22,6 +22,7 @@ import (
 	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
+	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
@@ -147,6 +148,20 @@ func run(log *slog.Logger) error {
 			"variable", "CHAT_GRPC_TARGET")
 	}
 
+	var nutritionHandler *handler.Nutrition
+	if cfg.NutritionAddr != "" {
+		conn, err := dial(cfg.NutritionAddr)
+		if err != nil {
+			return fmt.Errorf("nutrition-svc: %w", err)
+		}
+		defer closeConn(conn, "nutrition-svc", log)
+
+		nutritionHandler = handler.NewNutrition(nutritionv1.NewNutritionClient(conn))
+	} else {
+		log.Warn("nutrition-svc is not configured; its routes are not mounted",
+			"variable", "NUTRITION_GRPC_TARGET")
+	}
+
 	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
 
 	if err != nil {
@@ -165,6 +180,7 @@ func run(log *slog.Logger) error {
 		Assessments: assessmentHandler,
 		Coaching:    coachingHandler,
 		Chat:        chatHandler,
+		Nutrition:   nutritionHandler,
 		Regions:     regions,
 	})
 

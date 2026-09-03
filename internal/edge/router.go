@@ -42,6 +42,10 @@ type Deps struct {
 	// (F1-12). Boleh nil.
 	Regions assessmentv1.AssessmentClient
 
+	// Nutrition boleh nil: lingkungan tanpa nutrition-svc tetap melayani
+	// sisanya, dan rute culinary TIDAK dipasang.
+	Nutrition *handler.Nutrition
+
 	// Social boleh nil: lingkungan tanpa kredensial penyedia tetap
 	// melayani pendaftaran lewat kata sandi. Rutenya tidak dipasang sama
 	// sekali, sehingga jawabannya 404 - bukan endpoint yang ada tetapi
@@ -128,6 +132,10 @@ func NewRouter(deps Deps) *gin.Engine {
 				mountChat(protected, deps.Chat)
 			}
 
+			if deps.Nutrition != nil {
+				mountNutrition(protected, deps.Nutrition)
+			}
+
 		}
 	}
 
@@ -175,4 +183,18 @@ func mountChat(r gin.IRouter, h *handler.Chat) {
 	group.PATCH("/conversations/:slug", h.Update)
 	group.POST("/conversations/:slug/messages", h.SendMessage)
 	group.DELETE("/conversations/:slug", h.Destroy)
+}
+
+// mountNutrition memasang tiga endpoint culinary.
+//
+// Bentuk URL-nya dipertahankan dari sistem lama (ADR-005). Yang BERUBAH adalah
+// kode jawaban pembuatan panduan: 202 Accepted, karena panduannya datang
+// belakangan. Sistem lama menahan permintaan HTTP selama Gemini bekerja, dengan
+// timeout 180 detik (B14).
+func mountNutrition(r gin.IRouter, h *handler.Nutrition) {
+	group := r.Group("/culinary")
+
+	group.GET("/hub-data", h.HubData)
+	group.PATCH("/preferences", h.UpdatePreferences)
+	group.POST("/daily-guides", h.GenerateDailyGuide)
 }
