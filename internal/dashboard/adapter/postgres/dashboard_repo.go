@@ -23,12 +23,15 @@ func NewRepository(db pg.Querier) *Repository { return &Repository{db: db} }
 var _ domain.Repository = (*Repository)(nil)
 
 // Find membaca satu dasbor beserta riwayatnya.
+//
+// Ringkasannya - penilaian terbaru, penilaian sebelumnya, dan jumlahnya -
+// DITURUNKAN dari riwayat, bukan dibaca dari kolom yang diperbarui tiap event.
+// Versi pertama menyimpannya sebagai kolom, dan itu meninggalkan "penilaian
+// sebelumnya" kosong selamanya ketika dua event tiba terbalik. Yang diturunkan
+// saat dibaca benar untuk urutan kedatangan apa pun.
 func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Dashboard, error) {
 	const q = `
 		SELECT
-			latest_assessment_slug, latest_assessment_at, latest_risk_percentage,
-			latest_risk_category, latest_model_used,
-			previous_risk_percentage, total_assessments,
 			program_slug, program_title, program_status,
 			program_current_day, program_total_days, program_completion_percentage,
 			projected_at
@@ -37,9 +40,6 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 
 	var (
 		dash                      domain.Dashboard
-		slug, category, model     *string
-		assessedAt                *time.Time
-		latestRisk, previousRisk  *float64
 		programSlug, programTitle *string
 		programStatus             *string
 		currentDay, totalDays     *int
@@ -47,8 +47,6 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 	)
 
 	err := r.db.QueryRow(ctx, q, userID.String()).Scan(
-		&slug, &assessedAt, &latestRisk, &category, &model,
-		&previousRisk, &dash.Total,
 		&programSlug, &programTitle, &programStatus,
 		&currentDay, &totalDays, &completion,
 		&dash.ProjectedAt,
@@ -61,17 +59,6 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 	}
 
 	dash.UserID = userID
-	dash.Previous = previousRisk
-
-	if slug != nil && assessedAt != nil && latestRisk != nil {
-		dash.Latest = &domain.Assessment{
-			Slug:           *slug,
-			AssessedAt:     *assessedAt,
-			RiskPercentage: *latestRisk,
-			RiskCategory:   deref(category),
-			ModelUsed:      deref(model),
-		}
-	}
 
 	if programSlug != nil {
 		dash.Program = &domain.Program{
@@ -89,6 +76,17 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 		return nil, err
 	}
 	dash.History = history
+	dash.Total = len(history)
+
+	// Terbaru dan sebelumnya adalah dua baris teratas riwayat, yang sudah
+	// terurut menurut WAKTU PENILAIAN - bukan menurut urutan kedatangannya.
+	if len(history) > 0 {
+		dash.Latest = history[0]
+	}
+	if len(history) > 1 {
+		previous := history[1].RiskPercentage
+		dash.Previous = &previous
+	}
 
 	return &dash, nil
 }
@@ -148,70 +146,36 @@ func (r *Repository) ApplyAssessment(
 		return fmt.Errorf("projecting the assessment: %w", err)
 	}
 
-	// Baris yang sudah ada berarti event ini SUDAH pernah diterapkan. Berhenti
-	// di sini, karena melanjutkan akan menaikkan total_assessments untuk kedua
-	// kalinya dan menggeser previous_risk_percentage dengan angka yang sama.
+	// Baris yang sudah ada berarti event ini SUDAH pernah diterapkan.
 	//
-	// Inilah gerbang idempotensinya, dan ia ditegakkan basis data lewat kunci
-	// primer (user_id, slug) - bukan dengan SELECT lalu INSERT, yang di antara
-	// keduanya ada celah tempat dua proses membaca "belum ada".
+	// Waktu proyeksinya tetap dimajukan di bawah - pengiriman ulang tetap
+	// peristiwa yang terjadi - tetapi tidak ada satu angka pun yang bisa
+	// bergeser, karena tidak ada angka yang disimpan. Gerbangnya ditegakkan
+	// basis data lewat kunci primer (user_id, slug), bukan dengan SELECT lalu
+	// INSERT yang di antara keduanya ada celah tempat dua proses membaca
+	// "belum ada".
 	if tag.RowsAffected() == 0 {
 		return nil
 	}
 
-	// Lalu ringkasannya. Yang menarik ada di ELSE-nya: penilaian yang datang
-	// TERLAMBAT - occurred_at-nya lebih tua daripada yang sudah tersimpan -
-	// tetap masuk riwayat dan tetap menaikkan jumlah, tetapi TIDAK menggeser
-	// "terbaru". Event bisa tiba tidak berurutan, dan proyeksi yang menerima
-	// yang terakhir tiba sebagai yang terbaru akan menampilkan angka lama.
-	const upsertSummary = `
-		INSERT INTO dashboards (
-			user_id, latest_assessment_slug, latest_assessment_at,
-			latest_risk_percentage, latest_risk_category, latest_model_used,
-			total_assessments, projected_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, 1, $7, now())
+	// Lalu barisnya disentuh supaya waktu proyeksinya maju - dan itu SEMUA.
+	//
+	// Tidak ada ringkasan yang perlu diperbarui: penilaian terbaru, penilaian
+	// sebelumnya, dan jumlahnya diturunkan dari riwayat saat DIBACA. Versi
+	// pertama menyimpan ketiganya sebagai kolom dan memperbaruinya lewat
+	// serangkaian CASE yang membandingkan waktu; itu meninggalkan "penilaian
+	// sebelumnya" kosong selamanya ketika dua event tiba terbalik - keadaan
+	// biasa, karena Kafka menjamin urutan per kunci partisi dan penilaian
+	// dikunci pada id penilaiannya, bukan pada penggunanya.
+	const touch = `
+		INSERT INTO dashboards (user_id, projected_at, updated_at)
+		VALUES ($1, $2, now())
 		ON CONFLICT (user_id) DO UPDATE SET
-			previous_risk_percentage = CASE
-				WHEN dashboards.latest_assessment_at IS NULL
-				  OR EXCLUDED.latest_assessment_at > dashboards.latest_assessment_at
-				THEN dashboards.latest_risk_percentage
-				ELSE dashboards.previous_risk_percentage
-			END,
-			latest_assessment_slug = CASE
-				WHEN dashboards.latest_assessment_at IS NULL
-				  OR EXCLUDED.latest_assessment_at > dashboards.latest_assessment_at
-				THEN EXCLUDED.latest_assessment_slug
-				ELSE dashboards.latest_assessment_slug
-			END,
-			latest_risk_percentage = CASE
-				WHEN dashboards.latest_assessment_at IS NULL
-				  OR EXCLUDED.latest_assessment_at > dashboards.latest_assessment_at
-				THEN EXCLUDED.latest_risk_percentage
-				ELSE dashboards.latest_risk_percentage
-			END,
-			latest_risk_category = CASE
-				WHEN dashboards.latest_assessment_at IS NULL
-				  OR EXCLUDED.latest_assessment_at > dashboards.latest_assessment_at
-				THEN EXCLUDED.latest_risk_category
-				ELSE dashboards.latest_risk_category
-			END,
-			latest_model_used = CASE
-				WHEN dashboards.latest_assessment_at IS NULL
-				  OR EXCLUDED.latest_assessment_at > dashboards.latest_assessment_at
-				THEN EXCLUDED.latest_model_used
-				ELSE dashboards.latest_model_used
-			END,
-			latest_assessment_at = GREATEST(
-				dashboards.latest_assessment_at, EXCLUDED.latest_assessment_at),
-			total_assessments = dashboards.total_assessments + 1,
 			projected_at = GREATEST(dashboards.projected_at, EXCLUDED.projected_at),
 			updated_at = now()`
 
-	if _, err := r.db.Exec(ctx, upsertSummary,
-		userID.String(), a.Slug, a.AssessedAt, a.RiskPercentage,
-		a.RiskCategory, a.ModelUsed, occurredAt); err != nil {
-		return fmt.Errorf("projecting the assessment summary: %w", err)
+	if _, err := r.db.Exec(ctx, touch, userID.String(), occurredAt); err != nil {
+		return fmt.Errorf("advancing the projection time: %w", err)
 	}
 	return nil
 }

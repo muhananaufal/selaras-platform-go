@@ -173,6 +173,34 @@ services:
         limits:
           memory: 160M
 
+  dashboard-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: dashboard-svc
+    restart: unless-stopped
+    container_name: selaras-dashboard
+    environment:
+      DASHBOARD_DATABASE_DSN: >-
+        postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
+      DASHBOARD_GRPC_ADDR: ":9701"
+      DASHBOARD_HEALTH_ADDR: ":9703"
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "127.0.0.1:19701:9701"
+      - "127.0.0.1:19703:9703"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
   coaching-svc:
     build:
       context: ../..
@@ -250,6 +278,7 @@ services:
       COACHING_GRPC_TARGET: coaching-svc:9401
       CHAT_GRPC_TARGET: chat-svc:9501
       NUTRITION_GRPC_TARGET: nutrition-svc:9601
+      DASHBOARD_GRPC_TARGET: dashboard-svc:9701
       # Kosong berarti masuk lewat penyedia sosial tidak dipasang, dan
       # rutenya tidak ada. Terisi sebagian menggagalkan start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

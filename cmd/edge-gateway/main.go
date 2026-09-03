@@ -21,6 +21,7 @@ import (
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
+	dashboardv1 "github.com/muhananaufal/selaras-platform-go/gen/dashboard/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
@@ -162,6 +163,20 @@ func run(log *slog.Logger) error {
 			"variable", "NUTRITION_GRPC_TARGET")
 	}
 
+	var dashboardHandler *handler.Dashboard
+	if cfg.DashboardAddr != "" {
+		conn, err := dial(cfg.DashboardAddr)
+		if err != nil {
+			return fmt.Errorf("dashboard-svc: %w", err)
+		}
+		defer closeConn(conn, "dashboard-svc", log)
+
+		dashboardHandler = handler.NewDashboard(dashboardv1.NewDashboardClient(conn))
+	} else {
+		log.Warn("dashboard-svc is not configured; its route is not mounted",
+			"variable", "DASHBOARD_GRPC_TARGET")
+	}
+
 	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
 
 	if err != nil {
@@ -181,6 +196,7 @@ func run(log *slog.Logger) error {
 		Coaching:    coachingHandler,
 		Chat:        chatHandler,
 		Nutrition:   nutritionHandler,
+		Dashboards:  dashboardHandler,
 		Regions:     regions,
 	})
 

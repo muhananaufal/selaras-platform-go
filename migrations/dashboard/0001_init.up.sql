@@ -20,24 +20,21 @@ CREATE TABLE dashboards (
     -- terjawab.
     user_id UUID PRIMARY KEY,
 
-    -- Ringkasan penilaian terbaru, disalin dari assessment.completed.
+    -- Penilaian TIDAK diringkas ke dalam kolom di sini.
     --
-    -- NULL berarti pengguna belum pernah melakukan analisis - keadaan yang SAH,
-    -- dan gateway menerjemahkannya menjadi pesan sambutan seperti sistem lama.
-    latest_assessment_slug     TEXT,
-    latest_assessment_at       TIMESTAMPTZ,
-    latest_risk_percentage     NUMERIC(5,2),
-    latest_risk_category       TEXT,
-    latest_model_used          TEXT,
-
-    -- Penilaian SEBELUMNYA, untuk menghitung arah tren.
+    -- Versi pertama tabel ini menyimpan latest_*, previous_risk_percentage,
+    -- dan total_assessments sebagai kolom yang diperbarui setiap event. Itu
+    -- salah, dan salahnya terbukti saat dijalankan: dua penilaian yang tiba
+    -- TERBALIK - hal biasa, karena Kafka menjamin urutan per kunci partisi dan
+    -- penilaian dikunci pada id penilaiannya, bukan pada penggunanya -
+    -- meninggalkan previous_risk_percentage kosong selamanya, sehingga dasbor
+    -- menjawab "belum ada pembanding" untuk orang yang sudah dua kali
+    -- menganalisis.
     --
-    -- Disimpan sebagai kolom, bukan dihitung ulang dengan membaca dua baris
-    -- teratas riwayat: proyeksi menerima event satu per satu, dan yang
-    -- dibutuhkannya saat event tiba hanyalah "berapa angka sebelum ini".
-    previous_risk_percentage   NUMERIC(5,2),
-
-    total_assessments INT NOT NULL DEFAULT 0,
+    -- Ketiganya adalah turunan dari dashboard_assessments, yang sudah memuat
+    -- seluruhnya. Menurunkannya saat DIBACA benar untuk urutan kedatangan apa
+    -- pun, dan membuat penerapan event menjadi satu INSERT yang idempoten
+    -- secara struktural - bukan urutan CASE yang harus benar.
 
     -- Program coaching berjalan, disalin dari coaching.program.updated.
     -- NULL berarti tidak ada program - juga keadaan yang sah.

@@ -42,6 +42,10 @@ type Deps struct {
 	// (F1-12). Boleh nil.
 	Regions assessmentv1.AssessmentClient
 
+	// Dashboards boleh nil: lingkungan tanpa dashboard-svc tetap melayani
+	// sisanya, dan rute /dashboard TIDAK dipasang.
+	Dashboards *handler.Dashboard
+
 	// Nutrition boleh nil: lingkungan tanpa nutrition-svc tetap melayani
 	// sisanya, dan rute culinary TIDAK dipasang.
 	Nutrition *handler.Nutrition
@@ -134,6 +138,12 @@ func NewRouter(deps Deps) *gin.Engine {
 
 			if deps.Nutrition != nil {
 				mountNutrition(protected, deps.Nutrition)
+			}
+
+			if deps.Dashboards != nil {
+				// Satu endpoint, seluruh halaman utama. Bentuk URL-nya
+				// dipertahankan dari sistem lama (ADR-005).
+				protected.GET("/dashboard", deps.Dashboards.Show)
 			}
 
 		}
