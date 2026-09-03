@@ -85,7 +85,7 @@ func (p *provider) issue(t *testing.T, opts tokenOptions) string {
 		opts.subject = "google-sub-123"
 	}
 	if opts.email == "" {
-		opts.email = "person@gmail.com"
+		opts.email = "person@contoh.test"
 	}
 	if opts.emailVerified == nil {
 		opts.emailVerified = true
@@ -145,7 +145,7 @@ func TestAValidIDTokenYieldsTheIdentity(t *testing.T) {
 	if identity.ProviderID != "google-sub-123" {
 		t.Errorf("provider id = %q; want the subject", identity.ProviderID)
 	}
-	if identity.Email != "person@gmail.com" {
+	if identity.Email != "person@contoh.test" {
 		t.Errorf("email = %q", identity.Email)
 	}
 	if !identity.EmailVerified {

@@ -27,6 +27,7 @@ import (
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/middleware"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/oauth"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
@@ -184,6 +185,16 @@ func run(log *slog.Logger) error {
 	}
 
 	probes := httpx.NewHealth()
+
+	// Pembatasan laju memakai Redis yang sama dengan cache pencabutan.
+	//
+	// Jalur autentikasi tanpa pembatasan adalah tempat menebak kata sandi tanpa
+	// batas, dan jalur LLM tanpa pembatasan adalah tagihan tanpa batas.
+	limiter, err := middleware.NewLimiter(redisClient, log)
+	if err != nil {
+		return err
+	}
+
 	router := edge.NewRouter(edge.Deps{
 		Identity:    identityClient,
 		Profiles:    profilev1.NewProfileClient(profileConn),
@@ -198,6 +209,7 @@ func run(log *slog.Logger) error {
 		Nutrition:   nutritionHandler,
 		Dashboards:  dashboardHandler,
 		Regions:     regions,
+		Limiter:     limiter,
 	})
 
 	server := &http.Server{

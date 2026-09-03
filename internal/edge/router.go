@@ -55,6 +55,20 @@ type Deps struct {
 	// sekali, sehingga jawabannya 404 - bukan endpoint yang ada tetapi
 	// selalu gagal.
 	Social *handler.Social
+
+	// Limiter boleh nil: lingkungan tanpa Redis tetap melayani, tanpa
+	// pembatasan laju. Itu dinyatakan di log saat start-up, bukan diam-diam -
+	// jalur autentikasi tanpa pembatasan adalah tempat menebak kata sandi.
+	Limiter *middleware.Limiter
+}
+
+// passthrough adalah middleware yang tidak melakukan apa-apa.
+//
+// Dipakai saat pembatasan laju tidak terpasang. Ia ada supaya daftar rutenya
+// tetap berbentuk sama di kedua keadaan - dua cabang pendaftaran rute berarti
+// satu di antaranya suatu saat kehilangan sebuah endpoint.
+func passthrough() gin.HandlerFunc {
+	return func(c *gin.Context) { c.Next() }
 }
 
 // NewRouter merakit seluruh rute.
@@ -68,6 +82,13 @@ func NewRouter(deps Deps) *gin.Engine {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+
+	// Batas ukuran badan dipasang GLOBAL, sebelum rute mana pun.
+	//
+	// Dipasang per rute, ia akan terlewat pada endpoint berikutnya yang
+	// ditambahkan seseorang - dan endpoint yang terlewat itulah yang akan
+	// dipakai untuk mengirimkan sesuatu yang sangat besar.
+	router.Use(middleware.LimitBody())
 
 	// 404 dan 405 dijawab dengan bentuk galat yang sama seperti selebihnya.
 	// Bawaan Gin mengirim badan teks kosong, sehingga klien yang mengurai
@@ -89,12 +110,23 @@ func NewRouter(deps Deps) *gin.Engine {
 	// Prefiks dipertahankan dari sistem lama; frontend memanggil /api/v1.
 	api := router.Group("/api/v1")
 
+	// authLimit membatasi setiap jalur yang membandingkan kredensial atau
+	// mengirim surel. Nil berarti pembatasan tidak dipasang - lingkungan tanpa
+	// Redis tetap melayani, dan itu dinyatakan di log saat start-up.
+	authLimit := passthrough()
+	llmLimit := passthrough()
+	if deps.Limiter != nil {
+		authLimits, llmLimits := middleware.LimitsFromEnv()
+		authLimit = deps.Limiter.ByIP("auth", authLimits)
+		llmLimit = deps.Limiter.ByUser("llm", llmLimits)
+	}
+
 	public := api.Group("")
 	{
-		public.POST("/register", auth.Register)
-		public.POST("/login", auth.Login)
-		public.POST("/password-reset/request", auth.RequestPasswordReset)
-		public.POST("/password-reset/confirm", auth.ConfirmPasswordReset)
+		public.POST("/register", authLimit, auth.Register)
+		public.POST("/login", authLimit, auth.Login)
+		public.POST("/password-reset/request", authLimit, auth.RequestPasswordReset)
+		public.POST("/password-reset/confirm", authLimit, auth.ConfirmPasswordReset)
 
 		if deps.Social != nil {
 			public.GET("/auth/:provider/redirect", deps.Social.Redirect)
@@ -111,7 +143,10 @@ func NewRouter(deps Deps) *gin.Engine {
 		// DELETE, bentuk yang sama dengan sistem lama (ADR-005). Yang berubah
 		// adalah kode jawabannya - 202, bukan 200 - karena penghapusannya
 		// menyeberangi enam unit dan belum selesai saat permintaan dijawab.
-		protected.DELETE("/delete-account", auth.DeleteAccount)
+		// Penghapusan akun membandingkan kata sandi, jadi ia dibatasi seperti
+		// jalur autentikasi lain - tanpa itu, ia menjadi tempat menebak kata
+		// sandi yang tidak terbatas.
+		protected.DELETE("/delete-account", authLimit, auth.DeleteAccount)
 		protected.GET("/me", handler.Me)
 		protected.GET("/profile", profiles.Show)
 		protected.PATCH("/profile", profiles.Update)
@@ -125,7 +160,7 @@ func NewRouter(deps Deps) *gin.Engine {
 			// klien yang ada tidak perlu berubah (ADR-005). Yang berubah adalah
 			// jawabannya - 202 dengan job_id, bukan laporannya - dan itu dicatat
 			// sebagai pengecualian yang disengaja.
-			protected.PATCH("/risk-assessments/:slug/personalize", deps.Assessments.Personalize)
+			protected.PATCH("/risk-assessments/:slug/personalize", llmLimit, deps.Assessments.Personalize)
 			// Dua belas endpoint coaching. Bentuk URL-nya dipertahankan dari
 			// sistem lama supaya klien yang ada tidak perlu berubah (ADR-005).
 			//
@@ -134,15 +169,15 @@ func NewRouter(deps Deps) *gin.Engine {
 			// hasilnya datang belakangan - sistem lama menahan permintaan HTTP
 			// selama Gemini bekerja.
 			if deps.Coaching != nil {
-				mountCoaching(protected, deps.Coaching)
+				mountCoaching(protected, deps.Coaching, llmLimit)
 			}
 
 			if deps.Chat != nil {
-				mountChat(protected, deps.Chat)
+				mountChat(protected, deps.Chat, llmLimit)
 			}
 
 			if deps.Nutrition != nil {
-				mountNutrition(protected, deps.Nutrition)
+				mountNutrition(protected, deps.Nutrition, llmLimit)
 			}
 
 			if deps.Dashboards != nil {
@@ -166,17 +201,17 @@ func NewRouter(deps Deps) *gin.Engine {
 // Yang BERUBAH adalah kode jawabannya: memulai program, membuka thread, dan
 // mengirim pesan kini menjawab 202 Accepted karena hasilnya datang belakangan.
 // Sistem lama menahan permintaan HTTP selama Gemini bekerja.
-func mountCoaching(r gin.IRouter, h *handler.Coaching) {
+func mountCoaching(r gin.IRouter, h *handler.Coaching, limit gin.HandlerFunc) {
 	group := r.Group("/coaching")
 
-	group.POST("/programs", h.StartProgram)
+	group.POST("/programs", limit, h.StartProgram)
 	group.GET("/programs/:slug", h.ShowProgram)
 	group.PATCH("/programs/:slug/toggle-program-status", h.ToggleProgramStatus)
 	group.DELETE("/programs/:slug", h.DestroyProgram)
 	group.GET("/programs/:slug/graduation-report", h.GraduationReport)
-	group.POST("/programs/:slug/threads", h.StartThread)
+	group.POST("/programs/:slug/threads", limit, h.StartThread)
 
-	group.POST("/threads/:slug/messages", h.SendMessage)
+	group.POST("/threads/:slug/messages", limit, h.SendMessage)
 	group.GET("/threads/:slug", h.ShowThread)
 	group.PATCH("/threads/:slug", h.UpdateThread)
 	group.DELETE("/threads/:slug", h.DestroyThread)
@@ -189,14 +224,14 @@ func mountCoaching(r gin.IRouter, h *handler.Coaching) {
 // Bentuk URL-nya dipertahankan dari sistem lama (ADR-005). Yang berubah adalah
 // kode jawabannya: membuat percakapan dengan pesan dan mengirim pesan kini
 // menjawab 202 Accepted, karena balasannya datang belakangan.
-func mountChat(r gin.IRouter, h *handler.Chat) {
+func mountChat(r gin.IRouter, h *handler.Chat, limit gin.HandlerFunc) {
 	group := r.Group("/chat")
 
 	group.GET("/conversations", h.Index)
-	group.POST("/conversations", h.Store)
+	group.POST("/conversations", limit, h.Store)
 	group.GET("/conversations/:slug", h.Show)
 	group.PATCH("/conversations/:slug", h.Update)
-	group.POST("/conversations/:slug/messages", h.SendMessage)
+	group.POST("/conversations/:slug/messages", limit, h.SendMessage)
 	group.DELETE("/conversations/:slug", h.Destroy)
 }
 
@@ -206,10 +241,10 @@ func mountChat(r gin.IRouter, h *handler.Chat) {
 // kode jawaban pembuatan panduan: 202 Accepted, karena panduannya datang
 // belakangan. Sistem lama menahan permintaan HTTP selama Gemini bekerja, dengan
 // timeout 180 detik (B14).
-func mountNutrition(r gin.IRouter, h *handler.Nutrition) {
+func mountNutrition(r gin.IRouter, h *handler.Nutrition, limit gin.HandlerFunc) {
 	group := r.Group("/culinary")
 
 	group.GET("/hub-data", h.HubData)
 	group.PATCH("/preferences", h.UpdatePreferences)
-	group.POST("/daily-guides", h.GenerateDailyGuide)
+	group.POST("/daily-guides", limit, h.GenerateDailyGuide)
 }
