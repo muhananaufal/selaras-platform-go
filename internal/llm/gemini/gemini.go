@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"strings"
@@ -182,10 +183,16 @@ func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, e
 		return nil, &transportError{err: err}
 	}
 	defer func() {
-		// Badan respons ditutup, dan sisanya dibuang lebih dulu supaya koneksi
-		// bisa dipakai ulang alih-alih dibuang bersamanya.
-		_, _ = io.Copy(io.Discard, io.LimitReader(httpResp.Body, 4<<10))
-		_ = httpResp.Body.Close()
+		// Sisanya dibuang lebih dulu supaya koneksinya bisa dipakai ulang
+		// alih-alih dibuang bersamanya. Galat di sini dicatat, bukan
+		// dikembalikan: jawabannya sudah terbaca, dan kegagalan membersihkan
+		// koneksi tidak membatalkannya.
+		if _, err := io.Copy(io.Discard, io.LimitReader(httpResp.Body, 4<<10)); err != nil {
+			slog.Warn("draining the gemini response", "error", err)
+		}
+		if err := httpResp.Body.Close(); err != nil {
+			slog.Warn("closing the gemini response", "error", err)
+		}
 	}()
 
 	// Dibaca dengan batas. Tanpa batas, satu jawaban yang mengoceh - atau
