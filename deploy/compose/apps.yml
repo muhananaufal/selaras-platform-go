@@ -117,6 +117,34 @@ services:
         limits:
           memory: 160M
 
+  coaching-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: coaching-svc
+    restart: unless-stopped
+    container_name: selaras-coaching
+    environment:
+      COACHING_DATABASE_DSN: >-
+        postgres://svc_coaching:${SVC_COACHING_PASSWORD:?set SVC_COACHING_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=coaching
+      COACHING_GRPC_ADDR: ":9401"
+      COACHING_HEALTH_ADDR: ":9403"
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "127.0.0.1:19401:9401"
+      - "127.0.0.1:19403:9403"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
   llm-worker:
     build:
       context: ../..
@@ -163,6 +191,7 @@ services:
       IDENTITY_GRPC_TARGET: identity-svc:9101
       PROFILE_GRPC_TARGET: profile-svc:9201
       REDIS_URL: redis://redis:6379/0
+      COACHING_GRPC_TARGET: coaching-svc:9401
       # Kosong berarti masuk lewat penyedia sosial tidak dipasang, dan
       # rutenya tidak ada. Terisi sebagian menggagalkan start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

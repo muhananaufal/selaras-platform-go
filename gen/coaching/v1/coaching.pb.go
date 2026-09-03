@@ -181,6 +181,67 @@ func (CurriculumStatus) EnumDescriptor() ([]byte, []int) {
 	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{2}
 }
 
+// Keadaan laporan kelulusan.
+//
+// Empat keadaan, bukan dua. Yang diturunkan dari ada tidaknya laporan hanya
+// bisa membedakan "ada" dan "tidak ada", dan keduanya menyembunyikan yang
+// paling perlu diketahui klien: laporannya sedang dibuat, atau pembuatannya
+// gagal dan menunggu lebih lama tidak akan mengubah apa pun.
+type GraduationStatus int32
+
+const (
+	GraduationStatus_GRADUATION_STATUS_UNSPECIFIED   GraduationStatus = 0
+	GraduationStatus_GRADUATION_STATUS_NOT_REQUESTED GraduationStatus = 1
+	GraduationStatus_GRADUATION_STATUS_PENDING       GraduationStatus = 2
+	GraduationStatus_GRADUATION_STATUS_READY         GraduationStatus = 3
+	GraduationStatus_GRADUATION_STATUS_FAILED        GraduationStatus = 4
+)
+
+// Enum value maps for GraduationStatus.
+var (
+	GraduationStatus_name = map[int32]string{
+		0: "GRADUATION_STATUS_UNSPECIFIED",
+		1: "GRADUATION_STATUS_NOT_REQUESTED",
+		2: "GRADUATION_STATUS_PENDING",
+		3: "GRADUATION_STATUS_READY",
+		4: "GRADUATION_STATUS_FAILED",
+	}
+	GraduationStatus_value = map[string]int32{
+		"GRADUATION_STATUS_UNSPECIFIED":   0,
+		"GRADUATION_STATUS_NOT_REQUESTED": 1,
+		"GRADUATION_STATUS_PENDING":       2,
+		"GRADUATION_STATUS_READY":         3,
+		"GRADUATION_STATUS_FAILED":        4,
+	}
+)
+
+func (x GraduationStatus) Enum() *GraduationStatus {
+	p := new(GraduationStatus)
+	*p = x
+	return p
+}
+
+func (x GraduationStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GraduationStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_coaching_v1_coaching_proto_enumTypes[3].Descriptor()
+}
+
+func (GraduationStatus) Type() protoreflect.EnumType {
+	return &file_coaching_v1_coaching_proto_enumTypes[3]
+}
+
+func (x GraduationStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GraduationStatus.Descriptor instead.
+func (GraduationStatus) EnumDescriptor() ([]byte, []int) {
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{3}
+}
+
 type TaskType int32
 
 const (
@@ -214,11 +275,11 @@ func (x TaskType) String() string {
 }
 
 func (TaskType) Descriptor() protoreflect.EnumDescriptor {
-	return file_coaching_v1_coaching_proto_enumTypes[3].Descriptor()
+	return file_coaching_v1_coaching_proto_enumTypes[4].Descriptor()
 }
 
 func (TaskType) Type() protoreflect.EnumType {
-	return &file_coaching_v1_coaching_proto_enumTypes[3]
+	return &file_coaching_v1_coaching_proto_enumTypes[4]
 }
 
 func (x TaskType) Number() protoreflect.EnumNumber {
@@ -227,7 +288,7 @@ func (x TaskType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskType.Descriptor instead.
 func (TaskType) EnumDescriptor() ([]byte, []int) {
-	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{3}
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{4}
 }
 
 type MessageRole int32
@@ -263,11 +324,11 @@ func (x MessageRole) String() string {
 }
 
 func (MessageRole) Descriptor() protoreflect.EnumDescriptor {
-	return file_coaching_v1_coaching_proto_enumTypes[4].Descriptor()
+	return file_coaching_v1_coaching_proto_enumTypes[5].Descriptor()
 }
 
 func (MessageRole) Type() protoreflect.EnumType {
-	return &file_coaching_v1_coaching_proto_enumTypes[4]
+	return &file_coaching_v1_coaching_proto_enumTypes[5]
 }
 
 func (x MessageRole) Number() protoreflect.EnumNumber {
@@ -276,7 +337,7 @@ func (x MessageRole) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MessageRole.Descriptor instead.
 func (MessageRole) EnumDescriptor() ([]byte, []int) {
-	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{4}
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{5}
 }
 
 type CoachingTask struct {
@@ -647,16 +708,28 @@ func (x *SourceAssessment) GetModelUsed() string {
 }
 
 type CoachingProgram struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Slug             string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId    string                 `protobuf:"bytes,3,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
-	SourceAssessment *SourceAssessment      `protobuf:"bytes,4,opt,name=source_assessment,json=sourceAssessment,proto3" json:"source_assessment,omitempty"`
-	Title            string                 `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
-	Description      string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
-	Status           ProgramStatus          `protobuf:"varint,7,opt,name=status,proto3,enum=coaching.v1.ProgramStatus" json:"status,omitempty"`
-	Difficulty       Difficulty             `protobuf:"varint,8,opt,name=difficulty,proto3,enum=coaching.v1.Difficulty" json:"difficulty,omitempty"`
-	StartDate        string                 `protobuf:"bytes,9,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Slug  string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
+	// Pemilik program adalah PENGGUNA, bukan profilnya (ADR-024).
+	//
+	// Kontrak ini semula memakai user_profile_id, dan itu keliru karena dua
+	// hal. Pertama, ADR-002 aturan 2 mengizinkan profil belum terisi - program
+	// yang dikunci pada id profil akan mengunci keluar pengguna yang justru
+	// diizinkan ada. Kedua, id profil harus diterjemahkan lebih dulu dari
+	// identitas yang sudah terverifikasi, dan penerjemahan itu adalah
+	// panggilan yang tidak menambah apa pun (ADR-023).
+	//
+	// Sistem lama memakai profile->id di CoachingController dan user_id di
+	// ChatController - dua pola identitas untuk satu pertanyaan, dan itu
+	// separuh dari temuan S9.
+	UserId           string            `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	SourceAssessment *SourceAssessment `protobuf:"bytes,4,opt,name=source_assessment,json=sourceAssessment,proto3" json:"source_assessment,omitempty"`
+	Title            string            `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	Description      string            `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	Status           ProgramStatus     `protobuf:"varint,7,opt,name=status,proto3,enum=coaching.v1.ProgramStatus" json:"status,omitempty"`
+	Difficulty       Difficulty        `protobuf:"varint,8,opt,name=difficulty,proto3,enum=coaching.v1.Difficulty" json:"difficulty,omitempty"`
+	StartDate        string            `protobuf:"bytes,9,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
 	// Satu-satunya sumber kebenaran untuk akhir program. Sistem lama
 	// menghitungnya dari created_at ditambah 28 hari sambil menyimpan kolom
 	// ini tanpa memakainya (temuan B5).
@@ -714,9 +787,9 @@ func (x *CoachingProgram) GetSlug() string {
 	return ""
 }
 
-func (x *CoachingProgram) GetUserProfileId() string {
+func (x *CoachingProgram) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -807,7 +880,7 @@ func (x *CoachingProgram) GetTimestamps() *v1.Timestamps {
 
 type StartProgramRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId      string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId             string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	RiskAssessmentSlug string                 `protobuf:"bytes,2,opt,name=risk_assessment_slug,json=riskAssessmentSlug,proto3" json:"risk_assessment_slug,omitempty"`
 	Difficulty         Difficulty             `protobuf:"varint,3,opt,name=difficulty,proto3,enum=coaching.v1.Difficulty" json:"difficulty,omitempty"`
 	IdempotencyKey     *v1.IdempotencyKey     `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -845,9 +918,9 @@ func (*StartProgramRequest) Descriptor() ([]byte, []int) {
 	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *StartProgramRequest) GetUserProfileId() string {
+func (x *StartProgramRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -874,8 +947,14 @@ func (x *StartProgramRequest) GetIdempotencyKey() *v1.IdempotencyKey {
 }
 
 type StartProgramResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Program       *CoachingProgram       `protobuf:"bytes,1,opt,name=program,proto3" json:"program,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// job_id menunjuk pekerjaan pembuatan kurikulum.
+	//
+	// Ia ada karena StartProgram menjawab SEBELUM kurikulumnya jadi: program
+	// dikembalikan dalam keadaan pending, dan klien memakai id ini untuk
+	// menanyakan kemajuannya.
+	JobId         string           `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Program       *CoachingProgram `protobuf:"bytes,1,opt,name=program,proto3" json:"program,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -910,6 +989,13 @@ func (*StartProgramResponse) Descriptor() ([]byte, []int) {
 	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{7}
 }
 
+func (x *StartProgramResponse) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
 func (x *StartProgramResponse) GetProgram() *CoachingProgram {
 	if x != nil {
 		return x.Program
@@ -920,7 +1006,7 @@ func (x *StartProgramResponse) GetProgram() *CoachingProgram {
 type GetProgramRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -962,9 +1048,9 @@ func (x *GetProgramRequest) GetSlug() string {
 	return ""
 }
 
-func (x *GetProgramRequest) GetUserProfileId() string {
+func (x *GetProgramRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1016,7 +1102,7 @@ func (x *GetProgramResponse) GetProgram() *CoachingProgram {
 type ToggleProgramStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1058,9 +1144,9 @@ func (x *ToggleProgramStatusRequest) GetSlug() string {
 	return ""
 }
 
-func (x *ToggleProgramStatusRequest) GetUserProfileId() string {
+func (x *ToggleProgramStatusRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1112,7 +1198,7 @@ func (x *ToggleProgramStatusResponse) GetProgram() *CoachingProgram {
 type DeleteProgramRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1154,9 +1240,9 @@ func (x *DeleteProgramRequest) GetSlug() string {
 	return ""
 }
 
-func (x *DeleteProgramRequest) GetUserProfileId() string {
+func (x *DeleteProgramRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1200,7 +1286,7 @@ func (*DeleteProgramResponse) Descriptor() ([]byte, []int) {
 type ToggleTaskStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1242,9 +1328,9 @@ func (x *ToggleTaskStatusRequest) GetTaskId() string {
 	return ""
 }
 
-func (x *ToggleTaskStatusRequest) GetUserProfileId() string {
+func (x *ToggleTaskStatusRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1296,7 +1382,7 @@ func (x *ToggleTaskStatusResponse) GetTask() *CoachingTask {
 type GetGraduationReportRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1338,16 +1424,19 @@ func (x *GetGraduationReportRequest) GetSlug() string {
 	return ""
 }
 
-func (x *GetGraduationReportRequest) GetUserProfileId() string {
+func (x *GetGraduationReportRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
 
 type GetGraduationReportResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReportJson    string                 `protobuf:"bytes,1,opt,name=report_json,json=reportJson,proto3" json:"report_json,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Kosong selama laporannya belum ada. Status di bawah yang membedakan
+	// "belum diminta" dari "sedang dibuat" dan dari "gagal".
+	ReportJson    string           `protobuf:"bytes,1,opt,name=report_json,json=reportJson,proto3" json:"report_json,omitempty"`
+	Status        GraduationStatus `protobuf:"varint,2,opt,name=status,proto3,enum=coaching.v1.GraduationStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1389,11 +1478,18 @@ func (x *GetGraduationReportResponse) GetReportJson() string {
 	return ""
 }
 
+func (x *GetGraduationReportResponse) GetStatus() GraduationStatus {
+	if x != nil {
+		return x.Status
+	}
+	return GraduationStatus_GRADUATION_STATUS_UNSPECIFIED
+}
+
 type StartThreadRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProgramSlug   string                 `protobuf:"bytes,1,opt,name=program_slug,json=programSlug,proto3" json:"program_slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ProgramSlug string                 `protobuf:"bytes,1,opt,name=program_slug,json=programSlug,proto3" json:"program_slug,omitempty"`
+	UserId      string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Message     string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	// Bila kosong, judul diambil dari 45 karakter pertama pesan (D12).
 	Title          *string            `protobuf:"bytes,4,opt,name=title,proto3,oneof" json:"title,omitempty"`
 	IdempotencyKey *v1.IdempotencyKey `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -1438,9 +1534,9 @@ func (x *StartThreadRequest) GetProgramSlug() string {
 	return ""
 }
 
-func (x *StartThreadRequest) GetUserProfileId() string {
+func (x *StartThreadRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1521,7 +1617,7 @@ func (x *StartThreadResponse) GetJobId() string {
 type GetThreadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Page          *v1.PageRequest        `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1564,9 +1660,9 @@ func (x *GetThreadRequest) GetSlug() string {
 	return ""
 }
 
-func (x *GetThreadRequest) GetUserProfileId() string {
+func (x *GetThreadRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1641,7 +1737,7 @@ func (x *GetThreadResponse) GetPage() *v1.PageResponse {
 type UpdateThreadTitleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1684,9 +1780,9 @@ func (x *UpdateThreadTitleRequest) GetSlug() string {
 	return ""
 }
 
-func (x *UpdateThreadTitleRequest) GetUserProfileId() string {
+func (x *UpdateThreadTitleRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1745,7 +1841,7 @@ func (x *UpdateThreadTitleResponse) GetThread() *CoachingThread {
 type DeleteThreadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1787,9 +1883,9 @@ func (x *DeleteThreadRequest) GetSlug() string {
 	return ""
 }
 
-func (x *DeleteThreadRequest) GetUserProfileId() string {
+func (x *DeleteThreadRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1833,7 +1929,7 @@ func (*DeleteThreadResponse) Descriptor() ([]byte, []int) {
 type SendThreadMessageRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ThreadSlug     string                 `protobuf:"bytes,1,opt,name=thread_slug,json=threadSlug,proto3" json:"thread_slug,omitempty"`
-	UserProfileId  string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId         string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Message        string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	IdempotencyKey *v1.IdempotencyKey     `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1877,9 +1973,9 @@ func (x *SendThreadMessageRequest) GetThreadSlug() string {
 	return ""
 }
 
-func (x *SendThreadMessageRequest) GetUserProfileId() string {
+func (x *SendThreadMessageRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1988,11 +2084,11 @@ const file_coaching_v1_coaching_proto_rawDesc = "" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12'\n" +
 	"\x0frisk_percentage\x18\x03 \x01(\x01R\x0eriskPercentage\x12\x1d\n" +
 	"\n" +
-	"model_used\x18\x04 \x01(\tR\tmodelUsed\"\xc9\x05\n" +
+	"model_used\x18\x04 \x01(\tR\tmodelUsed\"\xba\x05\n" +
 	"\x0fCoachingProgram\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04slug\x18\x02 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x03 \x01(\tR\ruserProfileId\x12J\n" +
+	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12J\n" +
 	"\x11source_assessment\x18\x04 \x01(\v2\x1d.coaching.v1.SourceAssessmentR\x10sourceAssessment\x12\x14\n" +
 	"\x05title\x18\x05 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x122\n" +
@@ -2011,73 +2107,75 @@ const file_coaching_v1_coaching_proto_rawDesc = "" +
 	"\n" +
 	"timestamps\x18\x0f \x01(\v2\x15.common.v1.TimestampsR\n" +
 	"timestampsB\x19\n" +
-	"\x17_graduation_report_json\"\xec\x01\n" +
-	"\x13StartProgramRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x120\n" +
+	"\x17_graduation_report_json\"\xdd\x01\n" +
+	"\x13StartProgramRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x120\n" +
 	"\x14risk_assessment_slug\x18\x02 \x01(\tR\x12riskAssessmentSlug\x127\n" +
 	"\n" +
 	"difficulty\x18\x03 \x01(\x0e2\x17.coaching.v1.DifficultyR\n" +
 	"difficulty\x12B\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"N\n" +
-	"\x14StartProgramResponse\x126\n" +
-	"\aprogram\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingProgramR\aprogram\"O\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"e\n" +
+	"\x14StartProgramResponse\x12\x15\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x126\n" +
+	"\aprogram\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingProgramR\aprogram\"@\n" +
 	"\x11GetProgramRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\"L\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"L\n" +
 	"\x12GetProgramResponse\x126\n" +
-	"\aprogram\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingProgramR\aprogram\"X\n" +
+	"\aprogram\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingProgramR\aprogram\"I\n" +
 	"\x1aToggleProgramStatusRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\"U\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"U\n" +
 	"\x1bToggleProgramStatusResponse\x126\n" +
-	"\aprogram\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingProgramR\aprogram\"R\n" +
+	"\aprogram\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingProgramR\aprogram\"C\n" +
 	"\x14DeleteProgramRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\"\x17\n" +
-	"\x15DeleteProgramResponse\"Z\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x17\n" +
+	"\x15DeleteProgramResponse\"K\n" +
 	"\x17ToggleTaskStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\"I\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"I\n" +
 	"\x18ToggleTaskStatusResponse\x12-\n" +
-	"\x04task\x18\x01 \x01(\v2\x19.coaching.v1.CoachingTaskR\x04task\"X\n" +
+	"\x04task\x18\x01 \x01(\v2\x19.coaching.v1.CoachingTaskR\x04task\"I\n" +
 	"\x1aGetGraduationReportRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\">\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"u\n" +
 	"\x1bGetGraduationReportResponse\x12\x1f\n" +
 	"\vreport_json\x18\x01 \x01(\tR\n" +
-	"reportJson\"\xe2\x01\n" +
+	"reportJson\x125\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1d.coaching.v1.GraduationStatusR\x06status\"\xd3\x01\n" +
 	"\x12StartThreadRequest\x12!\n" +
-	"\fprogram_slug\x18\x01 \x01(\tR\vprogramSlug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12\x18\n" +
+	"\fprogram_slug\x18\x01 \x01(\tR\vprogramSlug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x19\n" +
 	"\x05title\x18\x04 \x01(\tH\x00R\x05title\x88\x01\x01\x12B\n" +
 	"\x0fidempotency_key\x18\x05 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKeyB\b\n" +
 	"\x06_title\"a\n" +
 	"\x13StartThreadResponse\x123\n" +
 	"\x06thread\x18\x01 \x01(\v2\x1b.coaching.v1.CoachingThreadR\x06thread\x12\x15\n" +
-	"\x06job_id\x18\x02 \x01(\tR\x05jobId\"z\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\"k\n" +
 	"\x10GetThreadRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12*\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12*\n" +
 	"\x04page\x18\x03 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\xaf\x01\n" +
 	"\x11GetThreadResponse\x123\n" +
 	"\x06thread\x18\x01 \x01(\v2\x1b.coaching.v1.CoachingThreadR\x06thread\x128\n" +
 	"\bmessages\x18\x02 \x03(\v2\x1c.coaching.v1.CoachingMessageR\bmessages\x12+\n" +
-	"\x04page\x18\x03 \x01(\v2\x17.common.v1.PageResponseR\x04page\"l\n" +
+	"\x04page\x18\x03 \x01(\v2\x17.common.v1.PageResponseR\x04page\"]\n" +
 	"\x18UpdateThreadTitleRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12\x14\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\"P\n" +
 	"\x19UpdateThreadTitleResponse\x123\n" +
-	"\x06thread\x18\x01 \x01(\v2\x1b.coaching.v1.CoachingThreadR\x06thread\"Q\n" +
+	"\x06thread\x18\x01 \x01(\v2\x1b.coaching.v1.CoachingThreadR\x06thread\"B\n" +
 	"\x13DeleteThreadRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\"\x16\n" +
-	"\x14DeleteThreadResponse\"\xc1\x01\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x16\n" +
+	"\x14DeleteThreadResponse\"\xb2\x01\n" +
 	"\x18SendThreadMessageRequest\x12\x1f\n" +
 	"\vthread_slug\x18\x01 \x01(\tR\n" +
-	"threadSlug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12\x18\n" +
+	"threadSlug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12B\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"j\n" +
 	"\x19SendThreadMessageResponse\x126\n" +
@@ -2099,7 +2197,13 @@ const file_coaching_v1_coaching_proto_rawDesc = "" +
 	"\x1dCURRICULUM_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19CURRICULUM_STATUS_PENDING\x10\x01\x12\x1b\n" +
 	"\x17CURRICULUM_STATUS_READY\x10\x02\x12\x1c\n" +
-	"\x18CURRICULUM_STATUS_FAILED\x10\x03*`\n" +
+	"\x18CURRICULUM_STATUS_FAILED\x10\x03*\xb4\x01\n" +
+	"\x10GraduationStatus\x12!\n" +
+	"\x1dGRADUATION_STATUS_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fGRADUATION_STATUS_NOT_REQUESTED\x10\x01\x12\x1d\n" +
+	"\x19GRADUATION_STATUS_PENDING\x10\x02\x12\x1b\n" +
+	"\x17GRADUATION_STATUS_READY\x10\x03\x12\x1c\n" +
+	"\x18GRADUATION_STATUS_FAILED\x10\x04*`\n" +
 	"\bTaskType\x12\x19\n" +
 	"\x15TASK_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TASK_TYPE_MAIN_MISSION\x10\x01\x12\x1d\n" +
@@ -2135,102 +2239,104 @@ func file_coaching_v1_coaching_proto_rawDescGZIP() []byte {
 	return file_coaching_v1_coaching_proto_rawDescData
 }
 
-var file_coaching_v1_coaching_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_coaching_v1_coaching_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_coaching_v1_coaching_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_coaching_v1_coaching_proto_goTypes = []any{
 	(ProgramStatus)(0),                  // 0: coaching.v1.ProgramStatus
 	(Difficulty)(0),                     // 1: coaching.v1.Difficulty
 	(CurriculumStatus)(0),               // 2: coaching.v1.CurriculumStatus
-	(TaskType)(0),                       // 3: coaching.v1.TaskType
-	(MessageRole)(0),                    // 4: coaching.v1.MessageRole
-	(*CoachingTask)(nil),                // 5: coaching.v1.CoachingTask
-	(*CoachingWeek)(nil),                // 6: coaching.v1.CoachingWeek
-	(*CoachingThread)(nil),              // 7: coaching.v1.CoachingThread
-	(*CoachingMessage)(nil),             // 8: coaching.v1.CoachingMessage
-	(*SourceAssessment)(nil),            // 9: coaching.v1.SourceAssessment
-	(*CoachingProgram)(nil),             // 10: coaching.v1.CoachingProgram
-	(*StartProgramRequest)(nil),         // 11: coaching.v1.StartProgramRequest
-	(*StartProgramResponse)(nil),        // 12: coaching.v1.StartProgramResponse
-	(*GetProgramRequest)(nil),           // 13: coaching.v1.GetProgramRequest
-	(*GetProgramResponse)(nil),          // 14: coaching.v1.GetProgramResponse
-	(*ToggleProgramStatusRequest)(nil),  // 15: coaching.v1.ToggleProgramStatusRequest
-	(*ToggleProgramStatusResponse)(nil), // 16: coaching.v1.ToggleProgramStatusResponse
-	(*DeleteProgramRequest)(nil),        // 17: coaching.v1.DeleteProgramRequest
-	(*DeleteProgramResponse)(nil),       // 18: coaching.v1.DeleteProgramResponse
-	(*ToggleTaskStatusRequest)(nil),     // 19: coaching.v1.ToggleTaskStatusRequest
-	(*ToggleTaskStatusResponse)(nil),    // 20: coaching.v1.ToggleTaskStatusResponse
-	(*GetGraduationReportRequest)(nil),  // 21: coaching.v1.GetGraduationReportRequest
-	(*GetGraduationReportResponse)(nil), // 22: coaching.v1.GetGraduationReportResponse
-	(*StartThreadRequest)(nil),          // 23: coaching.v1.StartThreadRequest
-	(*StartThreadResponse)(nil),         // 24: coaching.v1.StartThreadResponse
-	(*GetThreadRequest)(nil),            // 25: coaching.v1.GetThreadRequest
-	(*GetThreadResponse)(nil),           // 26: coaching.v1.GetThreadResponse
-	(*UpdateThreadTitleRequest)(nil),    // 27: coaching.v1.UpdateThreadTitleRequest
-	(*UpdateThreadTitleResponse)(nil),   // 28: coaching.v1.UpdateThreadTitleResponse
-	(*DeleteThreadRequest)(nil),         // 29: coaching.v1.DeleteThreadRequest
-	(*DeleteThreadResponse)(nil),        // 30: coaching.v1.DeleteThreadResponse
-	(*SendThreadMessageRequest)(nil),    // 31: coaching.v1.SendThreadMessageRequest
-	(*SendThreadMessageResponse)(nil),   // 32: coaching.v1.SendThreadMessageResponse
-	(*v1.Timestamps)(nil),               // 33: common.v1.Timestamps
-	(*v1.IdempotencyKey)(nil),           // 34: common.v1.IdempotencyKey
-	(*v1.PageRequest)(nil),              // 35: common.v1.PageRequest
-	(*v1.PageResponse)(nil),             // 36: common.v1.PageResponse
+	(GraduationStatus)(0),               // 3: coaching.v1.GraduationStatus
+	(TaskType)(0),                       // 4: coaching.v1.TaskType
+	(MessageRole)(0),                    // 5: coaching.v1.MessageRole
+	(*CoachingTask)(nil),                // 6: coaching.v1.CoachingTask
+	(*CoachingWeek)(nil),                // 7: coaching.v1.CoachingWeek
+	(*CoachingThread)(nil),              // 8: coaching.v1.CoachingThread
+	(*CoachingMessage)(nil),             // 9: coaching.v1.CoachingMessage
+	(*SourceAssessment)(nil),            // 10: coaching.v1.SourceAssessment
+	(*CoachingProgram)(nil),             // 11: coaching.v1.CoachingProgram
+	(*StartProgramRequest)(nil),         // 12: coaching.v1.StartProgramRequest
+	(*StartProgramResponse)(nil),        // 13: coaching.v1.StartProgramResponse
+	(*GetProgramRequest)(nil),           // 14: coaching.v1.GetProgramRequest
+	(*GetProgramResponse)(nil),          // 15: coaching.v1.GetProgramResponse
+	(*ToggleProgramStatusRequest)(nil),  // 16: coaching.v1.ToggleProgramStatusRequest
+	(*ToggleProgramStatusResponse)(nil), // 17: coaching.v1.ToggleProgramStatusResponse
+	(*DeleteProgramRequest)(nil),        // 18: coaching.v1.DeleteProgramRequest
+	(*DeleteProgramResponse)(nil),       // 19: coaching.v1.DeleteProgramResponse
+	(*ToggleTaskStatusRequest)(nil),     // 20: coaching.v1.ToggleTaskStatusRequest
+	(*ToggleTaskStatusResponse)(nil),    // 21: coaching.v1.ToggleTaskStatusResponse
+	(*GetGraduationReportRequest)(nil),  // 22: coaching.v1.GetGraduationReportRequest
+	(*GetGraduationReportResponse)(nil), // 23: coaching.v1.GetGraduationReportResponse
+	(*StartThreadRequest)(nil),          // 24: coaching.v1.StartThreadRequest
+	(*StartThreadResponse)(nil),         // 25: coaching.v1.StartThreadResponse
+	(*GetThreadRequest)(nil),            // 26: coaching.v1.GetThreadRequest
+	(*GetThreadResponse)(nil),           // 27: coaching.v1.GetThreadResponse
+	(*UpdateThreadTitleRequest)(nil),    // 28: coaching.v1.UpdateThreadTitleRequest
+	(*UpdateThreadTitleResponse)(nil),   // 29: coaching.v1.UpdateThreadTitleResponse
+	(*DeleteThreadRequest)(nil),         // 30: coaching.v1.DeleteThreadRequest
+	(*DeleteThreadResponse)(nil),        // 31: coaching.v1.DeleteThreadResponse
+	(*SendThreadMessageRequest)(nil),    // 32: coaching.v1.SendThreadMessageRequest
+	(*SendThreadMessageResponse)(nil),   // 33: coaching.v1.SendThreadMessageResponse
+	(*v1.Timestamps)(nil),               // 34: common.v1.Timestamps
+	(*v1.IdempotencyKey)(nil),           // 35: common.v1.IdempotencyKey
+	(*v1.PageRequest)(nil),              // 36: common.v1.PageRequest
+	(*v1.PageResponse)(nil),             // 37: common.v1.PageResponse
 }
 var file_coaching_v1_coaching_proto_depIdxs = []int32{
-	3,  // 0: coaching.v1.CoachingTask.task_type:type_name -> coaching.v1.TaskType
-	5,  // 1: coaching.v1.CoachingWeek.tasks:type_name -> coaching.v1.CoachingTask
-	33, // 2: coaching.v1.CoachingThread.timestamps:type_name -> common.v1.Timestamps
-	4,  // 3: coaching.v1.CoachingMessage.role:type_name -> coaching.v1.MessageRole
-	33, // 4: coaching.v1.CoachingMessage.timestamps:type_name -> common.v1.Timestamps
-	9,  // 5: coaching.v1.CoachingProgram.source_assessment:type_name -> coaching.v1.SourceAssessment
+	4,  // 0: coaching.v1.CoachingTask.task_type:type_name -> coaching.v1.TaskType
+	6,  // 1: coaching.v1.CoachingWeek.tasks:type_name -> coaching.v1.CoachingTask
+	34, // 2: coaching.v1.CoachingThread.timestamps:type_name -> common.v1.Timestamps
+	5,  // 3: coaching.v1.CoachingMessage.role:type_name -> coaching.v1.MessageRole
+	34, // 4: coaching.v1.CoachingMessage.timestamps:type_name -> common.v1.Timestamps
+	10, // 5: coaching.v1.CoachingProgram.source_assessment:type_name -> coaching.v1.SourceAssessment
 	0,  // 6: coaching.v1.CoachingProgram.status:type_name -> coaching.v1.ProgramStatus
 	1,  // 7: coaching.v1.CoachingProgram.difficulty:type_name -> coaching.v1.Difficulty
 	2,  // 8: coaching.v1.CoachingProgram.curriculum_status:type_name -> coaching.v1.CurriculumStatus
-	6,  // 9: coaching.v1.CoachingProgram.weeks:type_name -> coaching.v1.CoachingWeek
-	7,  // 10: coaching.v1.CoachingProgram.threads:type_name -> coaching.v1.CoachingThread
-	33, // 11: coaching.v1.CoachingProgram.timestamps:type_name -> common.v1.Timestamps
+	7,  // 9: coaching.v1.CoachingProgram.weeks:type_name -> coaching.v1.CoachingWeek
+	8,  // 10: coaching.v1.CoachingProgram.threads:type_name -> coaching.v1.CoachingThread
+	34, // 11: coaching.v1.CoachingProgram.timestamps:type_name -> common.v1.Timestamps
 	1,  // 12: coaching.v1.StartProgramRequest.difficulty:type_name -> coaching.v1.Difficulty
-	34, // 13: coaching.v1.StartProgramRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
-	10, // 14: coaching.v1.StartProgramResponse.program:type_name -> coaching.v1.CoachingProgram
-	10, // 15: coaching.v1.GetProgramResponse.program:type_name -> coaching.v1.CoachingProgram
-	10, // 16: coaching.v1.ToggleProgramStatusResponse.program:type_name -> coaching.v1.CoachingProgram
-	5,  // 17: coaching.v1.ToggleTaskStatusResponse.task:type_name -> coaching.v1.CoachingTask
-	34, // 18: coaching.v1.StartThreadRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
-	7,  // 19: coaching.v1.StartThreadResponse.thread:type_name -> coaching.v1.CoachingThread
-	35, // 20: coaching.v1.GetThreadRequest.page:type_name -> common.v1.PageRequest
-	7,  // 21: coaching.v1.GetThreadResponse.thread:type_name -> coaching.v1.CoachingThread
-	8,  // 22: coaching.v1.GetThreadResponse.messages:type_name -> coaching.v1.CoachingMessage
-	36, // 23: coaching.v1.GetThreadResponse.page:type_name -> common.v1.PageResponse
-	7,  // 24: coaching.v1.UpdateThreadTitleResponse.thread:type_name -> coaching.v1.CoachingThread
-	34, // 25: coaching.v1.SendThreadMessageRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
-	8,  // 26: coaching.v1.SendThreadMessageResponse.message:type_name -> coaching.v1.CoachingMessage
-	11, // 27: coaching.v1.Coaching.StartProgram:input_type -> coaching.v1.StartProgramRequest
-	13, // 28: coaching.v1.Coaching.GetProgram:input_type -> coaching.v1.GetProgramRequest
-	15, // 29: coaching.v1.Coaching.ToggleProgramStatus:input_type -> coaching.v1.ToggleProgramStatusRequest
-	17, // 30: coaching.v1.Coaching.DeleteProgram:input_type -> coaching.v1.DeleteProgramRequest
-	19, // 31: coaching.v1.Coaching.ToggleTaskStatus:input_type -> coaching.v1.ToggleTaskStatusRequest
-	21, // 32: coaching.v1.Coaching.GetGraduationReport:input_type -> coaching.v1.GetGraduationReportRequest
-	23, // 33: coaching.v1.Coaching.StartThread:input_type -> coaching.v1.StartThreadRequest
-	25, // 34: coaching.v1.Coaching.GetThread:input_type -> coaching.v1.GetThreadRequest
-	27, // 35: coaching.v1.Coaching.UpdateThreadTitle:input_type -> coaching.v1.UpdateThreadTitleRequest
-	29, // 36: coaching.v1.Coaching.DeleteThread:input_type -> coaching.v1.DeleteThreadRequest
-	31, // 37: coaching.v1.Coaching.SendThreadMessage:input_type -> coaching.v1.SendThreadMessageRequest
-	12, // 38: coaching.v1.Coaching.StartProgram:output_type -> coaching.v1.StartProgramResponse
-	14, // 39: coaching.v1.Coaching.GetProgram:output_type -> coaching.v1.GetProgramResponse
-	16, // 40: coaching.v1.Coaching.ToggleProgramStatus:output_type -> coaching.v1.ToggleProgramStatusResponse
-	18, // 41: coaching.v1.Coaching.DeleteProgram:output_type -> coaching.v1.DeleteProgramResponse
-	20, // 42: coaching.v1.Coaching.ToggleTaskStatus:output_type -> coaching.v1.ToggleTaskStatusResponse
-	22, // 43: coaching.v1.Coaching.GetGraduationReport:output_type -> coaching.v1.GetGraduationReportResponse
-	24, // 44: coaching.v1.Coaching.StartThread:output_type -> coaching.v1.StartThreadResponse
-	26, // 45: coaching.v1.Coaching.GetThread:output_type -> coaching.v1.GetThreadResponse
-	28, // 46: coaching.v1.Coaching.UpdateThreadTitle:output_type -> coaching.v1.UpdateThreadTitleResponse
-	30, // 47: coaching.v1.Coaching.DeleteThread:output_type -> coaching.v1.DeleteThreadResponse
-	32, // 48: coaching.v1.Coaching.SendThreadMessage:output_type -> coaching.v1.SendThreadMessageResponse
-	38, // [38:49] is the sub-list for method output_type
-	27, // [27:38] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	35, // 13: coaching.v1.StartProgramRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	11, // 14: coaching.v1.StartProgramResponse.program:type_name -> coaching.v1.CoachingProgram
+	11, // 15: coaching.v1.GetProgramResponse.program:type_name -> coaching.v1.CoachingProgram
+	11, // 16: coaching.v1.ToggleProgramStatusResponse.program:type_name -> coaching.v1.CoachingProgram
+	6,  // 17: coaching.v1.ToggleTaskStatusResponse.task:type_name -> coaching.v1.CoachingTask
+	3,  // 18: coaching.v1.GetGraduationReportResponse.status:type_name -> coaching.v1.GraduationStatus
+	35, // 19: coaching.v1.StartThreadRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	8,  // 20: coaching.v1.StartThreadResponse.thread:type_name -> coaching.v1.CoachingThread
+	36, // 21: coaching.v1.GetThreadRequest.page:type_name -> common.v1.PageRequest
+	8,  // 22: coaching.v1.GetThreadResponse.thread:type_name -> coaching.v1.CoachingThread
+	9,  // 23: coaching.v1.GetThreadResponse.messages:type_name -> coaching.v1.CoachingMessage
+	37, // 24: coaching.v1.GetThreadResponse.page:type_name -> common.v1.PageResponse
+	8,  // 25: coaching.v1.UpdateThreadTitleResponse.thread:type_name -> coaching.v1.CoachingThread
+	35, // 26: coaching.v1.SendThreadMessageRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	9,  // 27: coaching.v1.SendThreadMessageResponse.message:type_name -> coaching.v1.CoachingMessage
+	12, // 28: coaching.v1.Coaching.StartProgram:input_type -> coaching.v1.StartProgramRequest
+	14, // 29: coaching.v1.Coaching.GetProgram:input_type -> coaching.v1.GetProgramRequest
+	16, // 30: coaching.v1.Coaching.ToggleProgramStatus:input_type -> coaching.v1.ToggleProgramStatusRequest
+	18, // 31: coaching.v1.Coaching.DeleteProgram:input_type -> coaching.v1.DeleteProgramRequest
+	20, // 32: coaching.v1.Coaching.ToggleTaskStatus:input_type -> coaching.v1.ToggleTaskStatusRequest
+	22, // 33: coaching.v1.Coaching.GetGraduationReport:input_type -> coaching.v1.GetGraduationReportRequest
+	24, // 34: coaching.v1.Coaching.StartThread:input_type -> coaching.v1.StartThreadRequest
+	26, // 35: coaching.v1.Coaching.GetThread:input_type -> coaching.v1.GetThreadRequest
+	28, // 36: coaching.v1.Coaching.UpdateThreadTitle:input_type -> coaching.v1.UpdateThreadTitleRequest
+	30, // 37: coaching.v1.Coaching.DeleteThread:input_type -> coaching.v1.DeleteThreadRequest
+	32, // 38: coaching.v1.Coaching.SendThreadMessage:input_type -> coaching.v1.SendThreadMessageRequest
+	13, // 39: coaching.v1.Coaching.StartProgram:output_type -> coaching.v1.StartProgramResponse
+	15, // 40: coaching.v1.Coaching.GetProgram:output_type -> coaching.v1.GetProgramResponse
+	17, // 41: coaching.v1.Coaching.ToggleProgramStatus:output_type -> coaching.v1.ToggleProgramStatusResponse
+	19, // 42: coaching.v1.Coaching.DeleteProgram:output_type -> coaching.v1.DeleteProgramResponse
+	21, // 43: coaching.v1.Coaching.ToggleTaskStatus:output_type -> coaching.v1.ToggleTaskStatusResponse
+	23, // 44: coaching.v1.Coaching.GetGraduationReport:output_type -> coaching.v1.GetGraduationReportResponse
+	25, // 45: coaching.v1.Coaching.StartThread:output_type -> coaching.v1.StartThreadResponse
+	27, // 46: coaching.v1.Coaching.GetThread:output_type -> coaching.v1.GetThreadResponse
+	29, // 47: coaching.v1.Coaching.UpdateThreadTitle:output_type -> coaching.v1.UpdateThreadTitleResponse
+	31, // 48: coaching.v1.Coaching.DeleteThread:output_type -> coaching.v1.DeleteThreadResponse
+	33, // 49: coaching.v1.Coaching.SendThreadMessage:output_type -> coaching.v1.SendThreadMessageResponse
+	39, // [39:50] is the sub-list for method output_type
+	28, // [28:39] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_coaching_v1_coaching_proto_init() }
@@ -2245,7 +2351,7 @@ func file_coaching_v1_coaching_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coaching_v1_coaching_proto_rawDesc), len(file_coaching_v1_coaching_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
