@@ -145,6 +145,34 @@ services:
         limits:
           memory: 160M
 
+  nutrition-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: nutrition-svc
+    restart: unless-stopped
+    container_name: selaras-nutrition
+    environment:
+      NUTRITION_DATABASE_DSN: >-
+        postgres://svc_nutrition:${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=nutrition
+      NUTRITION_GRPC_ADDR: ":9601"
+      NUTRITION_HEALTH_ADDR: ":9603"
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "127.0.0.1:19601:9601"
+      - "127.0.0.1:19603:9603"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
   coaching-svc:
     build:
       context: ../..
@@ -221,6 +249,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       COACHING_GRPC_TARGET: coaching-svc:9401
       CHAT_GRPC_TARGET: chat-svc:9501
+      NUTRITION_GRPC_TARGET: nutrition-svc:9601
       # Kosong berarti masuk lewat penyedia sosial tidak dipasang, dan
       # rutenya tidak ada. Terisi sebagian menggagalkan start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

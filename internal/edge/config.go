@@ -27,6 +27,7 @@ type Config struct {
 
 	// ChatAddr boleh kosong: rute chat tidak dipasang.
 	ChatAddr      string
+	NutritionAddr string
 	VerifyKey     ed25519.PublicKey
 	TokenIssuer   string
 	RevocationTTL time.Duration
@@ -47,6 +48,7 @@ func LoadConfig() (Config, error) {
 		AssessmentAddr: os.Getenv("ASSESSMENT_GRPC_TARGET"),
 		CoachingAddr:   os.Getenv("COACHING_GRPC_TARGET"),
 		ChatAddr:       os.Getenv("CHAT_GRPC_TARGET"),
+		NutritionAddr:  os.Getenv("NUTRITION_GRPC_TARGET"),
 		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
 	}
 
