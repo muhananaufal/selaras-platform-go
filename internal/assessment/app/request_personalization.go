@@ -31,6 +31,21 @@ type EventWriter interface {
 // ditulis.
 type EventWriterFor func(pg.Querier) EventWriter
 
+// StatusWriter menulis status personalisasi di dalam sebuah transaksi.
+//
+// Ia sengaja sebuah port yang sempit, bukan seluruh domain.Repository:
+// use case ini hanya perlu satu operasi, dan port yang lebih lebar akan
+// mengundang tulisan lain masuk ke transaksi yang tidak diniatkan untuknya.
+type StatusWriter interface {
+	SetPersonalizationStatus(
+		ctx context.Context, id domain.ID,
+		to domain.PersonalizationStatus, from []domain.PersonalizationStatus, failure string,
+	) (bool, error)
+}
+
+// StatusWriterFor membuat penulis status di atas satu transaksi.
+type StatusWriterFor func(pg.Querier) StatusWriter
+
 // UnitOfWork menjalankan sebuah fungsi di dalam satu transaksi.
 //
 // Ia dibutuhkan di sini karena permintaan personalisasi menghasilkan DUA
@@ -73,8 +88,11 @@ type PersonalizationTicket struct {
 func (s *Service) RequestPersonalization(
 	ctx context.Context, uow UnitOfWork, events EventWriterFor, req PersonalizationRequest,
 ) (*PersonalizationTicket, error) {
-	if uow == nil || events == nil {
-		return nil, errors.New("personalisation needs a unit of work and an event writer")
+	if uow == nil || events == nil || s.statusWriter == nil {
+		// Menerima permintaan tanpa salah satu dari ketiganya berarti
+		// mengembalikan tiket untuk pekerjaan yang tidak akan pernah tercatat
+		// atau tidak akan pernah dikerjakan. Menolaknya jauh lebih jujur.
+		return nil, errors.New("personalisation needs a unit of work, an event writer, and a status writer")
 	}
 
 	// Kepemilikan diperiksa lewat jalur yang sama dengan pembacaan biasa: id
@@ -121,10 +139,20 @@ func (s *Service) RequestPersonalization(
 		},
 	}
 
-	// Penulisnya dibangun DARI transaksi, bukan dipakai dari luar. Saat tulisan
-	// kedua bergabung nanti - penandaan status, misalnya - keduanya sudah
-	// berada di transaksi yang sama tanpa ada yang perlu diingat.
+	// Dua tulisan, satu transaksi: penandaan bahwa penilaian ini sedang
+	// dikerjakan, dan event yang memintanya.
+	//
+	// Kalau salah satunya bisa terjadi tanpa yang lain, sistem punya penilaian
+	// yang menunggu selamanya (status pending tanpa event) atau pekerjaan yang
+	// tidak ada yang menunggu (event tanpa status). Penulis event dibangun DARI
+	// transaksi ini, bukan dipakai dari luar.
 	if err := uow.Do(ctx, func(q pg.Querier) error {
+		if _, err := s.statusWriter(q).SetPersonalizationStatus(ctx, assessment.ID,
+			domain.PersonalizationPending,
+			[]domain.PersonalizationStatus{domain.PersonalizationNotRequested, domain.PersonalizationFailed},
+			""); err != nil {
+			return err
+		}
 		return events(q).Write(ctx, "assessment", assessment.ID.String(), envelope)
 	}); err != nil {
 		return nil, fmt.Errorf("requesting personalisation: %w", err)

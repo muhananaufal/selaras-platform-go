@@ -98,6 +98,16 @@ type Assessment struct {
 	// ada, dan penilaiannya tetap sah tanpanya.
 	ResultDetails map[string]any
 
+	// PersonalizationStatus dibaca dari kolomnya sendiri, bukan diturunkan
+	// dari ada tidaknya ResultDetails. Yang diturunkan hanya bisa membedakan
+	// dua keadaan; klien butuh empat - dan yang paling penting di antaranya,
+	// "gagal", tidak bisa dinyatakan sama sekali tanpa kolom ini.
+	PersonalizationStatus PersonalizationStatus
+
+	// PersonalizationError menjelaskan kegagalannya. Kosong saat statusnya
+	// bukan failed.
+	PersonalizationError string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -177,6 +187,21 @@ func (a *Assessment) BelongsTo(profileID ProfileID) bool {
 	return a.UserProfileID == profileID
 }
 
+// PersonalizationStatus adalah keadaan laporan personalisasi.
+//
+// Empat keadaan, bukan dua. Yang diturunkan dari ada tidaknya laporan hanya
+// bisa membedakan "ada" dan "tidak ada", dan keduanya menyembunyikan keadaan
+// yang paling perlu diketahui klien: pekerjaannya gagal, dan menunggu lebih
+// lama tidak akan mengubah apa pun.
+type PersonalizationStatus string
+
+const (
+	PersonalizationNotRequested PersonalizationStatus = "not_requested"
+	PersonalizationPending      PersonalizationStatus = "pending"
+	PersonalizationCompleted    PersonalizationStatus = "completed"
+	PersonalizationFailed       PersonalizationStatus = "failed"
+)
+
 // Repository adalah port penyimpanan penilaian.
 type Repository interface {
 	// Create menyimpan penilaian baru. Slug yang bentrok menghasilkan
@@ -197,6 +222,15 @@ type Repository interface {
 	// laporan yang sudah ada dengan yang datang belakangan akan mengganti isi
 	// yang mungkin sudah dibaca pengguna.
 	SetResultDetails(ctx context.Context, id ID, report map[string]any) (stored bool, err error)
+
+	// SetPersonalizationStatus mencatat keadaan pekerjaan personalisasi.
+	//
+	// from membatasi perpindahan yang boleh terjadi: kosong berarti dari
+	// keadaan mana pun. Ia yang menahan event yang tiba terlambat mengubah
+	// pekerjaan yang sudah selesai kembali menjadi pending.
+	SetPersonalizationStatus(
+		ctx context.Context, id ID, to PersonalizationStatus, from []PersonalizationStatus, failure string,
+	) (changed bool, err error)
 }
 
 // NormaliseSlug membersihkan slug yang datang dari URL.

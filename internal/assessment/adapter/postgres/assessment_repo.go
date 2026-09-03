@@ -19,6 +19,13 @@ const constraintSlugUnique = "risk_assessments_slug_unique"
 const assessmentColumns = `id, user_profile_id, slug, model_used, final_risk_percentage,
 	inputs, generated_values, result_details, created_at, updated_at`
 
+// readColumns menambahkan kolom yang TIDAK ditulis saat pembuatan.
+//
+// Ia terpisah dari assessmentColumns karena yang terakhir juga dipakai INSERT,
+// dan menambahkan kolom ke sana akan membuat jumlah placeholder-nya tidak lagi
+// cocok - kekeliruan yang baru terlihat saat dijalankan.
+const readColumns = assessmentColumns + `, personalization_status, coalesce(personalization_error, '')`
+
 // Repository memenuhi domain.Repository.
 type Repository struct {
 	db pg.Querier
@@ -56,7 +63,7 @@ func (r *Repository) Create(ctx context.Context, a *domain.Assessment) error {
 }
 
 func (r *Repository) FindBySlug(ctx context.Context, slug string) (*domain.Assessment, error) {
-	const q = `SELECT ` + assessmentColumns + ` FROM risk_assessments WHERE slug = $1`
+	const q = `SELECT ` + readColumns + ` FROM risk_assessments WHERE slug = $1`
 
 	row := r.db.QueryRow(ctx, q, slug)
 	a, err := scanAssessment(row)
@@ -78,7 +85,7 @@ func (r *Repository) ListForProfile(
 	// lalu memotongnya di memori memindahkan pekerjaan basis data ke service,
 	// dan indeks gabungan di migrasi memang dibuat untuk kueri ini.
 	const q = `
-		SELECT ` + assessmentColumns + `
+		SELECT ` + readColumns + `
 		FROM risk_assessments
 		WHERE user_profile_id = $1
 		ORDER BY created_at DESC
@@ -118,10 +125,12 @@ func scanAssessment(s scanner) (*domain.Assessment, error) {
 		risk                       float64
 		inputs, generated, details []byte
 		createdAt, updatedAt       time.Time
+		personalization, failure   string
 	)
 
 	if err := s.Scan(&id, &profileID, &slug, &model, &risk,
-		&inputs, &generated, &details, &createdAt, &updatedAt); err != nil {
+		&inputs, &generated, &details, &createdAt, &updatedAt,
+		&personalization, &failure); err != nil {
 		return nil, err
 	}
 
@@ -135,13 +144,15 @@ func scanAssessment(s scanner) (*domain.Assessment, error) {
 	}
 
 	a := &domain.Assessment{
-		ID:             parsedID,
-		UserProfileID:  parsedProfile,
-		Slug:           slug,
-		ModelUsed:      model,
-		RiskPercentage: risk,
-		CreatedAt:      createdAt,
-		UpdatedAt:      updatedAt,
+		ID:                    parsedID,
+		UserProfileID:         parsedProfile,
+		Slug:                  slug,
+		PersonalizationStatus: domain.PersonalizationStatus(personalization),
+		PersonalizationError:  failure,
+		ModelUsed:             model,
+		RiskPercentage:        risk,
+		CreatedAt:             createdAt,
+		UpdatedAt:             updatedAt,
 	}
 
 	if a.Inputs, err = decode(inputs); err != nil {
@@ -220,4 +231,50 @@ func (r *Repository) SetResultDetails(
 		return false, fmt.Errorf("storing the personalisation report: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// SetPersonalizationStatus mencatat keadaan pekerjaan personalisasi.
+//
+// Perpindahan yang diizinkan ditegakkan di dalam WHERE, bukan diperiksa lebih
+// dulu. Pemeriksaan pendahuluan punya celah di antara membaca dan menulis: dua
+// event yang tiba serempak akan sama-sama membaca keadaan lama, dan yang
+// terlambat menimpa yang lebih baru.
+func (r *Repository) SetPersonalizationStatus(
+	ctx context.Context,
+	id domain.ID,
+	to domain.PersonalizationStatus,
+	from []domain.PersonalizationStatus,
+	failure string,
+) (bool, error) {
+	q := `
+		UPDATE risk_assessments
+		SET personalization_status = $2, personalization_error = $3, updated_at = now()
+		WHERE id = $1`
+
+	args := []any{id.String(), string(to), nullable(failure)}
+	if len(from) > 0 {
+		allowed := make([]string, 0, len(from))
+		for _, s := range from {
+			allowed = append(allowed, string(s))
+		}
+		q += ` AND personalization_status = ANY($4)`
+		args = append(args, allowed)
+	}
+
+	tag, err := r.db.Exec(ctx, q, args...)
+	if err != nil {
+		return false, fmt.Errorf("recording the personalisation status: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// nullable mengubah string kosong menjadi NULL.
+//
+// Kolomnya menyimpan alasan kegagalan, dan string kosong yang tersimpan akan
+// terlihat seperti "gagal tanpa alasan" - berbeda dari "tidak gagal".
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

@@ -182,16 +182,31 @@ func toProto(a *domain.Assessment, input *assessmentv1.AssessmentInput) *assessm
 	return out
 }
 
-// personalizationStatus dibaca dari ada tidaknya laporannya.
+// personalizationStatus dibaca dari kolomnya, bukan diturunkan (F3-12).
 //
-// Sampai llm-worker ada, hanya dua keadaan yang mungkin: belum diminta, dan
-// selesai. Menyatakan PENDING tanpa ada yang mengerjakannya akan membuat klien
-// menunggu sesuatu yang tidak akan datang.
+// Yang diturunkan dari ada tidaknya laporan hanya bisa membedakan dua keadaan,
+// dan keduanya menyembunyikan yang paling perlu diketahui klien: pekerjaannya
+// gagal, dan menunggu lebih lama tidak akan mengubah apa pun.
 func personalizationStatus(a *domain.Assessment) assessmentv1.PersonalizationStatus {
-	if a.ResultDetails != nil {
+	switch a.PersonalizationStatus {
+	case domain.PersonalizationPending:
+		return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING
+	case domain.PersonalizationCompleted:
 		return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED
+	case domain.PersonalizationFailed:
+		return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_FAILED
+	case domain.PersonalizationNotRequested:
+		return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED
+	default:
+		// Kolom kosong berarti baris yang ditulis sebelum kolomnya ada, atau
+		// nilai yang tidak dikenali. Laporan yang ADA tetap dilaporkan selesai:
+		// menyatakan "belum diminta" untuk laporan yang bisa dibaca klien akan
+		// menawarkan tombol untuk pekerjaan yang sudah ada hasilnya.
+		if a.ResultDetails != nil {
+			return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED
+		}
+		return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED
 	}
-	return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED
 }
 
 func modelToProto(name string) assessmentv1.RiskModel {
