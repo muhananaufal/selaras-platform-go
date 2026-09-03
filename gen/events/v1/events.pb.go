@@ -984,9 +984,22 @@ func (x *ChatReplyCompleted) GetPromptVersion() string {
 }
 
 type MealGuideRequested struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	GuideId       string                 `protobuf:"bytes,1,opt,name=guide_id,json=guideId,proto3" json:"guide_id,omitempty"`
-	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	GuideId string                 `protobuf:"bytes,1,opt,name=guide_id,json=guideId,proto3" json:"guide_id,omitempty"`
+	JobId   string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	// Konteks lengkap yang dirakit nutrition-svc, sebagai JSON.
+	//
+	// Ia IKUT di dalam event, tidak dibiarkan sebagai isian kosong yang
+	// dilengkapi belakangan seperti permintaan LLM lainnya (lihat F3-10).
+	// Alasannya bukan keseragaman: konteks ini memuat CATATAN ALERGI pengguna,
+	// dan prompt yang berangkat tanpanya akan meminta model menyarankan makanan
+	// kepada orang yang alergi terhadapnya. Penanda "belum dibawa event" yang
+	// jujur pun tidak menolong - yang dihasilkan tetap saran makanan yang
+	// terlihat sah.
+	//
+	// Isinya sama persis dengan yang disimpan di kolom generation_context,
+	// sehingga sebuah saran selalu bisa dijelaskan kembali dari barisnya sendiri.
+	ContextJson   string `protobuf:"bytes,3,opt,name=context_json,json=contextJson,proto3" json:"context_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1031,6 +1044,13 @@ func (x *MealGuideRequested) GetGuideId() string {
 func (x *MealGuideRequested) GetJobId() string {
 	if x != nil {
 		return x.JobId
+	}
+	return ""
+}
+
+func (x *MealGuideRequested) GetContextJson() string {
+	if x != nil {
+		return x.ContextJson
 	}
 	return ""
 }
@@ -1391,10 +1411,11 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
 	"reply_json\x18\x02 \x01(\tR\treplyJson\x12%\n" +
-	"\x0eprompt_version\x18\x03 \x01(\tR\rpromptVersion\"F\n" +
+	"\x0eprompt_version\x18\x03 \x01(\tR\rpromptVersion\"i\n" +
 	"\x12MealGuideRequested\x12\x19\n" +
 	"\bguide_id\x18\x01 \x01(\tR\aguideId\x12\x15\n" +
-	"\x06job_id\x18\x02 \x01(\tR\x05jobId\"\x8c\x01\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12!\n" +
+	"\fcontext_json\x18\x03 \x01(\tR\vcontextJson\"\x8c\x01\n" +
 	"\x12MealGuideCompleted\x12\x19\n" +
 	"\bguide_id\x18\x01 \x01(\tR\aguideId\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x1d\n" +

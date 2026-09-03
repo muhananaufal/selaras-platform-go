@@ -96,6 +96,7 @@ func TestTheChecksumMatchesTheTemplateOnDisk(t *testing.T) {
 		"curriculum":      "9ca38ec5b6e333d34e7b6d9ba59fff7045d14d0f453330608ea5ef1f00544ef4",
 		"graduation":      "ea6c804edfbd1317b017ca4b6a7c2823fc1ff6c75af449daec8b51622006d566",
 		"chat_reply":      "7922962e69428a5940d6b261015395335d5c03b1e567e5516fedd5929015797a",
+		"daily_guide":     "d9eb2e591d8e8d2dfa5f8cf3d43726bd8097293fd29ed6b375690937e91ff10d",
 	}
 
 	lib := library(t)
@@ -119,7 +120,7 @@ func TestTheChecksumMatchesTheTemplateOnDisk(t *testing.T) {
 // Templat yang menyelinap masuk tanpa lewat sini berarti ada prompt yang
 // dikirim ke model tanpa seorang pun pernah membacanya.
 func TestOnlyKnownTemplatesExist(t *testing.T) {
-	want := []string{"chat_reply", "curriculum", "graduation", "personalization"}
+	want := []string{"chat_reply", "curriculum", "daily_guide", "graduation", "personalization"}
 
 	names := library(t).Names()
 	if len(names) != len(want) {

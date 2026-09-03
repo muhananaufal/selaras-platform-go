@@ -128,6 +128,20 @@ message ChatReplyCompleted {
 message MealGuideRequested {
   string guide_id = 1;
   string job_id = 2;
+
+  // Konteks lengkap yang dirakit nutrition-svc, sebagai JSON.
+  //
+  // Ia IKUT di dalam event, tidak dibiarkan sebagai isian kosong yang
+  // dilengkapi belakangan seperti permintaan LLM lainnya (lihat F3-10).
+  // Alasannya bukan keseragaman: konteks ini memuat CATATAN ALERGI pengguna,
+  // dan prompt yang berangkat tanpanya akan meminta model menyarankan makanan
+  // kepada orang yang alergi terhadapnya. Penanda "belum dibawa event" yang
+  // jujur pun tidak menolong - yang dihasilkan tetap saran makanan yang
+  // terlihat sah.
+  //
+  // Isinya sama persis dengan yang disimpan di kolom generation_context,
+  // sehingga sebuah saran selalu bisa dijelaskan kembali dari barisnya sendiri.
+  string context_json = 3;
 }
 
 message MealGuideCompleted {
