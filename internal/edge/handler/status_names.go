@@ -18,3 +18,13 @@ const (
 	// dan klien tidak boleh memperlakukannya sebagai "sedang berjalan".
 	statusUnknown = "unknown"
 )
+
+// Nama peran pengirim pesan.
+//
+// Ketiga endpoint yang menampilkan percakapan - chat umum, thread coaching, dan
+// autentikasi yang menyebut peran akun - memakai kata yang sama. Menamainya
+// sekali membuat ketiganya tetap sama.
+const (
+	roleNameUser  = "user"
+	roleNameModel = "model"
+)

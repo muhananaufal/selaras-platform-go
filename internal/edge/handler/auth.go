@@ -189,7 +189,7 @@ func successFrom(token *identityv1.TokenPair, user *identityv1.User) authSuccess
 func roleName(r identityv1.Role) string {
 	switch r {
 	case identityv1.Role_ROLE_USER:
-		return "user"
+		return roleNameUser
 	case identityv1.Role_ROLE_ADMIN:
 		return "admin"
 	default:

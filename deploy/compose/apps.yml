@@ -117,6 +117,34 @@ services:
         limits:
           memory: 160M
 
+  chat-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: chat-svc
+    restart: unless-stopped
+    container_name: selaras-chat
+    environment:
+      CHAT_DATABASE_DSN: >-
+        postgres://svc_chat:${SVC_CHAT_PASSWORD:?set SVC_CHAT_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=chat
+      CHAT_GRPC_ADDR: ":9501"
+      CHAT_HEALTH_ADDR: ":9503"
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "127.0.0.1:19501:9501"
+      - "127.0.0.1:19503:9503"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
   coaching-svc:
     build:
       context: ../..
@@ -192,6 +220,7 @@ services:
       PROFILE_GRPC_TARGET: profile-svc:9201
       REDIS_URL: redis://redis:6379/0
       COACHING_GRPC_TARGET: coaching-svc:9401
+      CHAT_GRPC_TARGET: chat-svc:9501
       # Kosong berarti masuk lewat penyedia sosial tidak dipasang, dan
       # rutenya tidak ada. Terisi sebagian menggagalkan start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

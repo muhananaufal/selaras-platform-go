@@ -193,9 +193,9 @@ func taskTypeName(t coachingv1.TaskType) string {
 func messageRoleName(r coachingv1.MessageRole) string {
 	switch r {
 	case coachingv1.MessageRole_MESSAGE_ROLE_USER:
-		return "user"
+		return roleNameUser
 	case coachingv1.MessageRole_MESSAGE_ROLE_MODEL:
-		return "model"
+		return roleNameModel
 	default:
 		return ""
 	}

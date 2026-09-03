@@ -21,6 +21,10 @@ import (
 type Deps struct {
 	Identity identityv1.IdentityClient
 	Profiles profilev1.ProfileClient
+	// Chat boleh nil: lingkungan tanpa chat-svc tetap melayani sisanya, dan
+	// rute chat TIDAK dipasang.
+	Chat *handler.Chat
+
 	// Coaching boleh nil: lingkungan tanpa coaching-svc tetap melayani sisanya,
 	// dan rute coaching TIDAK dipasang. 404 jauh lebih jujur daripada 500 dari
 	// klien yang tidak menyambung ke mana-mana.
@@ -120,6 +124,10 @@ func NewRouter(deps Deps) *gin.Engine {
 				mountCoaching(protected, deps.Coaching)
 			}
 
+			if deps.Chat != nil {
+				mountChat(protected, deps.Chat)
+			}
+
 		}
 	}
 
@@ -151,4 +159,20 @@ func mountCoaching(r gin.IRouter, h *handler.Coaching) {
 	group.DELETE("/threads/:slug", h.DestroyThread)
 
 	group.PATCH("/tasks/:id/toggle-task-status", h.ToggleTaskStatus)
+}
+
+// mountChat memasang enam endpoint percakapan asisten umum.
+//
+// Bentuk URL-nya dipertahankan dari sistem lama (ADR-005). Yang berubah adalah
+// kode jawabannya: membuat percakapan dengan pesan dan mengirim pesan kini
+// menjawab 202 Accepted, karena balasannya datang belakangan.
+func mountChat(r gin.IRouter, h *handler.Chat) {
+	group := r.Group("/chat")
+
+	group.GET("/conversations", h.Index)
+	group.POST("/conversations", h.Store)
+	group.GET("/conversations/:slug", h.Show)
+	group.PATCH("/conversations/:slug", h.Update)
+	group.POST("/conversations/:slug/messages", h.SendMessage)
+	group.DELETE("/conversations/:slug", h.Destroy)
 }

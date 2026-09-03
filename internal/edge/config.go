@@ -23,7 +23,10 @@ type Config struct {
 
 	// CoachingAddr boleh kosong: lingkungan tanpa coaching-svc tetap melayani
 	// sisanya, dan rute coaching tidak dipasang.
-	CoachingAddr  string
+	CoachingAddr string
+
+	// ChatAddr boleh kosong: rute chat tidak dipasang.
+	ChatAddr      string
 	VerifyKey     ed25519.PublicKey
 	TokenIssuer   string
 	RevocationTTL time.Duration
@@ -43,6 +46,7 @@ func LoadConfig() (Config, error) {
 		RedisURL:       os.Getenv("REDIS_URL"),
 		AssessmentAddr: os.Getenv("ASSESSMENT_GRPC_TARGET"),
 		CoachingAddr:   os.Getenv("COACHING_GRPC_TARGET"),
+		ChatAddr:       os.Getenv("CHAT_GRPC_TARGET"),
 		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
 	}
 
