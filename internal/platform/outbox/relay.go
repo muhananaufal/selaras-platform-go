@@ -37,6 +37,19 @@ type RelayOptions struct {
 	// langsung berputar lagi - menunggu di sana hanya menambah keterlambatan
 	// pada pekerjaan yang sudah menunggu.
 	Interval time.Duration
+
+	// PublishTimeout membatasi berapa lama satu penerbitan boleh menunggu.
+	//
+	// Ia ada karena klien Kafka menyangga dan mencoba ulang di dalam: dengan
+	// broker yang mati, ProduceSync tidak mengembalikan galat sampai batas
+	// coba ulangnya sendiri habis - puluhan detik - dan selama itu relay
+	// tergantung tanpa mencatat apa pun. Baris outbox-nya diam di sana dengan
+	// attempts nol dan last_error kosong, dan orang yang menyelidikinya tidak
+	// menemukan penjelasan apa pun.
+	//
+	// Ini benar-benar terjadi: test ketahanan F3-14 menemukannya dengan
+	// mematikan broker sungguhan.
+	PublishTimeout time.Duration
 }
 
 // Relay memindahkan event dari outbox ke broker.
@@ -74,6 +87,9 @@ func NewRelay(pool pg.Beginner, pub Publisher, log *slog.Logger, opts RelayOptio
 	}
 	if opts.Interval <= 0 {
 		opts.Interval = time.Second
+	}
+	if opts.PublishTimeout <= 0 {
+		opts.PublishTimeout = 10 * time.Second
 	}
 	return &Relay{pool: pool, pub: pub, log: log, opts: opts}, nil
 }
@@ -151,7 +167,12 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 			return nil
 		}
 
-		sent, pubErr := r.pub.Publish(ctx, msgs)
+		// Penerbitannya dibatasi waktu, TERPISAH dari transaksinya. Tanpa
+		// batas ini, satu putaran bisa tergantung selama klien Kafka menyangga
+		// dan mencoba ulang di dalam - dan kegagalannya tidak pernah tercatat.
+		pubCtx, cancelPub := context.WithTimeout(ctx, r.opts.PublishTimeout)
+		sent, pubErr := r.pub.Publish(pubCtx, msgs)
+		cancelPub()
 
 		published := make([]uuid.UUID, 0, len(sent))
 		for _, i := range sent {
