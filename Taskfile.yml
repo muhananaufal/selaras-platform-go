@@ -181,6 +181,11 @@ tasks:
       - task: openapi:lint
       - task: test
 
+  topics:
+    desc: Create the platform's Kafka topics, then read them back from the broker
+    cmds:
+      - go run ./cmd/topics -brokers 127.0.0.1:19092
+
   migrate:
     desc: 'Apply migrations for one service. Usage: task migrate -- identity'
     requires:
