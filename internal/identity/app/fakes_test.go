@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
@@ -100,12 +101,41 @@ func (f *fakeUsers) count() int {
 type fakeUnitOfWork struct {
 	users  domain.UserRepository
 	resets domain.PasswordResetRepository
+	sagas  app.SagaRepository
+	events *fakeEvents
 	calls  int
 }
 
 func (f *fakeUnitOfWork) Users() domain.UserRepository { return f.users }
 
 func (f *fakeUnitOfWork) PasswordResets() domain.PasswordResetRepository { return f.resets }
+
+func (f *fakeUnitOfWork) Sagas() app.SagaRepository { return f.sagas }
+
+// Events mengembalikan penulis palsu, dibuat malas supaya test yang tidak
+// menyentuh event tidak perlu menyiapkannya.
+func (f *fakeUnitOfWork) Events() app.EventWriter {
+	if f.events == nil {
+		f.events = &fakeEvents{}
+	}
+	return f.events
+}
+
+// fakeEvents mencatat event yang ditulis, tanpa mengirimkannya ke mana pun.
+type fakeEvents struct {
+	written []*eventsv1.Envelope
+	err     error
+}
+
+func (f *fakeEvents) Write(
+	_ context.Context, _, _ string, envelope *eventsv1.Envelope,
+) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.written = append(f.written, envelope)
+	return nil
+}
 
 func (f *fakeUnitOfWork) Do(_ context.Context, fn func(app.Repositories) error) error {
 	f.calls++
@@ -309,5 +339,19 @@ func (f *fakeResetLinks) SendResetLink(_ context.Context, email domain.Email, to
 		return f.err
 	}
 	f.sent = append(f.sent, sentLink{email: email.String(), token: token.Expose()})
+	return nil
+}
+
+// Delete menghapus akun dari penyimpanan palsu.
+//
+// Baris yang tidak ada bukan galat, sama seperti adapter sungguhannya: saga
+// bisa mengulangi langkah terakhirnya setelah proses mati.
+func (f *fakeUsers) Delete(_ context.Context, id domain.UserID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failNow != nil {
+		return f.failNow
+	}
+	delete(f.byID, id.String())
 	return nil
 }

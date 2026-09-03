@@ -7,6 +7,7 @@ import (
 
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
@@ -46,4 +47,17 @@ func (t *transactional) Users() domain.UserRepository {
 
 func (t *transactional) PasswordResets() domain.PasswordResetRepository {
 	return NewPasswordResetRepository(t.q)
+}
+
+func (t *transactional) Sagas() app.SagaRepository {
+	return NewSagaRepository(t.q)
+}
+
+// Events menulis ke outbox DI DALAM transaksi yang sama.
+//
+// Penulis yang dibangun di atas kolam koneksi akan commit sendiri, dan eventnya
+// bertahan meski sagalnya batal - menghapus data seseorang tanpa satu pun
+// catatan bahwa itu diminta.
+func (t *transactional) Events() app.EventWriter {
+	return outbox.NewWriter(t.q)
 }
