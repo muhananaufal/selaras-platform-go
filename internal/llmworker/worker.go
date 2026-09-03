@@ -44,6 +44,11 @@ type Consumer struct {
 	prompts  *prompt.Library
 	jobs     *Repository
 	log      *slog.Logger
+
+	// metrics boleh nil. Worker tanpa metrik mencatat lebih sedikit, tetapi
+	// tidak berperilaku lain - dan memaksanya wajib akan membuat test harus
+	// menyiapkan meter yang tidak diuji apa pun.
+	metrics *Metrics
 }
 
 // NewConsumer merangkai worker.
@@ -70,6 +75,17 @@ func NewConsumer(
 		client: client, pool: pool, provider: provider,
 		prompts: prompts, jobs: NewRepository(), log: log,
 	}, nil
+}
+
+// WithMetrics memasang instrumen antrean (F3-15).
+//
+// Terpisah dari NewConsumer supaya test tidak perlu menyiapkan meter yang tidak
+// menguji apa pun, dan supaya worker tetap bisa berjalan saat telemetri gagal
+// disiapkan - metrik yang hilang jauh lebih ringan akibatnya daripada worker
+// yang menolak start.
+func (c *Consumer) WithMetrics(m *Metrics) *Consumer {
+	c.metrics = m
+	return c
 }
 
 // Run membaca sampai ctx selesai.
@@ -190,8 +206,11 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 	if !claimed {
 		c.log.InfoContext(ctx, "a job arrived again and was skipped",
 			"idempotency_key", key, "event_id", env.GetEventId())
+		c.metrics.Observe(ctx, OutcomeSkipped, 0)
 		return nil
 	}
+
+	started := time.Now()
 
 	// Tahap dua: kerjakan, dengan percobaan ulang DI DALAM PROSES.
 	//
@@ -209,17 +228,21 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 	// Jadi pesannya ditahan di sini sampai selesai atau menyerah. Partisinya
 	// ikut tertahan selama itu - dan justru itu yang menjaga urutan per
 	// agregat.
-	return c.work(ctx, job, req)
+	return c.work(ctx, job, req, started)
 }
 
 // work mencoba pekerjaan sampai berhasil atau menyerah.
 func (c *Consumer) work(
-	ctx context.Context, job *Job, req *eventsv1.PersonalizationRequested,
+	ctx context.Context, job *Job, req *eventsv1.PersonalizationRequested, started time.Time,
 ) error {
 	for attempt := job.Attempts; attempt < MaxAttempts; attempt++ {
 		answer, genErr := c.generate(ctx, req)
 		if genErr == nil {
-			return c.recordSuccess(ctx, job, req, answer)
+			err := c.recordSuccess(ctx, job, req, answer)
+			if err == nil {
+				c.metrics.Observe(ctx, OutcomeCompleted, time.Since(started))
+			}
+			return err
 		}
 
 		if ctx.Err() != nil {
@@ -227,6 +250,7 @@ func (c *Consumer) work(
 			// berikutnya - setelah restart, dengan offset yang memang belum
 			// dikomit - benar-benar mengerjakannya alih-alih melewatinya
 			// sebagai duplikat.
+			c.metrics.Observe(ctx, OutcomeAbandoned, time.Since(started))
 			return c.abandon(ctx, job, genErr)
 		}
 
@@ -235,11 +259,14 @@ func (c *Consumer) work(
 			return err
 		}
 		if dead {
+			c.metrics.Observe(ctx, OutcomeDead, time.Since(started))
 			return nil
 		}
+		c.metrics.Observe(ctx, OutcomeFailed, time.Since(started))
 
 		select {
 		case <-ctx.Done():
+			c.metrics.Observe(ctx, OutcomeAbandoned, time.Since(started))
 			return c.abandon(ctx, job, genErr)
 		case <-time.After(retryDelay(attempt)):
 		}

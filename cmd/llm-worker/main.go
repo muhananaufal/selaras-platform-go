@@ -99,6 +99,12 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// Telemetri disiapkan setelah yang lain, dan kegagalannya TIDAK mematikan
+	// worker: metrik yang hilang jauh lebih ringan akibatnya daripada antrean
+	// yang tidak ada yang mengerjakan.
+	stopMetrics := startMetrics(ctx, log, consumer, consumerClient)
+	defer stopMetrics()
+
 	relay, err := outbox.NewRelay(pool, kafka.NewPublisher(producerClient), log,
 		outbox.RelayOptions{Batch: 50, Interval: time.Second})
 	if err != nil {

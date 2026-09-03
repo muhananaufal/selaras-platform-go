@@ -131,6 +131,9 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:?set LLM_PROVIDER to gemini or fake}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      METRICS_ADDR: ":9402"
+    ports:
+      - "127.0.0.1:19402:9402"
     depends_on:
       postgres:
         condition: service_healthy
