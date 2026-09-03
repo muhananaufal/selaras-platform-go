@@ -36,9 +36,11 @@ ORDER BY created_at DESC;
   **ditolak** dengan `Unimplemented`, bukan diterima diam-diam.
 - **Ada, `published_at` NULL, `attempts` naik** → relay tidak bisa menerbitkan.
   Lihat `last_error`. Broker mati, topic tidak ada, atau kredensial salah.
-- **Ada, `published_at` NULL, `attempts` = 0** → relay tidak berjalan. Periksa
-  apakah proses `assessment-svc` hidup dan lognya memuat
-  `"outbox relay started"`.
+- **Ada, `published_at` NULL, `attempts` = 0** → relay tidak berjalan sama sekali.
+  Periksa apakah proses `assessment-svc` hidup dan lognya memuat
+  `"outbox relay started"`. Relay yang berjalan tetapi tidak bisa menerbitkan
+  SELALU menaikkan `attempts` dalam sepuluh detik (`PublishTimeout`), jadi
+  attempts nol berarti tidak ada yang mencoba - bukan mencoba dan gagal.
 
 ```sql
 -- 2. Apakah worker mengambilnya?
