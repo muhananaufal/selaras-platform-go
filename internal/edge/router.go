@@ -99,6 +99,12 @@ func NewRouter(deps Deps) *gin.Engine {
 			protected.POST("/risk-assessments", deps.Assessments.Start)
 			protected.GET("/risk-assessments", deps.Assessments.Index)
 			protected.GET("/risk-assessments/:slug", deps.Assessments.Show)
+
+			// PATCH, bukan POST: bentuknya dipertahankan dari sistem lama supaya
+			// klien yang ada tidak perlu berubah (ADR-005). Yang berubah adalah
+			// jawabannya - 202 dengan job_id, bukan laporannya - dan itu dicatat
+			// sebagai pengecualian yang disengaja.
+			protected.PATCH("/risk-assessments/:slug/personalize", deps.Assessments.Personalize)
 		}
 	}
 

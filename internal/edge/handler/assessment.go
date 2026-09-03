@@ -166,3 +166,75 @@ func modelName(m assessmentv1.RiskModel) string {
 		return ""
 	}
 }
+
+// personalizationView adalah tiket yang dikembalikan segera.
+type personalizationView struct {
+	JobID  string `json:"job_id"`
+	Status string `json:"status"`
+}
+
+// Personalize meminta laporan personalisasi dibuat.
+//
+// Ia menjawab 202 Accepted, BUKAN 200 dengan laporannya. Ini perbedaan yang
+// terlihat klien dibandingkan sistem lama, dan ia disengaja: jalur lama
+// menahan permintaan HTTP selama Gemini berpikir - sampai 300 detik menurut
+// konfigurasinya - sehingga satu kegagalan penyedia menjadi kegagalan
+// permintaan, dan tidak ada yang bisa mencoba ulang tanpa pengguna menekan
+// tombolnya lagi.
+//
+// Laporannya diambil lewat GET /risk-assessments/{slug} seperti biasa.
+func (h *Assessment) Personalize(c *gin.Context) {
+	claims, ok := middleware.ClaimsFrom(c)
+	if !ok {
+		httperr.Write(c, http.StatusUnauthorized, httperr.CodeUnauthenticated, "Unauthenticated.")
+		return
+	}
+
+	req := &assessmentv1.RequestPersonalizationRequest{
+		Slug:   c.Param("slug"),
+		UserId: claims.UserID.String(),
+	}
+
+	// Kunci idempotensi dari klien dihormati bila ada. Klien yang mengirim
+	// ulang permintaan yang sama - karena jaringannya putus, misalnya - tidak
+	// membayar dua kali.
+	if key := c.GetHeader("Idempotency-Key"); key != "" {
+		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
+	}
+
+	resp, err := h.assessments.RequestPersonalization(c.Request.Context(), req)
+	if err != nil {
+		httperr.FromGRPC(c, err)
+		return
+	}
+
+	status := http.StatusAccepted
+	if resp.GetStatus() == assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED {
+		// Sudah ada laporannya. 200, bukan 202: tidak ada yang perlu ditunggu.
+		status = http.StatusOK
+	}
+
+	writeData(c, status, personalizationView{
+		JobID:  resp.GetJobId(),
+		Status: personalizationStatusName(resp.GetStatus()),
+	})
+}
+
+// personalizationStatusName memetakan enum ke nama yang dibaca klien.
+func personalizationStatusName(s assessmentv1.PersonalizationStatus) string {
+	switch s {
+	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED:
+		return "not_requested"
+	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING:
+		return "pending"
+	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED:
+		return "completed"
+	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_FAILED:
+		return "failed"
+	default:
+		// UNSPECIFIED tidak dipetakan ke salah satu keadaan nyata. Klien yang
+		// menerima "pending" untuk keadaan yang tidak diketahui akan menunggu
+		// sesuatu yang mungkin tidak pernah datang.
+		return "unknown"
+	}
+}

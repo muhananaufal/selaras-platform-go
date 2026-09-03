@@ -27,6 +27,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
@@ -99,7 +100,13 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	server, err := assessmentgrpc.NewServer(svc, constants)
+	// Penulis outbox dibangun DARI transaksi yang diberikan unit of work,
+	// bukan dari kolam koneksi. Yang kedua akan commit sendiri, dan eventnya
+	// bertahan meski perubahan bisnisnya batal.
+	events := func(q pg.Querier) app.EventWriter { return outbox.NewWriter(q) }
+
+	server, err := assessmentgrpc.NewServer(svc, constants,
+		assessmentpg.NewUnitOfWork(pool), events)
 	if err != nil {
 		return err
 	}

@@ -393,3 +393,29 @@ func TestTheProfileIdComesFromTheProfileNotTheRequest(t *testing.T) {
 		t.Errorf("profile id = %s; want the one profile-svc reported", mine.UserProfileID)
 	}
 }
+
+// SetResultDetails meniru sisi basis data: laporan yang sudah ada tidak
+// ditimpa, dan itu yang membuat pengiriman ulang tidak mengganti isi yang
+// mungkin sudah dibaca pengguna.
+func (r *fakeRepo) SetResultDetails(
+	_ context.Context, id domain.ID, report map[string]any,
+) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.failNow != nil {
+		return false, r.failNow
+	}
+
+	for _, a := range r.bySlug {
+		if a.ID != id {
+			continue
+		}
+		if a.ResultDetails != nil {
+			return false, nil
+		}
+		a.ResultDetails = report
+		return true, nil
+	}
+	return false, domain.ErrAssessmentNotFound
+}

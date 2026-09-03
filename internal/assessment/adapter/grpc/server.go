@@ -22,13 +22,24 @@ type Server struct {
 	assessmentv1.UnimplementedAssessmentServer
 	svc       *app.Service
 	constants score.Constants
+
+	// uow dan events boleh nil: assessment-svc tetap melayani pembacaan
+	// tanpa outbox. Yang tidak boleh adalah berpura-pura menerima pekerjaan
+	// yang tidak akan pernah ada yang mengerjakan.
+	uow    app.UnitOfWork
+	events app.EventWriterFor
 }
 
-func NewServer(svc *app.Service, constants score.Constants) (*Server, error) {
+func NewServer(
+	svc *app.Service,
+	constants score.Constants,
+	uow app.UnitOfWork,
+	events app.EventWriterFor,
+) (*Server, error) {
 	if svc == nil {
 		return nil, errors.New("nil assessment service")
 	}
-	return &Server{svc: svc, constants: constants}, nil
+	return &Server{svc: svc, constants: constants, uow: uow, events: events}, nil
 }
 
 var _ assessmentv1.AssessmentServer = (*Server)(nil)
@@ -103,13 +114,41 @@ func (s *Server) ResolveRiskRegion(
 	}, nil
 }
 
-// RequestPersonalization menjawab Unimplemented sampai llm-worker ada.
+// RequestPersonalization menerima permintaan lalu kembali segera.
+//
+// Ia TIDAK memanggil penyedia LLM. Yang terjadi hanyalah satu baris outbox,
+// dan llm-worker yang mengerjakannya. Memanggil penyedia dari sini berarti
+// pengguna menunggu puluhan detik dan satu kegagalan penyedia menjadi
+// kegagalan HTTP yang tidak bisa dicoba ulang siapa pun.
 func (s *Server) RequestPersonalization(
-	_ context.Context,
-	_ *assessmentv1.RequestPersonalizationRequest,
+	ctx context.Context,
+	req *assessmentv1.RequestPersonalizationRequest,
 ) (*assessmentv1.RequestPersonalizationResponse, error) {
-	return nil, status.Error(codes.Unimplemented,
-		"personalisation is the llm-worker flow in F3-10")
+	if s.uow == nil || s.events == nil {
+		return nil, status.Error(codes.Unimplemented,
+			"this service was started without an outbox and cannot queue work")
+	}
+
+	ticket, err := s.svc.RequestPersonalization(ctx, s.uow, s.events, app.PersonalizationRequest{
+		Slug:           req.GetSlug(),
+		UserID:         req.GetUserId(),
+		IdempotencyKey: req.GetIdempotencyKey().GetValue(),
+	})
+	if err != nil {
+		return nil, toStatus(ctx, "RequestPersonalization", err)
+	}
+
+	// PENDING, bukan COMPLETED, meski permintaannya berhasil diterima.
+	// Perbedaannya yang memberi tahu klien bahwa masih ada yang perlu ditunggu.
+	statusOut := assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING
+	if ticket.AlreadyRunning {
+		statusOut = assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED
+	}
+
+	return &assessmentv1.RequestPersonalizationResponse{
+		JobId:  ticket.JobID,
+		Status: statusOut,
+	}, nil
 }
 
 // toProto memetakan penilaian ke bentuk kontrak.
