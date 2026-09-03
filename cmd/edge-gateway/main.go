@@ -19,6 +19,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
+	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
@@ -115,7 +116,24 @@ func run(log *slog.Logger) error {
 			"variable", "ASSESSMENT_GRPC_TARGET")
 	}
 
+	var coachingHandler *handler.Coaching
+	if cfg.CoachingAddr != "" {
+		conn, err := dial(cfg.CoachingAddr)
+		if err != nil {
+			return fmt.Errorf("coaching-svc: %w", err)
+		}
+		defer closeConn(conn, "coaching-svc", log)
+
+		coachingHandler = handler.NewCoaching(coachingv1.NewCoachingClient(conn))
+	} else {
+		// Tanpa coaching-svc, rutenya tidak dipasang. 404 jauh lebih jujur
+		// daripada 500 dari klien yang tidak menyambung ke mana-mana.
+		log.Warn("coaching-svc is not configured; its routes are not mounted",
+			"variable", "COACHING_GRPC_TARGET")
+	}
+
 	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
+
 	if err != nil {
 		return err
 	}
@@ -130,6 +148,7 @@ func run(log *slog.Logger) error {
 		Now:         time.Now,
 		Social:      socialHandler,
 		Assessments: assessmentHandler,
+		Coaching:    coachingHandler,
 		Regions:     regions,
 	})
 

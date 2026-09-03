@@ -20,10 +20,14 @@ type Config struct {
 	// AssessmentAddr boleh kosong: lingkungan tanpa assessment-svc tetap
 	// melayani autentikasi dan profil.
 	AssessmentAddr string
-	VerifyKey      ed25519.PublicKey
-	TokenIssuer    string
-	RevocationTTL  time.Duration
-	Social         SocialConfig
+
+	// CoachingAddr boleh kosong: lingkungan tanpa coaching-svc tetap melayani
+	// sisanya, dan rute coaching tidak dipasang.
+	CoachingAddr  string
+	VerifyKey     ed25519.PublicKey
+	TokenIssuer   string
+	RevocationTTL time.Duration
+	Social        SocialConfig
 }
 
 // LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
@@ -38,6 +42,7 @@ func LoadConfig() (Config, error) {
 		ProfileAddr:    os.Getenv("PROFILE_GRPC_TARGET"),
 		RedisURL:       os.Getenv("REDIS_URL"),
 		AssessmentAddr: os.Getenv("ASSESSMENT_GRPC_TARGET"),
+		CoachingAddr:   os.Getenv("COACHING_GRPC_TARGET"),
 		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
 	}
 

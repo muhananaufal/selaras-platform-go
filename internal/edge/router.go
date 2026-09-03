@@ -19,8 +19,12 @@ import (
 
 // Deps adalah seluruh yang dibutuhkan router.
 type Deps struct {
-	Identity    identityv1.IdentityClient
-	Profiles    profilev1.ProfileClient
+	Identity identityv1.IdentityClient
+	Profiles profilev1.ProfileClient
+	// Coaching boleh nil: lingkungan tanpa coaching-svc tetap melayani sisanya,
+	// dan rute coaching TIDAK dipasang. 404 jauh lebih jujur daripada 500 dari
+	// klien yang tidak menyambung ke mana-mana.
+	Coaching    *handler.Coaching
 	Tokens      middleware.TokenVerifier
 	Revocations domain.RevocationChecker
 	Probes      *httpx.Health
@@ -105,8 +109,46 @@ func NewRouter(deps Deps) *gin.Engine {
 			// jawabannya - 202 dengan job_id, bukan laporannya - dan itu dicatat
 			// sebagai pengecualian yang disengaja.
 			protected.PATCH("/risk-assessments/:slug/personalize", deps.Assessments.Personalize)
+			// Dua belas endpoint coaching. Bentuk URL-nya dipertahankan dari
+			// sistem lama supaya klien yang ada tidak perlu berubah (ADR-005).
+			//
+			// Yang BERUBAH adalah kode jawabannya: memulai program, membuka
+			// thread, dan mengirim pesan kini menjawab 202 Accepted karena
+			// hasilnya datang belakangan - sistem lama menahan permintaan HTTP
+			// selama Gemini bekerja.
+			if deps.Coaching != nil {
+				mountCoaching(protected, deps.Coaching)
+			}
+
 		}
 	}
 
 	return router
+}
+
+// mountCoaching memasang dua belas endpoint coaching.
+//
+// Terpisah dari NewRouter supaya daftar rutenya terbaca sebagai satu daftar,
+// bukan tersembunyi di tengah perakitan yang lain. Bentuk URL-nya dipertahankan
+// dari sistem lama supaya klien yang ada tidak perlu berubah (ADR-005).
+//
+// Yang BERUBAH adalah kode jawabannya: memulai program, membuka thread, dan
+// mengirim pesan kini menjawab 202 Accepted karena hasilnya datang belakangan.
+// Sistem lama menahan permintaan HTTP selama Gemini bekerja.
+func mountCoaching(r gin.IRouter, h *handler.Coaching) {
+	group := r.Group("/coaching")
+
+	group.POST("/programs", h.StartProgram)
+	group.GET("/programs/:slug", h.ShowProgram)
+	group.PATCH("/programs/:slug/toggle-program-status", h.ToggleProgramStatus)
+	group.DELETE("/programs/:slug", h.DestroyProgram)
+	group.GET("/programs/:slug/graduation-report", h.GraduationReport)
+	group.POST("/programs/:slug/threads", h.StartThread)
+
+	group.POST("/threads/:slug/messages", h.SendMessage)
+	group.GET("/threads/:slug", h.ShowThread)
+	group.PATCH("/threads/:slug", h.UpdateThread)
+	group.DELETE("/threads/:slug", h.DestroyThread)
+
+	group.PATCH("/tasks/:id/toggle-task-status", h.ToggleTaskStatus)
 }

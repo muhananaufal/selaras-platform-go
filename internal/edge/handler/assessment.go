@@ -247,17 +247,17 @@ func (h *Assessment) Personalize(c *gin.Context) {
 func personalizationStatusName(s assessmentv1.PersonalizationStatus) string {
 	switch s {
 	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED:
-		return "not_requested"
+		return statusNotRequested
 	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING:
-		return "pending"
+		return statusPending
 	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED:
-		return "completed"
+		return statusCompleted
 	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_FAILED:
-		return "failed"
+		return statusFailed
 	default:
 		// UNSPECIFIED tidak dipetakan ke salah satu keadaan nyata. Klien yang
 		// menerima "pending" untuk keadaan yang tidak diketahui akan menunggu
 		// sesuatu yang mungkin tidak pernah datang.
-		return "unknown"
+		return statusUnknown
 	}
 }
