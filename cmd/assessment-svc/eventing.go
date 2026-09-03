@@ -57,7 +57,7 @@ func startEventing(
 
 	results, err := kafka.NewConsumer(
 		kafka.Config{Brokers: brokers, ClientID: "assessment-results"},
-		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter)
+		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter, outbox.TopicProfileUpdated)
 	if err != nil {
 		producer.Close()
 		return nil, err

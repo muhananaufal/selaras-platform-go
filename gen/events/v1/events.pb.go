@@ -367,8 +367,19 @@ type ProfileUpdated struct {
 	Sex                string                 `protobuf:"bytes,3,opt,name=sex,proto3" json:"sex,omitempty"`
 	CountryOfResidence *string                `protobuf:"bytes,4,opt,name=country_of_residence,json=countryOfResidence,proto3,oneof" json:"country_of_residence,omitempty"`
 	Language           string                 `protobuf:"bytes,5,opt,name=language,proto3" json:"language,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// user_id WAJIB ada, dan alasannya sama dengan ADR-022 dan ADR-023.
+	//
+	// Konsumennya - cache profil di assessment-svc - mencari lewat user_id,
+	// karena itulah identitas yang sudah terverifikasi di setiap permintaan.
+	// Event yang hanya membawa user_profile_id akan menghasilkan cache yang
+	// tidak bisa dicari: assessment harus memanggil profile-svc lebih dulu untuk
+	// menerjemahkan user_id menjadi user_profile_id, dan panggilan itulah yang
+	// seharusnya dihilangkan cache ini.
+	//
+	// Ditambahkan saat F2-16, sebelum ada yang membangun apa pun di atasnya.
+	UserId        string `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProfileUpdated) Reset() {
@@ -432,6 +443,13 @@ func (x *ProfileUpdated) GetCountryOfResidence() string {
 func (x *ProfileUpdated) GetLanguage() string {
 	if x != nil {
 		return x.Language
+	}
+	return ""
+}
+
+func (x *ProfileUpdated) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -1316,13 +1334,14 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x0ellm_job_failed\x18\x17 \x01(\v2\x17.events.v1.LlmJobFailedH\x00R\fllmJobFailedB\t\n" +
 	"\apayloadB\x12\n" +
 	"\x10_idempotency_keyB\v\n" +
-	"\t_trace_id\"\xf1\x01\n" +
+	"\t_trace_id\"\x8a\x02\n" +
 	"\x0eProfileUpdated\x12&\n" +
 	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12'\n" +
 	"\rdate_of_birth\x18\x02 \x01(\tH\x00R\vdateOfBirth\x88\x01\x01\x12\x10\n" +
 	"\x03sex\x18\x03 \x01(\tR\x03sex\x125\n" +
 	"\x14country_of_residence\x18\x04 \x01(\tH\x01R\x12countryOfResidence\x88\x01\x01\x12\x1a\n" +
-	"\blanguage\x18\x05 \x01(\tR\blanguageB\x10\n" +
+	"\blanguage\x18\x05 \x01(\tR\blanguage\x12\x17\n" +
+	"\auser_id\x18\x06 \x01(\tR\x06userIdB\x10\n" +
 	"\x0e_date_of_birthB\x17\n" +
 	"\x15_country_of_residence\"\x96\x01\n" +
 	"\x13AssessmentCompleted\x12#\n" +

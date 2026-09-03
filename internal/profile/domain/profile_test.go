@@ -303,3 +303,44 @@ func TestHydrateRebuildsAProfileExactly(t *testing.T) {
 		t.Errorf("language = %q; want %q", p.Language(), domain.LanguageEnglish)
 	}
 }
+
+// TestAgeIsNotSkewedByLeapYears menutup bug yang ditemukan saat F2-16.
+//
+// Versi sebelumnya membandingkan YearDay. Di tahun kabisat, 29 Februari
+// menggeser seluruh hari sesudahnya satu angka, sehingga orang yang lahir
+// 1 Maret terhitung sudah berulang tahun pada 29 Februari - setahun lebih tua,
+// satu hari lebih awal, dan umur adalah masukan langsung ke model risikonya.
+func TestAgeIsNotSkewedByLeapYears(t *testing.T) {
+	date := func(s string) time.Time {
+		parsed, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			t.Fatalf("bad date in the test itself: %v", err)
+		}
+		return parsed
+	}
+
+	dob, err := domain.NewDateOfBirth("1990-03-01", date("2026-01-01"))
+	if err != nil {
+		t.Fatalf("NewDateOfBirth: %v", err)
+	}
+
+	cases := []struct {
+		on   string
+		want int
+	}{
+		{"2028-02-29", 37}, // sehari sebelum ulang tahun, di tahun kabisat
+		{"2028-03-01", 38}, // tepat pada ulang tahun
+		{"2027-02-28", 36}, // sehari sebelum, di tahun biasa
+		{"2027-03-01", 37},
+	}
+
+	for _, c := range cases {
+		age, ok := dob.AgeOn(date(c.on))
+		if !ok {
+			t.Fatalf("AgeOn(%s) reported the date as unstated", c.on)
+		}
+		if age != c.want {
+			t.Errorf("on %s the age is %d, want %d", c.on, age, c.want)
+		}
+	}
+}

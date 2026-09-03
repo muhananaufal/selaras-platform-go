@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
+	"github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/cache"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/idempotency"
@@ -125,6 +126,8 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) error {
 	}
 
 	switch payload := env.GetPayload().(type) {
+	case *eventsv1.Envelope_ProfileUpdated:
+		return r.cacheProfile(ctx, &env, payload.ProfileUpdated)
 	case *eventsv1.Envelope_PersonalizationCompleted:
 		return r.complete(ctx, &env, payload.PersonalizationCompleted)
 	case *eventsv1.Envelope_LlmJobFailed:
@@ -231,6 +234,55 @@ func (r *Results) markFailed(ctx context.Context, assessmentID, reason string) e
 			reason)
 		return err
 	})
+}
+
+// cacheProfile menyimpan cuplikan profil yang datang lewat event (F2-16).
+//
+// TIDAK memakai penjaga idempotensi, dan itu disengaja: penyimpanan ini
+// idempoten karena bentuknya - UPSERT yang hanya menang bila eventnya lebih
+// baru. Klaim idempotensi di sini hanya menambah baris yang harus disapu untuk
+// menahan sesuatu yang sudah tertahan.
+func (r *Results) cacheProfile(
+	ctx context.Context, env *eventsv1.Envelope, updated *eventsv1.ProfileUpdated,
+) error {
+	if updated.GetUserId() == "" || updated.GetUserProfileId() == "" {
+		// Event tanpa salah satu id tidak bisa disimpan sebagai cuplikan yang
+		// bisa dicari. Ia dilewati dan dicatat, bukan diulang selamanya.
+		r.log.ErrorContext(ctx, "a profile event was missing an id and was skipped",
+			"event_id", env.GetEventId())
+		return nil
+	}
+
+	observedAt := env.GetOccurredAt().AsTime()
+
+	return pg.InTx(ctx, r.pool, func(q pg.Querier) error {
+		stored, err := cache.NewProfiles(q).Store(ctx,
+			updated.GetUserId(), updated.GetUserProfileId(),
+			updated.DateOfBirth, sexOf(updated), updated.CountryOfResidence,
+			updated.GetLanguage(), observedAt)
+		if err != nil {
+			return err
+		}
+		if !stored {
+			// Event yang lebih lama daripada yang sudah tersimpan. Bukan galat:
+			// konsumen yang diputar ulang akan menghasilkan banyak di antaranya.
+			r.log.DebugContext(ctx, "a profile event was older than the cached snapshot",
+				"user_id", updated.GetUserId())
+		}
+		return nil
+	})
+}
+
+// sexOf mengembalikan pointer ke jenis kelamin, atau nil bila belum dinyatakan.
+//
+// Bedanya nyata di cache: NULL berarti "belum diisi", string kosong berarti
+// "diketahui kosong" - dan yang pertama boleh dicari ulang ke profile-svc.
+func sexOf(updated *eventsv1.ProfileUpdated) *string {
+	if updated.GetSex() == "" {
+		return nil
+	}
+	sex := updated.GetSex()
+	return &sex
 }
 
 // idempotencyKeyOf memilih kunci yang menahan duplikat.

@@ -19,11 +19,13 @@ import (
 
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/profile"
 	profilegrpc "github.com/muhananaufal/selaras-platform-go/internal/profile/adapter/grpc"
 	profilepg "github.com/muhananaufal/selaras-platform-go/internal/profile/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/profile/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/profile/domain"
 )
 
 const (
@@ -61,6 +63,24 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Penerbitan event dipasang bila brokernya ada. Ketiganya sekaligus atau
+	// tidak sama sekali: sebagian yang terpasang berarti perubahan profil
+	// tersimpan tanpa disiarkan, dan cache di sisi lain basi tanpa ada yang
+	// tahu.
+	svc = svc.WithEvents(
+		profilepg.NewUnitOfWork(pool),
+		func(q pg.Querier) domain.ProfileRepository { return profilepg.NewProfileRepository(q) },
+		func(q pg.Querier) app.EventWriter { return outbox.NewWriter(q) },
+	)
+
+	stopRelay, err := startRelay(ctx, log, pool)
+	if err != nil {
+		return err
+	}
+	defer stopRelay()
+
+	log.Info("profile events", "published", svc.PublishesEvents())
+
 	server, err := profilegrpc.NewServer(svc)
 	if err != nil {
 		return err

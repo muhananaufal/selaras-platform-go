@@ -138,7 +138,14 @@ func (d DateOfBirth) AgeOn(on time.Time) (int, bool) {
 	// Ulang tahun yang belum lewat tahun ini berarti umurnya masih satu
 	// tahun lebih muda. Selisih tahun saja akan melebihkan sampai 364 hari,
 	// dan mesin risiko membaca angka ini.
-	if on.YearDay() < born.YearDay() {
+	//
+	// Perbandingannya bulan-dan-tanggal, BUKAN YearDay. YearDay salah di tahun
+	// kabisat: 29 Februari menggeser seluruh hari sesudahnya satu angka,
+	// sehingga orang yang lahir 1 Maret terhitung sudah berulang tahun pada 29
+	// Februari - setahun lebih tua, satu hari lebih awal. Ditemukan saat F2-16,
+	// di jalur yang sudah berjalan.
+	if on.Month() < born.Month() ||
+		(on.Month() == born.Month() && on.Day() < born.Day()) {
 		age--
 	}
 	return age, true

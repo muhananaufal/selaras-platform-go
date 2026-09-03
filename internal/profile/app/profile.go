@@ -18,6 +18,13 @@ import (
 type Service struct {
 	profiles domain.ProfileRepository
 	now      func() time.Time
+
+	// Ketiganya dipasang bersama lewat WithEvents, atau tidak sama sekali.
+	// Sebagian yang terpasang berarti perubahan profil tersimpan tanpa
+	// disiarkan - dan tidak ada yang tahu sampai cache di sisi lain basi.
+	uow    UnitOfWork
+	repos  ProfileRepositoryFor
+	events EventWriterFor
 }
 
 func NewService(profiles domain.ProfileRepository, now func() time.Time) (*Service, error) {
