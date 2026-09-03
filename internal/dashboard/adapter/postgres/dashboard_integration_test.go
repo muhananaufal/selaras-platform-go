@@ -375,3 +375,58 @@ func TestTheProjectionStateOnlyMovesForward(t *testing.T) {
 		t.Errorf("after a reset the projection reports %+v", state)
 	}
 }
+
+// TestTwoAssessmentsArrivingBackwardsStillGiveATrend adalah regresi untuk bug
+// yang ditemukan saat menjalankan test e2e, bukan saat membaca kode.
+//
+// Versi pertama tabel ini menyimpan latest_*, previous_risk_percentage, dan
+// total_assessments sebagai kolom yang diperbarui tiap event, lewat serangkaian
+// CASE yang membandingkan waktu. CASE itu hanya mengisi "penilaian sebelumnya"
+// ketika event yang tiba LEBIH BARU dari yang tersimpan - sehingga dua
+// penilaian yang tiba TERBALIK meninggalkannya kosong selamanya, dan dasbor
+// menjawab "belum ada pembanding" untuk orang yang sudah dua kali menganalisis.
+//
+// Kedatangan terbalik bukan hal langka: Kafka menjamin urutan per kunci
+// partisi, dan penilaian dikunci pada id penilaiannya, bukan pada penggunanya.
+// Dua penilaian satu orang bisa mendarat di partisi berbeda.
+//
+// Perbaikannya bukan menambah CASE. Ketiga nilai itu adalah turunan dari
+// riwayat, yang sudah memuat seluruhnya, jadi ketiganya dihapus dari tabel dan
+// diturunkan saat dibaca - benar untuk urutan kedatangan APA PUN.
+func TestTwoAssessmentsArrivingBackwardsStillGiveATrend(t *testing.T) {
+	pool, ctx := setup(t)
+	repo := dashboardpg.NewRepository(pool)
+
+	owner := userID(t)
+	older := assessment("aaa", base, 25.36)
+	newer := assessment("bbb", base.Add(10*time.Millisecond), 18.2)
+
+	// Yang BARU tiba lebih dulu - persis yang terjadi di test e2e.
+	if err := repo.ApplyAssessment(ctx, owner, newer, newer.AssessedAt); err != nil {
+		t.Fatalf("ApplyAssessment: %v", err)
+	}
+	if err := repo.ApplyAssessment(ctx, owner, older, older.AssessedAt); err != nil {
+		t.Fatalf("ApplyAssessment: %v", err)
+	}
+
+	dash, err := repo.Find(ctx, owner)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+
+	if dash.Previous == nil {
+		t.Fatal("with two assessments there is no previous one; the trend can never be computed")
+	}
+	if *dash.Previous != 25.36 {
+		t.Errorf("the previous risk is %v, want 25.36", *dash.Previous)
+	}
+	if got := dash.Trend(); got != domain.TrendImproving {
+		t.Errorf("a drop from 25.36 to 18.2 is reported as %q", got)
+	}
+	if dash.Latest.Slug != "bbb" {
+		t.Errorf("the latest assessment is %q, want bbb", dash.Latest.Slug)
+	}
+	if dash.Total != 2 {
+		t.Errorf("the total is %d, want 2", dash.Total)
+	}
+}
