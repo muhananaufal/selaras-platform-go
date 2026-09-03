@@ -34,14 +34,20 @@ message ChatMessage {
 message Conversation {
   string id = 1;
   string slug = 2;
-  string user_profile_id = 3;
+
+  // Pemilik percakapan adalah PENGGUNA, bukan profilnya (ADR-024).
+  //
+  // Sistem lama sudah memakai user_id di ChatController; yang keliru adalah
+  // CoachingController yang memakai profile->id. Keduanya bersama membentuk
+  // temuan S9, dan kontrak ini semula justru mengulangi sisi yang keliru.
+  string user_id = 3;
   string title = 4;
   optional string last_message_snippet = 5;
   common.v1.Timestamps timestamps = 6;
 }
 
 message ListConversationsRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   common.v1.PageRequest page = 2;
 }
 
@@ -51,7 +57,7 @@ message ListConversationsResponse {
 }
 
 message CreateConversationRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
   string message = 2;
   common.v1.IdempotencyKey idempotency_key = 3;
 }
@@ -63,7 +69,7 @@ message CreateConversationResponse {
 
 message GetConversationRequest {
   string slug = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
   common.v1.PageRequest page = 3;
 }
 
@@ -75,7 +81,7 @@ message GetConversationResponse {
 
 message UpdateConversationTitleRequest {
   string slug = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
   string title = 3;
 }
 
@@ -85,14 +91,14 @@ message UpdateConversationTitleResponse {
 
 message DeleteConversationRequest {
   string slug = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
 }
 
 message DeleteConversationResponse {}
 
 message SendMessageRequest {
   string conversation_slug = 1;
-  string user_profile_id = 2;
+  string user_id = 2;
   string message = 3;
   common.v1.IdempotencyKey idempotency_key = 4;
 }

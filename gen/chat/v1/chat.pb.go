@@ -140,13 +140,18 @@ func (x *ChatMessage) GetTimestamps() *v1.Timestamps {
 }
 
 type Conversation struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Slug               string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId      string                 `protobuf:"bytes,3,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
-	Title              string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
-	LastMessageSnippet *string                `protobuf:"bytes,5,opt,name=last_message_snippet,json=lastMessageSnippet,proto3,oneof" json:"last_message_snippet,omitempty"`
-	Timestamps         *v1.Timestamps         `protobuf:"bytes,6,opt,name=timestamps,proto3" json:"timestamps,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Slug  string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
+	// Pemilik percakapan adalah PENGGUNA, bukan profilnya (ADR-024).
+	//
+	// Sistem lama sudah memakai user_id di ChatController; yang keliru adalah
+	// CoachingController yang memakai profile->id. Keduanya bersama membentuk
+	// temuan S9, dan kontrak ini semula justru mengulangi sisi yang keliru.
+	UserId             string         `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Title              string         `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
+	LastMessageSnippet *string        `protobuf:"bytes,5,opt,name=last_message_snippet,json=lastMessageSnippet,proto3,oneof" json:"last_message_snippet,omitempty"`
+	Timestamps         *v1.Timestamps `protobuf:"bytes,6,opt,name=timestamps,proto3" json:"timestamps,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -195,9 +200,9 @@ func (x *Conversation) GetSlug() string {
 	return ""
 }
 
-func (x *Conversation) GetUserProfileId() string {
+func (x *Conversation) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -225,7 +230,7 @@ func (x *Conversation) GetTimestamps() *v1.Timestamps {
 
 type ListConversationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Page          *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -261,9 +266,9 @@ func (*ListConversationsRequest) Descriptor() ([]byte, []int) {
 	return file_chat_v1_chat_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ListConversationsRequest) GetUserProfileId() string {
+func (x *ListConversationsRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -329,7 +334,7 @@ func (x *ListConversationsResponse) GetPage() *v1.PageResponse {
 
 type CreateConversationRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId  string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Message        string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	IdempotencyKey *v1.IdempotencyKey     `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -366,9 +371,9 @@ func (*CreateConversationRequest) Descriptor() ([]byte, []int) {
 	return file_chat_v1_chat_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *CreateConversationRequest) GetUserProfileId() string {
+func (x *CreateConversationRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -442,7 +447,7 @@ func (x *CreateConversationResponse) GetJobId() string {
 type GetConversationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Page          *v1.PageRequest        `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -485,9 +490,9 @@ func (x *GetConversationRequest) GetSlug() string {
 	return ""
 }
 
-func (x *GetConversationRequest) GetUserProfileId() string {
+func (x *GetConversationRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -562,7 +567,7 @@ func (x *GetConversationResponse) GetPage() *v1.PageResponse {
 type UpdateConversationTitleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -605,9 +610,9 @@ func (x *UpdateConversationTitleRequest) GetSlug() string {
 	return ""
 }
 
-func (x *UpdateConversationTitleRequest) GetUserProfileId() string {
+func (x *UpdateConversationTitleRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -666,7 +671,7 @@ func (x *UpdateConversationTitleResponse) GetConversation() *Conversation {
 type DeleteConversationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -708,9 +713,9 @@ func (x *DeleteConversationRequest) GetSlug() string {
 	return ""
 }
 
-func (x *DeleteConversationRequest) GetUserProfileId() string {
+func (x *DeleteConversationRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -754,7 +759,7 @@ func (*DeleteConversationResponse) Descriptor() ([]byte, []int) {
 type SendMessageRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ConversationSlug string                 `protobuf:"bytes,1,opt,name=conversation_slug,json=conversationSlug,proto3" json:"conversation_slug,omitempty"`
-	UserProfileId    string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId           string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Message          string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	IdempotencyKey   *v1.IdempotencyKey     `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -798,9 +803,9 @@ func (x *SendMessageRequest) GetConversationSlug() string {
 	return ""
 }
 
-func (x *SendMessageRequest) GetUserProfileId() string {
+func (x *SendMessageRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -882,51 +887,51 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\fcontent_json\x18\x03 \x01(\tR\vcontentJson\x125\n" +
 	"\n" +
 	"timestamps\x18\x04 \x01(\v2\x15.common.v1.TimestampsR\n" +
-	"timestamps\"\xf7\x01\n" +
+	"timestamps\"\xe8\x01\n" +
 	"\fConversation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04slug\x18\x02 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x03 \x01(\tR\ruserProfileId\x12\x14\n" +
+	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x125\n" +
 	"\x14last_message_snippet\x18\x05 \x01(\tH\x00R\x12lastMessageSnippet\x88\x01\x01\x125\n" +
 	"\n" +
 	"timestamps\x18\x06 \x01(\v2\x15.common.v1.TimestampsR\n" +
 	"timestampsB\x17\n" +
-	"\x15_last_message_snippet\"n\n" +
-	"\x18ListConversationsRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12*\n" +
+	"\x15_last_message_snippet\"_\n" +
+	"\x18ListConversationsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\x85\x01\n" +
 	"\x19ListConversationsResponse\x12;\n" +
 	"\rconversations\x18\x01 \x03(\v2\x15.chat.v1.ConversationR\rconversations\x12+\n" +
-	"\x04page\x18\x02 \x01(\v2\x17.common.v1.PageResponseR\x04page\"\xa1\x01\n" +
-	"\x19CreateConversationRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12\x18\n" +
+	"\x04page\x18\x02 \x01(\v2\x17.common.v1.PageResponseR\x04page\"\x92\x01\n" +
+	"\x19CreateConversationRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12B\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"n\n" +
 	"\x1aCreateConversationResponse\x129\n" +
 	"\fconversation\x18\x01 \x01(\v2\x15.chat.v1.ConversationR\fconversation\x12\x15\n" +
-	"\x06job_id\x18\x02 \x01(\tR\x05jobId\"\x80\x01\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\"q\n" +
 	"\x16GetConversationRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12*\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12*\n" +
 	"\x04page\x18\x03 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\xb3\x01\n" +
 	"\x17GetConversationResponse\x129\n" +
 	"\fconversation\x18\x01 \x01(\v2\x15.chat.v1.ConversationR\fconversation\x120\n" +
 	"\bmessages\x18\x02 \x03(\v2\x14.chat.v1.ChatMessageR\bmessages\x12+\n" +
-	"\x04page\x18\x03 \x01(\v2\x17.common.v1.PageResponseR\x04page\"r\n" +
+	"\x04page\x18\x03 \x01(\v2\x17.common.v1.PageResponseR\x04page\"c\n" +
 	"\x1eUpdateConversationTitleRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12\x14\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\"\\\n" +
 	"\x1fUpdateConversationTitleResponse\x129\n" +
-	"\fconversation\x18\x01 \x01(\v2\x15.chat.v1.ConversationR\fconversation\"W\n" +
+	"\fconversation\x18\x01 \x01(\v2\x15.chat.v1.ConversationR\fconversation\"H\n" +
 	"\x19DeleteConversationRequest\x12\x12\n" +
-	"\x04slug\x18\x01 \x01(\tR\x04slug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\"\x1c\n" +
-	"\x1aDeleteConversationResponse\"\xc7\x01\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1c\n" +
+	"\x1aDeleteConversationResponse\"\xb8\x01\n" +
 	"\x12SendMessageRequest\x12+\n" +
-	"\x11conversation_slug\x18\x01 \x01(\tR\x10conversationSlug\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12\x18\n" +
+	"\x11conversation_slug\x18\x01 \x01(\tR\x10conversationSlug\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12B\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"\\\n" +
 	"\x13SendMessageResponse\x12.\n" +

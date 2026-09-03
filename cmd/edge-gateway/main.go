@@ -19,6 +19,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
+	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
@@ -132,6 +133,20 @@ func run(log *slog.Logger) error {
 			"variable", "COACHING_GRPC_TARGET")
 	}
 
+	var chatHandler *handler.Chat
+	if cfg.ChatAddr != "" {
+		conn, err := dial(cfg.ChatAddr)
+		if err != nil {
+			return fmt.Errorf("chat-svc: %w", err)
+		}
+		defer closeConn(conn, "chat-svc", log)
+
+		chatHandler = handler.NewChat(chatv1.NewChatClient(conn))
+	} else {
+		log.Warn("chat-svc is not configured; its routes are not mounted",
+			"variable", "CHAT_GRPC_TARGET")
+	}
+
 	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
 
 	if err != nil {
@@ -149,6 +164,7 @@ func run(log *slog.Logger) error {
 		Social:      socialHandler,
 		Assessments: assessmentHandler,
 		Coaching:    coachingHandler,
+		Chat:        chatHandler,
 		Regions:     regions,
 	})
 
