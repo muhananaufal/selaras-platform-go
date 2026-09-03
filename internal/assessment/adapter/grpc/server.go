@@ -52,7 +52,7 @@ func (s *Server) StartAssessment(
 		return nil, status.Error(codes.InvalidArgument, "no assessment input was sent")
 	}
 
-	assessment, err := s.svc.Start(ctx, app.StartCommand{
+	assessment, err := s.svc.Start(ctx, s.uow, s.events, app.StartCommand{
 		UserID:  req.GetUserId(),
 		Answers: AnswersFrom(req.GetInput()),
 	})

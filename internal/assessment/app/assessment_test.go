@@ -130,7 +130,7 @@ func validAnswers() map[string]any {
 func TestStartCalculatesAndStores(t *testing.T) {
 	svc, repo, profiles := newService(t)
 
-	a, err := svc.Start(context.Background(), app.StartCommand{
+	a, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID:  mineID,
 		Answers: validAnswers(),
 	})
@@ -168,7 +168,7 @@ func TestStartStoresTheInputsBesideTheResult(t *testing.T) {
 	answers := validAnswers()
 	answers["an_answer_nothing_reads"] = "kept anyway"
 
-	a, err := svc.Start(context.Background(), app.StartCommand{
+	a, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: answers,
 	})
 	if err != nil {
@@ -192,7 +192,7 @@ func TestStartStoresTheInputsBesideTheResult(t *testing.T) {
 func TestDiabetesValuesAppearOnlyOnTheDiabetesPath(t *testing.T) {
 	svc, _, _ := newService(t)
 
-	withoutDiabetes, err := svc.Start(context.Background(), app.StartCommand{
+	withoutDiabetes, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: validAnswers(),
 	})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestDiabetesValuesAppearOnlyOnTheDiabetesPath(t *testing.T) {
 	answers["scr_input_type"] = "manual"
 	answers["scr_value"] = 0.9
 
-	withDiabetes, err := svc.Start(context.Background(), app.StartCommand{
+	withDiabetes, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: answers,
 	})
 	if err != nil {
@@ -243,7 +243,7 @@ func TestAnIncompleteProfileIsRefusedWithItsMissingFields(t *testing.T) {
 			svc, repo, profiles := newService(t)
 			profiles.snapshot = snapshot
 
-			_, err := svc.Start(context.Background(), app.StartCommand{
+			_, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 				UserID: mineID, Answers: validAnswers(),
 			})
 			if !errors.Is(err, app.ErrProfileIncomplete) {
@@ -262,7 +262,7 @@ func TestAnEmptyCountryIsRefusedRatherThanDefaulted(t *testing.T) {
 	svc, _, profiles := newService(t)
 	profiles.snapshot.CountryOfResidence = ""
 
-	_, err := svc.Start(context.Background(), app.StartCommand{
+	_, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: validAnswers(),
 	})
 	if !errors.Is(err, app.ErrProfileIncomplete) {
@@ -276,7 +276,7 @@ func TestAnEmptyCountryIsRefusedRatherThanDefaulted(t *testing.T) {
 func TestSomeoneElsesAssessmentIsNotFoundRatherThanForbidden(t *testing.T) {
 	svc, _, _ := newService(t)
 
-	theirs, err := svc.Start(context.Background(), app.StartCommand{
+	theirs, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: theirsID, Answers: validAnswers(),
 	})
 	if err != nil {
@@ -302,7 +302,7 @@ func TestSomeoneElsesAssessmentIsNotFoundRatherThanForbidden(t *testing.T) {
 func TestAMissingSlugAndSomeoneElsesLookIdentical(t *testing.T) {
 	svc, _, _ := newService(t)
 
-	theirs, err := svc.Start(context.Background(), app.StartCommand{
+	theirs, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: theirsID, Answers: validAnswers(),
 	})
 	if err != nil {
@@ -320,7 +320,7 @@ func TestAMissingSlugAndSomeoneElsesLookIdentical(t *testing.T) {
 func TestSlugLookupIgnoresCaseAndSpace(t *testing.T) {
 	svc, _, _ := newService(t)
 
-	mine, err := svc.Start(context.Background(), app.StartCommand{
+	mine, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: validAnswers(),
 	})
 	if err != nil {
@@ -336,7 +336,7 @@ func TestHistoryIsCappedEvenWhenTheCallerAsksForMore(t *testing.T) {
 	svc, _, _ := newService(t)
 
 	for range 3 {
-		if _, err := svc.Start(context.Background(), app.StartCommand{
+		if _, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 			UserID: mineID, Answers: validAnswers(),
 		}); err != nil {
 			t.Fatalf("Start: %v", err)
@@ -379,13 +379,13 @@ func TestNewServiceRefusesMissingDependencies(t *testing.T) {
 func TestTheProfileIdComesFromTheProfileNotTheRequest(t *testing.T) {
 	svc, _, _ := newService(t)
 
-	mine, err := svc.Start(context.Background(), app.StartCommand{
+	mine, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: validAnswers(),
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	theirs, err := svc.Start(context.Background(), app.StartCommand{
+	theirs, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: theirsID, Answers: validAnswers(),
 	})
 	if err != nil {

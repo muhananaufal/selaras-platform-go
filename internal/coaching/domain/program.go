@@ -312,3 +312,31 @@ func (p *Program) Validate() error {
 func truncateToDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
+
+// DayOn adalah hari keberapa program ini berjalan pada tanggal tertentu.
+//
+// Nol berarti belum dimulai; DurationDays berarti sudah usai. Angka di antara
+// keduanya adalah hari ke-N, dihitung mulai dari satu - hari pertama program
+// adalah "hari ke-1", bukan "hari ke-0", karena itu yang dibaca manusia.
+//
+// Perhitungannya ada DI SINI, bukan di lapisan tampilan. Sistem lama
+// menghitungnya di dalam DashboardResource, sehingga satu-satunya tempat aturan
+// ini hidup adalah kelas yang tugasnya menyusun JSON - dan siapa pun yang butuh
+// angka yang sama di tempat lain harus menyalinnya. Salinan aturan adalah
+// aturan yang akan menyimpang.
+func (p *Program) DayOn(on time.Time) int {
+	day := truncateToDay(on)
+	total := p.DurationDays()
+
+	switch {
+	case day.Before(p.StartDate):
+		return 0
+	case !day.Before(p.EndDate):
+		// Sudah usai. Ia dijepit ke total, bukan dibiarkan tumbuh: program yang
+		// berakhir bulan lalu tidak berada di "hari ke-90" dari program 30 hari.
+		return total
+	default:
+		elapsed := int(day.Sub(p.StartDate).Hours() / 24)
+		return elapsed + 1
+	}
+}

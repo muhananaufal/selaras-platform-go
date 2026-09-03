@@ -251,8 +251,21 @@ func programUpdated(p *domain.Program, now time.Time) *eventsv1.Envelope {
 		SchemaVersion: 1,
 		Payload: &eventsv1.Envelope_CoachingProgramUpdated{
 			CoachingProgramUpdated: &eventsv1.CoachingProgramUpdated{
-				ProgramId: p.ID.String(),
-				Status:    string(p.Status),
+				ProgramId:  p.ID.String(),
+				Slug:       p.Slug,
+				Status:     string(p.Status),
+				UserId:     p.UserID.String(),
+				Title:      p.Title,
+				CurrentDay: int32(p.DayOn(now)),
+				TotalDays:  int32(p.DurationDays()),
+
+				// completion_percentage sengaja TIDAK diisi di sini.
+				//
+				// Event ini terbit saat program dibuat, dihidupkan, atau
+				// dijeda - saat itu tugasnya belum dihitung, dan mengisi nol
+				// berarti mengatakan "nol persen selesai" kepada dasbor,
+				// menimpa angka yang sudah benar. Yang menghitungnya adalah
+				// event dari task.go.
 			},
 		},
 	}

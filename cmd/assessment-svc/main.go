@@ -26,6 +26,7 @@ import (
 	assessmentpg "github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/profileclient"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
@@ -114,6 +115,13 @@ func run(log *slog.Logger) error {
 	events := func(q pg.Querier) app.EventWriter { return outbox.NewWriter(q) }
 	statuses := func(q pg.Querier) app.StatusWriter { return assessmentpg.NewRepository(q) }
 	svc = svc.WithStatusWriter(statuses)
+
+	// Repository transaksional: penilaian dan event pengumumannya ditulis dalam
+	// satu transaksi, sehingga dasbor tidak pernah melewatkan penilaian yang
+	// sudah tersimpan (E10).
+	svc = svc.WithRepositoryFor(func(q pg.Querier) domain.Repository {
+		return assessmentpg.NewRepository(q)
+	})
 
 	server, err := assessmentgrpc.NewServer(svc, constants,
 		assessmentpg.NewUnitOfWork(pool), events)

@@ -272,7 +272,7 @@ func TestAnEmptyReportIsRefused(t *testing.T) {
 func seedAssessment(t *testing.T, svc *app.Service) *domain.Assessment {
 	t.Helper()
 
-	a, err := svc.Start(context.Background(), app.StartCommand{
+	a, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
 		UserID: mineID, Answers: validAnswers(),
 	})
 	if err != nil {

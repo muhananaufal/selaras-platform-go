@@ -7,8 +7,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	commonv1 "github.com/muhananaufal/selaras-platform-go/gen/common/v1"
+	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
+	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
 // ProfileSnapshot adalah data demografis yang dibutuhkan mesin risiko.
@@ -62,6 +68,11 @@ type Service struct {
 	// untuk gagal, tetapi juga bukan alasan untuk berpura-pura menerima
 	// pekerjaan yang tidak akan tercatat.
 	statusWriter StatusWriterFor
+
+	// repoFor dipasang belakangan lewat WithRepositoryFor, dengan alasan yang
+	// sama seperti statusWriter: nil berarti service ini melayani pembacaan
+	// dan perhitungan tanpa outbox, bukan berpura-pura mengumumkan apa pun.
+	repoFor RepositoryFor
 }
 
 func NewService(
@@ -92,8 +103,16 @@ type StartCommand struct {
 	Answers map[string]any
 }
 
-// Start menghitung risiko dan menyimpan hasilnya.
-func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Assessment, error) {
+// Start menghitung risiko, menyimpan hasilnya, dan mengumumkannya.
+//
+// uow dan events boleh nil: assessment-svc tetap melayani perhitungan tanpa
+// outbox, sebagaimana ia tetap melayani pembacaan. Yang TIDAK boleh adalah
+// menyimpan penilaian tanpa eventnya ketika keduanya ADA - read-model dasbor
+// tidak akan pernah tahu penilaian itu terjadi, dan pengguna melihat dasbor
+// yang tertinggal tanpa ada yang bisa menjelaskan sebabnya.
+func (s *Service) Start(
+	ctx context.Context, uow UnitOfWork, events EventWriterFor, cmd StartCommand,
+) (*domain.Assessment, error) {
 	profile, err := s.profiles.Snapshot(ctx, cmd.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("reading the profile: %w", err)
@@ -125,24 +144,85 @@ func (s *Service) Start(ctx context.Context, cmd StartCommand) (*domain.Assessme
 		return nil, err
 	}
 
-	// Slug 80 bit praktis tidak akan bentrok, tetapi "praktis tidak akan"
-	// bukan "tidak bisa". Satu percobaan ulang mengubah kemungkinan yang
-	// sangat kecil menjadi kegagalan yang tidak pernah terlihat pengguna.
-	if err := s.assessments.Create(ctx, assessment); err != nil {
+	// Tanpa outbox, penilaiannya tetap dihitung dan disimpan. Ia hanya tidak
+	// diumumkan - dan itu dinyatakan di log saat start-up, bukan diam-diam.
+	if uow == nil || events == nil || s.repoFor == nil {
+		return assessment, s.store(ctx, s.assessments, assessment)
+	}
+
+	// Penilaian dan eventnya ditulis dalam SATU transaksi (E10).
+	//
+	// Menerbitkannya setelah commit membiarkan proses mati di antara keduanya,
+	// dan dasbor tidak akan pernah tahu penilaian itu ada. Menerbitkannya
+	// sebelum commit lebih buruk lagi: dasbor menampilkan penilaian yang batal.
+	announced := assessmentCompleted(assessment, cmd.UserID, result.Category, s.now())
+
+	if err := uow.Do(ctx, func(q pg.Querier) error {
+		if err := s.store(ctx, s.repoFor(q), assessment); err != nil {
+			return err
+		}
+		return events(q).Write(ctx, "assessment", assessment.ID.String(), announced)
+	}); err != nil {
+		return nil, err
+	}
+	return assessment, nil
+}
+
+// store menyimpan penilaian, mencoba slug baru bila yang pertama bentrok.
+//
+// Slug 80 bit praktis tidak akan bentrok, tetapi "praktis tidak akan" bukan
+// "tidak bisa". Satu percobaan ulang mengubah kemungkinan yang sangat kecil
+// menjadi kegagalan yang tidak pernah terlihat pengguna.
+func (s *Service) store(
+	ctx context.Context, repo domain.Repository, assessment *domain.Assessment,
+) error {
+	if err := repo.Create(ctx, assessment); err != nil {
 		if !errors.Is(err, domain.ErrSlugTaken) {
-			return nil, fmt.Errorf("storing the assessment: %w", err)
+			return fmt.Errorf("storing the assessment: %w", err)
 		}
 		slug, err := domain.NewSlug()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		assessment.Slug = slug
-		if err := s.assessments.Create(ctx, assessment); err != nil {
-			return nil, fmt.Errorf("storing the assessment: %w", err)
+		if err := repo.Create(ctx, assessment); err != nil {
+			return fmt.Errorf("storing the assessment: %w", err)
 		}
 	}
+	return nil
+}
 
-	return assessment, nil
+// assessmentCompleted menyusun event yang memberi tahu dunia luar.
+//
+// Ia membawa user_id dan kategori risiko, dan keduanya ada alasannya. user_id:
+// read-model dasbor menyimpan satu baris per pengguna dan harus tahu baris siapa
+// yang diperbarui. Kategori: ia DIHITUNG di sini, bukan diminta dari model
+// bahasa seperti sistem lama (B19), sehingga ia ada begitu penilaiannya ada -
+// bukan menunggu personalisasi yang bisa gagal.
+func assessmentCompleted(
+	a *domain.Assessment, userID string, category score.Category, now time.Time,
+) *eventsv1.Envelope {
+	return &eventsv1.Envelope{
+		EventId:       uuid.NewString(),
+		OccurredAt:    timestamppb.New(now),
+		SchemaVersion: 1,
+
+		// Kunci idempotensi diturunkan dari penilaiannya. Satu penilaian
+		// menghasilkan satu event ini, selamanya - konsumen yang menerimanya
+		// dua kali karena relay at-least-once bisa mengenalinya.
+		IdempotencyKey: &commonv1.IdempotencyKey{Value: "assessment-completed:" + a.ID.String()},
+
+		Payload: &eventsv1.Envelope_AssessmentCompleted{
+			AssessmentCompleted: &eventsv1.AssessmentCompleted{
+				AssessmentId:   a.ID.String(),
+				Slug:           a.Slug,
+				RiskPercentage: a.RiskPercentage,
+				ModelUsed:      a.ModelUsed,
+				UserId:         userID,
+				RiskCategory:   string(category),
+			},
+		},
+	}
 }
 
 // resolveProfileID menanyakan id profil seorang pengguna.
@@ -228,5 +308,11 @@ func validate(p ProfileSnapshot) error {
 // hanya menguji perhitungan - tidak perlu menyediakannya.
 func (s *Service) WithStatusWriter(w StatusWriterFor) *Service {
 	s.statusWriter = w
+	return s
+}
+
+// WithRepositoryFor memasang pabrik repository transaksional.
+func (s *Service) WithRepositoryFor(f RepositoryFor) *Service {
+	s.repoFor = f
 	return s
 }

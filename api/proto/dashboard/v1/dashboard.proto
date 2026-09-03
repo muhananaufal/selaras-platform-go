@@ -29,6 +29,13 @@ message AssessmentSummary {
   string assessed_on = 2;
   string model_used = 3;
   double risk_percentage = 4;
+
+  // Kategori risiko yang DIHITUNG, bukan yang dikarang model.
+  //
+  // Sistem lama membacanya dari laporan LLM, sehingga dasbor pengguna yang
+  // personalisasinya belum tiba menampilkan "N/A" sebagai status kesehatannya.
+  // Nilai ini datang dari SCORE2, jadi ia ada begitu penilaiannya ada.
+  string risk_category = 5;
 }
 
 message ProgramSummary {
@@ -46,7 +53,7 @@ message RiskTrendPoint {
 }
 
 message DashboardView {
-  string user_profile_id = 1;
+  string user_id = 1;
 
   // Kosong bila pengguna belum pernah melakukan analisis. Gateway
   // menerjemahkannya menjadi pesan sambutan, sebagaimana perilaku lama.
@@ -67,7 +74,7 @@ message DashboardView {
 }
 
 message GetDashboardRequest {
-  string user_profile_id = 1;
+  string user_id = 1;
 }
 
 message GetDashboardResponse {
