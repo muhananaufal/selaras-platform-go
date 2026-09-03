@@ -96,11 +96,45 @@ services:
       PROFILE_GRPC_TARGET: profile-svc:9201
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
+      # Tanpa ini, permintaan personalisasi DITOLAK alih-alih diterima lalu
+      # hilang - lihat startEventing di cmd/assessment-svc.
+      KAFKA_BROKERS: kafka:9092
     ports:
       - "127.0.0.1:19301:9301"
       - "127.0.0.1:19302:9302"
     depends_on:
       postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+
+  llm-worker:
+    build:
+      context: ../..
+      args:
+        UNIT: llm-worker
+    restart: unless-stopped
+    container_name: selaras-llm-worker
+    environment:
+      LLM_POSTGRES_DSN: >-
+        postgres://svc_llm:${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=llm
+      KAFKA_BROKERS: kafka:9092
+      # Mode fake HARUS diminta eksplisit. Nilai bawaan yang jatuh ke fake
+      # berarti ada keadaan di mana pengguna dijawab teks yang dibuat-buat
+      # tanpa ada yang tahu - lihat buildProvider di cmd/llm-worker.
+      LLM_PROVIDER: ${LLM_PROVIDER:?set LLM_PROVIDER to gemini or fake}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     healthcheck:
       disable: true

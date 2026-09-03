@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -28,6 +29,18 @@ type assessmentView struct {
 	RiskPercentage float64       `json:"risk_percentage"`
 	ResolvedValues *resolvedView `json:"resolved_values"`
 	CreatedAt      string        `json:"created_at"`
+
+	// PersonalizationStatus adalah satu-satunya cara klien membedakan
+	// "sedang dikerjakan" dari "gagal" dan dari "belum pernah diminta"
+	// (F3-12). Tanpa ini, ketiganya terlihat sama: laporan yang tidak ada.
+	PersonalizationStatus string `json:"personalization_status"`
+
+	// PersonalizedReport adalah laporannya, apa adanya.
+	//
+	// json.RawMessage, bukan map: laporan yang di-decode lalu di-encode ulang
+	// kehilangan urutan kuncinya dan mengubah angka yang tidak bisa
+	// direpresentasikan float64. Yang disimpan sudah JSON; ia diteruskan.
+	PersonalizedReport json.RawMessage `json:"personalized_report,omitempty"`
 }
 
 type resolvedView struct {
@@ -126,9 +139,19 @@ func (h *Assessment) Index(c *gin.Context) {
 
 func viewOf(a *assessmentv1.RiskAssessment) assessmentView {
 	view := assessmentView{
-		Slug:           a.GetSlug(),
-		ModelUsed:      modelName(a.GetModelUsed()),
-		RiskPercentage: a.GetRiskPercentage(),
+		Slug:                  a.GetSlug(),
+		ModelUsed:             modelName(a.GetModelUsed()),
+		RiskPercentage:        a.GetRiskPercentage(),
+		PersonalizationStatus: personalizationStatusName(a.GetPersonalizationStatus()),
+	}
+
+	if report := a.GetPersonalizedReportJson(); report != "" {
+		// Diperiksa dulu, bukan diteruskan begitu saja. Byte yang bukan JSON
+		// akan membuat SELURUH respons tidak bisa di-parse klien - satu baris
+		// yang rusak di basis data menjatuhkan endpoint-nya.
+		if json.Valid([]byte(report)) {
+			view.PersonalizedReport = json.RawMessage(report)
+		}
 	}
 	if ts := a.GetTimestamps().GetCreatedAt(); ts != nil {
 		view.CreatedAt = ts.AsTime().Format(time.RFC3339)
