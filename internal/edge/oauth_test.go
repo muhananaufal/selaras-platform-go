@@ -49,7 +49,7 @@ func newFakeGoogle(t *testing.T) *fakeGoogle {
 	g := &fakeGoogle{
 		key:           key,
 		subject:       "google-sub-1",
-		email:         "person@gmail.com",
+		email:         "person@contoh.test",
 		emailVerified: true,
 	}
 
@@ -214,7 +214,7 @@ func TestTheWholeSocialSignInFlow(t *testing.T) {
 		t.Fatalf("me status = %d; want 200 (%v)", status, me)
 	}
 	data, _ := me["data"].(map[string]any)
-	if data["email"] != "person@gmail.com" {
+	if data["email"] != "person@contoh.test" {
 		t.Errorf("email = %v; want the address Google asserted", data["email"])
 	}
 }

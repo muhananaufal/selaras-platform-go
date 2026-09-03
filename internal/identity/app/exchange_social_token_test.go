@@ -38,7 +38,7 @@ func googleIdentity() app.SocialIdentity {
 	return app.SocialIdentity{
 		Provider:      "google",
 		ProviderID:    "google-sub-123",
-		Email:         "person@gmail.com",
+		Email:         "person@contoh.test",
 		EmailVerified: true,
 	}
 }
@@ -103,7 +103,7 @@ func TestAFirstTimeGoogleSignInSurvivesADeadProfileService(t *testing.T) {
 // kredensial yang berfungsi tanpa memberi tahu siapa pun.
 func TestSigningInWithGoogleNeverDestroysAnExistingPassword(t *testing.T) {
 	f := newSocialFixture(t)
-	existing := seedUser(t, f.users, "person@gmail.com")
+	existing := seedUser(t, f.users, "person@contoh.test")
 
 	if _, err := f.exchange.Execute(context.Background(), googleIdentity()); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -128,7 +128,7 @@ func TestSigningInWithGoogleNeverDestroysAnExistingPassword(t *testing.T) {
 // akun kedua yang dibuat untuk alamat yang sama.
 func TestLinkingDoesNotCreateASecondAccount(t *testing.T) {
 	f := newSocialFixture(t)
-	seedUser(t, f.users, "person@gmail.com")
+	seedUser(t, f.users, "person@contoh.test")
 
 	if _, err := f.exchange.Execute(context.Background(), googleIdentity()); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -144,7 +144,7 @@ func TestLinkingDoesNotCreateASecondAccount(t *testing.T) {
 // berdasarkan alamat adalah cara mengambil alih akun orang.
 func TestAnUnverifiedAddressCannotLinkToAnExistingAccount(t *testing.T) {
 	f := newSocialFixture(t)
-	victim := seedUser(t, f.users, "person@gmail.com")
+	victim := seedUser(t, f.users, "person@contoh.test")
 
 	identity := googleIdentity()
 	identity.EmailVerified = false
@@ -224,7 +224,7 @@ func TestASecondGoogleIdentityCannotOverwriteTheFirst(t *testing.T) {
 // setiap kali login sosial berhasil.
 func TestASocialSignInEndsEveryPreviousSession(t *testing.T) {
 	f := newSocialFixture(t)
-	existing := seedUser(t, f.users, "person@gmail.com")
+	existing := seedUser(t, f.users, "person@contoh.test")
 
 	if _, err := f.exchange.Execute(context.Background(), googleIdentity()); err != nil {
 		t.Fatalf("Execute: %v", err)

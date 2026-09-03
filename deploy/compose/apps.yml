@@ -290,6 +290,18 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-}
       ASSESSMENT_GRPC_TARGET: assessment-svc:9301
       EDGE_HTTP_ADDR: ":8080"
+
+      # Batas laju DINAIKKAN di lingkungan pengembangan, bukan dimatikan.
+      #
+      # Batas produksi - lima percobaan masuk per menit per IP - membuat suite
+      # test ujung ke ujung mustahil dijalankan: ia mendaftarkan puluhan akun
+      # dari satu alamat dalam hitungan detik, dan itu memang bentuk yang ingin
+      # ditolak di produksi.
+      #
+      # Yang dinaikkan hanya angkanya; jalurnya tetap dilalui setiap permintaan,
+      # sehingga pembatasan itu sendiri tetap teruji di sini.
+      RATE_LIMIT_AUTH_REQUESTS: ${RATE_LIMIT_AUTH_REQUESTS:-500}
+      RATE_LIMIT_LLM_REQUESTS: ${RATE_LIMIT_LLM_REQUESTS:-500}
     ports:
       - "127.0.0.1:18080:8080"
     depends_on:
