@@ -29,9 +29,19 @@ const (
 	CodeNotFound           = "NOT_FOUND"
 	CodeAlreadyExists      = "ALREADY_EXISTS"
 	CodeFailedPrecondition = "FAILED_PRECONDITION"
-	CodeRateLimited        = "RATE_LIMITED"
-	CodeInternal           = "INTERNAL"
-	CodeUnavailable        = "UNAVAILABLE"
+
+	// CodePermissionDenied dipakai saat pemanggilnya SUDAH terautentikasi
+	// tetapi tetap tidak boleh melakukannya - misalnya kata sandi yang keliru
+	// saat mengonfirmasi penghapusan akun.
+	//
+	// Sebelumnya jalur itu memakai FAILED_PRECONDITION, dan itu keliru: klien
+	// yang membedakan kesalahan berdasarkan kode akan memperlakukannya sebagai
+	// "keadaan belum siap" alih-alih "yang Anda ketik salah", lalu mencoba lagi
+	// dengan masukan yang sama persis.
+	CodePermissionDenied = "PERMISSION_DENIED"
+	CodeRateLimited      = "RATE_LIMITED"
+	CodeInternal         = "INTERNAL"
+	CodeUnavailable      = "UNAVAILABLE"
 )
 
 // Write mengirim jawaban galat dan menghentikan rantai handler.
@@ -85,7 +95,7 @@ func FromGRPC(c *gin.Context, err error) {
 		Write(c, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated.")
 
 	case codes.PermissionDenied:
-		Write(c, http.StatusForbidden, CodeFailedPrecondition, st.Message())
+		Write(c, http.StatusForbidden, CodePermissionDenied, st.Message())
 
 	case codes.NotFound:
 		Write(c, http.StatusNotFound, CodeNotFound, st.Message())

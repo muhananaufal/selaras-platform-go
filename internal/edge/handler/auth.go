@@ -196,3 +196,49 @@ func roleName(r identityv1.Role) string {
 		return ""
 	}
 }
+
+// DeleteAccount memulai penghapusan akun secara permanen.
+//
+// Ia menjawab 202, bukan 204: penghapusannya menyeberangi enam unit dan belum
+// selesai saat permintaan ini dijawab. Menjawab 204 akan mengatakan "sudah
+// hilang" pada saat datanya masih ada di mana-mana - dan klien yang memercayai
+// itu akan menampilkan halaman perpisahan sebelum apa pun benar-benar terhapus.
+func (h *Auth) DeleteAccount(c *gin.Context) {
+	claims, ok := middleware.ClaimsFrom(c)
+	if !ok {
+		httperr.Write(c, http.StatusUnauthorized, httperr.CodeUnauthenticated, "Unauthenticated.")
+		return
+	}
+
+	var body struct {
+		// Kata sandi WAJIB, dan di sini ia benar-benar dibandingkan.
+		//
+		// Sistem lama mewajibkannya di aturan validasi lalu tidak pernah
+		// memeriksanya (S2): siapa pun yang memegang token sah bisa menghapus
+		// akun secara permanen dengan mengirim string apa pun.
+		Password string `json:"password" binding:"required"`
+	}
+	if !bind(c, &body) {
+		return
+	}
+
+	resp, err := h.identity.DeleteAccount(c.Request.Context(), &identityv1.DeleteAccountRequest{
+		// Id datang dari token yang sudah diverifikasi gateway, bukan dari
+		// badan permintaan (ADR-023).
+		UserId:   claims.UserID.String(),
+		Password: body.Password,
+	})
+	if err != nil {
+		httperr.FromGRPC(c, err)
+		return
+	}
+
+	writeData(c, http.StatusAccepted, struct {
+		SagaID string `json:"saga_id"`
+
+		// Dinyatakan apa adanya: penghapusannya berjalan, belum selesai.
+		// Klien yang menampilkan "akun Anda telah dihapus" pada saat ini
+		// mengatakan sesuatu yang belum benar.
+		Status string `json:"status"`
+	}{resp.GetSagaId(), "in_progress"})
+}

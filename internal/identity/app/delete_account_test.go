@@ -94,11 +94,12 @@ func (f *fakeSagas) Outstanding(_ context.Context, _ int) ([]*domain.DeletionSag
 
 // deletionHarness merakit use case penghapusan beserta akun yang bisa dihapus.
 type deletionHarness struct {
-	uc     *app.DeleteAccount
-	sagas  *fakeSagas
-	users  *fakeUsers
-	uow    *fakeUnitOfWork
-	userID domain.UserID
+	uc      *app.DeleteAccount
+	sagas   *fakeSagas
+	users   *fakeUsers
+	uow     *fakeUnitOfWork
+	revokes *fakeRevocations
+	userID  domain.UserID
 }
 
 const deletionPassword = "RahasiaKuat#2026"
@@ -132,14 +133,15 @@ func newDeletionHarness(t *testing.T) *deletionHarness {
 	}
 
 	uow := &fakeUnitOfWork{users: users, sagas: sagas}
+	revokes := &fakeRevocations{}
 
 	uc, err := app.NewDeleteAccount(users, sagas, hasher, &fakeProfiles{id: uuid.NewString()},
-		uow, time.Now, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+		revokes, uow, time.Now, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	if err != nil {
 		t.Fatalf("NewDeleteAccount: %v", err)
 	}
 
-	return &deletionHarness{uc: uc, sagas: sagas, users: users, uow: uow, userID: user.ID()}
+	return &deletionHarness{uc: uc, sagas: sagas, users: users, uow: uow, revokes: revokes, userID: user.ID()}
 }
 
 // TestTheWrongPasswordDeletesNothing adalah S2, temuan yang paling langsung
@@ -347,5 +349,85 @@ func TestARepeatedConfirmationDoesNotCloseTheSagaEarly(t *testing.T) {
 	}
 	if _, closed := h.sagas.closed[saga.ID.String()]; closed {
 		t.Error("the saga closed on repeated answers from one unit")
+	}
+}
+
+// TestDeletingAnAccountRevokesItsTokens adalah kemunduran yang ditemukan test
+// e2e, bukan pembacaan kode.
+//
+// Gateway memverifikasi tanda tangan token tanpa menanyai siapa pun; yang
+// menghentikan token yang sudah terbit hanyalah generasi yang naik. Tanpa
+// menaikkannya, akun yang sudah dihapus TETAP menjawab permintaan sampai
+// tokennya kedaluwarsa sendiri - dan test e2e mengamati persis itu selama empat
+// puluh detik penuh.
+//
+// Sistem lama menghapus seluruh token sebelum forceDelete(). Melewatkannya di
+// sini adalah kemunduran, bukan penyederhanaan.
+func TestDeletingAnAccountRevokesItsTokens(t *testing.T) {
+	h := newDeletionHarness(t)
+
+	before, err := h.users.FindByID(context.Background(), h.userID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	generationBefore := before.TokenGeneration()
+
+	saga, err := h.uc.Execute(context.Background(), app.DeleteAccountCommand{
+		UserID: h.userID.String(), Password: deletionPassword,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, name := range domain.DeletionParticipants {
+		if err := h.uc.ConfirmDeletion(context.Background(), saga.ID.String(), domain.Confirmation{
+			Service: name, Succeeded: true, ConfirmedAt: time.Now(),
+		}); err != nil {
+			t.Fatalf("ConfirmDeletion(%s): %v", name, err)
+		}
+	}
+
+	if h.users.count() != 0 {
+		t.Fatal("the account survived a complete saga")
+	}
+
+	// Generasi BARU diumumkan, dan ia lebih tinggi dari sebelumnya - itulah
+	// yang membuat token yang sudah terbit ditolak gateway.
+	if len(h.revokes.published) == 0 {
+		t.Fatal("no new token generation was published; every outstanding token stays valid")
+	}
+	last := h.revokes.published[len(h.revokes.published)-1]
+	if last.generation <= generationBefore {
+		t.Errorf("the published generation is %d, not higher than %d",
+			last.generation, generationBefore)
+	}
+	if last.userID != h.userID {
+		t.Errorf("the revocation names user %s, want %s", last.userID, h.userID)
+	}
+}
+
+// TestAnIncompleteSagaDoesNotRevokeAnything menjaga sisi lainnya.
+//
+// Saga yang belum lengkap TIDAK boleh mencabut token: penghapusannya belum
+// terjadi, dan mengeluarkan orang dari sesinya untuk penghapusan yang mungkin
+// berakhir gagal adalah kerugian tanpa manfaat.
+func TestAnIncompleteSagaDoesNotRevokeAnything(t *testing.T) {
+	h := newDeletionHarness(t)
+
+	saga, err := h.uc.Execute(context.Background(), app.DeleteAccountCommand{
+		UserID: h.userID.String(), Password: deletionPassword,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if err := h.uc.ConfirmDeletion(context.Background(), saga.ID.String(), domain.Confirmation{
+		Service: "profile", Succeeded: true, ConfirmedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("ConfirmDeletion: %v", err)
+	}
+
+	if len(h.revokes.published) != 0 {
+		t.Error("an unfinished saga revoked the account's tokens")
 	}
 }

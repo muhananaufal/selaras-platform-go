@@ -81,6 +81,12 @@ func run(log *slog.Logger) error {
 
 	log.Info("profile events", "published", svc.PublishesEvents())
 
+	stopDeletion, err := startDeletionConsumer(ctx, log, pool, os.Getenv("KAFKA_BROKERS"))
+	if err != nil {
+		return err
+	}
+	defer stopDeletion()
+
 	server, err := profilegrpc.NewServer(svc)
 	if err != nil {
 		return err

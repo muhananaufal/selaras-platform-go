@@ -24,6 +24,7 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-3600}
       PROFILE_GRPC_TARGET: profile-svc:9201
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      KAFKA_BROKERS: kafka:9092
 
       # Mailpit di dalam jaringan compose. Alur reset karena itu bisa
       # BENAR-BENAR dijalankan di mesin sendiri, dan surelnya dibaca di
@@ -46,6 +47,8 @@ services:
       redis:
         condition: service_healthy
       mailpit:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     healthcheck:
       # Image-nya distroless dan tidak punya shell, curl, atau wget. Probe

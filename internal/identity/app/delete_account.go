@@ -56,9 +56,19 @@ type DeleteAccount struct {
 	sagas    SagaRepository
 	hasher   domain.PasswordHasher
 	profiles ProfileFinder
-	uow      UnitOfWork
-	now      func() time.Time
-	log      *slog.Logger
+
+	// revocations mengumumkan generasi token yang baru saat akun dihapus.
+	//
+	// Tanpanya, token yang sudah terbit TETAP BERLAKU sampai kedaluwarsa
+	// sendiri - gateway memverifikasi tanda tangan tanpa menanyai siapa pun,
+	// dan cache pencabutannya masih memegang generasi lama. Sistem lama
+	// menghapus seluruh token sebelum menghapus akun; melewatkannya di sini
+	// adalah kemunduran, bukan penyederhanaan.
+	revocations domain.RevocationPublisher
+
+	uow UnitOfWork
+	now func() time.Time
+	log *slog.Logger
 }
 
 func NewDeleteAccount(
@@ -66,6 +76,7 @@ func NewDeleteAccount(
 	sagas SagaRepository,
 	hasher domain.PasswordHasher,
 	profiles ProfileFinder,
+	revocations domain.RevocationPublisher,
 	uow UnitOfWork,
 	now func() time.Time,
 	log *slog.Logger,
@@ -79,6 +90,8 @@ func NewDeleteAccount(
 		return nil, errors.New("nil password hasher")
 	case profiles == nil:
 		return nil, errors.New("nil profile finder")
+	case revocations == nil:
+		return nil, errors.New("nil revocation publisher")
 	case uow == nil:
 		return nil, errors.New("nil unit of work")
 	case now == nil:
@@ -87,8 +100,8 @@ func NewDeleteAccount(
 		return nil, errors.New("nil logger")
 	}
 	return &DeleteAccount{
-		users: users, sagas: sagas, hasher: hasher,
-		profiles: profiles, uow: uow, now: now, log: log,
+		users: users, sagas: sagas, hasher: hasher, profiles: profiles,
+		revocations: revocations, uow: uow, now: now, log: log,
 	}, nil
 }
 
@@ -222,7 +235,15 @@ func (d *DeleteAccount) ConfirmDeletion(
 
 	now := d.now()
 
-	return d.uow.Do(ctx, func(r Repositories) error {
+	// generation diisi di dalam transaksi dan diumumkan sesudahnya - publikasi
+	// yang berjalan di dalam transaksi akan mengumumkan perubahan yang bisa
+	// batal.
+	var (
+		generation  int64
+		deletedUser domain.UserID
+	)
+
+	err = d.uow.Do(ctx, func(r Repositories) error {
 		saga, err := r.Sagas().Find(ctx, id)
 		if err != nil {
 			return err
@@ -261,6 +282,28 @@ func (d *DeleteAccount) ConfirmDeletion(
 			return nil
 		}
 
+		// Token dicabut SEBELUM barisnya hilang.
+		//
+		// Gateway memverifikasi tanda tangan tanpa menanyai siapa pun; yang
+		// menghentikan token yang sudah terbit hanyalah generasi yang naik.
+		// Menaikkannya setelah barisnya hilang mustahil - tidak ada lagi yang
+		// bisa dinaikkan - dan tokennya akan tetap diterima sampai cache
+		// pencabutan gateway kedaluwarsa sendiri.
+		//
+		// Sistem lama menghapus seluruh token sebelum forceDelete(). Melewatkan
+		// langkah itu adalah kemunduran, dan test e2e menangkapnya: akun yang
+		// sudah dihapus masih menjawab permintaan selama empat puluh detik.
+		user, err := r.Users().FindByID(ctx, saga.UserID)
+		if err != nil {
+			return fmt.Errorf("reading the account before deleting it: %w", err)
+		}
+		user.RevokeAllTokens(now)
+		if err := r.Users().Update(ctx, user); err != nil {
+			return fmt.Errorf("revoking tokens before deletion: %w", err)
+		}
+		generation = user.TokenGeneration()
+		deletedUser = saga.UserID
+
 		if err := r.Users().Delete(ctx, saga.UserID); err != nil {
 			return fmt.Errorf("deleting the account after every unit confirmed: %w", err)
 		}
@@ -269,6 +312,18 @@ func (d *DeleteAccount) ConfirmDeletion(
 			"saga_id", id.String())
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Publikasi berjalan SETELAH commit, dan kegagalannya tidak membatalkan
+	// penghapusan: barisnya sudah hilang, jadi pencabutannya nyata. Yang
+	// tertinggal hanya cache, dan gateway yang meleset menanyai sumbernya -
+	// yang kini menjawab "tidak ada akun itu", dan ia gagal-tertutup (ADR-020).
+	if generation > 0 {
+		publishGenerationBestEffort(ctx, d.revocations, deletedUser, generation)
+	}
+	return nil
 }
 
 // deletionRequested menyusun event yang mengumumkan permintaannya.

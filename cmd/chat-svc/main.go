@@ -81,6 +81,12 @@ func run(log *slog.Logger) error {
 	}
 	defer stopResults()
 
+	stopDeletion, err := startDeletionConsumer(ctx, log, pool, cfg.KafkaBrokers)
+	if err != nil {
+		return err
+	}
+	defer stopDeletion()
+
 	server, err := chatgrpc.NewServer(svc)
 	if err != nil {
 		return err

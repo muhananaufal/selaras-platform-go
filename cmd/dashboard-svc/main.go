@@ -71,17 +71,30 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// TIDAK ada relay outbox di sini, dan itu disengaja.
+	// Relay outbox DIBUTUHKAN, meski dasbor tidak memiliki satu fakta pun.
 	//
-	// dashboard-svc tidak memiliki satu fakta pun dan tidak menerbitkan satu
-	// event pun - ia hanya membaca. Menyalakan relay untuk tabel outbox yang
-	// tidak akan pernah terisi hanya menambah satu proses yang harus dijelaskan
-	// kepada siapa pun yang membaca log-nya.
+	// Versi pertama melewatkannya dengan alasan "service ini hanya membaca".
+	// Itu keliru: saga penghapusan akun menuntut setiap unit mengonfirmasi
+	// setelah datanya hilang, dan konfirmasi itu sebuah event. Tanpa relay,
+	// konfirmasinya tertulis di outbox lalu tidak pernah berangkat - dan saga
+	// menggantung selamanya menunggu unit yang sebenarnya sudah selesai.
+	stopRelay, err := startRelay(ctx, log, pool, cfg.KafkaBrokers)
+	if err != nil {
+		return err
+	}
+	defer stopRelay()
+
 	stopProjector, err := startProjector(ctx, log, svc, cfg.KafkaBrokers)
 	if err != nil {
 		return err
 	}
 	defer stopProjector()
+
+	stopDeletion, err := startDeletionConsumer(ctx, log, pool, cfg.KafkaBrokers)
+	if err != nil {
+		return err
+	}
+	defer stopDeletion()
 
 	server, err := dashboardgrpc.NewServer(svc, time.Now)
 	if err != nil {
