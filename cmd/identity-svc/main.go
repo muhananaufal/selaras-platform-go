@@ -118,10 +118,32 @@ func run(log *slog.Logger) error {
 	}
 	defer closeProfiles()
 
-	server, err := buildServer(cfg, pool, issuer, verifier, revocations, profiles, log)
+	server, deleteAccount, err := buildServer(cfg, pool, issuer, verifier, revocations, profiles, log)
 	if err != nil {
 		return err
 	}
+
+	// Relay outbox dan konsumen konfirmasi: yang satu mengeluarkan permintaan
+	// penghapusan, yang lain menerima jawabannya. Keduanya bisa gagal
+	// sendiri-sendiri, jadi keduanya dinyalakan terpisah.
+	stopRelay, err := startRelay(ctx, log, pool, os.Getenv("KAFKA_BROKERS"))
+	if err != nil {
+		return err
+	}
+	defer stopRelay()
+
+	stopConfirmations, err := startConfirmationConsumer(
+		ctx, log, deleteAccount, os.Getenv("KAFKA_BROKERS"))
+	if err != nil {
+		return err
+	}
+	defer stopConfirmations()
+
+	// Saga yang menggantung dari proses sebelumnya tidak akan menyelesaikan
+	// dirinya sendiri: unitnya sudah dihubungi, dan yang belum menjawab tidak
+	// akan ditanya lagi. Satu-satunya cara ia terlihat adalah kalau seseorang
+	// diberi tahu saat start-up.
+	deleteAccount.LogOutstandingSagas(ctx, log)
 
 	probes := httpx.NewHealth()
 
@@ -207,15 +229,16 @@ func buildServer(
 	revocations domain.RevocationPublisher,
 	profiles profileClient,
 	log *slog.Logger,
-) (*identitygrpc.Server, error) {
+) (*identitygrpc.Server, *app.DeleteAccount, error) {
 	uow := identitypg.NewUnitOfWork(pool)
 	users := identitypg.NewUserRepository(pool)
+	sagas := identitypg.NewSagaRepository(pool)
 	hasher := crypto.NewArgon2idHasher(crypto.DefaultParams())
 	now := time.Now
 
 	links, err := buildResetLinkSender(cfg.Mail, log)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Verifier sosial dipilih di sini, sekali, berdasarkan konfigurasi.
@@ -227,7 +250,7 @@ func buildServer(
 	} else {
 		google, err := social.NewGoogleVerifier(cfg.GoogleClientID, "", nil, time.Hour)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		socialVerifier = google
 		log.Info("social sign-in is configured", "provider", "google")
@@ -235,41 +258,57 @@ func buildServer(
 
 	register, err := app.NewRegister(uow, hasher, issuer, profiles, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	login, err := app.NewLogin(uow, hasher, issuer, profiles, revocations, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	logout, err := app.NewLogout(uow, revocations, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	requestReset, err := app.NewRequestPasswordReset(uow, links, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	confirmReset, err := app.NewConfirmPasswordReset(uow, hasher, revocations, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	exchange, err := app.NewExchangeSocialToken(uow, issuer, profiles, revocations, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return identitygrpc.NewServer(identitygrpc.UseCases{
+	// Penghapusan akun butuh pembanding kata sandi DAN penyimpanan saga.
+	//
+	// Ia dikembalikan terpisah karena konsumen konfirmasi memakainya juga, dan
+	// keduanya harus use case yang SAMA - aturan penutupan saga hanya boleh
+	// hidup di satu tempat, kalau tidak akun bisa dihapus lewat jalur yang
+	// menghitung konfirmasinya secara berbeda.
+	deleteAccount, err := app.NewDeleteAccount(users, sagas, hasher, profiles, revocations, uow, now, log)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	server, err := identitygrpc.NewServer(identitygrpc.UseCases{
 		Register:              register,
 		Login:                 login,
 		Logout:                logout,
 		RequestReset:          requestReset,
 		ConfirmReset:          confirmReset,
 		ExchangeSocial:        exchange,
+		Deletion:              deleteAccount,
 		Users:                 users,
 		Tokens:                verifier,
 		Social:                socialVerifier,
 		AccessTokenTTLSeconds: int64(cfg.AccessTTL.Seconds()),
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return server, deleteAccount, nil
 }
 
 // healthEndpoint menerima probes dari luar, bukan membuatnya sendiri.

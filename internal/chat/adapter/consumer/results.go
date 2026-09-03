@@ -13,6 +13,7 @@ import (
 
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/chat/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 )
 
 // Scope adalah ruang lingkup idempotensi konsumen ini.
@@ -88,7 +89,9 @@ func (r *Results) Run(ctx context.Context) error {
 			continue
 		}
 
-		var handled, failed int
+		var handled int
+		rewinder := kafka.NewRewinder()
+
 		fetches.EachRecord(func(rec *kgo.Record) {
 			if ctx.Err() != nil {
 				return
@@ -96,7 +99,7 @@ func (r *Results) Run(ctx context.Context) error {
 			if err := r.handle(ctx, rec); err != nil {
 				r.log.ErrorContext(ctx, "handling a chat reply failed",
 					"offset", rec.Offset, "partition", rec.Partition, "error", err)
-				failed++
+				rewinder.Failed(rec)
 			}
 			handled++
 		})
@@ -104,9 +107,20 @@ func (r *Results) Run(ctx context.Context) error {
 		if handled == 0 {
 			continue
 		}
-		if failed > 0 {
+		if rewinder.Any() {
 			r.log.WarnContext(ctx, "holding offsets so failed replies are redelivered",
-				"failed", failed, "handled", handled)
+				"handled", handled)
+			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
+			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
+			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
+			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			rewinder.Rewind(r.client)
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(time.Second):
+			}
 			continue
 		}
 

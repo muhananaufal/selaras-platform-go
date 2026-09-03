@@ -42,7 +42,19 @@ type client struct {
 	base  string
 	token string
 	http  *http.Client
+
+	// email disimpan supaya test yang perlu masuk lagi - misalnya untuk
+	// membuktikan akun yang dihapus benar-benar hilang - tidak perlu
+	// menebaknya kembali dari nama testnya.
+	email string
 }
+
+// defaultPassword dipakai setiap akun yang dibuat register().
+//
+// Ia konstanta, bukan literal yang diulang: test penghapusan akun harus
+// mengirimkan kata sandi yang SAMA untuk mengonfirmasi, dan dua literal yang
+// perlahan menyimpang akan membuat test itu gagal dengan alasan yang salah.
+const defaultPassword = "correct-horse-battery"
 
 func newClient(t *testing.T) *client {
 	t.Helper()
@@ -115,8 +127,8 @@ func (c *client) register() {
 	code, body := c.do(http.MethodPost, "/api/v1/register", map[string]any{
 		"name":                  "E2E",
 		"email":                 email,
-		"password":              "correct-horse-battery",
-		"password_confirmation": "correct-horse-battery",
+		"password":              defaultPassword,
+		"password_confirmation": defaultPassword,
 	})
 	if code != http.StatusCreated && code != http.StatusOK {
 		c.t.Fatalf("register answered %d: %v", code, body)
@@ -132,6 +144,21 @@ func (c *client) register() {
 		c.t.Fatalf("register returned no access token: %v", body)
 	}
 	c.token = token
+	c.email = email
+}
+
+// doAnonymous menjalankan permintaan TANPA token.
+//
+// Dipakai test yang perlu membuktikan sesuatu tentang akun yang tokennya sudah
+// tidak berlaku - masuk kembali setelah akun dihapus, misalnya.
+func (c *client) doAnonymous(method, path string, body any) (int, map[string]any) {
+	c.t.Helper()
+
+	saved := c.token
+	c.token = ""
+	defer func() { c.token = saved }()
+
+	return c.do(method, path, body)
 }
 
 // dig membaca nilai bersarang tanpa memaksa pemanggil menulis type assertion

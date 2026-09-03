@@ -14,6 +14,7 @@ import (
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/dashboard/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/dashboard/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 )
 
 // Scope adalah ruang lingkup idempotensi proyektor ini.
@@ -75,7 +76,9 @@ func (p *Projector) Run(ctx context.Context) error {
 			continue
 		}
 
-		var handled, failed int
+		var handled int
+		rewinder := kafka.NewRewinder()
+
 		fetches.EachRecord(func(rec *kgo.Record) {
 			if ctx.Err() != nil {
 				return
@@ -84,7 +87,7 @@ func (p *Projector) Run(ctx context.Context) error {
 				p.log.ErrorContext(ctx, "projecting an event failed",
 					"topic", rec.Topic, "offset", rec.Offset,
 					"partition", rec.Partition, "error", err)
-				failed++
+				rewinder.Failed(rec)
 			}
 			handled++
 		})
@@ -92,13 +95,24 @@ func (p *Projector) Run(ctx context.Context) error {
 		if handled == 0 {
 			continue
 		}
-		if failed > 0 {
+		if rewinder.Any() {
 			// Offset DITAHAN. Proyeksi yang melewatkan satu event akan salah
 			// SELAMANYA - tidak ada yang mengirimnya lagi, dan tidak ada yang
 			// menyadarinya sampai seseorang membandingkan dasbor dengan
 			// sumbernya. Pengiriman ulang aman: proyeksinya idempoten.
 			p.log.WarnContext(ctx, "holding offsets so failed events are redelivered",
-				"failed", failed, "handled", handled)
+				"handled", handled)
+			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
+			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
+			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
+			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			rewinder.Rewind(p.client)
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(time.Second):
+			}
 			continue
 		}
 

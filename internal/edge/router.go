@@ -107,6 +107,11 @@ func NewRouter(deps Deps) *gin.Engine {
 	protected.Use(middleware.Authenticate(deps.Tokens, deps.Revocations))
 	{
 		protected.POST("/logout", auth.Logout)
+
+		// DELETE, bentuk yang sama dengan sistem lama (ADR-005). Yang berubah
+		// adalah kode jawabannya - 202, bukan 200 - karena penghapusannya
+		// menyeberangi enam unit dan belum selesai saat permintaan dijawab.
+		protected.DELETE("/delete-account", auth.DeleteAccount)
 		protected.GET("/me", handler.Me)
 		protected.GET("/profile", profiles.Show)
 		protected.PATCH("/profile", profiles.Update)
