@@ -71,7 +71,7 @@ func (w *Writer) Write(
 		return errors.New("nil envelope")
 	}
 
-	eventType := eventTypeOf(envelope)
+	eventType := EventTypeOf(envelope)
 	if eventType == "" {
 		// Envelope tanpa payload tidak bisa dirutekan ke topic mana pun.
 		// Menyimpannya berarti relay akan menemukannya, gagal, dan mencoba
@@ -197,41 +197,41 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
-// eventTypeOf membaca jenis event dari envelope.
+// EventTypeOf membaca jenis event dari envelope.
 //
 // Ia dipakai untuk merutekan ke topic. Nama yang dikembalikan sengaja mengikuti
 // nama bidang di kontrak, sehingga menambah event baru di proto langsung
 // terbawa ke sini tanpa daftar kedua yang bisa tertinggal.
-func eventTypeOf(e *eventsv1.Envelope) string {
+func EventTypeOf(e *eventsv1.Envelope) string {
 	switch e.GetPayload().(type) {
 	case *eventsv1.Envelope_ProfileUpdated:
-		return "profile.updated"
+		return EventProfileUpdated
 	case *eventsv1.Envelope_AssessmentCompleted:
-		return "assessment.completed"
+		return EventAssessmentCompleted
 	case *eventsv1.Envelope_PersonalizationRequested:
-		return "personalization.requested"
+		return EventPersonalizationRequested
 	case *eventsv1.Envelope_PersonalizationCompleted:
-		return "personalization.completed"
+		return EventPersonalizationCompleted
 	case *eventsv1.Envelope_CoachingProgramUpdated:
-		return "coaching.program.updated"
+		return EventCoachingProgramUpdate
 	case *eventsv1.Envelope_CurriculumRequested:
-		return "curriculum.requested"
+		return EventCurriculumRequested
 	case *eventsv1.Envelope_CurriculumCompleted:
-		return "curriculum.completed"
+		return EventCurriculumCompleted
 	case *eventsv1.Envelope_ChatReplyRequested:
-		return "chat.reply.requested"
+		return EventChatReplyRequested
 	case *eventsv1.Envelope_ChatReplyCompleted:
-		return "chat.reply.completed"
+		return EventChatReplyCompleted
 	case *eventsv1.Envelope_MealGuideRequested:
-		return "meal.guide.requested"
+		return EventMealGuideRequested
 	case *eventsv1.Envelope_MealGuideCompleted:
-		return "meal.guide.completed"
+		return EventMealGuideCompleted
 	case *eventsv1.Envelope_UserDeletionRequested:
-		return "user.deletion.requested"
+		return EventUserDeletionRequested
 	case *eventsv1.Envelope_UserDeletionConfirmed:
-		return "user.deletion.confirmed"
+		return EventUserDeletionConfirmed
 	case *eventsv1.Envelope_LlmJobFailed:
-		return "llm.job.failed"
+		return EventLLMJobFailed
 	default:
 		return ""
 	}
