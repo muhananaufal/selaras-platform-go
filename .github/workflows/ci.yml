@@ -56,6 +56,30 @@ jobs:
           --health-cmd "/mailpit readyz"
           --health-interval 5s --health-timeout 3s --health-retries 20
 
+      # Broker yang sama dengan lokal, dalam mode KRaft.
+      #
+      # Ia ada di sini karena test integrasi Kafka MENGGAGALKAN dirinya saat
+      # CI=true dan brokernya tidak ada, alih-alih melewatinya diam-diam.
+      kafka:
+        image: apache/kafka:4.3.1
+        ports: ['9092:9092']
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 10s --health-timeout 5s --health-retries 20 --health-start-period 30s
+
     env:
       PGHOST: 127.0.0.1
       PGUSER: selaras_admin
@@ -117,6 +141,11 @@ jobs:
             -dsn "pgx5://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
           go run ./cmd/migrate -service profile -direction up \
             -dsn "pgx5://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
+
+      # Topic dibuat lewat alat yang sama dengan yang dipakai di lokal, bukan
+      # lewat skrip terpisah. Dua salinan akan menyimpang diam-diam.
+      - name: Create Kafka topics
+        run: go run ./cmd/topics -brokers 127.0.0.1:9092
       # -p 1: beberapa paket test berbagi satu skema Postgres dan
       # mengosongkan tabel yang sama, jadi menjalankannya bersamaan membuat
       # keduanya saling menghapus data.
@@ -128,6 +157,7 @@ jobs:
         env:
           SVC_IDENTITY_PASSWORD: ci-not-a-secret
           SVC_PROFILE_PASSWORD: ci-not-a-secret
+          TEST_KAFKA_BROKERS: 127.0.0.1:9092
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
           TEST_SMTP_HOST: 127.0.0.1
           TEST_SMTP_PORT: "1025"
