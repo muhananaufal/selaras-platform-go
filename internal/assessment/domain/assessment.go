@@ -189,6 +189,14 @@ type Repository interface {
 
 	// ListForProfile mengembalikan riwayat satu profil, terbaru lebih dulu.
 	ListForProfile(ctx context.Context, profileID ProfileID, limit int) ([]*Assessment, error)
+
+	// SetResultDetails menyimpan laporan personalisasi.
+	//
+	// stored bernilai false kalau laporannya SUDAH ADA - dan itu bukan galat.
+	// Event bisa tiba dua kali (relay outbox at-least-once), dan menimpa
+	// laporan yang sudah ada dengan yang datang belakangan akan mengganti isi
+	// yang mungkin sudah dibaca pengguna.
+	SetResultDetails(ctx context.Context, id ID, report map[string]any) (stored bool, err error)
 }
 
 // NormaliseSlug membersihkan slug yang datang dari URL.

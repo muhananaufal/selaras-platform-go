@@ -195,3 +195,29 @@ func nullableJSON(m map[string]any) any {
 	}
 	return encoded
 }
+
+// SetResultDetails menyimpan laporan personalisasi.
+//
+// Syarat `result_details IS NULL` ada di WHERE, bukan diperiksa lebih dulu
+// dengan SELECT. Pemeriksaan pendahuluan punya celah di antara membaca dan
+// menulis, dan dua event yang tiba serempak akan sama-sama membaca "belum ada"
+// lalu sama-sama menulis - yang kedua menimpa yang pertama.
+func (r *Repository) SetResultDetails(
+	ctx context.Context, id domain.ID, report map[string]any,
+) (bool, error) {
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		return false, fmt.Errorf("encoding the personalisation report: %w", err)
+	}
+
+	const q = `
+		UPDATE risk_assessments
+		SET result_details = $2, updated_at = now()
+		WHERE id = $1 AND result_details IS NULL`
+
+	tag, err := r.db.Exec(ctx, q, id.String(), encoded)
+	if err != nil {
+		return false, fmt.Errorf("storing the personalisation report: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
