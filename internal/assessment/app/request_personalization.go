@@ -190,3 +190,11 @@ func (s *Service) StorePersonalization(
 	}
 	return nil
 }
+
+// RepositoryFor membuat repository penilaian di atas satu transaksi.
+//
+// Ia ada karena Start harus menulis penilaian DAN event pengumumannya dalam
+// satu transaksi (E10). Repository yang dibangun di atas kolam koneksi akan
+// commit sendiri, dan penilaiannya bertahan meski eventnya batal - dasbor lalu
+// tidak akan pernah tahu penilaian itu ada.
+type RepositoryFor func(pg.Querier) domain.Repository

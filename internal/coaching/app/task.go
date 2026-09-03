@@ -135,7 +135,11 @@ func taskToggled(
 				ProgramId:            p.ID.String(),
 				Slug:                 p.Slug,
 				Status:               string(p.Status),
-				CompletionPercentage: percentage,
+				CompletionPercentage: &percentage,
+				UserId:               p.UserID.String(),
+				Title:                p.Title,
+				CurrentDay:           int32(p.DayOn(now)),
+				TotalDays:            int32(p.DurationDays()),
 			},
 		},
 	}

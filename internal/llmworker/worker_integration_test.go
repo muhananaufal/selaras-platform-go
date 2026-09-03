@@ -88,6 +88,21 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 		t.Fatalf("creating the test topic: %v", err)
 	}
 
+	// Topic uji dihapus setelah testnya selesai.
+	//
+	// Tanpa ini setiap jalankan meninggalkan satu topic yatim di broker, dan
+	// dua ratus lima puluh di antaranya sempat menumpuk sebelum ada yang
+	// menyadarinya. Kegagalan menghapus hanya dicatat: pembersihan yang
+	// menjatuhkan test hijau membuat orang mematikan pembersihannya.
+	t.Cleanup(func() {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancelCleanup()
+
+		if err := kafka.DeleteTopics(cleanupCtx, producer, topic); err != nil {
+			t.Logf("could not delete the test topic %s: %v", topic, err)
+		}
+	})
+
 	consumerClient, err := kafka.NewConsumer(
 		kafka.Config{Brokers: addr, ClientID: "worker-test"},
 		group, topic)

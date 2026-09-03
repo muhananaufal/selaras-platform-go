@@ -181,3 +181,33 @@ func WaitForTopics(ctx context.Context, client *kgo.Client, topics []Topic) (map
 		}
 	}
 }
+
+// DeleteTopics menghapus topic. Dipakai TEST untuk membersihkan miliknya.
+//
+// Ia ada karena harness test membuat satu topic per test - itu benar, sebab
+// topic bersama membuat test saling mewarisi pesan - tetapi tanpa penghapusan,
+// setiap jalankan meninggalkan sisanya di broker. Dua ratus lima puluh topic
+// yatim sempat menumpuk di lingkungan pengembangan sesi ini sebelum ada yang
+// menyadarinya, dan metadata broker menanggung seluruhnya.
+//
+// Kegagalan menghapus TIDAK menggagalkan test: pembersihan yang menjatuhkan
+// test hijau membuat orang mematikan pembersihannya.
+func DeleteTopics(ctx context.Context, client *kgo.Client, names ...string) error {
+	if len(names) == 0 {
+		return nil
+	}
+
+	responses, err := kadm.NewClient(client).DeleteTopics(ctx, names...)
+	if err != nil {
+		return fmt.Errorf("deleting topics: %w", err)
+	}
+
+	// Sama seperti CreateTopic, penolakan per topic ada di dalam responsnya,
+	// bukan hanya di err.
+	for _, r := range responses {
+		if r.Err != nil && !errors.Is(r.Err, kerr.UnknownTopicOrPartition) {
+			return fmt.Errorf("deleting topic %s: %w", r.Topic, r.Err)
+		}
+	}
+	return nil
+}

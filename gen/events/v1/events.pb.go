@@ -460,8 +460,20 @@ type AssessmentCompleted struct {
 	Slug           string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
 	RiskPercentage float64                `protobuf:"fixed64,3,opt,name=risk_percentage,json=riskPercentage,proto3" json:"risk_percentage,omitempty"`
 	ModelUsed      string                 `protobuf:"bytes,4,opt,name=model_used,json=modelUsed,proto3" json:"model_used,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// user_id WAJIB ada, alasannya sama dengan CoachingProgramUpdated di bawah:
+	// read-model dasbor menyimpan satu baris per pengguna dan harus tahu baris
+	// siapa yang diperbarui.
+	UserId string `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Kategori risiko yang dihitung, bukan yang dikarang model.
+	//
+	// Dasbor menampilkannya sebagai "status terkini". Di sistem lama ia dibaca
+	// dari laporan LLM (`result_details.riskSummary.riskCategory`), sehingga
+	// dasbor pengguna yang personalisasinya belum tiba - atau gagal - menampilkan
+	// "N/A". Nilai ini datang dari SCORE2 yang sudah selesai dihitung, jadi ia
+	// selalu ada begitu penilaiannya ada.
+	RiskCategory  string `protobuf:"bytes,6,opt,name=risk_category,json=riskCategory,proto3" json:"risk_category,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AssessmentCompleted) Reset() {
@@ -518,6 +530,20 @@ func (x *AssessmentCompleted) GetRiskPercentage() float64 {
 func (x *AssessmentCompleted) GetModelUsed() string {
 	if x != nil {
 		return x.ModelUsed
+	}
+	return ""
+}
+
+func (x *AssessmentCompleted) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AssessmentCompleted) GetRiskCategory() string {
+	if x != nil {
+		return x.RiskCategory
 	}
 	return ""
 }
@@ -651,13 +677,39 @@ func (x *PersonalizationCompleted) GetPromptVersion() string {
 }
 
 type CoachingProgramUpdated struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	ProgramId            string                 `protobuf:"bytes,1,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
-	Slug                 string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
-	Status               string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	CompletionPercentage float64                `protobuf:"fixed64,4,opt,name=completion_percentage,json=completionPercentage,proto3" json:"completion_percentage,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProgramId string                 `protobuf:"bytes,1,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
+	Slug      string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
+	Status    string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	// OPTIONAL, dan itu bukan kelalaian.
+	//
+	// Event ini terbit dari dua tempat. Yang satu - saat program dibuat,
+	// dihidupkan, atau dijeda - tidak menghitung tugas sama sekali; yang lain
+	// terbit justru karena sebuah tugas ditandai selesai. Tanpa presence
+	// eksplisit, "tidak dihitung" dan "nol persen" terlihat SAMA di kawat, dan
+	// dasbor yang menjeda programnya akan melompat kembali ke nol persen dari
+	// angka yang sudah benar.
+	//
+	// Ini bentuk lain dari B16, dan pelajarannya sama: nilai nol proto3 bukan
+	// "tidak ada".
+	CompletionPercentage *float64 `protobuf:"fixed64,4,opt,name=completion_percentage,json=completionPercentage,proto3,oneof" json:"completion_percentage,omitempty"`
+	// user_id WAJIB ada, dan alasannya sama dengan ADR-022, ADR-023, dan ADR-024.
+	//
+	// Konsumennya - read-model dasbor - menyimpan SATU BARIS PER PENGGUNA, jadi
+	// ia harus tahu baris siapa yang diperbarui. Event yang hanya membawa
+	// program_id memaksa dasbor memanggil coaching-svc untuk menerjemahkannya,
+	// dan panggilan itulah yang seharusnya dihilangkan read-model.
+	UserId string `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Judul dan kemajuan program, untuk ditampilkan tanpa memanggil siapa pun.
+	//
+	// Dasbor menampilkan "hari ke-N dari M" persis seperti sistem lama. Kalau
+	// angka itu tidak ikut, dasbor harus menghitungnya sendiri dari tanggal
+	// mulai - dan perhitungan yang sama di dua tempat akan menyimpang.
+	Title         string `protobuf:"bytes,6,opt,name=title,proto3" json:"title,omitempty"`
+	CurrentDay    int32  `protobuf:"varint,7,opt,name=current_day,json=currentDay,proto3" json:"current_day,omitempty"`
+	TotalDays     int32  `protobuf:"varint,8,opt,name=total_days,json=totalDays,proto3" json:"total_days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CoachingProgramUpdated) Reset() {
@@ -712,8 +764,36 @@ func (x *CoachingProgramUpdated) GetStatus() string {
 }
 
 func (x *CoachingProgramUpdated) GetCompletionPercentage() float64 {
+	if x != nil && x.CompletionPercentage != nil {
+		return *x.CompletionPercentage
+	}
+	return 0
+}
+
+func (x *CoachingProgramUpdated) GetUserId() string {
 	if x != nil {
-		return x.CompletionPercentage
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *CoachingProgramUpdated) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *CoachingProgramUpdated) GetCurrentDay() int32 {
+	if x != nil {
+		return x.CurrentDay
+	}
+	return 0
+}
+
+func (x *CoachingProgramUpdated) GetTotalDays() int32 {
+	if x != nil {
+		return x.TotalDays
 	}
 	return 0
 }
@@ -1363,13 +1443,15 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\blanguage\x18\x05 \x01(\tR\blanguage\x12\x17\n" +
 	"\auser_id\x18\x06 \x01(\tR\x06userIdB\x10\n" +
 	"\x0e_date_of_birthB\x17\n" +
-	"\x15_country_of_residence\"\x96\x01\n" +
+	"\x15_country_of_residence\"\xd4\x01\n" +
 	"\x13AssessmentCompleted\x12#\n" +
 	"\rassessment_id\x18\x01 \x01(\tR\fassessmentId\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12'\n" +
 	"\x0frisk_percentage\x18\x03 \x01(\x01R\x0eriskPercentage\x12\x1d\n" +
 	"\n" +
-	"model_used\x18\x04 \x01(\tR\tmodelUsed\"j\n" +
+	"model_used\x18\x04 \x01(\tR\tmodelUsed\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\x12#\n" +
+	"\rrisk_category\x18\x06 \x01(\tR\friskCategory\"j\n" +
 	"\x18PersonalizationRequested\x12#\n" +
 	"\rassessment_id\x18\x01 \x01(\tR\fassessmentId\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x15\n" +
@@ -1379,13 +1461,20 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x1f\n" +
 	"\vreport_json\x18\x03 \x01(\tR\n" +
 	"reportJson\x12%\n" +
-	"\x0eprompt_version\x18\x04 \x01(\tR\rpromptVersion\"\x98\x01\n" +
+	"\x0eprompt_version\x18\x04 \x01(\tR\rpromptVersion\"\xa6\x02\n" +
 	"\x16CoachingProgramUpdated\x12\x1d\n" +
 	"\n" +
 	"program_id\x18\x01 \x01(\tR\tprogramId\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\x123\n" +
-	"\x15completion_percentage\x18\x04 \x01(\x01R\x14completionPercentage\"\xa1\x01\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x128\n" +
+	"\x15completion_percentage\x18\x04 \x01(\x01H\x00R\x14completionPercentage\x88\x01\x01\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\x12\x14\n" +
+	"\x05title\x18\x06 \x01(\tR\x05title\x12\x1f\n" +
+	"\vcurrent_day\x18\a \x01(\x05R\n" +
+	"currentDay\x12\x1d\n" +
+	"\n" +
+	"total_days\x18\b \x01(\x05R\ttotalDaysB\x18\n" +
+	"\x16_completion_percentage\"\xa1\x01\n" +
 	"\x13CurriculumRequested\x12\x1d\n" +
 	"\n" +
 	"program_id\x18\x01 \x01(\tR\tprogramId\x12\x15\n" +
@@ -1520,6 +1609,7 @@ func file_events_v1_events_proto_init() {
 		(*Envelope_LlmJobFailed)(nil),
 	}
 	file_events_v1_events_proto_msgTypes[1].OneofWrappers = []any{}
+	file_events_v1_events_proto_msgTypes[5].OneofWrappers = []any{}
 	file_events_v1_events_proto_msgTypes[8].OneofWrappers = []any{}
 	file_events_v1_events_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}

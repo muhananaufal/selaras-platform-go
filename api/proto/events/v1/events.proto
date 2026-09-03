@@ -75,6 +75,20 @@ message AssessmentCompleted {
   string slug = 2;
   double risk_percentage = 3;
   string model_used = 4;
+
+  // user_id WAJIB ada, alasannya sama dengan CoachingProgramUpdated di bawah:
+  // read-model dasbor menyimpan satu baris per pengguna dan harus tahu baris
+  // siapa yang diperbarui.
+  string user_id = 5;
+
+  // Kategori risiko yang dihitung, bukan yang dikarang model.
+  //
+  // Dasbor menampilkannya sebagai "status terkini". Di sistem lama ia dibaca
+  // dari laporan LLM (`result_details.riskSummary.riskCategory`), sehingga
+  // dasbor pengguna yang personalisasinya belum tiba - atau gagal - menampilkan
+  // "N/A". Nilai ini datang dari SCORE2 yang sudah selesai dihitung, jadi ia
+  // selalu ada begitu penilaiannya ada.
+  string risk_category = 6;
 }
 
 message PersonalizationRequested {
@@ -94,7 +108,36 @@ message CoachingProgramUpdated {
   string program_id = 1;
   string slug = 2;
   string status = 3;
-  double completion_percentage = 4;
+
+  // OPTIONAL, dan itu bukan kelalaian.
+  //
+  // Event ini terbit dari dua tempat. Yang satu - saat program dibuat,
+  // dihidupkan, atau dijeda - tidak menghitung tugas sama sekali; yang lain
+  // terbit justru karena sebuah tugas ditandai selesai. Tanpa presence
+  // eksplisit, "tidak dihitung" dan "nol persen" terlihat SAMA di kawat, dan
+  // dasbor yang menjeda programnya akan melompat kembali ke nol persen dari
+  // angka yang sudah benar.
+  //
+  // Ini bentuk lain dari B16, dan pelajarannya sama: nilai nol proto3 bukan
+  // "tidak ada".
+  optional double completion_percentage = 4;
+
+  // user_id WAJIB ada, dan alasannya sama dengan ADR-022, ADR-023, dan ADR-024.
+  //
+  // Konsumennya - read-model dasbor - menyimpan SATU BARIS PER PENGGUNA, jadi
+  // ia harus tahu baris siapa yang diperbarui. Event yang hanya membawa
+  // program_id memaksa dasbor memanggil coaching-svc untuk menerjemahkannya,
+  // dan panggilan itulah yang seharusnya dihilangkan read-model.
+  string user_id = 5;
+
+  // Judul dan kemajuan program, untuk ditampilkan tanpa memanggil siapa pun.
+  //
+  // Dasbor menampilkan "hari ke-N dari M" persis seperti sistem lama. Kalau
+  // angka itu tidak ikut, dasbor harus menghitungnya sendiri dari tanggal
+  // mulai - dan perhitungan yang sama di dua tempat akan menyimpang.
+  string title = 6;
+  int32 current_day = 7;
+  int32 total_days = 8;
 }
 
 message CurriculumRequested {

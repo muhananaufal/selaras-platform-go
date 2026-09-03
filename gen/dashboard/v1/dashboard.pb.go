@@ -84,8 +84,14 @@ type AssessmentSummary struct {
 	AssessedOn     string                 `protobuf:"bytes,2,opt,name=assessed_on,json=assessedOn,proto3" json:"assessed_on,omitempty"`
 	ModelUsed      string                 `protobuf:"bytes,3,opt,name=model_used,json=modelUsed,proto3" json:"model_used,omitempty"`
 	RiskPercentage float64                `protobuf:"fixed64,4,opt,name=risk_percentage,json=riskPercentage,proto3" json:"risk_percentage,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Kategori risiko yang DIHITUNG, bukan yang dikarang model.
+	//
+	// Sistem lama membacanya dari laporan LLM, sehingga dasbor pengguna yang
+	// personalisasinya belum tiba menampilkan "N/A" sebagai status kesehatannya.
+	// Nilai ini datang dari SCORE2, jadi ia ada begitu penilaiannya ada.
+	RiskCategory  string `protobuf:"bytes,5,opt,name=risk_category,json=riskCategory,proto3" json:"risk_category,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AssessmentSummary) Reset() {
@@ -144,6 +150,13 @@ func (x *AssessmentSummary) GetRiskPercentage() float64 {
 		return x.RiskPercentage
 	}
 	return 0
+}
+
+func (x *AssessmentSummary) GetRiskCategory() string {
+	if x != nil {
+		return x.RiskCategory
+	}
+	return ""
 }
 
 type ProgramSummary struct {
@@ -283,8 +296,8 @@ func (x *RiskTrendPoint) GetRiskPercentage() float64 {
 }
 
 type DashboardView struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	// Kosong bila pengguna belum pernah melakukan analisis. Gateway
 	// menerjemahkannya menjadi pesan sambutan, sebagaimana perilaku lama.
 	AssessmentHistory []*AssessmentSummary `protobuf:"bytes,2,rep,name=assessment_history,json=assessmentHistory,proto3" json:"assessment_history,omitempty"`
@@ -332,9 +345,9 @@ func (*DashboardView) Descriptor() ([]byte, []int) {
 	return file_dashboard_v1_dashboard_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *DashboardView) GetUserProfileId() string {
+func (x *DashboardView) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -390,7 +403,7 @@ func (x *DashboardView) GetTimestamps() *v1.Timestamps {
 
 type GetDashboardRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -425,9 +438,9 @@ func (*GetDashboardRequest) Descriptor() ([]byte, []int) {
 	return file_dashboard_v1_dashboard_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *GetDashboardRequest) GetUserProfileId() string {
+func (x *GetDashboardRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -480,14 +493,15 @@ var File_dashboard_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_dashboard_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1cdashboard/v1/dashboard.proto\x12\fdashboard.v1\x1a\x16common/v1/common.proto\"\x90\x01\n" +
+	"\x1cdashboard/v1/dashboard.proto\x12\fdashboard.v1\x1a\x16common/v1/common.proto\"\xb5\x01\n" +
 	"\x11AssessmentSummary\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x1f\n" +
 	"\vassessed_on\x18\x02 \x01(\tR\n" +
 	"assessedOn\x12\x1d\n" +
 	"\n" +
 	"model_used\x18\x03 \x01(\tR\tmodelUsed\x12'\n" +
-	"\x0frisk_percentage\x18\x04 \x01(\x01R\x0eriskPercentage\"\xc7\x01\n" +
+	"\x0frisk_percentage\x18\x04 \x01(\x01R\x0eriskPercentage\x12#\n" +
+	"\rrisk_category\x18\x05 \x01(\tR\friskCategory\"\xc7\x01\n" +
 	"\x0eProgramSummary\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x16\n" +
@@ -500,9 +514,9 @@ const file_dashboard_v1_dashboard_proto_rawDesc = "" +
 	"\x0eRiskTrendPoint\x12\x1f\n" +
 	"\vassessed_on\x18\x01 \x01(\tR\n" +
 	"assessedOn\x12'\n" +
-	"\x0frisk_percentage\x18\x02 \x01(\x01R\x0eriskPercentage\"\x98\x04\n" +
-	"\rDashboardView\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12N\n" +
+	"\x0frisk_percentage\x18\x02 \x01(\x01R\x0eriskPercentage\"\x89\x04\n" +
+	"\rDashboardView\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12N\n" +
 	"\x12assessment_history\x18\x02 \x03(\v2\x1f.dashboard.v1.AssessmentSummaryR\x11assessmentHistory\x12Q\n" +
 	"\x11latest_assessment\x18\x03 \x01(\v2\x1f.dashboard.v1.AssessmentSummaryH\x00R\x10latestAssessment\x88\x01\x01\x12;\n" +
 	"\aprogram\x18\x04 \x01(\v2\x1c.dashboard.v1.ProgramSummaryH\x01R\aprogram\x88\x01\x01\x12;\n" +
@@ -515,9 +529,9 @@ const file_dashboard_v1_dashboard_proto_rawDesc = "" +
 	"timestampsB\x14\n" +
 	"\x12_latest_assessmentB\n" +
 	"\n" +
-	"\b_program\"=\n" +
-	"\x13GetDashboardRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\"Q\n" +
+	"\b_program\".\n" +
+	"\x13GetDashboardRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"Q\n" +
 	"\x14GetDashboardResponse\x129\n" +
 	"\tdashboard\x18\x01 \x01(\v2\x1b.dashboard.v1.DashboardViewR\tdashboard*\xa0\x01\n" +
 	"\vHealthTrend\x12\x1c\n" +

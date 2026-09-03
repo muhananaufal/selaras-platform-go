@@ -51,6 +51,13 @@ type Result struct {
 	ModelUsed      string
 	RiskPercent    float64
 	ClinicalInputs ClinicalInputs
+
+	// Category dihitung di sini, bukan diminta dari model bahasa (B19).
+	//
+	// Ia ikut ke dalam Result karena usianya ada di sini dan tidak di tempat
+	// lain: pemanggil yang menghitungnya sendiri harus membawa usia ke sana,
+	// dan itu cara termudah membuat dua jawaban berbeda untuk satu penilaian.
+	Category Category
 }
 
 // Engine menjalankan mesin risiko.
@@ -104,6 +111,7 @@ func (e *Engine) Calculate(req Request) (Result, error) {
 		ModelUsed:      model,
 		RiskPercent:    risk,
 		ClinicalInputs: inputs,
+		Category:       CategoryFor(inputs.Age, risk),
 	}, nil
 }
 
