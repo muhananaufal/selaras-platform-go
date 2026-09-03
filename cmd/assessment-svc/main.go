@@ -21,6 +21,7 @@ import (
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment"
+	"github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/cache"
 	assessmentgrpc "github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/grpc"
 	assessmentpg "github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/profileclient"
@@ -91,9 +92,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// Cache profil di depan klien gRPC-nya (F2-16, ADR-007). Urutannya tidak
+	// boleh dibalik: cache lebih dulu, panggilan gRPC hanya sebagai jaring.
+	cachedProfiles, err := cache.NewSource(pool, profiles, log)
+	if err != nil {
+		return err
+	}
+
 	svc, err := app.NewService(
 		assessmentpg.NewRepository(pool),
-		profiles,
+		cachedProfiles,
 		score.NewEngine(constants),
 		time.Now,
 	)

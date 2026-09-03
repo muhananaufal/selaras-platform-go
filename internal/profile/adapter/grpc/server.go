@@ -57,7 +57,11 @@ func (s *Server) UpdateProfile(
 		return nil, toStatus(ctx, "UpdateProfile", err)
 	}
 
-	profile, err := s.svc.Update(ctx, userID, changesFrom(req))
+	// UpdateAndPublish, bukan Update: perubahan profil yang tidak disiarkan
+	// akan membuat cache di assessment-svc basi tanpa ada yang tahu (F2-16).
+	// Tanpa broker terpasang ia jatuh ke Update biasa, dan itu dinyatakan di
+	// log saat start - bukan diam-diam.
+	profile, err := s.svc.UpdateAndPublish(ctx, userID, changesFrom(req))
 	if err != nil {
 		return nil, toStatus(ctx, "UpdateProfile", err)
 	}

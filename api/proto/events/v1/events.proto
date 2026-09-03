@@ -56,6 +56,18 @@ message ProfileUpdated {
   string sex = 3;
   optional string country_of_residence = 4;
   string language = 5;
+
+  // user_id WAJIB ada, dan alasannya sama dengan ADR-022 dan ADR-023.
+  //
+  // Konsumennya - cache profil di assessment-svc - mencari lewat user_id,
+  // karena itulah identitas yang sudah terverifikasi di setiap permintaan.
+  // Event yang hanya membawa user_profile_id akan menghasilkan cache yang
+  // tidak bisa dicari: assessment harus memanggil profile-svc lebih dulu untuk
+  // menerjemahkan user_id menjadi user_profile_id, dan panggilan itulah yang
+  // seharusnya dihilangkan cache ini.
+  //
+  // Ditambahkan saat F2-16, sebelum ada yang membangun apa pun di atasnya.
+  string user_id = 6;
 }
 
 message AssessmentCompleted {

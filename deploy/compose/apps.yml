@@ -69,6 +69,9 @@ services:
       PROFILE_DATABASE_DSN: >-
         postgres://svc_profile:${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=profile
       PROFILE_GRPC_ADDR: ":9201"
+      # Tanpa ini, event profile.updated menumpuk di outbox tanpa terkirim,
+      # dan cache di assessment-svc tidak pernah terisi (F2-16).
+      KAFKA_BROKERS: kafka:9092
       PROFILE_HEALTH_ADDR: ":9202"
     ports:
       - "127.0.0.1:19201:9201"
