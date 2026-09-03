@@ -150,9 +150,21 @@ func buildProvider(log *slog.Logger) (llm.Provider, error) {
 		if err != nil {
 			return nil, err
 		}
-		model := os.Getenv("GEMINI_MODEL")
-		if model == "" {
-			model = "gemini-2.5-flash-lite"
+		// Nama model WAJIB dari konfigurasi, tanpa nilai bawaan (F3-16).
+		//
+		// Bawaan yang ditulis di kode membuat nama model hidup di dua tempat.
+		// Yang menyusahkan bukan duplikasinya, melainkan bahwa mengganti model -
+		// hal yang seharusnya tidak menyentuh kode sama sekali - menjadi hal
+		// yang KADANG menyentuh kode, bergantung pada apakah seseorang ingat
+		// variabelnya sudah diisi.
+		//
+		// Dan model yang ditarik penyedia akan membuat setiap permintaan gagal
+		// di runtime dengan galat dari API, sementara variabel yang kosong
+		// tertangkap saat start-up. Itu perbedaan antara satu baris log saat
+		// menyalakan dan satu insiden.
+		model, err := required("GEMINI_MODEL")
+		if err != nil {
+			return nil, err
 		}
 		return gemini.New(gemini.Config{
 			APIKey:      key,
