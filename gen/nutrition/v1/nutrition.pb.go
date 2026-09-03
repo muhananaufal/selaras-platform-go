@@ -490,9 +490,61 @@ func (GuideStatus) EnumDescriptor() ([]byte, []int) {
 	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{8}
 }
 
+// StringList membuat "tidak dikirim" bisa dibedakan dari "dikirim kosong".
+//
+// proto3 tidak mengenal `optional repeated`: daftar kosong dan daftar yang
+// tidak disertakan terlihat SAMA PERSIS di kawat. Tanpa pembungkus ini,
+// UpdatePreferences tidak punya cara menyatakan "jangan sentuh selera saya",
+// dan satu PATCH yang hanya mengirim alergi akan menghapus selera serta
+// peralatan dapur pengguna. Itu bug yang benar-benar ada di sistem lama (B16),
+// dan ia lahir dari KONTRAKNYA, bukan dari kodenya.
+type StringList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []string               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StringList) Reset() {
+	*x = StringList{}
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StringList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StringList) ProtoMessage() {}
+
+func (x *StringList) ProtoReflect() protoreflect.Message {
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StringList.ProtoReflect.Descriptor instead.
+func (*StringList) Descriptor() ([]byte, []int) {
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StringList) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 type CulinaryPreferences struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId    string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId           string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Allergies        *string                `protobuf:"bytes,2,opt,name=allergies,proto3,oneof" json:"allergies,omitempty"`
 	BudgetLevel      BudgetLevel            `protobuf:"varint,3,opt,name=budget_level,json=budgetLevel,proto3,enum=nutrition.v1.BudgetLevel" json:"budget_level,omitempty"`
 	CookingStyle     CookingStyle           `protobuf:"varint,4,opt,name=cooking_style,json=cookingStyle,proto3,enum=nutrition.v1.CookingStyle" json:"cooking_style,omitempty"`
@@ -505,7 +557,7 @@ type CulinaryPreferences struct {
 
 func (x *CulinaryPreferences) Reset() {
 	*x = CulinaryPreferences{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[0]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -517,7 +569,7 @@ func (x *CulinaryPreferences) String() string {
 func (*CulinaryPreferences) ProtoMessage() {}
 
 func (x *CulinaryPreferences) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[0]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -530,12 +582,12 @@ func (x *CulinaryPreferences) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CulinaryPreferences.ProtoReflect.Descriptor instead.
 func (*CulinaryPreferences) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{0}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *CulinaryPreferences) GetUserProfileId() string {
+func (x *CulinaryPreferences) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -596,7 +648,7 @@ type DailyGuideInput struct {
 
 func (x *DailyGuideInput) Reset() {
 	*x = DailyGuideInput{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[1]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +660,7 @@ func (x *DailyGuideInput) String() string {
 func (*DailyGuideInput) ProtoMessage() {}
 
 func (x *DailyGuideInput) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[1]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +673,7 @@ func (x *DailyGuideInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DailyGuideInput.ProtoReflect.Descriptor instead.
 func (*DailyGuideInput) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{1}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DailyGuideInput) GetPlanType() PlanType {
@@ -667,11 +719,11 @@ func (x *DailyGuideInput) GetSocialContext() SocialContext {
 }
 
 type DailyMealGuide struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	UserProfileId string                 `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
-	GuideDate     string                 `protobuf:"bytes,3,opt,name=guide_date,json=guideDate,proto3" json:"guide_date,omitempty"`
-	Input         *DailyGuideInput       `protobuf:"bytes,4,opt,name=input,proto3" json:"input,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId    string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	GuideDate string                 `protobuf:"bytes,3,opt,name=guide_date,json=guideDate,proto3" json:"guide_date,omitempty"`
+	Input     *DailyGuideInput       `protobuf:"bytes,4,opt,name=input,proto3" json:"input,omitempty"`
 	// Waktu makan ditentukan jam server saat panduan diminta (D10).
 	MealTime      MealTime       `protobuf:"varint,5,opt,name=meal_time,json=mealTime,proto3,enum=nutrition.v1.MealTime" json:"meal_time,omitempty"`
 	Status        GuideStatus    `protobuf:"varint,6,opt,name=status,proto3,enum=nutrition.v1.GuideStatus" json:"status,omitempty"`
@@ -684,7 +736,7 @@ type DailyMealGuide struct {
 
 func (x *DailyMealGuide) Reset() {
 	*x = DailyMealGuide{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[2]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -696,7 +748,7 @@ func (x *DailyMealGuide) String() string {
 func (*DailyMealGuide) ProtoMessage() {}
 
 func (x *DailyMealGuide) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[2]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -709,7 +761,7 @@ func (x *DailyMealGuide) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DailyMealGuide.ProtoReflect.Descriptor instead.
 func (*DailyMealGuide) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{2}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DailyMealGuide) GetId() string {
@@ -719,9 +771,9 @@ func (x *DailyMealGuide) GetId() string {
 	return ""
 }
 
-func (x *DailyMealGuide) GetUserProfileId() string {
+func (x *DailyMealGuide) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -777,7 +829,7 @@ func (x *DailyMealGuide) GetTimestamps() *v1.Timestamps {
 
 type GetHubDataRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Page          *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -785,7 +837,7 @@ type GetHubDataRequest struct {
 
 func (x *GetHubDataRequest) Reset() {
 	*x = GetHubDataRequest{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[3]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -797,7 +849,7 @@ func (x *GetHubDataRequest) String() string {
 func (*GetHubDataRequest) ProtoMessage() {}
 
 func (x *GetHubDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[3]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -810,12 +862,12 @@ func (x *GetHubDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHubDataRequest.ProtoReflect.Descriptor instead.
 func (*GetHubDataRequest) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{3}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *GetHubDataRequest) GetUserProfileId() string {
+func (x *GetHubDataRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -838,7 +890,7 @@ type GetHubDataResponse struct {
 
 func (x *GetHubDataResponse) Reset() {
 	*x = GetHubDataResponse{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[4]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -850,7 +902,7 @@ func (x *GetHubDataResponse) String() string {
 func (*GetHubDataResponse) ProtoMessage() {}
 
 func (x *GetHubDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[4]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -863,7 +915,7 @@ func (x *GetHubDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHubDataResponse.ProtoReflect.Descriptor instead.
 func (*GetHubDataResponse) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{4}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetHubDataResponse) GetPreferences() *CulinaryPreferences {
@@ -887,21 +939,26 @@ func (x *GetHubDataResponse) GetPage() *v1.PageResponse {
 	return nil
 }
 
+// UpdatePreferencesRequest adalah pembaruan PARSIAL.
+//
+// Bidang yang tidak disertakan DIBIARKAN apa adanya; yang disertakan diganti.
+// Tiap bidang memakai presence eksplisit supaya keduanya bisa dibedakan - lihat
+// StringList di atas untuk alasan lengkapnya.
 type UpdatePreferencesRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId    string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId           string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Allergies        *string                `protobuf:"bytes,2,opt,name=allergies,proto3,oneof" json:"allergies,omitempty"`
-	BudgetLevel      BudgetLevel            `protobuf:"varint,3,opt,name=budget_level,json=budgetLevel,proto3,enum=nutrition.v1.BudgetLevel" json:"budget_level,omitempty"`
-	CookingStyle     CookingStyle           `protobuf:"varint,4,opt,name=cooking_style,json=cookingStyle,proto3,enum=nutrition.v1.CookingStyle" json:"cooking_style,omitempty"`
-	TasteProfiles    []string               `protobuf:"bytes,5,rep,name=taste_profiles,json=tasteProfiles,proto3" json:"taste_profiles,omitempty"`
-	KitchenEquipment []string               `protobuf:"bytes,6,rep,name=kitchen_equipment,json=kitchenEquipment,proto3" json:"kitchen_equipment,omitempty"`
+	BudgetLevel      *BudgetLevel           `protobuf:"varint,3,opt,name=budget_level,json=budgetLevel,proto3,enum=nutrition.v1.BudgetLevel,oneof" json:"budget_level,omitempty"`
+	CookingStyle     *CookingStyle          `protobuf:"varint,4,opt,name=cooking_style,json=cookingStyle,proto3,enum=nutrition.v1.CookingStyle,oneof" json:"cooking_style,omitempty"`
+	TasteProfiles    *StringList            `protobuf:"bytes,5,opt,name=taste_profiles,json=tasteProfiles,proto3,oneof" json:"taste_profiles,omitempty"`
+	KitchenEquipment *StringList            `protobuf:"bytes,6,opt,name=kitchen_equipment,json=kitchenEquipment,proto3,oneof" json:"kitchen_equipment,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdatePreferencesRequest) Reset() {
 	*x = UpdatePreferencesRequest{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[5]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +970,7 @@ func (x *UpdatePreferencesRequest) String() string {
 func (*UpdatePreferencesRequest) ProtoMessage() {}
 
 func (x *UpdatePreferencesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[5]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,12 +983,12 @@ func (x *UpdatePreferencesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePreferencesRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePreferencesRequest) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{5}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *UpdatePreferencesRequest) GetUserProfileId() string {
+func (x *UpdatePreferencesRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -944,27 +1001,27 @@ func (x *UpdatePreferencesRequest) GetAllergies() string {
 }
 
 func (x *UpdatePreferencesRequest) GetBudgetLevel() BudgetLevel {
-	if x != nil {
-		return x.BudgetLevel
+	if x != nil && x.BudgetLevel != nil {
+		return *x.BudgetLevel
 	}
 	return BudgetLevel_BUDGET_LEVEL_UNSPECIFIED
 }
 
 func (x *UpdatePreferencesRequest) GetCookingStyle() CookingStyle {
-	if x != nil {
-		return x.CookingStyle
+	if x != nil && x.CookingStyle != nil {
+		return *x.CookingStyle
 	}
 	return CookingStyle_COOKING_STYLE_UNSPECIFIED
 }
 
-func (x *UpdatePreferencesRequest) GetTasteProfiles() []string {
+func (x *UpdatePreferencesRequest) GetTasteProfiles() *StringList {
 	if x != nil {
 		return x.TasteProfiles
 	}
 	return nil
 }
 
-func (x *UpdatePreferencesRequest) GetKitchenEquipment() []string {
+func (x *UpdatePreferencesRequest) GetKitchenEquipment() *StringList {
 	if x != nil {
 		return x.KitchenEquipment
 	}
@@ -980,7 +1037,7 @@ type UpdatePreferencesResponse struct {
 
 func (x *UpdatePreferencesResponse) Reset() {
 	*x = UpdatePreferencesResponse{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[6]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -992,7 +1049,7 @@ func (x *UpdatePreferencesResponse) String() string {
 func (*UpdatePreferencesResponse) ProtoMessage() {}
 
 func (x *UpdatePreferencesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[6]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1005,7 +1062,7 @@ func (x *UpdatePreferencesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePreferencesResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePreferencesResponse) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{6}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UpdatePreferencesResponse) GetPreferences() *CulinaryPreferences {
@@ -1017,7 +1074,7 @@ func (x *UpdatePreferencesResponse) GetPreferences() *CulinaryPreferences {
 
 type GenerateDailyGuideRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	UserProfileId  string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
+	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Input          *DailyGuideInput       `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
 	IdempotencyKey *v1.IdempotencyKey     `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1026,7 +1083,7 @@ type GenerateDailyGuideRequest struct {
 
 func (x *GenerateDailyGuideRequest) Reset() {
 	*x = GenerateDailyGuideRequest{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[7]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1038,7 +1095,7 @@ func (x *GenerateDailyGuideRequest) String() string {
 func (*GenerateDailyGuideRequest) ProtoMessage() {}
 
 func (x *GenerateDailyGuideRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[7]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1051,12 +1108,12 @@ func (x *GenerateDailyGuideRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateDailyGuideRequest.ProtoReflect.Descriptor instead.
 func (*GenerateDailyGuideRequest) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{7}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *GenerateDailyGuideRequest) GetUserProfileId() string {
+func (x *GenerateDailyGuideRequest) GetUserId() string {
 	if x != nil {
-		return x.UserProfileId
+		return x.UserId
 	}
 	return ""
 }
@@ -1086,7 +1143,7 @@ type GenerateDailyGuideResponse struct {
 
 func (x *GenerateDailyGuideResponse) Reset() {
 	*x = GenerateDailyGuideResponse{}
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[8]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1098,7 +1155,7 @@ func (x *GenerateDailyGuideResponse) String() string {
 func (*GenerateDailyGuideResponse) ProtoMessage() {}
 
 func (x *GenerateDailyGuideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nutrition_v1_nutrition_proto_msgTypes[8]
+	mi := &file_nutrition_v1_nutrition_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1111,7 +1168,7 @@ func (x *GenerateDailyGuideResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateDailyGuideResponse.ProtoReflect.Descriptor instead.
 func (*GenerateDailyGuideResponse) Descriptor() ([]byte, []int) {
-	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{8}
+	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GenerateDailyGuideResponse) GetGuideId() string {
@@ -1139,9 +1196,12 @@ var File_nutrition_v1_nutrition_proto protoreflect.FileDescriptor
 
 const file_nutrition_v1_nutrition_proto_rawDesc = "" +
 	"\n" +
-	"\x1cnutrition/v1/nutrition.proto\x12\fnutrition.v1\x1a\x16common/v1/common.proto\"\xf8\x02\n" +
-	"\x13CulinaryPreferences\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12!\n" +
+	"\x1cnutrition/v1/nutrition.proto\x12\fnutrition.v1\x1a\x16common/v1/common.proto\"$\n" +
+	"\n" +
+	"StringList\x12\x16\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"\xe9\x02\n" +
+	"\x13CulinaryPreferences\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\tallergies\x18\x02 \x01(\tH\x00R\tallergies\x88\x01\x01\x12<\n" +
 	"\fbudget_level\x18\x03 \x01(\x0e2\x19.nutrition.v1.BudgetLevelR\vbudgetLevel\x12?\n" +
 	"\rcooking_style\x18\x04 \x01(\x0e2\x1a.nutrition.v1.CookingStyleR\fcookingStyle\x12%\n" +
@@ -1158,10 +1218,10 @@ const file_nutrition_v1_nutrition_proto_rawDesc = "" +
 	"\fenergy_level\x18\x03 \x01(\x0e2\x19.nutrition.v1.EnergyLevelR\venergyLevel\x12-\n" +
 	"\x12cuisine_preference\x18\x04 \x01(\tR\x11cuisinePreference\x12<\n" +
 	"\fcraving_type\x18\x05 \x01(\x0e2\x19.nutrition.v1.CravingTypeR\vcravingType\x12B\n" +
-	"\x0esocial_context\x18\x06 \x01(\x0e2\x1b.nutrition.v1.SocialContextR\rsocialContext\"\x86\x03\n" +
+	"\x0esocial_context\x18\x06 \x01(\x0e2\x1b.nutrition.v1.SocialContextR\rsocialContext\"\xf7\x02\n" +
 	"\x0eDailyMealGuide\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
-	"\x0fuser_profile_id\x18\x02 \x01(\tR\ruserProfileId\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1d\n" +
 	"\n" +
 	"guide_date\x18\x03 \x01(\tR\tguideDate\x123\n" +
 	"\x05input\x18\x04 \x01(\v2\x1d.nutrition.v1.DailyGuideInputR\x05input\x123\n" +
@@ -1173,27 +1233,31 @@ const file_nutrition_v1_nutrition_proto_rawDesc = "" +
 	"\n" +
 	"timestamps\x18\t \x01(\v2\x15.common.v1.TimestampsR\n" +
 	"timestampsB\r\n" +
-	"\v_guide_json\"g\n" +
-	"\x11GetHubDataRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12*\n" +
+	"\v_guide_json\"X\n" +
+	"\x11GetHubDataRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\xbe\x01\n" +
 	"\x12GetHubDataResponse\x12C\n" +
 	"\vpreferences\x18\x01 \x01(\v2!.nutrition.v1.CulinaryPreferencesR\vpreferences\x126\n" +
 	"\ahistory\x18\x02 \x03(\v2\x1c.nutrition.v1.DailyMealGuideR\ahistory\x12+\n" +
-	"\x04page\x18\x03 \x01(\v2\x17.common.v1.PageResponseR\x04page\"\xc6\x02\n" +
-	"\x18UpdatePreferencesRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12!\n" +
-	"\tallergies\x18\x02 \x01(\tH\x00R\tallergies\x88\x01\x01\x12<\n" +
-	"\fbudget_level\x18\x03 \x01(\x0e2\x19.nutrition.v1.BudgetLevelR\vbudgetLevel\x12?\n" +
-	"\rcooking_style\x18\x04 \x01(\x0e2\x1a.nutrition.v1.CookingStyleR\fcookingStyle\x12%\n" +
-	"\x0etaste_profiles\x18\x05 \x03(\tR\rtasteProfiles\x12+\n" +
-	"\x11kitchen_equipment\x18\x06 \x03(\tR\x10kitchenEquipmentB\f\n" +
+	"\x04page\x18\x03 \x01(\v2\x17.common.v1.PageResponseR\x04page\"\xcb\x03\n" +
+	"\x18UpdatePreferencesRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
+	"\tallergies\x18\x02 \x01(\tH\x00R\tallergies\x88\x01\x01\x12A\n" +
+	"\fbudget_level\x18\x03 \x01(\x0e2\x19.nutrition.v1.BudgetLevelH\x01R\vbudgetLevel\x88\x01\x01\x12D\n" +
+	"\rcooking_style\x18\x04 \x01(\x0e2\x1a.nutrition.v1.CookingStyleH\x02R\fcookingStyle\x88\x01\x01\x12D\n" +
+	"\x0etaste_profiles\x18\x05 \x01(\v2\x18.nutrition.v1.StringListH\x03R\rtasteProfiles\x88\x01\x01\x12J\n" +
+	"\x11kitchen_equipment\x18\x06 \x01(\v2\x18.nutrition.v1.StringListH\x04R\x10kitchenEquipment\x88\x01\x01B\f\n" +
 	"\n" +
-	"_allergies\"`\n" +
+	"_allergiesB\x0f\n" +
+	"\r_budget_levelB\x10\n" +
+	"\x0e_cooking_styleB\x11\n" +
+	"\x0f_taste_profilesB\x14\n" +
+	"\x12_kitchen_equipment\"`\n" +
 	"\x19UpdatePreferencesResponse\x12C\n" +
-	"\vpreferences\x18\x01 \x01(\v2!.nutrition.v1.CulinaryPreferencesR\vpreferences\"\xbc\x01\n" +
-	"\x19GenerateDailyGuideRequest\x12&\n" +
-	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x123\n" +
+	"\vpreferences\x18\x01 \x01(\v2!.nutrition.v1.CulinaryPreferencesR\vpreferences\"\xad\x01\n" +
+	"\x19GenerateDailyGuideRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x123\n" +
 	"\x05input\x18\x02 \x01(\v2\x1d.nutrition.v1.DailyGuideInputR\x05input\x12B\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"\x81\x01\n" +
 	"\x1aGenerateDailyGuideResponse\x12\x19\n" +
@@ -1265,7 +1329,7 @@ func file_nutrition_v1_nutrition_proto_rawDescGZIP() []byte {
 }
 
 var file_nutrition_v1_nutrition_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_nutrition_v1_nutrition_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_nutrition_v1_nutrition_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_nutrition_v1_nutrition_proto_goTypes = []any{
 	(BudgetLevel)(0),                   // 0: nutrition.v1.BudgetLevel
 	(CookingStyle)(0),                  // 1: nutrition.v1.CookingStyle
@@ -1276,54 +1340,57 @@ var file_nutrition_v1_nutrition_proto_goTypes = []any{
 	(SocialContext)(0),                 // 6: nutrition.v1.SocialContext
 	(MealTime)(0),                      // 7: nutrition.v1.MealTime
 	(GuideStatus)(0),                   // 8: nutrition.v1.GuideStatus
-	(*CulinaryPreferences)(nil),        // 9: nutrition.v1.CulinaryPreferences
-	(*DailyGuideInput)(nil),            // 10: nutrition.v1.DailyGuideInput
-	(*DailyMealGuide)(nil),             // 11: nutrition.v1.DailyMealGuide
-	(*GetHubDataRequest)(nil),          // 12: nutrition.v1.GetHubDataRequest
-	(*GetHubDataResponse)(nil),         // 13: nutrition.v1.GetHubDataResponse
-	(*UpdatePreferencesRequest)(nil),   // 14: nutrition.v1.UpdatePreferencesRequest
-	(*UpdatePreferencesResponse)(nil),  // 15: nutrition.v1.UpdatePreferencesResponse
-	(*GenerateDailyGuideRequest)(nil),  // 16: nutrition.v1.GenerateDailyGuideRequest
-	(*GenerateDailyGuideResponse)(nil), // 17: nutrition.v1.GenerateDailyGuideResponse
-	(*v1.Timestamps)(nil),              // 18: common.v1.Timestamps
-	(*v1.PageRequest)(nil),             // 19: common.v1.PageRequest
-	(*v1.PageResponse)(nil),            // 20: common.v1.PageResponse
-	(*v1.IdempotencyKey)(nil),          // 21: common.v1.IdempotencyKey
+	(*StringList)(nil),                 // 9: nutrition.v1.StringList
+	(*CulinaryPreferences)(nil),        // 10: nutrition.v1.CulinaryPreferences
+	(*DailyGuideInput)(nil),            // 11: nutrition.v1.DailyGuideInput
+	(*DailyMealGuide)(nil),             // 12: nutrition.v1.DailyMealGuide
+	(*GetHubDataRequest)(nil),          // 13: nutrition.v1.GetHubDataRequest
+	(*GetHubDataResponse)(nil),         // 14: nutrition.v1.GetHubDataResponse
+	(*UpdatePreferencesRequest)(nil),   // 15: nutrition.v1.UpdatePreferencesRequest
+	(*UpdatePreferencesResponse)(nil),  // 16: nutrition.v1.UpdatePreferencesResponse
+	(*GenerateDailyGuideRequest)(nil),  // 17: nutrition.v1.GenerateDailyGuideRequest
+	(*GenerateDailyGuideResponse)(nil), // 18: nutrition.v1.GenerateDailyGuideResponse
+	(*v1.Timestamps)(nil),              // 19: common.v1.Timestamps
+	(*v1.PageRequest)(nil),             // 20: common.v1.PageRequest
+	(*v1.PageResponse)(nil),            // 21: common.v1.PageResponse
+	(*v1.IdempotencyKey)(nil),          // 22: common.v1.IdempotencyKey
 }
 var file_nutrition_v1_nutrition_proto_depIdxs = []int32{
 	0,  // 0: nutrition.v1.CulinaryPreferences.budget_level:type_name -> nutrition.v1.BudgetLevel
 	1,  // 1: nutrition.v1.CulinaryPreferences.cooking_style:type_name -> nutrition.v1.CookingStyle
-	18, // 2: nutrition.v1.CulinaryPreferences.timestamps:type_name -> common.v1.Timestamps
+	19, // 2: nutrition.v1.CulinaryPreferences.timestamps:type_name -> common.v1.Timestamps
 	2,  // 3: nutrition.v1.DailyGuideInput.plan_type:type_name -> nutrition.v1.PlanType
 	3,  // 4: nutrition.v1.DailyGuideInput.time_availability:type_name -> nutrition.v1.TimeAvailability
 	4,  // 5: nutrition.v1.DailyGuideInput.energy_level:type_name -> nutrition.v1.EnergyLevel
 	5,  // 6: nutrition.v1.DailyGuideInput.craving_type:type_name -> nutrition.v1.CravingType
 	6,  // 7: nutrition.v1.DailyGuideInput.social_context:type_name -> nutrition.v1.SocialContext
-	10, // 8: nutrition.v1.DailyMealGuide.input:type_name -> nutrition.v1.DailyGuideInput
+	11, // 8: nutrition.v1.DailyMealGuide.input:type_name -> nutrition.v1.DailyGuideInput
 	7,  // 9: nutrition.v1.DailyMealGuide.meal_time:type_name -> nutrition.v1.MealTime
 	8,  // 10: nutrition.v1.DailyMealGuide.status:type_name -> nutrition.v1.GuideStatus
-	18, // 11: nutrition.v1.DailyMealGuide.timestamps:type_name -> common.v1.Timestamps
-	19, // 12: nutrition.v1.GetHubDataRequest.page:type_name -> common.v1.PageRequest
-	9,  // 13: nutrition.v1.GetHubDataResponse.preferences:type_name -> nutrition.v1.CulinaryPreferences
-	11, // 14: nutrition.v1.GetHubDataResponse.history:type_name -> nutrition.v1.DailyMealGuide
-	20, // 15: nutrition.v1.GetHubDataResponse.page:type_name -> common.v1.PageResponse
+	19, // 11: nutrition.v1.DailyMealGuide.timestamps:type_name -> common.v1.Timestamps
+	20, // 12: nutrition.v1.GetHubDataRequest.page:type_name -> common.v1.PageRequest
+	10, // 13: nutrition.v1.GetHubDataResponse.preferences:type_name -> nutrition.v1.CulinaryPreferences
+	12, // 14: nutrition.v1.GetHubDataResponse.history:type_name -> nutrition.v1.DailyMealGuide
+	21, // 15: nutrition.v1.GetHubDataResponse.page:type_name -> common.v1.PageResponse
 	0,  // 16: nutrition.v1.UpdatePreferencesRequest.budget_level:type_name -> nutrition.v1.BudgetLevel
 	1,  // 17: nutrition.v1.UpdatePreferencesRequest.cooking_style:type_name -> nutrition.v1.CookingStyle
-	9,  // 18: nutrition.v1.UpdatePreferencesResponse.preferences:type_name -> nutrition.v1.CulinaryPreferences
-	10, // 19: nutrition.v1.GenerateDailyGuideRequest.input:type_name -> nutrition.v1.DailyGuideInput
-	21, // 20: nutrition.v1.GenerateDailyGuideRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
-	8,  // 21: nutrition.v1.GenerateDailyGuideResponse.status:type_name -> nutrition.v1.GuideStatus
-	12, // 22: nutrition.v1.Nutrition.GetHubData:input_type -> nutrition.v1.GetHubDataRequest
-	14, // 23: nutrition.v1.Nutrition.UpdatePreferences:input_type -> nutrition.v1.UpdatePreferencesRequest
-	16, // 24: nutrition.v1.Nutrition.GenerateDailyGuide:input_type -> nutrition.v1.GenerateDailyGuideRequest
-	13, // 25: nutrition.v1.Nutrition.GetHubData:output_type -> nutrition.v1.GetHubDataResponse
-	15, // 26: nutrition.v1.Nutrition.UpdatePreferences:output_type -> nutrition.v1.UpdatePreferencesResponse
-	17, // 27: nutrition.v1.Nutrition.GenerateDailyGuide:output_type -> nutrition.v1.GenerateDailyGuideResponse
-	25, // [25:28] is the sub-list for method output_type
-	22, // [22:25] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	9,  // 18: nutrition.v1.UpdatePreferencesRequest.taste_profiles:type_name -> nutrition.v1.StringList
+	9,  // 19: nutrition.v1.UpdatePreferencesRequest.kitchen_equipment:type_name -> nutrition.v1.StringList
+	10, // 20: nutrition.v1.UpdatePreferencesResponse.preferences:type_name -> nutrition.v1.CulinaryPreferences
+	11, // 21: nutrition.v1.GenerateDailyGuideRequest.input:type_name -> nutrition.v1.DailyGuideInput
+	22, // 22: nutrition.v1.GenerateDailyGuideRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	8,  // 23: nutrition.v1.GenerateDailyGuideResponse.status:type_name -> nutrition.v1.GuideStatus
+	13, // 24: nutrition.v1.Nutrition.GetHubData:input_type -> nutrition.v1.GetHubDataRequest
+	15, // 25: nutrition.v1.Nutrition.UpdatePreferences:input_type -> nutrition.v1.UpdatePreferencesRequest
+	17, // 26: nutrition.v1.Nutrition.GenerateDailyGuide:input_type -> nutrition.v1.GenerateDailyGuideRequest
+	14, // 27: nutrition.v1.Nutrition.GetHubData:output_type -> nutrition.v1.GetHubDataResponse
+	16, // 28: nutrition.v1.Nutrition.UpdatePreferences:output_type -> nutrition.v1.UpdatePreferencesResponse
+	18, // 29: nutrition.v1.Nutrition.GenerateDailyGuide:output_type -> nutrition.v1.GenerateDailyGuideResponse
+	27, // [27:30] is the sub-list for method output_type
+	24, // [24:27] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_nutrition_v1_nutrition_proto_init() }
@@ -1331,16 +1398,16 @@ func file_nutrition_v1_nutrition_proto_init() {
 	if File_nutrition_v1_nutrition_proto != nil {
 		return
 	}
-	file_nutrition_v1_nutrition_proto_msgTypes[0].OneofWrappers = []any{}
-	file_nutrition_v1_nutrition_proto_msgTypes[2].OneofWrappers = []any{}
-	file_nutrition_v1_nutrition_proto_msgTypes[5].OneofWrappers = []any{}
+	file_nutrition_v1_nutrition_proto_msgTypes[1].OneofWrappers = []any{}
+	file_nutrition_v1_nutrition_proto_msgTypes[3].OneofWrappers = []any{}
+	file_nutrition_v1_nutrition_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nutrition_v1_nutrition_proto_rawDesc), len(file_nutrition_v1_nutrition_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
