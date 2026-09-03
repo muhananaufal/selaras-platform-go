@@ -116,8 +116,46 @@ func (r *Results) Run(ctx context.Context) error {
 	}
 }
 
+// isMine menyatakan pesan ini milik assessment.
+//
+// Topic llm.results dan llm.dlq dipakai BERSAMA seluruh service yang memakai
+// llm-worker. Tanpa penyaringan ini, konsumen assessment akan mencoba
+// memperlakukan program coaching sebagai penilaian.
+//
+// Jenisnya dibaca dari header aggregate_type yang diisi relay outbox - tanpa
+// membongkar isinya, dan tanpa menebak dari bentuknya.
+func isMine(rec *kgo.Record) bool {
+	for _, h := range rec.Headers {
+		if h.Key != "aggregate_type" {
+			continue
+		}
+		switch string(h.Value) {
+		case "assessment":
+			// Hasil dan kegagalan personalisasi.
+			return true
+		case "user_profile":
+			// Event profil yang mengisi cache (F2-16). Ia datang dari
+			// profile-svc lewat topic yang berbeda, tetapi melewati handler
+			// yang sama.
+			return true
+		default:
+			return false
+		}
+	}
+
+	// Tanpa header, jenisnya tidak diketahui. Ia DILEWATI, bukan diterima:
+	// menerimanya berarti menebak, dan tebakan yang salah menandai penilaian
+	// orang lain.
+	return false
+}
+
 // handle memproses satu hasil.
 func (r *Results) handle(ctx context.Context, rec *kgo.Record) error {
+	// Disaring lebih dulu, sebelum apa pun dibongkar.
+	if !isMine(rec) {
+		return nil
+	}
+
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
 		r.log.ErrorContext(ctx, "a result could not be decoded and was skipped",

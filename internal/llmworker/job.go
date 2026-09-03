@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
@@ -187,20 +186,4 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
-}
-
-// personalizationOf membaca permintaan personalisasi dari envelope-nya.
-//
-// Ia mengembalikan galat, bukan nil diam-diam: envelope yang jenisnya tidak
-// sesuai berarti ada yang salah di routing, dan mendiamkannya akan membuat
-// pesan itu terhitung selesai tanpa pernah dikerjakan.
-func personalizationOf(env *eventsv1.Envelope) (*eventsv1.PersonalizationRequested, error) {
-	req := env.GetPersonalizationRequested()
-	if req == nil {
-		return nil, fmt.Errorf("the envelope does not carry a personalisation request")
-	}
-	if req.GetAssessmentId() == "" {
-		return nil, errors.New("the request names no assessment")
-	}
-	return req, nil
 }

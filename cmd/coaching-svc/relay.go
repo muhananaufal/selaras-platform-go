@@ -7,6 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/muhananaufal/selaras-platform-go/internal/coaching/adapter/consumer"
+	"github.com/muhananaufal/selaras-platform-go/internal/coaching/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
@@ -52,3 +54,42 @@ func startRelay(
 
 	return producer.Close, nil
 }
+
+// startResultConsumer menyalakan konsumen hasil LLM.
+//
+// Terpisah dari relay: yang satu mengeluarkan event, yang lain menerimanya, dan
+// keduanya bisa gagal sendiri-sendiri. Tanpa broker, keduanya tidak dinyalakan
+// dan itu dinyatakan di log - bukan diam-diam.
+func startResultConsumer(
+	ctx context.Context, log *slog.Logger, svc *app.Service, brokers string,
+) (func(), error) {
+	if brokers == "" {
+		log.Warn("KAFKA_BROKERS is not set; coaching results will never arrive")
+		return func() {}, nil
+	}
+
+	client, err := kafka.NewConsumer(
+		kafka.Config{Brokers: brokers, ClientID: "coaching-results"},
+		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter)
+	if err != nil {
+		return nil, err
+	}
+
+	results, err := consumer.NewResults(client, svc, log)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+
+	go func() {
+		if err := results.Run(ctx); err != nil {
+			log.Error("the coaching result consumer stopped", "error", err)
+		}
+	}()
+
+	return client.Close, nil
+}
+
+// ResultGroup tetap. Mengubahnya berarti group baru yang membaca ulang seluruh
+// riwayat llm.results.
+const ResultGroup = "coaching-results"

@@ -189,9 +189,13 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 		return nil
 	}
 
-	req, err := personalizationOf(&env)
+	req, err := requestOf(&env)
 	if err != nil {
-		c.log.ErrorContext(ctx, "a message was not a personalisation request",
+		// Pesan yang jenisnya tidak dikenali tidak akan pernah bisa dikerjakan.
+		// Ia dilewati dan dicatat, bukan diulang selamanya - dan yang
+		// menunggunya akan menunggu selamanya, yang justru sebabnya ini harus
+		// terlihat di log.
+		c.log.ErrorContext(ctx, "a message carried no usable LLM request",
 			"event_id", env.GetEventId(), "error", err)
 		return nil
 	}
@@ -233,7 +237,7 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 
 // work mencoba pekerjaan sampai berhasil atau menyerah.
 func (c *Consumer) work(
-	ctx context.Context, job *Job, req *eventsv1.PersonalizationRequested, started time.Time,
+	ctx context.Context, job *Job, req *Request, started time.Time,
 ) error {
 	for attempt := job.Attempts; attempt < MaxAttempts; attempt++ {
 		answer, genErr := c.generate(ctx, req)
@@ -306,7 +310,7 @@ func (c *Consumer) abandon(ctx context.Context, job *Job, cause error) error {
 
 // claim membuat pekerjaan baru bila kuncinya belum pernah dipakai.
 func (c *Consumer) claim(
-	ctx context.Context, key string, req *eventsv1.PersonalizationRequested,
+	ctx context.Context, key string, req *Request,
 ) (claimed bool, job *Job, err error) {
 	err = pg.InTx(ctx, c.pool, func(q pg.Querier) error {
 		guard, err := idempotency.NewGuard(q, Scope)
@@ -339,9 +343,9 @@ func (c *Consumer) claim(
 
 		job = &Job{
 			Key:           key,
-			Kind:          KindPersonalization,
-			AggregateType: "assessment",
-			AggregateID:   req.GetAssessmentId(),
+			Kind:          req.Kind,
+			AggregateType: req.AggregateType,
+			AggregateID:   req.AggregateID,
 		}
 		if err := c.jobs.Create(ctx, q, job); err != nil {
 			return err
@@ -357,25 +361,20 @@ func (c *Consumer) claim(
 
 // generate memanggil penyedia.
 func (c *Consumer) generate(
-	ctx context.Context, req *eventsv1.PersonalizationRequested,
+	ctx context.Context, req *Request,
 ) (*llm.Response, error) {
-	tmpl, err := c.prompts.Latest("personalization")
+	// Templatnya dipilih permintaan, bukan ditetapkan di sini: satu worker
+	// mengerjakan personalisasi, kurikulum, laporan kelulusan, dan balasan
+	// chat, dan masing-masing punya prompt sendiri.
+	tmpl, err := c.prompts.Latest(req.Template)
 	if err != nil {
 		return nil, err
 	}
 
-	// Data promptnya masih tipis: assessment-svc belum mengirim profil dan
-	// jawabannya di dalam event (F3-10 melengkapinya). Yang ada sekarang sudah
-	// cukup untuk membuktikan alurnya, dan bidang yang belum ada dinyatakan
-	// apa adanya alih-alih diisi tebakan yang akan sampai ke model.
-	rendered, err := tmpl.Render(map[string]any{
-		"Profile":        notYetInTheEvent,
-		"Answers":        notYetInTheEvent,
-		"ModelUsed":      notYetInTheEvent,
-		"RiskPercentage": notYetInTheEvent,
-		"Age":            notYetInTheEvent,
-		"Language":       "Bahasa Indonesia",
-	})
+	// Data promptnya masih tipis: event-nya belum membawa profil dan riwayat.
+	// Bidang yang belum ada dinyatakan APA ADANYA alih-alih diisi tebakan -
+	// tebakan di sini akan sampai ke model sebagai fakta tentang seseorang.
+	rendered, err := tmpl.Render(req.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +390,7 @@ func (c *Consumer) generate(
 // recordSuccess menyimpan hasil dan menerbitkan event selesainya.
 func (c *Consumer) recordSuccess(
 	ctx context.Context, job *Job,
-	req *eventsv1.PersonalizationRequested, answer *llm.Response,
+	req *Request, answer *llm.Response,
 ) error {
 	if answer.Truncated() {
 		// Jawaban terpotong bukan jawaban. Menyimpannya sebagai laporan utuh
@@ -408,27 +407,61 @@ func (c *Consumer) recordSuccess(
 			return err
 		}
 
-		return outbox.NewWriter(q).Write(ctx, "assessment", req.GetAssessmentId(), &eventsv1.Envelope{
-			EventId:       job.ID.String(),
-			OccurredAt:    timestamppb.Now(),
-			SchemaVersion: 1,
-			Payload: &eventsv1.Envelope_PersonalizationCompleted{
-				PersonalizationCompleted: &eventsv1.PersonalizationCompleted{
-					AssessmentId:  req.GetAssessmentId(),
-					JobId:         job.ID.String(),
-					ReportJson:    answer.Text,
-					PromptVersion: answer.PromptVersion,
-				},
-			},
-		})
+		return outbox.NewWriter(q).Write(ctx, req.AggregateType, req.AggregateID,
+			completionEvent(job, req, answer))
 	})
+}
+
+// completionEvent menyusun event hasil, sesuai jenis pekerjaannya.
+//
+// Jenis event yang berbeda mendarat di topic yang berbeda (lihat
+// outbox.TopicFor), dan itu yang membuat konsumen assessment tidak perlu
+// menyaring hasil coaching dan sebaliknya.
+func completionEvent(job *Job, req *Request, answer *llm.Response) *eventsv1.Envelope {
+	env := &eventsv1.Envelope{
+		EventId:       job.ID.String(),
+		OccurredAt:    timestamppb.Now(),
+		SchemaVersion: 1,
+	}
+
+	switch req.Kind {
+	case KindCurriculum, KindGraduation:
+		env.Payload = &eventsv1.Envelope_CurriculumCompleted{
+			CurriculumCompleted: &eventsv1.CurriculumCompleted{
+				ProgramId:      req.AggregateID,
+				JobId:          job.ID.String(),
+				CurriculumJson: answer.Text,
+				PromptVersion:  answer.PromptVersion,
+			},
+		}
+
+	case KindChatReply:
+		env.Payload = &eventsv1.Envelope_ChatReplyCompleted{
+			ChatReplyCompleted: &eventsv1.ChatReplyCompleted{
+				JobId:         job.ID.String(),
+				ReplyJson:     answer.Text,
+				PromptVersion: answer.PromptVersion,
+			},
+		}
+
+	default:
+		env.Payload = &eventsv1.Envelope_PersonalizationCompleted{
+			PersonalizationCompleted: &eventsv1.PersonalizationCompleted{
+				AssessmentId:  req.AggregateID,
+				JobId:         job.ID.String(),
+				ReportJson:    answer.Text,
+				PromptVersion: answer.PromptVersion,
+			},
+		}
+	}
+	return env
 }
 
 // recordFailure mencatat kegagalan, dan menerbitkan event gagal saat pekerjaan
 // itu sudah tidak akan dicoba lagi.
 func (c *Consumer) recordFailure(
 	ctx context.Context, job *Job,
-	req *eventsv1.PersonalizationRequested, cause error, dead bool,
+	req *Request, cause error, dead bool,
 ) error {
 
 	c.log.ErrorContext(ctx, "a job failed",
@@ -445,7 +478,7 @@ func (c *Consumer) recordFailure(
 		// Event gagal hanya diterbitkan saat pekerjaannya benar-benar berhenti
 		// dicoba. Menerbitkannya di setiap kegagalan akan membuat pemanggil
 		// mengira pekerjaannya sudah menyerah padahal masih akan diulang.
-		return outbox.NewWriter(q).Write(ctx, "assessment", req.GetAssessmentId(), &eventsv1.Envelope{
+		return outbox.NewWriter(q).Write(ctx, req.AggregateType, req.AggregateID, &eventsv1.Envelope{
 			EventId:       job.ID.String(),
 			OccurredAt:    timestamppb.Now(),
 			SchemaVersion: 1,

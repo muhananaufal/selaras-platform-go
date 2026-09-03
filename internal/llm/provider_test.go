@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
@@ -170,5 +171,87 @@ func TestATruncatedAnswerIsVisible(t *testing.T) {
 	}
 	if got.Truncated() {
 		t.Fatal("an answer that stopped normally reports itself as truncated")
+	}
+}
+
+// TestTheFakeMatchesTheShapeItsPromptAsksFor menutup celah yang ditemukan
+// dengan menjalankannya.
+//
+// Versi pertama penyedia palsu mengembalikan bentuk yang SAMA untuk setiap
+// templat. Akibatnya nyata: konsumen coaching membedakan kurikulum dari laporan
+// kelulusan lewat ada tidaknya "weeks", dan jawaban palsu yang tidak punya
+// keduanya tersimpan sebagai laporan - program tetap menunggu kurikulum
+// selamanya.
+func TestTheFakeMatchesTheShapeItsPromptAsksFor(t *testing.T) {
+	cases := map[string][]string{
+		"curriculum@1": {"program_title", "weeks"},
+		"graduation@1": {"headline", "completion", "next_step"},
+		"chat_reply@1": {"text", "suggestions"},
+	}
+
+	for version, keys := range cases {
+		req := request()
+		req.PromptVersion = version
+
+		got, err := llm.NewFake().Generate(context.Background(), req)
+		if err != nil {
+			t.Errorf("Generate for %s: %v", version, err)
+			continue
+		}
+
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(got.Text), &decoded); err != nil {
+			t.Errorf("%s did not answer with JSON: %v", version, err)
+			continue
+		}
+		for _, key := range keys {
+			if _, ok := decoded[key]; !ok {
+				t.Errorf("%s answered without %q: %v", version, key, decoded)
+			}
+		}
+	}
+
+	// Dan kurikulumnya benar-benar berisi pekan bernomor berurutan dengan
+	// tanggal yang bisa dibaca - kerangka yang melanggar aturan prompt-nya
+	// sendiri tidak membuktikan apa pun.
+	req := request()
+	req.PromptVersion = "curriculum@1"
+
+	got, err := llm.NewFake().Generate(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	var curriculum struct {
+		Weeks []struct {
+			WeekNumber int `json:"week_number"`
+			Tasks      []struct {
+				TaskDate string `json:"task_date"`
+			} `json:"tasks"`
+		} `json:"weeks"`
+	}
+	if err := json.Unmarshal([]byte(got.Text), &curriculum); err != nil {
+		t.Fatalf("the curriculum is not readable: %v", err)
+	}
+	if len(curriculum.Weeks) != 4 {
+		t.Fatalf("the fake curriculum has %d weeks, want 4", len(curriculum.Weeks))
+	}
+
+	var previous time.Time
+	for i, w := range curriculum.Weeks {
+		if w.WeekNumber != i+1 {
+			t.Fatalf("week at position %d is numbered %d", i, w.WeekNumber)
+		}
+		for _, task := range w.Tasks {
+			date, err := time.Parse(time.DateOnly, task.TaskDate)
+			if err != nil {
+				t.Fatalf("a task date is unreadable: %v", err)
+			}
+			if !previous.IsZero() && !date.After(previous) {
+				t.Fatalf("task dates are not strictly increasing: %s after %s",
+					task.TaskDate, previous.Format(time.DateOnly))
+			}
+			previous = date
+		}
 	}
 }
