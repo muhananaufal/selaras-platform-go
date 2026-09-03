@@ -12,6 +12,14 @@ type Config struct {
 	HealthAddr  string
 	DatabaseDSN string
 
+	// Timezone menentukan jam mana yang dipakai menghitung waktu makan (D10).
+	//
+	// Ia HARUS zona pengguna, bukan zona server. Container berjalan di UTC, dan
+	// menghitungnya di sana membuat pukul 13.00 WIB tercatat sebagai sarapan -
+	// meleset tujuh jam dari maksud aturannya. Sistem lama punya kekeliruan yang
+	// sama (B18): config/app.php memakai UTC sementara penggunanya di Indonesia.
+	Timezone string
+
 	// KafkaBrokers kosong berarti service berjalan tanpa outbox: pembacaan
 	// tetap dilayani, dan setiap use case yang menerbitkan event DITOLAK
 	// dengan pesan yang menyebutkan sebabnya.
@@ -26,6 +34,7 @@ func LoadConfig() (Config, error) {
 		GRPCAddr:     envOr("NUTRITION_GRPC_ADDR", ":9601"),
 		HealthAddr:   envOr("NUTRITION_HEALTH_ADDR", ":9602"),
 		DatabaseDSN:  os.Getenv("NUTRITION_DATABASE_DSN"),
+		Timezone:     envOr("NUTRITION_TIMEZONE", "Asia/Jakarta"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
 	}
 	if cfg.DatabaseDSN == "" {

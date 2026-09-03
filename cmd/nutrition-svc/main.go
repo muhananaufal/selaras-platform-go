@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -11,6 +12,11 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	// Basis distroless/static tidak memuat basis data zona waktu, sehingga
+	// LoadLocation di sana selalu gagal. Ia di-embed ke dalam binernya: satu
+	// berkas yang ikut, ditukar dengan waktu makan yang benar.
+	_ "time/tzdata"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -68,6 +74,21 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// Jam pengguna, bukan jam server.
+	//
+	// Container berjalan di UTC. Menghitung waktu makan di sana membuat pukul
+	// 13.00 WIB tercatat sebagai sarapan - meleset tujuh jam dari maksud aturan
+	// D10. Zonanya dimuat SEKARANG dan kegagalannya menghentikan start-up: nama
+	// zona yang salah ketik akan jatuh ke UTC diam-diam, dan setiap panduan
+	// sesudahnya salah tanpa satu pun galat yang terlihat.
+	location, err := time.LoadLocation(cfg.Timezone)
+	if err != nil {
+		return fmt.Errorf("loading timezone %q: %w", cfg.Timezone, err)
+	}
+	log.Info("meal times will be computed in this zone", "timezone", location.String())
+
+	clock := func() time.Time { return time.Now().In(location) }
+
 	// Bahasa dibaca dari cache yang diisi event profile.updated, bukan dengan
 	// memanggil profile-svc pada setiap permintaan (ADR-007). Membuat panduan
 	// menu tidak boleh mati hanya karena profile-svc mati.
@@ -75,7 +96,7 @@ func run(log *slog.Logger) error {
 		nutritionpg.NewPreferencesRepository(pool),
 		nutritionpg.NewGuideRepository(pool),
 		cache.NewLanguages(pool),
-		uow, time.Now)
+		uow, clock)
 	if err != nil {
 		return err
 	}

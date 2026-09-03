@@ -603,3 +603,193 @@ func (h *harness) attemptsOf(t *testing.T, aggregateID string) int {
 	}
 	return attempts
 }
+
+// TestAnUnusableRequestTellsWhoeverIsWaiting adalah F6 yang menemukannya.
+//
+// nutrition-svc dinyalakan sementara llm-worker belum dibangun ulang. Worker
+// lama tidak mengenal MealGuideRequested, melewatinya, dan panduan itu tetap
+// pending SELAMANYA - tanpa galat, tanpa status yang berubah, hanya satu baris
+// log yang harus kebetulan dibaca seseorang. Kesenjangan versi seperti itu
+// terjadi di setiap penggelaran bertahap.
+//
+// Kini yang menunggunya diberi tahu lewat DLQ, memakai agregat dari header dan
+// kunci partisi pesannya - persis yang sudah dibaca setiap konsumen.
+func TestAnUnusableRequestTellsWhoeverIsWaiting(t *testing.T) {
+	h := newHarness(t)
+
+	guideID := uuid.NewString()
+
+	// Envelope yang TIDAK memuat permintaan LLM apa pun. Bentuknya sah,
+	// kuncinya ada, tetapi payload-nya bukan sesuatu yang worker ini kenal -
+	// persis keadaan worker lama yang bertemu jenis pekerjaan baru.
+	env := &eventsv1.Envelope{
+		EventId:        uuid.NewString(),
+		OccurredAt:     timestamppb.Now(),
+		SchemaVersion:  1,
+		IdempotencyKey: &commonv1.IdempotencyKey{Value: "unusable:" + guideID},
+		Payload: &eventsv1.Envelope_ProfileUpdated{
+			ProfileUpdated: &eventsv1.ProfileUpdated{UserId: uuid.NewString()},
+		},
+	}
+	payload, err := proto.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshalling: %v", err)
+	}
+
+	if _, err := kafka.NewPublisher(h.producer).Publish(h.ctx, []kafka.Message{{
+		Topic:   h.topic,
+		Key:     []byte(guideID),
+		Value:   payload,
+		Headers: map[string]string{"aggregate_type": "meal_guide"},
+	}}); err != nil {
+		t.Fatalf("publishing: %v", err)
+	}
+
+	if err := h.runUntil(t, 30*time.Second, func() bool {
+		return h.dlqEventsFor(t, guideID) > 0
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Satu event gagal, membawa agregat yang benar sehingga konsumen yang
+	// menunggu bisa mengenalinya.
+	if got := h.dlqEventsFor(t, guideID); got != 1 {
+		t.Fatalf("the waiting aggregate was told %d times, want exactly 1", got)
+	}
+
+	var aggregateType, reason string
+	if err := h.pool.QueryRow(h.ctx, `
+		SELECT aggregate_type, coalesce(last_error, '') FROM outbox WHERE aggregate_id = $1`,
+		guideID).Scan(&aggregateType, &reason); err != nil {
+		t.Fatalf("reading the outbox row: %v", err)
+	}
+	if aggregateType != "meal_guide" {
+		t.Errorf("the failure names aggregate type %q; consumers filter on it", aggregateType)
+	}
+
+	// Dan TIDAK ada pekerjaan yang dibuat: tidak ada yang bisa dikerjakan.
+	if got := h.countJobs(t, guideID); got != 0 {
+		t.Errorf("%d jobs were created for a request nobody understands", got)
+	}
+}
+
+// TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue menjaga jalur tanpa alamat.
+//
+// Tanpa header aggregate_type, tidak ada konsumen yang bisa mengenali event
+// gagalnya - setiap konsumen menyaring justru pada header itu. Menulis baris
+// outbox yang tidak bisa dikenali siapa pun lebih buruk daripada tidak menulis:
+// ia menambah pesan yang setiap konsumen bongkar lalu buang.
+//
+// Pesan TANPA KUNCI sengaja tidak diuji di sini: publisher platform ini
+// menolaknya lebih dulu ("a message with no key would lose its ordering"), jadi
+// keadaan itu tidak bisa dibuat lewat jalur yang sesungguhnya. Penjagaannya di
+// kode tetap ada untuk produsen lain, dan itu dinyatakan - bukan diuji dengan
+// jalur palsu yang membuktikan hal lain.
+func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) {
+	addr := brokers(t)
+	h := newHarnessInGroup(t, "unaddressed-"+uuid.NewString())
+
+	env := &eventsv1.Envelope{
+		EventId:        uuid.NewString(),
+		OccurredAt:     timestamppb.Now(),
+		SchemaVersion:  1,
+		IdempotencyKey: &commonv1.IdempotencyKey{Value: "unaddressed:" + uuid.NewString()},
+		Payload: &eventsv1.Envelope_ProfileUpdated{
+			ProfileUpdated: &eventsv1.ProfileUpdated{UserId: uuid.NewString()},
+		},
+	}
+	payload, err := proto.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshalling: %v", err)
+	}
+
+	before := h.totalOutboxRows(t)
+
+	// Kunci ADA - publisher platform ini mensyaratkannya - tetapi headernya
+	// tidak, dan tanpa header itu tidak ada konsumen yang bisa mengenalinya.
+	if _, err := kafka.NewPublisher(h.producer).Publish(h.ctx, []kafka.Message{{
+		Topic: h.topic,
+		Key:   []byte(uuid.NewString()),
+		Value: payload,
+	}}); err != nil {
+		t.Fatalf("publishing: %v", err)
+	}
+
+	// Worker dijalankan untuk waktu tertentu lalu dihentikan.
+	//
+	// runUntil tidak dipakai di sini: ia menunggu sesuatu TERJADI, sementara
+	// yang harus dibuktikan justru bahwa tidak terjadi apa-apa. Memakainya akan
+	// menggagalkan test dengan "did not finish the work in time" - kalimat yang
+	// menggambarkan keberhasilan sebagai kegagalan.
+	runCtx, cancel := context.WithTimeout(h.ctx, 10*time.Second)
+	defer cancel()
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- h.consumer.Run(runCtx) }()
+
+	select {
+	case err := <-stopped:
+		// Berhenti karena waktunya habis adalah yang diharapkan; berhenti
+		// karena galat berarti worker macet pada pesan ini.
+		if err != nil {
+			t.Fatalf("the worker stopped with an error on an unaddressable message: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("Run did not return after its context expired")
+	}
+
+	if after := h.totalOutboxRows(t); after != before {
+		t.Errorf("%d outbox rows were written for a message nobody can be told about", after-before)
+	}
+
+	// Dan yang sesungguhnya membedakan: OFFSET-NYA MAJU.
+	//
+	// Tanpa penjaganya, announceUnusable meneruskan agregat kosong ke
+	// outbox.Write, yang menolaknya dengan galat yang sama - handle
+	// mengembalikan galat, offset DITAHAN, dan pesan yang tidak bisa
+	// dialamatkan itu dikirim ulang selamanya, menyumbat antrean untuk semua
+	// orang. Jumlah baris outbox tidak bisa membedakan keduanya; hanya ini
+	// yang bisa.
+	h.leaveGroup()
+
+	second, err := kafka.NewConsumer(
+		kafka.Config{Brokers: addr, ClientID: "unaddressed-check"}, h.group, h.topic)
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+	defer second.Close()
+
+	pollCtx, cancelPoll := context.WithTimeout(h.ctx, 10*time.Second)
+	defer cancelPoll()
+
+	var replayed int
+	second.PollFetches(pollCtx).EachRecord(func(_ *kgo.Record) { replayed++ })
+
+	if replayed != 0 {
+		t.Fatalf("a second consumer received the unaddressable message %d times again; "+
+			"its offset was never committed, and it will block the queue forever", replayed)
+	}
+}
+
+// dlqEventsFor menghitung event gagal untuk sebuah agregat.
+func (h *harness) dlqEventsFor(t *testing.T, aggregateID string) int {
+	t.Helper()
+
+	var n int
+	if err := h.pool.QueryRow(h.ctx,
+		`SELECT count(*) FROM outbox WHERE aggregate_id = $1 AND event_type = $2`,
+		aggregateID, outbox.EventLLMJobFailed).Scan(&n); err != nil {
+		t.Fatalf("counting dlq events: %v", err)
+	}
+	return n
+}
+
+func (h *harness) totalOutboxRows(t *testing.T) int {
+	t.Helper()
+
+	var n int
+	if err := h.pool.QueryRow(h.ctx, `SELECT count(*) FROM outbox`).Scan(&n); err != nil {
+		t.Fatalf("counting outbox rows: %v", err)
+	}
+	return n
+}
