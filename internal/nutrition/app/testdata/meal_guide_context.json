@@ -1,0 +1,31 @@
+{
+  "language": "id",
+  "health_focus": "kesehatan jantung umum",
+  "daily_mission": "menjaga pola hidup sehat",
+  "meal_time": "breakfast",
+  "preferences": {
+    "allergies": "udang dan kepiting",
+    "budget_level": "thrifty",
+    "cooking_style": "quick_every_time",
+    "taste_profiles": [
+      "pedas",
+      "gurih"
+    ],
+    "kitchen_equipment": [
+      "wajan",
+      "rice cooker"
+    ]
+  },
+  "input": {
+    "plan_type": "cook_at_home",
+    "time_availability": "quick",
+    "energy_level": "tired",
+    "cuisine_preference": "Masakan Sunda",
+    "craving_type": "soupy_and_warm",
+    "social_context": "with_family"
+  },
+  "learning_history": [
+    "Sayur asem",
+    "Pepes ikan"
+  ]
+}

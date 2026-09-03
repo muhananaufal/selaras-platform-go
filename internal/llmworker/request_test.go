@@ -2,6 +2,8 @@ package llmworker
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,29 +11,24 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm/prompt"
 )
 
-// fullMealGuideContext adalah konteks yang dirakit nutrition-svc.
-const fullMealGuideContext = `{
-  "language": "id",
-  "health_focus": "Tekanan darah tinggi",
-  "daily_mission": "Berjalan 20 menit",
-  "meal_time": "breakfast",
-  "preferences": {
-    "allergies": "udang dan kepiting",
-    "budget_level": "thrifty",
-    "cooking_style": "quick_every_time",
-    "taste_profiles": ["pedas", "gurih"],
-    "kitchen_equipment": ["wajan", "rice cooker"]
-  },
-  "input": {
-    "plan_type": "cook_at_home",
-    "time_availability": "quick",
-    "energy_level": "tired",
-    "cuisine_preference": "Masakan Sunda",
-    "craving_type": "soupy_and_warm",
-    "social_context": "with_family"
-  },
-  "learning_history": ["Sayur asem", "Pepes ikan"]
-}`
+// goldenContext adalah dokumen yang BENAR-BENAR dihasilkan nutrition-svc.
+//
+// Ia dibaca dari testdata milik paket itu, bukan disalin ke sini sebagai
+// literal kedua. Dua salinan di dua paket akan menyimpang tanpa ada yang tahu,
+// dan yang terlihat kemudian hanyalah prompt dengan bidang kosong-kosong.
+// Dengan satu berkas, mengubah salah satu sisi membuat sisi lain gagal.
+const goldenContext = "../nutrition/app/testdata/meal_guide_context.json"
+
+func fullMealGuideContext(t *testing.T) string {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.FromSlash(goldenContext))
+	if err != nil {
+		t.Fatalf("reading the context nutrition-svc produces: %v\n"+
+			"Regenerate it with: UPDATE_GOLDEN=1 go test ./internal/nutrition/app/", err)
+	}
+	return string(raw)
+}
 
 // TestTheMealGuidePromptCarriesTheAllergyNote adalah alasan keseluruhan
 // context_json ada di dalam eventnya.
@@ -45,7 +42,7 @@ func TestTheMealGuidePromptCarriesTheAllergyNote(t *testing.T) {
 	req, err := mealGuideRequest(&eventsv1.MealGuideRequested{
 		GuideId:     "01930000-0000-7000-8000-000000000001",
 		JobId:       "01930000-0000-7000-8000-000000000002",
-		ContextJson: fullMealGuideContext,
+		ContextJson: fullMealGuideContext(t),
 	})
 	if err != nil {
 		t.Fatalf("mealGuideRequest: %v", err)
@@ -65,8 +62,6 @@ func TestTheMealGuidePromptCarriesTheAllergyNote(t *testing.T) {
 
 	for _, want := range []string{
 		"udang dan kepiting", // Catatan alerginya, utuh.
-		"Tekanan darah tinggi",
-		"Berjalan 20 menit",
 		"breakfast",
 		"pedas, gurih",
 		"wajan, rice cooker",
@@ -82,7 +77,7 @@ func TestTheMealGuidePromptCarriesTheAllergyNote(t *testing.T) {
 // TestAMealGuideRequestWithoutContextIsRefused menutup jalur diamnya.
 func TestAMealGuideRequestWithoutContextIsRefused(t *testing.T) {
 	for name, req := range map[string]*eventsv1.MealGuideRequested{
-		"no guide":       {ContextJson: fullMealGuideContext},
+		"no guide":       {ContextJson: fullMealGuideContext(t)},
 		"no context":     {GuideId: "01930000-0000-7000-8000-000000000001"},
 		"broken context": {GuideId: "01930000-0000-7000-8000-000000000001", ContextJson: "{"},
 		"no meal time": {
@@ -134,7 +129,7 @@ func TestAnAbsentAllergyNoteIsStatedNotLeftBlank(t *testing.T) {
 // menggambarkan permintaan yang berbeda dari yang benar-benar dikirim.
 func TestTheMealGuideContextMatchesWhatIsStored(t *testing.T) {
 	var parsed mealGuideContext
-	if err := json.Unmarshal([]byte(fullMealGuideContext), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(fullMealGuideContext(t)), &parsed); err != nil {
 		t.Fatalf("the context shape does not parse: %v", err)
 	}
 
