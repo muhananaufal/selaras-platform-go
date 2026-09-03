@@ -281,3 +281,17 @@ func nullableString(s string) any {
 	}
 	return s
 }
+
+// FindByID mencari lewat id internalnya.
+func (r *ProgramRepository) FindByID(ctx context.Context, id domain.ID) (*domain.Program, error) {
+	const q = `SELECT ` + programColumns + ` FROM coaching_programs p WHERE p.id = $1`
+
+	p, err := scanProgram(r.db.QueryRow(ctx, q, id.String()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrProgramNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying the program: %w", err)
+	}
+	return p, nil
+}

@@ -20,6 +20,14 @@ type ProgramRepository interface {
 	// FindBySlug mencari lewat id publiknya.
 	FindBySlug(ctx context.Context, slug string) (*Program, error)
 
+	// FindByID mencari lewat id internalnya.
+	//
+	// Ia dipakai jalur yang berangkat dari thread atau tugas: keduanya
+	// menyimpan id program, bukan slug-nya. Slug adalah id PUBLIK, dan
+	// menyimpannya sebagai rujukan internal berarti mengubah slug akan
+	// memutus setiap rujukan itu.
+	FindByID(ctx context.Context, id ID) (*Program, error)
+
 	// FindActiveForUser mencari program yang sedang berjalan.
 	//
 	// found bernilai false bila tidak ada, dan itu keadaan yang sah - bukan
