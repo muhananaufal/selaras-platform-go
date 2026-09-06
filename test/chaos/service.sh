@@ -18,21 +18,28 @@ TOKEN=$(register "service")
 complete_profile "$TOKEN"
 SLUG=$(start_assessment "$TOKEN")
 
+# call mencetak kode HTTP, atau TIMEOUT(<kode curl>) bila permintaannya tidak
+# dijawab dalam sepuluh detik. Yang kedua adalah temuan, bukan galat skrip:
+# gateway yang menggantung lebih buruk daripada gateway yang menjawab 503.
+call() {
+  local method="$1" path="$2" body="$3"
+  if [ "$method" = "GET" ]; then
+    curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X GET "$BASE_URL/api/v1$path" \
+      -H "Authorization: Bearer $TOKEN" || echo "TIMEOUT($?)"
+  else
+    curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X "$method" "$BASE_URL/api/v1$path" \
+      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$body" || echo "TIMEOUT($?)"
+  fi
+}
+
 # probe mencetak "METHOD PATH -> kode" untuk daftar endpoint yang mewakili
 # setiap unit. Yang dibaca bukan hanya "gagal atau tidak", tetapi KODE-nya:
 # 503 dengan badan galat yang seragam adalah kegagalan yang jujur; 500 atau
 # koneksi menggantung bukan.
 probe() {
-  local label="$1"
-  log "--- $label"
+  log "--- $1"
   while read -r method path body; do
-    if [ "$method" = "GET" ]; then
-      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X GET "$BASE_URL/api/v1$path" -H "Authorization: Bearer $TOKEN")
-    else
-      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X "$method" "$BASE_URL/api/v1$path" \
-        -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$body")
-    fi
-    printf '    %-6s %-40s -> %s\n' "$method" "$path" "$code"
+    printf '    %-6s %-40s -> %s\n' "$method" "$path" "$(call "$method" "$path" "$body")"
   done <<EOF
 GET /me -
 GET /profile -
@@ -49,23 +56,28 @@ EOF
 
 probe "sebelum gangguan (semua service hidup)"
 
-log "MEMATIKAN $VICTIM (docker kill $CONTAINER)"
-docker kill "$CONTAINER" >/dev/null
+# stop -t 0, bukan kill: kebijakan restart unless-stopped menyalakan ulang
+# container yang MATI sendiri, tetapi tidak yang dihentikan. Yang diuji di
+# sini adalah service yang tidak ada selama beberapa saat, bukan yang
+# langsung bangkit.
+log "MEMATIKAN $VICTIM (docker stop -t 0 $CONTAINER)"
+docker stop -t 0 "$CONTAINER" >/dev/null
 sleep 3
 
 probe "saat $VICTIM mati"
 
 # Pendaftaran akun baru menyentuh identity -> profile (pembuatan profil);
 # ini jalur lintas-unit yang paling menarik saat profile-svc mati.
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/register" -H 'Content-Type: application/json' \
-  -d "{\"name\":\"Chaos\",\"email\":\"chaos-during-$(date +%s%N)@user.co\",\"password\":\"$PASSWORD\",\"password_confirmation\":\"$PASSWORD\"}")
-printf '    %-6s %-40s -> %s\n' POST /register "$code"
+register_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST "$BASE_URL/api/v1/register" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"Chaos\",\"email\":\"chaos-during-$(date +%s%N)@user.co\",\"password\":\"$PASSWORD\",\"password_confirmation\":\"$PASSWORD\"}" \
+  || echo "TIMEOUT($?)")
+printf '    %-6s %-40s -> %s\n' POST /register "$register_code"
 
 log "MENYALAKAN $VICTIM kembali"
 docker start "$CONTAINER" >/dev/null
-STARTED=$(date +%s)
 
-ready() { curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X GET "$BASE_URL/api/v1/profile" -H "Authorization: Bearer $TOKEN"; }
+ready() { call GET /profile -; }
 took=$(wait_until 200 60 ready) || exit 1
 log "GET /profile kembali 200 setelah $took detik"
 

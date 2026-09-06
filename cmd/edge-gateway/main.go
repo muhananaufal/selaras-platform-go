@@ -34,6 +34,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/rpc"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
@@ -304,7 +305,10 @@ func adminEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *htt
 func dial(target string) (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		telemetry.GRPCDialOption())
+		telemetry.GRPCDialOption(),
+		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
+		// baru mati membuat pemanggilnya menggantung, bukan gagal.
+		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("creating the client for %s: %w", target, err)
 	}

@@ -31,6 +31,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/rpc"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
@@ -96,7 +97,10 @@ func run(log *slog.Logger) error {
 
 	profileConn, err := grpc.NewClient(cfg.ProfileAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		telemetry.GRPCDialOption())
+		telemetry.GRPCDialOption(),
+		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
+		// baru mati membuat pemanggilnya menggantung, bukan gagal.
+		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
 	if err != nil {
 		return fmt.Errorf("creating the profile-svc client: %w", err)
 	}

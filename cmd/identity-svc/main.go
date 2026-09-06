@@ -38,6 +38,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/mail"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/rpc"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
@@ -370,7 +371,10 @@ func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error
 
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		telemetry.GRPCDialOption())
+		telemetry.GRPCDialOption(),
+		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
+		// baru mati membuat pemanggilnya menggantung, bukan gagal.
+		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating the profile-svc client: %w", err)
 	}
