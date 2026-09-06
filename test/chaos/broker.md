@@ -52,6 +52,15 @@ yang diuji adalah broker yang hilang mendadak, bukan yang pamit.
   broker menulis ke disk sebelum mengakui (`acks=all` pada satu node berarti
   satu penulisan). Skenario ini tidak menguji kehilangan disk; itu domain
   backup (F9-30/31), bukan chaos broker.
+- **Yang TIDAK tertangkap skenario ini, dan ditemukan di k3d (F9-04):** image
+  `apache/kafka` menulis log ke `/tmp` di dalam container kecuali
+  `KAFKA_LOG_DIRS` disetel. `docker kill` + `docker start` memakai container
+  yang sama, jadi datanya bertahan - tetapi `docker compose up
+  --force-recreate`, atau pod yang dibuat ulang, membuang SELURUH topic
+  beserta isinya, dan volume `kafka-data` yang dipasang ternyata kosong
+  sejak awal. Diperbaiki di compose dan k8s dengan `KAFKA_LOG_DIRS`. Outbox
+  tetap sumber kebenarannya, tetapi hasil yang sudah terbit dan belum
+  dikonsumsi akan hilang dalam jendela itu.
 
 ## Cara mengulang
 

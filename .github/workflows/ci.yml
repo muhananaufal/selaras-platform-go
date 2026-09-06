@@ -147,6 +147,10 @@ jobs:
             -dsn "pgx5://svc_assessment:$SVC_ASSESSMENT_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=assessment"
           go run ./cmd/migrate -service llm -direction up \
             -dsn "pgx5://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=llm"
+          for s in coaching chat nutrition dashboard; do
+            go run ./cmd/migrate -service "$s" -direction up \
+              -dsn "pgx5://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
+          done
 
       # Topic dibuat lewat alat yang sama dengan yang dipakai di lokal, bukan
       # lewat skrip terpisah. Dua salinan akan menyimpang diam-diam.
@@ -175,7 +179,14 @@ jobs:
           export TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
           export TEST_DSN_ASSESSMENT="postgres://svc_assessment:$SVC_ASSESSMENT_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=assessment"
           export TEST_DSN_LLM="postgres://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=llm"
-          go test ./... -race -count=1 -p 1
+          for s in coaching chat nutrition dashboard; do
+            export "TEST_DSN_$(echo $s | tr a-z A-Z)=postgres://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
+          done
+          # test/e2e dan test/acceptance membutuhkan stack yang menyala; job e2e
+          # di bawah yang menjalankannya. Di sini keduanya dikeluarkan secara
+          # EKSPLISIT, bukan dibiarkan melewati diri - dengan CI=true keduanya
+          # akan gagal, dan itu memang perilaku yang diinginkan.
+          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance") -race -count=1 -p 1
 
   lint:
     name: lint
@@ -228,3 +239,79 @@ jobs:
       - uses: gitleaks/gitleaks-action@v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Seluruh sistem menyala di runner lewat compose - profil yang sama dengan
+  # `task up:apps` - lalu suite e2e, daftar periksa aturan (D1-D12, S1-S11),
+  # dan skenario k6 baca dengan ambang SLO (F9-11) dijalankan terhadapnya.
+  # Kredensial dibuat di runner dan dibuang bersamanya; tidak ada yang berasal
+  # dari Secret repositori (ADR-016 melarang bawaan, bukan melarang nilai
+  # sekali pakai).
+  e2e:
+    name: e2e, acceptance, k6
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Write a throwaway .env
+        run: |
+          keys=$(go run ./cmd/keygen)
+          {
+            echo "POSTGRES_USER=selaras_admin"
+            echo "POSTGRES_PASSWORD=ci-not-a-secret"
+            echo "POSTGRES_DB=selaras"
+            echo "POSTGRES_HOST=127.0.0.1"
+            echo "POSTGRES_PORT=15432"
+            for s in IDENTITY PROFILE ASSESSMENT COACHING CHAT NUTRITION DASHBOARD LLM; do echo "SVC_${s}_PASSWORD=ci-not-a-secret"; done
+            echo "KAFKA_BROKERS=127.0.0.1:19092"
+            echo "REDIS_ADDR=127.0.0.1:16379"
+            echo "GRAFANA_ADMIN_PASSWORD=ci-not-a-secret"
+            echo "JWT_ACCESS_TTL=3600"
+            echo "LLM_PROVIDER=fake"
+            echo "GEMINI_API_KEY="
+            echo "GEMINI_MODEL="
+            echo "LOG_LEVEL=info"
+            echo "OTEL_EXPORTER_OTLP_ENDPOINT="
+            echo "$keys"
+          } > .env
+          grep -c '^JWT_' .env
+
+      - name: Start the stack
+        run: |
+          docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml up -d --build
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:18080/readyz && break; sleep 2; done
+          curl -sf http://127.0.0.1:18080/readyz
+
+      - name: Apply migrations and topics
+        run: |
+          set -a; . ./.env; set +a
+          for s in identity profile assessment coaching chat nutrition dashboard llm; do
+            go run ./cmd/migrate -service "$s" -direction up \
+              -dsn "postgres://svc_$s:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=$s"
+          done
+          go run ./cmd/topics -brokers 127.0.0.1:19092
+          docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml restart \
+            identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:18080/readyz && break; sleep 2; done
+
+      - name: e2e and acceptance
+        env:
+          TEST_E2E_BASE_URL: http://127.0.0.1:18080
+          TEST_REDIS_URL: redis://127.0.0.1:16379/0
+        run: |
+          export TEST_DSN_LLM="postgres://svc_llm:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=llm"
+          export TEST_DSN_CHAT="postgres://svc_chat:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=chat"
+          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m
+
+      - name: k6 read scenario against the SLO
+        run: |
+          docker run --rm --network selaras-core_default -v "$PWD/test/k6:/k6:ro" \
+            -e BASE_URL=http://edge-gateway:8080 grafana/k6:1.8.1 run /k6/scenarios/read.js
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml logs --tail=100
