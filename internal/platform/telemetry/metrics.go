@@ -1,9 +1,14 @@
-// Package telemetry menyediakan metrik yang bisa dibaca dari luar proses.
+// Package telemetry menyediakan metrik, trace, dan log yang saling terhubung.
 //
-// Ia sengaja kecil. Instrumentasi menyeluruh - trace, metrik, dan log di
-// seluruh unit - adalah F9-05, dan mendahuluinya di sini akan mengunci
-// keputusan yang belum diambil. Yang ada di sini hanya yang dibutuhkan F3-15:
-// tiga angka yang menjawab "apakah antreannya sehat".
+// Tiga hal yang dijaga di sini:
+//
+//   - Metrik disajikan dalam format Prometheus dari setiap proses, sehingga
+//     ia bisa dibaca dengan curl tanpa infrastruktur apa pun.
+//   - Trace dikirim lewat OTLP HANYA bila alamat collector dikonfigurasi, dan
+//     konteksnya menyeberangi broker lewat Envelope (lihat propagate.go) -
+//     bukan hanya gRPC dan HTTP.
+//   - Log yang ditulis dengan context membawa trace_id dan span_id (lihat
+//     logging.go), sehingga satu baris log bisa dibawa ke trace-nya.
 package telemetry
 
 import (
@@ -17,8 +22,6 @@ import (
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
 // Meters adalah pabrik instrumen beserta handler yang menyajikannya.
@@ -49,15 +52,9 @@ func New(serviceName string) (*Meters, error) {
 		return nil, fmt.Errorf("building the prometheus exporter: %w", err)
 	}
 
-	// Versi semconv WAJIB sama dengan yang dipakai resource.Default()
-	// [otel/sdk@v1.46.0/resource/builtin.go:16], kalau tidak Merge menolak
-	// dengan "conflicting Schema URL" - dan metriknya diam-diam tidak ada.
-	// Ini benar-benar terjadi: v1.26.0 vs v1.43.0.
-	res, err := resource.Merge(resource.Default(),
-		resource.NewWithAttributes(semconv.SchemaURL,
-			semconv.ServiceName(serviceName)))
+	res, err := describe(serviceName)
 	if err != nil {
-		return nil, fmt.Errorf("describing this service: %w", err)
+		return nil, err
 	}
 
 	provider := sdkmetric.NewMeterProvider(
