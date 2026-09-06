@@ -1,0 +1,38 @@
+# Backup Postgres terjadwal (F9-30). Dipakai BERSAMA core.yml:
+#   docker compose -f core.yml -f backup.yml up -d
+#
+# Terpisah dari core.yml karena siklus hidupnya lain: ia boleh tidak ada di
+# mesin pengembang yang datanya dibuang setiap hari, dan WAJIB ada di mana pun
+# datanya berarti. Image-nya SAMA dengan server supaya pg_dump sepadan.
+name: selaras-core
+
+services:
+  backup:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    container_name: selaras-backup
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:?set POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-selaras}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-21600}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ./backup/backup.sh:/backup.sh:ro
+      # Volume terpisah dari data Postgres. Backup yang tinggal di disk yang
+      # sama dengan datanya menjawab "salah hapus", bukan "disk mati";
+      # lokasi luar (bucket) adalah langkah berikutnya, dan dicatat di
+      # docs/runbook/backup.md sebagai yang BELUM ada.
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  backups:

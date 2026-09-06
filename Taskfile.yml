@@ -5,6 +5,7 @@ vars:
   COMPOSE_CORE: deploy/compose/core.yml
   COMPOSE_APPS: deploy/compose/apps.yml
   COMPOSE_FULL: deploy/compose/full.yml
+  COMPOSE_BACKUP: deploy/compose/backup.yml
 
   # Docker daemon hidup di dalam WSL. Perintah yang memakai bind mount
   # WAJIB dijalankan dari dalam WSL juga.
@@ -107,6 +108,17 @@ tasks:
     desc: Run unit tests with the race detector (needs cgo)
     cmds: [go test ./... -race -count=1]
 
+  test:e2e:
+    desc: Run the end-to-end suite against the running local stack
+    # Suite ini membutuhkan seluruh unit menyala (task up:apps atau up:full).
+    # TEST_DSN_LLM dipakai test outbox untuk membaca tabel job worker.
+    dotenv: [".env"]
+    cmds:
+      - >-
+        TEST_E2E_BASE_URL="http://127.0.0.1:18080"
+        TEST_DSN_LLM="postgres://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=llm"
+        go test ./test/e2e/ -count=1 -p 1 -timeout 20m
+
   test:integration:
     desc: Run every test against the running local stack, Postgres included
     # -p 1 menjalankan paket satu per satu. Beberapa paket test berbagi satu
@@ -156,7 +168,7 @@ tasks:
     # menyalakannya. Tanpa collector, alamat yang terisi hanya menghasilkan
     # galat ekspor di setiap unit.
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4317 docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} -f {{.COMPOSE_FULL}} up -d --build"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4317 docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} -f {{.COMPOSE_FULL}} -f {{.COMPOSE_BACKUP}} up -d --build"
 
   down:
     desc: Stop local dependencies
@@ -187,6 +199,16 @@ tasks:
       - task: proto:lint
       - task: openapi:lint
       - task: test
+
+  backup:now:
+    desc: Take one verified Postgres backup into the backups volume (F9-30)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_BACKUP}} run --rm -e BACKUP_ONCE=1 backup"
+
+  backup:list:
+    desc: List the backups in the volume
+    cmds:
+      - docker run --rm -v selaras-core_backups:/backups alpine ls -la /backups
 
   partitions:
     desc: Maintain monthly partitions for every partitioned table (F9-29)
