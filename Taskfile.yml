@@ -188,6 +188,15 @@ tasks:
       - task: openapi:lint
       - task: test
 
+  partitions:
+    desc: Maintain monthly partitions for every partitioned table (F9-29)
+    # DSN admin yang boleh menyentuh kedelapan skema: partisi dibuat dengan
+    # pemilik yang sama dengan tabel induknya, jadi peran per-service tetap
+    # memilikinya setelah itu.
+    dotenv: [".env"]
+    cmds:
+      - go run ./cmd/partitions -dsn "postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable" {{.CLI_ARGS}}
+
   k6:
     desc: "Run a k6 scenario against the local stack. Usage: task k6 -- read (or write, mixed)"
     # k6 berjalan sebagai container di jaringan compose, bukan dipasang di
