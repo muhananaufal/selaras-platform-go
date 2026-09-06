@@ -9,6 +9,11 @@ metadata:
   namespace: selaras
 spec:
   clusterIP: None
+  # Alamat pod dipublikasikan SEBELUM ia siap: KRaft membutuhkan nama DNS-nya
+  # sendiri (kafka-0.kafka) untuk membentuk kuorum, dan tanpa ini nama itu
+  # baru ada setelah readiness - yang tidak pernah tercapai. Itu terjadi:
+  # "kafka-0.kafka: Name does not resolve", pod restart terus.
+  publishNotReadyAddresses: true
   selector: { app: kafka }
   ports:
     - name: broker

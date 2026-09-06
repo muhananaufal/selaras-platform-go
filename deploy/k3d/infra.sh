@@ -14,9 +14,10 @@
 # jalankan deploy/k3d/import.sh lebih dulu.
 
 set -euo pipefail
+# k3d, kubectl, dan helm dipasang di ~/.local/bin milik pengguna WSL.
+export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-METRICS_SERVER_VERSION="v0.9.0"
 KEDA_VERSION="v2.20.2"
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
@@ -32,18 +33,15 @@ kubectl -n selaras create configmap postgres-initdb \
 log "dependensi"
 kubectl apply -f "$ROOT/deploy/k8s/infra/"
 
-log "metrics-server $METRICS_SERVER_VERSION (F9-20)"
-# k3s memakai sertifikat kubelet yang ditandatangani sendiri; tanpa
-# --kubelet-insecure-tls metrics-server menolak node dan `kubectl top`
-# tetap kosong. Ini batas lingkungan lokal, dan dinyatakan begitu.
-kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
-if ! kubectl -n kube-system get deployment metrics-server -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -q kubelet-insecure-tls; then
-  kubectl -n kube-system patch deployment metrics-server --type=json \
-    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
-fi
+log "metrics-server (F9-20): bawaan k3s, tidak dipasang ulang"
+# k3s membawa metrics-server sendiri di kube-system, sudah dipercaya
+# sertifikat kubelet-nya. Memasang rilis upstream di sampingnya menghasilkan
+# dua APIService untuk metrics.k8s.io yang saling menimpa. Versinya
+# mengikuti k3s (rancher/k3s:v1.36.4-k3s1 di cluster.yaml).
+kubectl -n kube-system get deployment metrics-server >/dev/null
 
 log "KEDA $KEDA_VERSION (F9-22)"
-kubectl apply --server-side -f "https://github.com/kedacore/keda/releases/download/${KEDA_VERSION}/keda-${KEDA_VERSION}.yaml"
+kubectl apply --server-side -f "https://github.com/kedacore/keda/releases/download/${KEDA_VERSION}/keda-${KEDA_VERSION#v}.yaml"
 
 log "observability (F9-06)"
 # Dashboard dari berkas yang SAMA dengan compose; kata sandi admin Grafana
