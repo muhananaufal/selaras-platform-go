@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -144,7 +145,16 @@ func buildProvider(log *slog.Logger) (llm.Provider, error) {
 	switch mode := os.Getenv("LLM_PROVIDER"); mode {
 	case "fake":
 		log.Warn("using the fake LLM provider; answers are generated locally and are not real")
-		return llm.NewFake(), nil
+		fake := llm.NewFake()
+		// Gangguan yang diminta, untuk chaos F9-14: "slow=<durasi>", "flaky=<n>",
+		// atau "error". Kosong berarti tidak ada gangguan.
+		if spec := os.Getenv("LLM_FAKE_FAULT"); spec != "" {
+			if err := applyFault(fake, spec); err != nil {
+				return nil, err
+			}
+			log.Warn("the fake LLM provider is running WITH A FAULT", "fault", spec)
+		}
+		return fake, nil
 
 	case "gemini", "":
 		key, err := required("GEMINI_API_KEY")
@@ -203,4 +213,41 @@ func duration(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// applyFault menyetel gangguan pada penyedia palsu dari LLM_FAKE_FAULT.
+//
+// Tiga bentuk, dan hanya tiga: "slow=<durasi>" menunda setiap jawaban,
+// "flaky=<n>" menggagalkan n panggilan pertama, "error" menggagalkan semuanya.
+// Yang lain ditolak: worker yang menyala tanpa gangguan yang dikira sedang
+// diuji menghasilkan laporan chaos yang membuktikan hal yang salah.
+func applyFault(fake *llm.Fake, spec string) error {
+	kind, arg, hasArg := strings.Cut(spec, "=")
+	switch {
+	case spec == "":
+		return nil
+
+	case kind == "slow" && hasArg:
+		delay, err := time.ParseDuration(arg)
+		if err != nil || delay <= 0 {
+			return fmt.Errorf("LLM_FAKE_FAULT=%q: slow needs a positive duration such as slow=20s", spec)
+		}
+		fake.Delay = delay
+		return nil
+
+	case kind == "flaky" && hasArg:
+		n, err := strconv.Atoi(arg)
+		if err != nil || n < 1 {
+			return fmt.Errorf("LLM_FAKE_FAULT=%q: flaky needs a positive count such as flaky=2", spec)
+		}
+		fake.FailFirst = n
+		return nil
+
+	case spec == "error":
+		fake.Err = errors.New("fake provider fault: every call fails")
+		return nil
+
+	default:
+		return fmt.Errorf("LLM_FAKE_FAULT=%q is not slow=<duration>, flaky=<n>, or error", spec)
+	}
 }
