@@ -20,10 +20,6 @@ image:
 secrets:
   existingSecret: selaras-secrets
 
-# Alamat Prometheus yang dibaca KEDA untuk lag llm-worker (F9-22).
-keda:
-  prometheusAddress: http://prometheus.observability.svc:9090
-
 # Variabel yang sama untuk semua unit. Nama host mengikuti nama Service di
 # namespace yang sama.
 env:
@@ -154,6 +150,10 @@ units:
       # maxReplicaCount TIDAK melebihi jumlah partisi llm.jobs (ADR-014 aturan 1).
       maxReplicaCount: 12
       minReplicaCount: 0
+      # Lag dibaca KEDA langsung dari broker untuk group dan topic ini -
+      # sumber yang tetap ada saat worker 0 replika (lihat scaledobject.yaml).
+      consumerGroup: llm-worker
+      topic: llm.jobs
       lagThreshold: "5"
       pollingInterval: 10
       cooldownPeriod: 60

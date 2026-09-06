@@ -6,13 +6,21 @@
 #
 # CPU adalah proksi yang buruk untuk pekerjaan yang didominasi menunggu
 # jawaban Gemini: worker yang tertinggal 500 job bisa punya CPU rendah. Sinyal
-# yang benar adalah LAG - yang sudah diekspos F3-15 sebagai kafka_consumer_lag
-# dan ditarik Prometheus.
+# yang benar adalah LAG.
+#
+# Lag dibaca KEDA LANGSUNG dari broker (scaler kafka), BUKAN dari metrik
+# kafka_consumer_lag milik F3-15. Keduanya angka yang sama; sumbernya yang
+# berbeda, dan perbedaannya menentukan segalanya untuk scale-to-zero: metrik
+# F3-15 diterbitkan oleh worker, jadi saat worker 0 replika metriknya tidak
+# ada dan tidak ada yang bisa membangunkannya. Itu benar-benar terjadi saat
+# suite e2e dijalankan di k3d (F9-23): ScaledObject "triggers are not
+# active" selamanya, balasan chat tidak pernah datang. Broker tahu lag-nya
+# sekalipun tidak ada satu pun konsumen yang hidup.
 #
 # maxReplicaCount TIDAK melebihi jumlah partisi llm.jobs (ADR-014 aturan 1):
 # konsumen ke-13 pada topic 12 partisi menganggur - scaling yang terlihat
-# bekerja padahal tidak menambah apa pun. Jumlah partisinya ditetapkan di
-# cmd/topics, dan nilainya ada di values supaya keduanya diperiksa bersama.
+# bekerja padahal tidak menambah apa pun. allowIdleConsumers=false membuat
+# KEDA menegakkannya juga.
 #
 # minReplicaCount 0 = scale-to-zero saat antrean kosong (F9-23). Harganya
 # adalah cold-start job pertama, dan angkanya DIUKUR di docs/performance-
@@ -31,17 +39,23 @@ spec:
   pollingInterval: {{ $u.keda.pollingInterval }}
   cooldownPeriod: {{ $u.keda.cooldownPeriod }}
   triggers:
-    - type: prometheus
+    - type: kafka
       metadata:
-        serverAddress: {{ $.Values.keda.prometheusAddress | quote }}
-        # Lag seluruh partisi dijumlahkan; satu replika per lagThreshold job.
-        query: sum(kafka_consumer_lag{topic="llm.jobs"})
-        threshold: {{ $u.keda.lagThreshold | quote }}
-        # Saat worker sudah 0 replika tidak ada yang melaporkan lag - metrik
-        # ini hilang. activationThreshold pada metrik yang ada dari sumber
-        # LAIN (outbox llm yang belum terkirim tidak cocok; job pending dari
-        # exporter Postgres cocok) adalah pekerjaan F9-23, dan dicatat di
-        # sana bila ternyata dibutuhkan.
-        activationThreshold: "0"
+        # Nama LENGKAP, bukan "kafka:9092" seperti yang dipakai unit: KEDA hidup
+        # di namespace keda, dan nama pendek tidak diterjemahkan lintas
+        # namespace. Broker juga mengumumkan nama lengkap ini
+        # (deploy/k8s/infra/kafka.yaml), kalau tidak klien di luar namespace
+        # selaras dialihkan ke alamat yang tidak bisa ia temukan.
+        bootstrapServers: {{ printf "kafka.%s.svc.cluster.local:9092" $.Release.Namespace | quote }}
+        consumerGroup: {{ $u.keda.consumerGroup | quote }}
+        topic: {{ $u.keda.topic | quote }}
+        # Satu replika per lagThreshold job yang menunggu; satu job yang
+        # menunggu sudah cukup untuk membangunkan worker dari nol.
+        lagThreshold: {{ $u.keda.lagThreshold | quote }}
+        activationLagThreshold: "0"
+        allowIdleConsumers: "false"
+        # Group yang belum pernah komit (worker baru) dihitung dari akhir
+        # topic, bukan dari awal riwayat - lag lama bukan pekerjaan baru.
+        offsetResetPolicy: latest
 {{- end }}
 {{- end }}
