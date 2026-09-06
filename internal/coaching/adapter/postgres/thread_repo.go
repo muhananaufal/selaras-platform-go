@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
@@ -125,6 +128,13 @@ func (r *ThreadRepository) CreateMessage(ctx context.Context, m *domain.Message)
 	if _, err := r.db.Exec(ctx, q,
 		m.ID.String(), m.ThreadID.String(), string(m.Role), content,
 		m.CreatedAt, m.UpdatedAt); err != nil {
+		// Foreign key yang gagal berarti thread-nya sudah tidak ada. Ia
+		// dinamai, bukan diteruskan sebagai galat SQL: konsumen balasan LLM
+		// hanya bisa membedakan "hilang" dari "rusak" bila galatnya punya nama.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation {
+			return domain.ErrThreadNotFound
+		}
 		return fmt.Errorf("creating the message: %w", err)
 	}
 	return nil

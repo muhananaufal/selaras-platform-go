@@ -13,6 +13,7 @@ import (
 
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/chat/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/chat/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
@@ -176,7 +177,17 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	return r.svc.StoreReply(ctx, conversationID, text)
+	if err = r.svc.StoreReply(ctx, conversationID, text); errors.Is(err, domain.ErrConversationNotFound) {
+		// Balasan untuk percakapan yang sudah tidak ada. Mengulanginya tidak
+		// akan pernah berhasil, dan menahan offset untuknya berarti konsumen
+		// ini memundurkan diri setiap detik, selamanya - itu benar-benar
+		// terjadi setelah akun uji dihapus, dan trace-lah yang
+		// menyingkapkannya.
+		r.log.WarnContext(ctx, "a reply arrived for a conversation that no longer exists and was dropped",
+			"conversation_id", conversationID, "event_id", env.GetEventId())
+		return nil
+	}
+	return err
 }
 
 // replyTextOf mengambil teks balasan dari bentuk JSON yang dikembalikan model.
