@@ -1,0 +1,109 @@
+{{- range $unit, $u := .Values.units }}
+{{- $ctx := dict "root" $ "unit" $unit }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $unit }}
+  labels:
+    {{- include "selaras.labels" $ctx | nindent 4 }}
+spec:
+  {{- if not (and $u.autoscaling $u.autoscaling.enabled) }}
+  {{- if not (and $u.keda $u.keda.enabled) }}
+  replicas: {{ $u.replicas | default 1 }}
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "selaras.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "selaras.labels" $ctx | nindent 8 }}
+      annotations:
+        # Prometheus menemukan /metrics lewat anotasi ini (deploy/k8s/observability).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $u.healthPort | quote }}
+        prometheus.io/path: /metrics
+    spec:
+      # Distroless, tanpa shell, non-root: tidak ada yang bisa di-exec ke dalamnya,
+      # dan itu memang yang diinginkan.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: {{ $unit }}
+          image: {{ include "selaras.image" $ctx | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            {{- if $u.grpcPort }}
+            - name: grpc
+              containerPort: {{ $u.grpcPort }}
+            {{- end }}
+            {{- if $u.httpPort }}
+            - name: http
+              containerPort: {{ $u.httpPort }}
+            {{- end }}
+            - name: health
+              containerPort: {{ $u.healthPort }}
+          env:
+            {{- range $k, $v := $.Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- range $k, $v := $u.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if eq $unit "edge-gateway" }}
+            {{- with $.Values.rateLimit.authRequests }}
+            - name: RATE_LIMIT_AUTH_REQUESTS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $.Values.rateLimit.llmRequests }}
+            - name: RATE_LIMIT_LLM_REQUESTS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- range $key := $u.secretEnv }}
+            # Rahasia dibaca dari Secret yang dibuat di luar chart (ADR-016).
+            # Kunci yang tidak ada membuat pod gagal start - bukan berjalan
+            # dengan nilai kosong.
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.existingSecret }}
+                  key: {{ $key }}
+            {{- end }}
+          # Tiga probe, tiga pertanyaan berbeda (F9-03): startup menunggu
+          # proses selesai menyambung ke dependensinya; readiness mengatur
+          # trafik; liveness hanya menjawab "apakah prosesnya masih hidup".
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml $u.resources | nindent 12 }}
+{{- end }}

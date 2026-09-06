@@ -1,0 +1,104 @@
+# Redis, Mailpit, dan PgBouncer untuk klaster lokal (F9-04). Salinan dari
+# deploy/compose/core.yml dengan bentuk Kubernetes; nilainya sama.
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: selaras }
+spec:
+  selector: { app: redis }
+  ports: [{ name: redis, port: 6379 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: redis, namespace: selaras }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.8.2-alpine
+          args: ["--save", "", "--appendonly", "no"]
+          ports: [{ name: redis, containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 192Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: mailpit, namespace: selaras }
+spec:
+  selector: { app: mailpit }
+  ports:
+    - { name: smtp, port: 1025 }
+    - { name: http, port: 8025 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: mailpit, namespace: selaras }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mailpit } }
+  template:
+    metadata: { labels: { app: mailpit } }
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.28.2
+          ports:
+            - { name: smtp, containerPort: 1025 }
+            - { name: http, containerPort: 8025 }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+# PgBouncer, mode transaksi (F9-27). Nilainya identik dengan compose;
+# kredensial admin dari Secret selaras-infra.
+apiVersion: v1
+kind: Service
+metadata: { name: pgbouncer, namespace: selaras }
+spec:
+  selector: { app: pgbouncer }
+  ports: [{ name: pg, port: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: pgbouncer, namespace: selaras }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: pgbouncer } }
+  template:
+    metadata: { labels: { app: pgbouncer } }
+    spec:
+      containers:
+        - name: pgbouncer
+          image: edoburu/pgbouncer:v1.25.2-p0
+          env:
+            - { name: DB_HOST, value: postgres }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: "*" }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: POSTGRES_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: POSTGRES_PASSWORD } }
+            - name: AUTH_USER
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: POSTGRES_USER } }
+            - name: STATS_USERS
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: POSTGRES_USER } }
+            - { name: AUTH_TYPE, value: scram-sha-256 }
+            - { name: POOL_MODE, value: transaction }
+            - { name: MAX_CLIENT_CONN, value: "1000" }
+            - { name: DEFAULT_POOL_SIZE, value: "8" }
+            - { name: IGNORE_STARTUP_PARAMETERS, value: search_path }
+            - { name: MAX_PREPARED_STATEMENTS, value: "200" }
+          ports: [{ name: pg, containerPort: 5432 }]
+          readinessProbe:
+            tcpSocket: { port: 5432 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

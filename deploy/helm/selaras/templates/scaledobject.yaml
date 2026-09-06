@@ -1,0 +1,47 @@
+{{- range $unit, $u := .Values.units }}
+{{- if and $u.keda $u.keda.enabled }}
+{{- $ctx := dict "root" $ "unit" $unit }}
+---
+# KEDA ScaledObject berbasis lag konsumen untuk llm-worker (F9-22, ADR-014).
+#
+# CPU adalah proksi yang buruk untuk pekerjaan yang didominasi menunggu
+# jawaban Gemini: worker yang tertinggal 500 job bisa punya CPU rendah. Sinyal
+# yang benar adalah LAG - yang sudah diekspos F3-15 sebagai kafka_consumer_lag
+# dan ditarik Prometheus.
+#
+# maxReplicaCount TIDAK melebihi jumlah partisi llm.jobs (ADR-014 aturan 1):
+# konsumen ke-13 pada topic 12 partisi menganggur - scaling yang terlihat
+# bekerja padahal tidak menambah apa pun. Jumlah partisinya ditetapkan di
+# cmd/topics, dan nilainya ada di values supaya keduanya diperiksa bersama.
+#
+# minReplicaCount 0 = scale-to-zero saat antrean kosong (F9-23). Harganya
+# adalah cold-start job pertama, dan angkanya DIUKUR di docs/performance-
+# report.md (ADR-014 aturan 5) - bukan diabaikan.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $unit }}
+  labels:
+    {{- include "selaras.labels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ $unit }}
+  minReplicaCount: {{ $u.keda.minReplicaCount }}
+  maxReplicaCount: {{ $u.keda.maxReplicaCount }}
+  pollingInterval: {{ $u.keda.pollingInterval }}
+  cooldownPeriod: {{ $u.keda.cooldownPeriod }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $.Values.keda.prometheusAddress | quote }}
+        # Lag seluruh partisi dijumlahkan; satu replika per lagThreshold job.
+        query: sum(kafka_consumer_lag{topic="llm.jobs"})
+        threshold: {{ $u.keda.lagThreshold | quote }}
+        # Saat worker sudah 0 replika tidak ada yang melaporkan lag - metrik
+        # ini hilang. activationThreshold pada metrik yang ada dari sumber
+        # LAIN (outbox llm yang belum terkirim tidak cocok; job pending dari
+        # exporter Postgres cocok) adalah pekerjaan F9-23, dan dicatat di
+        # sana bila ternyata dibutuhkan.
+        activationThreshold: "0"
+{{- end }}
+{{- end }}

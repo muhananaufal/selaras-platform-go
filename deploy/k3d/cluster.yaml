@@ -1,0 +1,33 @@
+# Klaster k3d lokal (F9-04). Satu perintah: task k3d:up
+#
+# Satu node server, tanpa agent: mesin ini punya empat processor logis dan
+# plafon WSL 8 GB, dan node kedua hanya menggandakan overhead k3s tanpa
+# menambah CPU. Konsekuensinya dinyatakan di ADR-014 aturan 4: yang terbukti
+# di sini adalah mekanisme autoscaling, bukan kapasitasnya.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: selaras
+servers: 1
+agents: 0
+image: rancher/k3s:v1.36.4-k3s1
+ports:
+  # NodePort edge-gateway (values-local.yaml) -> host, hanya loopback.
+  - port: 127.0.0.1:28080:30080
+    nodeFilters: [server:0]
+  # Grafana di klaster, hanya loopback.
+  - port: 127.0.0.1:23000:30300
+    nodeFilters: [server:0]
+options:
+  k3s:
+    extraArgs:
+      # Traefik dan ServiceLB tidak dipakai: gateway dijangkau lewat NodePort
+      # dan tidak ada Ingress di lingkungan lokal. Keduanya hanya memakan
+      # memori yang lebih berguna untuk KEDA dan metrics-server.
+      - arg: --disable=traefik
+        nodeFilters: [server:0]
+      - arg: --disable=servicelb
+        nodeFilters: [server:0]
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

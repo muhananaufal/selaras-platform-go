@@ -1,0 +1,176 @@
+# Nilai BERSAMA untuk chart selaras (F9-01, F9-02).
+#
+# Perbedaan lokal dan cloud hanya berupa NILAI (values-local.yaml,
+# values-cloud.yaml), bukan template terpisah (ADR-010). Berkas ini memuat
+# yang sama di kedua lingkungan: katalog unit, port, probe, dan bentuk
+# resource - angkanya diambil dari pengukuran compose (docs/performance-
+# report.md, docs/finops.md), bukan dikosongkan (F9-03).
+#
+# Tidak ada kredensial di sini, di values-*.yaml, atau di template (ADR-016).
+# Seluruh rahasia dibaca dari satu Secret yang dibuat DI LUAR chart
+# (secrets.existingSecret); kunci yang dibutuhkan tiap unit disebut di
+# `secretEnv` supaya yang hilang gagal saat start, bukan diam-diam kosong.
+
+image:
+  registry: ""          # kosong = image lokal yang di-import ke k3d
+  repository: selaras   # <registry>/<repository>/<unit>:<tag>
+  tag: dev
+  pullPolicy: IfNotPresent
+
+secrets:
+  existingSecret: selaras-secrets
+
+# Alamat Prometheus yang dibaca KEDA untuk lag llm-worker (F9-22).
+keda:
+  prometheusAddress: http://prometheus.observability.svc:9090
+
+# Variabel yang sama untuk semua unit. Nama host mengikuti nama Service di
+# namespace yang sama.
+env:
+  KAFKA_BROKERS: kafka:9092
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  REDIS_URL: redis://redis:6379/0
+
+# Batas laju gateway. Produksi memakai bawaan kode (5 dan 10 per menit);
+# lokal menaikkannya supaya suite e2e bisa berjalan (docs/runbook/rate-limits.md).
+rateLimit:
+  authRequests: ""
+  llmRequests: ""
+
+units:
+  identity-svc:
+    grpcPort: 9101
+    healthPort: 9102
+    env:
+      IDENTITY_GRPC_ADDR: ":9101"
+      IDENTITY_HEALTH_ADDR: ":9102"
+      PROFILE_GRPC_TARGET: profile-svc:9201
+      JWT_ACCESS_TTL: "3600"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAIL_FROM: no-reply.local
+      FRONTEND_URL: http://localhost:3000
+      # argon2id 64 MiB x dua derivasi serentak; GC harus bekerja sebelum plafon.
+      GOMEMLIMIT: 160MiB
+    secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY]
+    resources:
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { memory: 192Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  profile-svc:
+    grpcPort: 9201
+    healthPort: 9202
+    env:
+      PROFILE_GRPC_ADDR: ":9201"
+      PROFILE_HEALTH_ADDR: ":9202"
+    secretEnv: [PROFILE_DATABASE_DSN]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 128Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  assessment-svc:
+    grpcPort: 9301
+    healthPort: 9302
+    env:
+      ASSESSMENT_GRPC_ADDR: ":9301"
+      ASSESSMENT_HEALTH_ADDR: ":9302"
+      PROFILE_GRPC_TARGET: profile-svc:9201
+    secretEnv: [ASSESSMENT_DATABASE_DSN]
+    resources:
+      requests: { cpu: 50m, memory: 48Mi }
+      limits: { memory: 160Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  coaching-svc:
+    grpcPort: 9401
+    healthPort: 9403
+    env:
+      COACHING_GRPC_ADDR: ":9401"
+      COACHING_HEALTH_ADDR: ":9403"
+    secretEnv: [COACHING_DATABASE_DSN]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 160Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  chat-svc:
+    grpcPort: 9501
+    healthPort: 9503
+    env:
+      CHAT_GRPC_ADDR: ":9501"
+      CHAT_HEALTH_ADDR: ":9503"
+    secretEnv: [CHAT_DATABASE_DSN]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 160Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  nutrition-svc:
+    grpcPort: 9601
+    healthPort: 9603
+    env:
+      NUTRITION_GRPC_ADDR: ":9601"
+      NUTRITION_HEALTH_ADDR: ":9603"
+      NUTRITION_TIMEZONE: Asia/Jakarta
+    secretEnv: [NUTRITION_DATABASE_DSN]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 160Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  dashboard-svc:
+    grpcPort: 9701
+    healthPort: 9703
+    env:
+      DASHBOARD_GRPC_ADDR: ":9701"
+      DASHBOARD_HEALTH_ADDR: ":9703"
+    secretEnv: [DASHBOARD_DATABASE_DSN]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 160Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  llm-worker:
+    # Tanpa port gRPC: ia konsumen. healthPort melayani /metrics dan probe.
+    healthPort: 9402
+    env:
+      METRICS_ADDR: ":9402"
+      LLM_PROVIDER: fake
+      LLM_TIMEOUT: "120"
+    secretEnv: [LLM_POSTGRES_DSN, GEMINI_API_KEY, GEMINI_MODEL]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 160Mi }
+    # Di-scale KEDA menurut lag (F9-22), bukan HPA CPU (ADR-014).
+    autoscaling: { enabled: false }
+    keda:
+      enabled: true
+      # maxReplicaCount TIDAK melebihi jumlah partisi llm.jobs (ADR-014 aturan 1).
+      maxReplicaCount: 12
+      minReplicaCount: 0
+      lagThreshold: "5"
+      pollingInterval: 10
+      cooldownPeriod: 60
+
+  edge-gateway:
+    httpPort: 8080
+    healthPort: 8081
+    env:
+      EDGE_HTTP_ADDR: ":8080"
+      EDGE_ADMIN_ADDR: ":8081"
+      IDENTITY_GRPC_TARGET: identity-svc:9101
+      PROFILE_GRPC_TARGET: profile-svc:9201
+      ASSESSMENT_GRPC_TARGET: assessment-svc:9301
+      COACHING_GRPC_TARGET: coaching-svc:9401
+      CHAT_GRPC_TARGET: chat-svc:9501
+      NUTRITION_GRPC_TARGET: nutrition-svc:9601
+      DASHBOARD_GRPC_TARGET: dashboard-svc:9701
+    secretEnv: [JWT_VERIFY_KEY]
+    resources:
+      requests: { cpu: 50m, memory: 32Mi }
+      limits: { memory: 128Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 4, targetCPUUtilizationPercentage: 60 }
+    service:
+      type: ClusterIP

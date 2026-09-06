@@ -1,0 +1,159 @@
+# Job migrasi per skema dan Job pembuat topic (F9-04).
+#
+# Satu Job per service, memakai image `migrate` yang dibangun dari Dockerfile
+# yang sama (UNIT=migrate) dan DSN LANGSUNG ke Postgres dari Secret
+# selaras-secrets (MIGRATE_DSN_<SVC>) - bukan lewat PgBouncer, karena
+# golang-migrate memegang advisory lock tingkat sesi.
+#
+# Job bersifat sekali jalan; `kubectl apply` ulang setelah ada migrasi baru
+# menuntut Job lama dihapus dulu (deploy/k3d/infra.sh melakukannya).
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-identity, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "identity", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_IDENTITY } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-profile, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "profile", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_PROFILE } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-assessment, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "assessment", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_ASSESSMENT } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-coaching, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "coaching", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_COACHING } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-chat, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "chat", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_CHAT } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-nutrition, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "nutrition", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_NUTRITION } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-dashboard, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "dashboard", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_DASHBOARD } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-llm, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "llm", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_LLM } }
+---
+# Topic Kafka dengan jumlah partisi yang ditetapkan F3-01 (cmd/topics).
+apiVersion: batch/v1
+kind: Job
+metadata: { name: topics, namespace: selaras }
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: topics
+          image: selaras/topics:dev
+          imagePullPolicy: Never
+          args: ["-brokers", "kafka:9092"]

@@ -1,0 +1,51 @@
+{{- range $unit, $u := .Values.units }}
+{{- if and $u.autoscaling $u.autoscaling.enabled }}
+{{- $ctx := dict "root" $ "unit" $unit }}
+---
+# HPA berbasis CPU untuk unit HTTP/gRPC (ADR-014 opsi c, bagian HPA).
+#
+# Ambangnya BUKAN angka bulat sembarang (ADR-014 aturan 2): ia diturunkan
+# dari pengukuran di docs/performance-report.md - CPU per permintaan dan
+# titik saat p95 mulai melewati SLO. Angkanya ada di values-*.yaml supaya
+# lingkungan yang mesinnya berbeda bisa mengukur ulang tanpa menyentuh
+# template.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $unit }}
+  labels:
+    {{- include "selaras.labels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $unit }}
+  minReplicas: {{ $u.autoscaling.minReplicas }}
+  maxReplicas: {{ $u.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $u.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    # Naik cepat, turun pelan: burst adalah bentuk beban yang nyata (E4),
+    # sementara turun terlalu cepat membuat replika dibuang tepat sebelum
+    # gelombang berikutnya. Turun dibatasi satu replika per menit supaya
+    # grafik F9-24 memperlihatkan "naik lalu turun kembali" sebagai
+    # keputusan, bukan getaran.
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+{{- end }}
+{{- end }}
