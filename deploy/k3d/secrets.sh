@@ -12,16 +12,19 @@
 # menolak berjalan bila ada variabel wajib yang kosong.
 
 set -euo pipefail
+# k3d, kubectl, dan helm dipasang di ~/.local/bin milik pengguna WSL.
+export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 set -a; . "$ROOT/.env"; set +a
 
 need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "FATAL: $v is not set in .env" >&2; exit 1; }; done; }
-need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY GEMINI_MODEL LLM_PROVIDER \
+need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY LLM_PROVIDER \
   SVC_IDENTITY_PASSWORD SVC_PROFILE_PASSWORD SVC_ASSESSMENT_PASSWORD SVC_COACHING_PASSWORD \
   SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD
-# Kunci Gemini hanya wajib bila penyedianya Gemini; dengan penyedia palsu
-# nilainya kosong dan tidak pernah dibaca.
-[ "$LLM_PROVIDER" != "gemini" ] || need GEMINI_API_KEY
+# Kunci dan nama model Gemini hanya wajib bila penyedianya Gemini; dengan
+# penyedia palsu keduanya kosong dan tidak pernah dibaca (llm-worker
+# memeriksanya sendiri saat start, F3-16).
+[ "$LLM_PROVIDER" != "gemini" ] || need GEMINI_API_KEY GEMINI_MODEL
 
 kubectl get namespace selaras >/dev/null 2>&1 || kubectl create namespace selaras
 
@@ -67,7 +70,7 @@ kubectl -n selaras create secret generic selaras-secrets \
   --from-literal=JWT_SIGNING_KEY="$JWT_SIGNING_KEY" \
   --from-literal=JWT_VERIFY_KEY="$JWT_VERIFY_KEY" \
   --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
-  --from-literal=GEMINI_MODEL="$GEMINI_MODEL" \
+  --from-literal=GEMINI_MODEL="${GEMINI_MODEL:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "secrets applied to namespace selaras (values not shown)"

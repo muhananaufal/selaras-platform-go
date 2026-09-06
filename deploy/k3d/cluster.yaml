@@ -11,6 +11,14 @@ metadata:
 servers: 1
 agents: 0
 image: rancher/k3s:v1.36.4-k3s1
+# API server dipublikasikan HANYA di loopback host dengan port tetap. Tanpa
+# ini, k3d (yang melihat DOCKER_HOST tcp:// di WSL) menulis kubeconfig ke
+# kubernetes.docker.internal:6443 sementara portnya acak - dan menunggu
+# selamanya. Itu terjadi di sini.
+kubeAPI:
+  host: "127.0.0.1"
+  hostIP: "127.0.0.1"
+  hostPort: "26443"
 ports:
   # NodePort edge-gateway (values-local.yaml) -> host, hanya loopback.
   - port: 127.0.0.1:28080:30080
@@ -27,6 +35,16 @@ options:
       - arg: --disable=traefik
         nodeFilters: [server:0]
       - arg: --disable=servicelb
+        nodeFilters: [server:0]
+      # WSL2 di mesin ini menjalankan cgroup v1 untuk Docker, dan kubelet 1.36
+      # menolak cgroup v1 kecuali diminta secara eksplisit. Ini keputusan yang
+      # SALAH untuk produksi dan benar untuk laptop ini; dinyatakan di RFC
+      # penutup sebagai batas lingkungan lokal.
+      - arg: --kubelet-arg=fail-cgroupv1=false
+        nodeFilters: [server:0]
+      # /proc/sys/net/netfilter/nf_conntrack_max hanya-baca di WSL2; kube-proxy
+      # diminta tidak mengaturnya alih-alih gagal.
+      - arg: --kube-proxy-arg=conntrack-max-per-core=0
         nodeFilters: [server:0]
   kubeconfig:
     updateDefaultKubeconfig: true

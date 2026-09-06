@@ -8,6 +8,8 @@
 # di-OOM-kill di tengah (catatan F8).
 
 set -euo pipefail
+# k3d, kubectl, dan helm dipasang di ~/.local/bin milik pengguna WSL.
+export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TAG="${TAG:-dev}"
 REVISION=$(git -C "$ROOT" rev-parse --short HEAD)

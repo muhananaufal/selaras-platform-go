@@ -15,6 +15,10 @@ var (
 	// ErrMissingDiabetesInput menandai penilaian diabetes yang kekurangan
 	// masukan wajibnya.
 	ErrMissingDiabetesInput = errors.New("missing an input the diabetes model requires")
+
+	// ErrDiabetesAgeAfterCurrentAge menolak usia diagnosis yang melampaui
+	// usia pengguna sekarang (D6).
+	ErrDiabetesAgeAfterCurrentAge = errors.New("the age at diabetes diagnosis is after the current age")
 )
 
 // Request adalah satu permintaan perhitungan.
@@ -144,6 +148,14 @@ func (e *Engine) prepare(req Request) (ClinicalInputs, error) {
 	dxAge, ok := all.num("age_at_diabetes_diagnosis")
 	if !ok {
 		return ClinicalInputs{}, fmt.Errorf("%w: age_at_diabetes_diagnosis", ErrMissingDiabetesInput)
+	}
+	// D6: diagnosis tidak bisa terjadi setelah hari ini. Sistem lama
+	// memvalidasinya di request dengan usia dari basis data; di sini usia
+	// datang bersama permintaan, dan aturannya milik mesin yang memakai
+	// angkanya - satu tempat, bukan satu per pemanggil.
+	if int(dxAge) > req.Age {
+		return ClinicalInputs{}, fmt.Errorf("%w: diagnosed at %d, currently %d",
+			ErrDiabetesAgeAfterCurrentAge, int(dxAge), req.Age)
 	}
 	inputs.AgeAtDiabetesDiagnosis = int(dxAge)
 
