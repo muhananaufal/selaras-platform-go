@@ -104,6 +104,12 @@ func run(log *slog.Logger) error {
 	}
 	defer stopResults()
 
+	stopAssessments, err := startAssessmentConsumer(ctx, log, svc, cfg.KafkaBrokers)
+	if err != nil {
+		return err
+	}
+	defer stopAssessments()
+
 	stopDeletion, err := startDeletionConsumer(ctx, log, pool, cfg.KafkaBrokers)
 	if err != nil {
 		return err
