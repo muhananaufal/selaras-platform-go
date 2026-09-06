@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -75,13 +76,27 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// Replika baca (F9-32), bila dikonfigurasi. Kolamnya dibuka dan di-ping
+	// seperti primer: replika yang tidak terjangkau saat start lebih baik
+	// menolak menyala daripada diam-diam melayani dari primer.
+	reader := pg.Querier(pool)
+	if cfg.ReadDSN != "" {
+		readPool, err := pg.Open(ctx, pg.DefaultConfig(cfg.ReadDSN))
+		if err != nil {
+			return fmt.Errorf("connecting to the read replica: %w", err)
+		}
+		defer readPool.Close()
+		reader = readPool
+		log.Info("dashboard reads are served from a replica")
+	}
+
 	uow, err := dashboardpg.NewUnitOfWork(pool)
 	if err != nil {
 		return err
 	}
 
 	svc, err := app.NewService(
-		dashboardpg.NewRepository(pool),
+		dashboardpg.NewRepositoryWithReader(pool, reader),
 		dashboardpg.NewStateRepository(pool),
 		uow, time.Now)
 	if err != nil {

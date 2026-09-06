@@ -14,11 +14,35 @@ import (
 )
 
 // Repository memenuhi domain.Repository.
+//
+// Dua sambungan: db untuk menulis dan reader untuk membaca. Read-model
+// dasbor adalah tabel yang paling sering dibaca dan paling jarang ditulis di
+// seluruh sistem, jadi ia kandidat pertama untuk replika baca (F9-32).
+// Proyeksi (ApplyAssessment, ApplyProgram, Forget) SELALU ke db: menulis ke
+// replika mustahil, dan membaca lalu menulis lintas sambungan akan membuat
+// penjaga urutan membandingkan dengan keadaan yang tertinggal.
 type Repository struct {
-	db pg.Querier
+	db     pg.Querier
+	reader pg.Querier
 }
 
-func NewRepository(db pg.Querier) *Repository { return &Repository{db: db} }
+// NewRepository membaca dan menulis lewat satu sambungan.
+func NewRepository(db pg.Querier) *Repository { return &Repository{db: db, reader: db} }
+
+// NewRepositoryWithReader membaca lewat reader (replika) dan menulis lewat
+// db (primer).
+//
+// Pembacaan dari replika boleh tertinggal beberapa ratus milidetik di
+// belakang primer - lag-nya diukur dan dinyatakan di docs/db-connections.md.
+// Untuk dasbor itu dapat diterima: proyeksinya sendiri sudah tertinggal
+// ratusan milidetik di belakang event (F7), dan klien tidak pernah dijanjikan
+// pembacaan seketika setelah penulisan.
+func NewRepositoryWithReader(db, reader pg.Querier) *Repository {
+	if reader == nil {
+		reader = db
+	}
+	return &Repository{db: db, reader: reader}
+}
 
 var _ domain.Repository = (*Repository)(nil)
 
@@ -46,7 +70,7 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 		completion                *float64
 	)
 
-	err := r.db.QueryRow(ctx, q, userID.String()).Scan(
+	err := r.reader.QueryRow(ctx, q, userID.String()).Scan(
 		&programSlug, &programTitle, &programStatus,
 		&currentDay, &totalDays, &completion,
 		&dash.ProjectedAt,
@@ -99,7 +123,7 @@ func (r *Repository) history(ctx context.Context, userID domain.UserID) ([]*doma
 		WHERE user_id = $1
 		ORDER BY assessed_at DESC, slug DESC`
 
-	rows, err := r.db.Query(ctx, q, userID.String())
+	rows, err := r.reader.Query(ctx, q, userID.String())
 	if err != nil {
 		return nil, fmt.Errorf("querying the assessment history: %w", err)
 	}
