@@ -186,3 +186,29 @@ Pemulihannya sama dengan "memutarnya kembali" di Gejala 2.
 | `GEMINI_API_KEY` | ya bila `LLM_PROVIDER=gemini` | Worker menolak start |
 | `GEMINI_MODEL` | tidak | Bawaan `gemini-2.5-flash-lite` |
 | `LLM_TIMEOUT` | tidak | Detik, per percobaan. Bawaan 120 |
+
+## Siapa yang terdampak bila ia mati (F9-15)
+
+Tidak ada permintaan HTTP yang gagal: setiap endpoint yang mengantre
+pekerjaan LLM menjawab 202 tanpa menunggu worker (dibuktikan chaos F9-14
+dengan penyedia yang ditahan 15 detik: seluruh alur HTTP 295 ms). Yang
+terdampak adalah **hasilnya**: personalisasi, kurikulum, balasan thread dan
+chat, panduan menu — semuanya tetap `pending` sampai worker kembali, lalu
+dikerjakan berurutan dari offset yang belum dikomit. Lag di panel Grafana
+"Lag konsumen llm-worker per partisi" adalah angka yang menunjukkannya, dan
+sinyal yang sama yang dipakai KEDA untuk menambah replika (ADR-014).
+
+## Melatih kegagalannya tanpa Gemini (F9-14)
+
+`LLM_FAKE_FAULT` pada penyedia `fake`: `slow=<durasi>` menahan setiap
+jawaban, `flaky=<n>` menggagalkan n panggilan pertama, `error` menggagalkan
+semuanya. `bash test/chaos/llm.sh` memainkan ketiganya dan hasilnya dicatat
+di `test/chaos/llm.md`: percobaan ulang lalu selesai; `dead` setelah tiga
+percobaan dengan penilaian ditandai `failed`; dan 202 yang tetap seketika.
+
+## Membaca satu pekerjaan di Tempo (F9-07)
+
+Satu trace permintaan pengguna memuat span worker sebagai anaknya:
+`llm.jobs process` (klaim sampai simpan) dan di dalamnya `llm.generate`
+(panggilan penyedia). Dengan Gemini, `llm.generate` adalah bagian terlama
+dari trace mana pun; `docs/observability.md` menunjukkan pohonnya.
