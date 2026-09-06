@@ -11,10 +11,14 @@ import (
 // DefaultUpstreamTimeout adalah batas waktu satu panggilan ke service lain
 // bila pemanggilnya tidak menetapkan sendiri.
 //
-// Sepuluh detik: jauh di atas RPC terlama yang pernah diukur (Register dengan
-// argon2id, p99 di bawah setengah detik; laporan kinerja F9-10), dan jauh di
-// bawah batas yang membuat pengguna menganggap aplikasinya mati.
-const DefaultUpstreamTimeout = 10 * time.Second
+// Lima detik: sepuluh kali RPC terlama yang pernah diukur (Register dengan
+// argon2id, p99 di bawah setengah detik; laporan kinerja F9-10), dan masih
+// di bawah batas yang membuat pengguna menganggap aplikasinya mati. Chaos
+// F9-13 dengan sepuluh detik menunjukkan panggilan PERTAMA ke service yang
+// baru mati menunggu penuh sampai tenggat - klien gRPC masih mencoba
+// menyambung - jadi angka ini adalah berapa lama pengguna pertama menunggu
+// sebelum 504, dan sepuluh terlalu lama untuk itu.
+const DefaultUpstreamTimeout = 5 * time.Second
 
 // WithUpstreamDeadline membatasi setiap panggilan unary yang belum punya
 // batas waktu.
