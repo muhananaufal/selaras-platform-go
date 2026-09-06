@@ -1,0 +1,211 @@
+package telemetry_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
+)
+
+// spanContext memberi ctx yang membawa span aktif.
+func spanContext(t *testing.T) (context.Context, string) {
+	t.Helper()
+
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(tracetest.NewNoopExporter()))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutting down the test provider: %v", err)
+		}
+	})
+
+	ctx, span := provider.Tracer("test").Start(context.Background(), "request")
+	t.Cleanup(func() { span.End() })
+	return ctx, span.SpanContext().TraceID().String()
+}
+
+func decode(t *testing.T, line string) map[string]any {
+	t.Helper()
+	var record map[string]any
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatalf("the log line is not JSON: %v\n%s", err, line)
+	}
+	return record
+}
+
+func TestWithTraceContextAddsIdsOnlyWhenASpanIsActive(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(&buf, nil)))
+	ctx, traceID := spanContext(t)
+
+	log.InfoContext(ctx, "inside the request")
+	log.Info("outside any request")
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("wrote %d lines, want 2", len(lines))
+	}
+
+	inside := decode(t, lines[0])
+	if got := inside["trace_id"]; got != traceID {
+		t.Errorf("trace_id = %v, want %s", got, traceID)
+	}
+	if got, ok := inside["span_id"].(string); !ok || len(got) != 16 {
+		t.Errorf("span_id = %v, want a 16-hex-digit id", inside["span_id"])
+	}
+
+	outside := decode(t, lines[1])
+	if _, has := outside["trace_id"]; has {
+		t.Errorf("a record written without a span must not carry a trace_id: %s", lines[1])
+	}
+}
+
+func TestWithTraceContextSurvivesDerivedLoggers(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(&buf, nil)))
+	ctx, traceID := spanContext(t)
+
+	// log.With dan WithGroup adalah bentuk yang dipakai hampir semua unit;
+	// keduanya harus tetap membawa bidang trace.
+	log.With("service", "identity").WithGroup("saga").InfoContext(ctx, "confirmed", "id", "s-1")
+
+	record := decode(t, strings.TrimSpace(buf.String()))
+	if got := record["trace_id"]; got != traceID {
+		t.Errorf("trace_id = %v after With/WithGroup, want %s", got, traceID)
+	}
+	if got := record["service"]; got != "identity" {
+		t.Errorf("service = %v, the wrapped attributes were lost", got)
+	}
+}
+
+func TestWithTraceContextHandlesNilAndDoubleWrapping(t *testing.T) {
+	if got := telemetry.WithTraceContext(nil); got != nil {
+		t.Errorf("wrapping nil should give nil, got %T", got)
+	}
+
+	inner := slog.NewJSONHandler(&bytes.Buffer{}, nil)
+	once := telemetry.WithTraceContext(inner)
+	if twice := telemetry.WithTraceContext(once); twice != once {
+		t.Error("wrapping twice should not stack handlers; every record would carry duplicate ids")
+	}
+}
+
+func TestStartWithoutAnEndpointKeepsTracingOffButPropagating(t *testing.T) {
+	t.Setenv(telemetry.EndpointVariable, "")
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	tel, err := telemetry.Start(context.Background(), "test-svc", log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := tel.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+	})
+
+	if !strings.Contains(buf.String(), "tracing is off") {
+		t.Errorf("the log must say tracing is off, got:\n%s", buf.String())
+	}
+
+	// Propagator W3C tetap terpasang, sehingga traceparent yang datang tetap
+	// diteruskan walau proses ini tidak merekam.
+	fields := otel.GetTextMapPropagator().Fields()
+	var hasTraceParent bool
+	for _, f := range fields {
+		if f == "traceparent" {
+			hasTraceParent = true
+		}
+	}
+	if !hasTraceParent {
+		t.Errorf("the global propagator does not carry traceparent: %v", fields)
+	}
+
+	// Metrik tetap ada tanpa collector.
+	if tel.Meter() == nil || tel.Handler() == nil {
+		t.Error("metrics must be available even when tracing is off")
+	}
+}
+
+func TestStartWithAnEndpointInstallsARecordingProvider(t *testing.T) {
+	// Alamat yang tidak ada: exporter menyambung malas, jadi Start tetap
+	// berhasil dan kegagalan baru muncul saat mengekspor - persis perilaku
+	// yang diinginkan saat collector belum menyala.
+	t.Setenv(telemetry.EndpointVariable, "http://127.0.0.1:1")
+
+	previous := otel.GetTracerProvider()
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	tel, err := telemetry.Start(context.Background(), "test-svc", log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, isSDK := otel.GetTracerProvider().(*sdktrace.TracerProvider); !isSDK {
+		t.Errorf("the global tracer provider is %T, want the SDK provider", otel.GetTracerProvider())
+	}
+	if !strings.Contains(buf.String(), "tracing is on") {
+		t.Errorf("the log must say tracing is on, got:\n%s", buf.String())
+	}
+
+	// Span yang dibuat lewat provider global harus valid - itu bukti
+	// providernya benar-benar merekam, bukan tanpa-operasi.
+	_, span := otel.Tracer("test").Start(context.Background(), "probe")
+	if !span.SpanContext().IsValid() {
+		t.Error("spans from the installed provider are not valid; tracing is effectively off")
+	}
+	span.End()
+
+	// Shutdown mencoba mengekspor ke alamat yang tidak ada dan berhak gagal;
+	// yang dijaga hanyalah ia menghormati batas waktunya dan tidak
+	// menggantung. Setiap main membungkusnya dengan masa tenggang shutdown.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := tel.Shutdown(ctx); err != nil {
+		t.Logf("shutdown reported (expected with no collector): %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Errorf("shutdown took %s; it must give up at the deadline", elapsed)
+	}
+}
+
+// Kompilasi menjamin propagator yang dipasang bertipe komposit W3C; test ini
+// memastikan Baggage ikut terpasang, karena atribut lintas unit
+// (misalnya id pengguna untuk log) bergantung padanya.
+func TestStartInstallsBaggagePropagation(t *testing.T) {
+	t.Setenv(telemetry.EndpointVariable, "")
+	tel, err := telemetry.Start(context.Background(), "test-svc", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := tel.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+	})
+
+	var hasBaggage bool
+	for _, f := range otel.GetTextMapPropagator().Fields() {
+		if f == (propagation.Baggage{}).Fields()[0] {
+			hasBaggage = true
+		}
+	}
+	if !hasBaggage {
+		t.Error("baggage propagation is not installed")
+	}
+}

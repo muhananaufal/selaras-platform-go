@@ -44,6 +44,13 @@ type Envelope struct {
 	// Versi skema payload. Konsumen menolak versi yang tidak dikenalnya
 	// alih-alih menafsirkannya sembarangan.
 	SchemaVersion int32 `protobuf:"varint,6,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	// Konteks trace W3C (`traceparent`) dari transaksi yang menulis event ini.
+	//
+	// trace_id saja tidak cukup untuk menyambung: konsumen butuh span induk
+	// dan flag sampling supaya span-nya menjadi anak dari permintaan yang
+	// melahirkannya, bukan trace baru yang kebetulan berbagi id. Diisi oleh
+	// penulis outbox; kosong berarti event lahir tanpa trace aktif.
+	TraceParent *string `protobuf:"bytes,7,opt,name=trace_parent,json=traceParent,proto3,oneof" json:"trace_parent,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*Envelope_ProfileUpdated
@@ -135,6 +142,13 @@ func (x *Envelope) GetSchemaVersion() int32 {
 		return x.SchemaVersion
 	}
 	return 0
+}
+
+func (x *Envelope) GetTraceParent() string {
+	if x != nil && x.TraceParent != nil {
+		return *x.TraceParent
+	}
+	return ""
 }
 
 func (x *Envelope) GetPayload() isEnvelope_Payload {
@@ -1408,7 +1422,7 @@ var File_events_v1_events_proto protoreflect.FileDescriptor
 
 const file_events_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x16common/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x80\f\n" +
+	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x16common/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb9\f\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12;\n" +
 	"\voccurred_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -1416,7 +1430,8 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\bidentity\x18\x03 \x01(\v2\x13.common.v1.IdentityR\bidentity\x12G\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\v2\x19.common.v1.IdempotencyKeyH\x01R\x0eidempotencyKey\x88\x01\x01\x12\x1e\n" +
 	"\btrace_id\x18\x05 \x01(\tH\x02R\atraceId\x88\x01\x01\x12%\n" +
-	"\x0eschema_version\x18\x06 \x01(\x05R\rschemaVersion\x12D\n" +
+	"\x0eschema_version\x18\x06 \x01(\x05R\rschemaVersion\x12&\n" +
+	"\ftrace_parent\x18\a \x01(\tH\x03R\vtraceParent\x88\x01\x01\x12D\n" +
 	"\x0fprofile_updated\x18\n" +
 	" \x01(\v2\x19.events.v1.ProfileUpdatedH\x00R\x0eprofileUpdated\x12S\n" +
 	"\x14assessment_completed\x18\v \x01(\v2\x1e.events.v1.AssessmentCompletedH\x00R\x13assessmentCompleted\x12b\n" +
@@ -1434,7 +1449,8 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x0ellm_job_failed\x18\x17 \x01(\v2\x17.events.v1.LlmJobFailedH\x00R\fllmJobFailedB\t\n" +
 	"\apayloadB\x12\n" +
 	"\x10_idempotency_keyB\v\n" +
-	"\t_trace_id\"\x8a\x02\n" +
+	"\t_trace_idB\x0f\n" +
+	"\r_trace_parent\"\x8a\x02\n" +
 	"\x0eProfileUpdated\x12&\n" +
 	"\x0fuser_profile_id\x18\x01 \x01(\tR\ruserProfileId\x12'\n" +
 	"\rdate_of_birth\x18\x02 \x01(\tH\x00R\vdateOfBirth\x88\x01\x01\x12\x10\n" +

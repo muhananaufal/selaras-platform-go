@@ -30,6 +30,14 @@ message Envelope {
   // alih-alih menafsirkannya sembarangan.
   int32 schema_version = 6;
 
+  // Konteks trace W3C (`traceparent`) dari transaksi yang menulis event ini.
+  //
+  // trace_id saja tidak cukup untuk menyambung: konsumen butuh span induk
+  // dan flag sampling supaya span-nya menjadi anak dari permintaan yang
+  // melahirkannya, bukan trace baru yang kebetulan berbagi id. Diisi oleh
+  // penulis outbox; kosong berarti event lahir tanpa trace aktif.
+  optional string trace_parent = 7;
+
   oneof payload {
     ProfileUpdated profile_updated = 10;
     AssessmentCompleted assessment_completed = 11;
