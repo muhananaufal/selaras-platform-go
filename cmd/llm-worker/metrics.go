@@ -50,14 +50,21 @@ func startMetrics(
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", tel.Handler())
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	ready := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("ok")); err != nil {
 			// Klien yang pergi di tengah jawaban bukan kerusakan, tetapi
 			// probe yang selalu putus adalah gejala - jadi ia dicatat.
 			log.Warn("writing the health response", "error", err)
 		}
-	})
+	}
+	mux.HandleFunc("/healthz", ready)
+	// /readyz sama dengan /healthz: startMetrics dipanggil setelah broker
+	// di-ping dan konsumen dirakit, jadi endpoint ini ada berarti worker siap
+	// mengonsumsi. Chart (F9-03) memeriksa /readyz di setiap unit; tanpa ini
+	// startup probe llm-worker gagal 404 dan KEDA membangunkan pod yang
+	// tidak pernah dinyatakan hidup - itu terjadi di k3d.
+	mux.HandleFunc("/readyz", ready)
 
 	server := &http.Server{
 		Addr:              addr,

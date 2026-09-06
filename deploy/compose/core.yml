@@ -119,6 +119,10 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       # Heap ditahan rendah: WSL dibatasi 8GB untuk SELURUH Docker.
       KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      # Tanpa ini image apache/kafka menulis log ke /tmp di dalam container,
+      # bukan ke volume kafka-data: container yang dibuat ulang (bukan sekadar
+      # restart) kehilangan seluruh topic. Ditemukan di k3d (F9-04).
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     ports:
       - "127.0.0.1:19092:19092"
     volumes:
