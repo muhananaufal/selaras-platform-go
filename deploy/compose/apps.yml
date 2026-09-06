@@ -38,6 +38,13 @@ services:
 
       IDENTITY_GRPC_ADDR: ":9101"
       IDENTITY_HEALTH_ADDR: ":9102"
+
+      # Alamat collector OTLP. KOSONG berarti trace tidak dikirim - dan itu
+      # dinyatakan di log saat start, bukan gagal diam-diam. Diisi oleh
+      # `task up:full`, yang juga menyalakan collectornya; tanpa collector,
+      # alamat yang terisi hanya menghasilkan galat ekspor setiap beberapa
+      # detik di setiap unit.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
     ports:
       - "127.0.0.1:19101:9101"
       - "127.0.0.1:19102:9102"
@@ -76,6 +83,7 @@ services:
       # dan cache di assessment-svc tidak pernah terisi (F2-16).
       KAFKA_BROKERS: kafka:9092
       PROFILE_HEALTH_ADDR: ":9202"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
     ports:
       - "127.0.0.1:19201:9201"
       - "127.0.0.1:19202:9202"
@@ -102,6 +110,7 @@ services:
       PROFILE_GRPC_TARGET: profile-svc:9201
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       # Tanpa ini, permintaan personalisasi DITOLAK alih-alih diterima lalu
       # hilang - lihat startEventing di cmd/assessment-svc.
       KAFKA_BROKERS: kafka:9092
@@ -132,6 +141,7 @@ services:
         postgres://svc_chat:${SVC_CHAT_PASSWORD:?set SVC_CHAT_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=chat
       CHAT_GRPC_ADDR: ":9501"
       CHAT_HEALTH_ADDR: ":9503"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "127.0.0.1:19501:9501"
@@ -160,6 +170,7 @@ services:
         postgres://svc_nutrition:${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=nutrition
       NUTRITION_GRPC_ADDR: ":9601"
       NUTRITION_HEALTH_ADDR: ":9603"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "127.0.0.1:19601:9601"
@@ -188,6 +199,7 @@ services:
         postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       DASHBOARD_GRPC_ADDR: ":9701"
       DASHBOARD_HEALTH_ADDR: ":9703"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "127.0.0.1:19701:9701"
@@ -216,6 +228,7 @@ services:
         postgres://svc_coaching:${SVC_COACHING_PASSWORD:?set SVC_COACHING_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=coaching
       COACHING_GRPC_ADDR: ":9401"
       COACHING_HEALTH_ADDR: ":9403"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "127.0.0.1:19401:9401"
@@ -250,6 +263,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       METRICS_ADDR: ":9402"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
     ports:
       - "127.0.0.1:19402:9402"
     depends_on:
@@ -290,6 +304,9 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-}
       ASSESSMENT_GRPC_TARGET: assessment-svc:9301
       EDGE_HTTP_ADDR: ":8080"
+      # Metrik dan probe di port terpisah dari API publik.
+      EDGE_ADMIN_ADDR: ":8081"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
 
       # Batas laju DINAIKKAN di lingkungan pengembangan, bukan dimatikan.
       #
@@ -304,6 +321,7 @@ services:
       RATE_LIMIT_LLM_REQUESTS: ${RATE_LIMIT_LLM_REQUESTS:-500}
     ports:
       - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18081:8081"
     depends_on:
       redis:
         condition: service_healthy

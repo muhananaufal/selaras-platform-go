@@ -1,0 +1,39 @@
+# Prometheus menarik metrik dari port probe/admin setiap unit.
+#
+# Target statis, bukan penemuan otomatis: di compose, nama service adalah
+# nama host, dan daftar unitnya tetap. Di klaster, daftar ini digantikan
+# oleh ServiceMonitor (F9-06 sisi k8s).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: selaras
+    static_configs:
+      - targets: ["edge-gateway:8081"]
+        labels: { unit: edge-gateway }
+      - targets: ["identity-svc:9102"]
+        labels: { unit: identity-svc }
+      - targets: ["profile-svc:9202"]
+        labels: { unit: profile-svc }
+      - targets: ["assessment-svc:9302"]
+        labels: { unit: assessment-svc }
+      - targets: ["coaching-svc:9403"]
+        labels: { unit: coaching-svc }
+      - targets: ["chat-svc:9503"]
+        labels: { unit: chat-svc }
+      - targets: ["nutrition-svc:9603"]
+        labels: { unit: nutrition-svc }
+      - targets: ["dashboard-svc:9703"]
+        labels: { unit: dashboard-svc }
+      - targets: ["llm-worker:9402"]
+        labels: { unit: llm-worker }
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

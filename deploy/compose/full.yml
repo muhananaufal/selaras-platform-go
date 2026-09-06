@@ -1,5 +1,5 @@
 # Lapisan observability. Dipakai BERSAMA core.yml, bukan menggantikannya:
-#   docker compose -f core.yml -f full.yml up -d
+#   task up:full  (core.yml + apps.yml + full.yml, dengan alamat collector diisi)
 #
 # Dipisah karena WSL punya plafon memori dan sebagian besar pekerjaan
 # sehari-hari tidak membutuhkannya (R4). Konfigurasi tiap komponen diisi
@@ -61,6 +61,27 @@ services:
         limits:
           memory: 384M
 
+  alloy:
+    image: grafana/alloy:v1.19.2
+    container_name: selaras-alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      # Socket daemon, hanya baca: Alloy membaca log container lewat API
+      # Docker. Ini berarti Alloy bisa melihat SEMUA container di daemon ini,
+      # dan itulah alasan konfigurasinya menyaring ke proyek ini saja.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on: [loki]
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
   grafana:
     image: grafana/grafana:13.2.1
     container_name: selaras-grafana
@@ -70,6 +91,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/ds.yaml:ro
+      - ./observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/selaras.yaml:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:13000:3000"
@@ -81,6 +104,7 @@ services:
 
 volumes:
   prometheus-data:
+  alloy-data:
   tempo-data:
   loki-data:
   grafana-data:

@@ -1,0 +1,45 @@
+// Grafana Alloy - mengirim log container ke Loki.
+//
+// Ia membaca stdout setiap container lewat socket Docker, jadi unit tidak
+// perlu tahu Loki ada. Label yang dipasang: `service` dari nama service
+// compose dan `container` dari nama container - keduanya yang dipakai
+// Grafana untuk melompat dari span ke log unitnya.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  // Hanya container proyek ini. Mesin ini menjalankan proyek lain juga, dan
+  // log mereka bukan urusan stack ini.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "selaras-core"
+    action        = "keep"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
