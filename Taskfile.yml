@@ -150,9 +150,13 @@ tasks:
       - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} up -d"
 
   up:full:
-    desc: Start everything including the observability stack
+    desc: Start everything including the application units and the observability stack
+    # OTEL_COLLECTOR_ENDPOINT diisi di sini, bukan di .env: alamat ini hanya
+    # berlaku bila collectornya ikut menyala, dan profil inilah yang
+    # menyalakannya. Tanpa collector, alamat yang terisi hanya menghasilkan
+    # galat ekspor di setiap unit.
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_FULL}} up -d"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4317 docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} -f {{.COMPOSE_FULL}} up -d --build"
 
   down:
     desc: Stop local dependencies
@@ -183,6 +187,16 @@ tasks:
       - task: proto:lint
       - task: openapi:lint
       - task: test
+
+  k6:
+    desc: "Run a k6 scenario against the local stack. Usage: task k6 -- read (or write, mixed)"
+    # k6 berjalan sebagai container di jaringan compose, bukan dipasang di
+    # host: satu versi yang sama untuk semua orang, dan ia memanggil gateway
+    # lewat nama service - jalur yang sama dengan unit lain.
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker run --rm --network selaras-core_default -v {{.PROJECT_WSL}}/test/k6:/k6:ro -e BASE_URL=http://edge-gateway:8080 grafana/k6:1.8.1 run /k6/scenarios/{{.CLI_ARGS}}.js"
 
   topics:
     desc: Create the platform's Kafka topics, then read them back from the broker

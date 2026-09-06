@@ -1,0 +1,118 @@
+{
+  "uid": "selaras-overview",
+  "title": "Selaras — ikhtisar platform",
+  "description": "Latensi, tingkat galat, lag konsumen, dan durasi job LLM (F9-08). Metriknya disebutkan di docs/observability.md.",
+  "tags": ["selaras"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "15s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Latensi HTTP per rute (p95)",
+      "description": "histogram_quantile atas http_server_request_duration_seconds dari edge-gateway. p50 dan p99 ada di panel berikutnya supaya skala p95 tidak tenggelam.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "p95",
+          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{http_route}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Latensi HTTP seluruh rute (p50 / p95 / p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "p50", "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
+        { "refId": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "refId": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Tingkat galat HTTP per rute (5xx / seluruh)",
+      "description": "4xx sengaja tidak dihitung galat: penolakan validasi dan 401 adalah jawaban yang benar, bukan kegagalan sistem.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "err",
+          "expr": "sum by (http_route) (rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\"}[5m])) / sum by (http_route) (rate(http_server_request_duration_seconds_count[5m]))",
+          "legendFormat": "{{http_route}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "gRPC: galat per detik per RPC (status bukan OK)",
+      "description": "Dari rpc_server_call_duration_seconds di tujuh service. NotFound dan InvalidArgument ikut terhitung - di sini yang dicari adalah perubahan bentuknya, bukan angka nolnya.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "rpcerr",
+          "expr": "sum by (rpc_method, rpc_response_status_code) (rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!=\"OK\"}[5m]))",
+          "legendFormat": "{{rpc_method}} {{rpc_response_status_code}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Lag konsumen llm-worker per partisi",
+      "description": "kafka_consumer_lag (F3-15). Ini sinyal yang dipakai KEDA untuk scaling (ADR-014): lag naik dengan job gagal ikut naik berarti penyedianya bermasalah; lag naik tanpa job berarti worker tidak menyala.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "refId": "lag", "expr": "kafka_consumer_lag", "legendFormat": "{{topic}} p{{partition}}" },
+        { "refId": "total", "expr": "sum(kafka_consumer_lag)", "legendFormat": "total" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Job LLM: durasi p95 dan laju per hasil",
+      "description": "llm_job_duration_seconds dan llm_jobs_total. Dengan penyedia fake durasinya milidetik; dengan Gemini, panel inilah yang menunjukkan biaya sebenarnya per job.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "laju.*" }, "properties": [{ "id": "unit", "value": "ops" }, { "id": "custom.axisPlacement", "value": "right" }] }
+        ]
+      },
+      "targets": [
+        { "refId": "dur", "expr": "histogram_quantile(0.95, sum by (le, outcome) (rate(llm_job_duration_seconds_bucket[5m])))", "legendFormat": "p95 {{outcome}}" },
+        { "refId": "rate", "expr": "sum by (outcome) (rate(llm_jobs_total[5m]))", "legendFormat": "laju {{outcome}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Throughput HTTP per rute",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "rps", "expr": "sum by (http_route, http_request_method) (rate(http_server_request_duration_seconds_count[1m]))", "legendFormat": "{{http_request_method}} {{http_route}}" }
+      ]
+    }
+  ]
+}

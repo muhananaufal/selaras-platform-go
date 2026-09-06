@@ -1,0 +1,14 @@
+# Penyedia dashboard Grafana dari berkas. Dashboard-nya sendiri ada di
+# deploy/grafana/dashboards/ - di luar direktori compose, karena berkas yang
+# sama dipakai lagi oleh ConfigMap di klaster.
+
+apiVersion: 1
+
+providers:
+  - name: selaras
+    folder: Selaras
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

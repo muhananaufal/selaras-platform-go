@@ -1,0 +1,50 @@
+# Sumber data Grafana, disediakan dari berkas supaya tidak ada langkah klik
+# yang harus diulang setiap kali volume-nya dibuang.
+#
+# Tiga tautan silang yang membuat ketiganya berguna bersama:
+#   - Loki: bidang trace_id di log menjadi tautan ke Tempo.
+#   - Tempo: satu span bisa dibawa ke log unitnya lewat label service.
+#   - Tempo: metrik span dan graf service dihitung dari Prometheus.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: Buka trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        tags:
+          - key: service.name
+            value: service
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
