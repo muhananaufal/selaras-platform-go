@@ -17,8 +17,11 @@ services:
     environment:
       # Nama host berasal dari jaringan compose, bukan localhost: di dalam
       # container, localhost adalah container itu sendiri.
+      # Seluruh unit menyambung lewat PgBouncer (F9-27), bukan langsung ke
+      # Postgres: angka koneksinya di docs/db-connections.md. search_path di
+      # DSN diabaikan PgBouncer; yang berlaku adalah bawaan peran dari initdb.
       IDENTITY_DATABASE_DSN: >-
-        postgres://svc_identity:${SVC_IDENTITY_PASSWORD:?set SVC_IDENTITY_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=identity
+        postgres://svc_identity:${SVC_IDENTITY_PASSWORD:?set SVC_IDENTITY_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=identity
       REDIS_URL: redis://redis:6379/0
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-3600}
@@ -55,6 +58,8 @@ services:
       - "127.0.0.1:19101:9101"
       - "127.0.0.1:19102:9102"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -83,7 +88,7 @@ services:
     container_name: selaras-profile
     environment:
       PROFILE_DATABASE_DSN: >-
-        postgres://svc_profile:${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=profile
+        postgres://svc_profile:${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=profile
       PROFILE_GRPC_ADDR: ":9201"
       # Tanpa ini, event profile.updated menumpuk di outbox tanpa terkirim,
       # dan cache di assessment-svc tidak pernah terisi (F2-16).
@@ -94,6 +99,8 @@ services:
       - "127.0.0.1:19201:9201"
       - "127.0.0.1:19202:9202"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     healthcheck:
@@ -112,7 +119,7 @@ services:
     container_name: selaras-assessment
     environment:
       ASSESSMENT_DATABASE_DSN: >-
-        postgres://svc_assessment:${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=assessment
+        postgres://svc_assessment:${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=assessment
       PROFILE_GRPC_TARGET: profile-svc:9201
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
@@ -124,6 +131,8 @@ services:
       - "127.0.0.1:19301:9301"
       - "127.0.0.1:19302:9302"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -144,7 +153,7 @@ services:
     container_name: selaras-chat
     environment:
       CHAT_DATABASE_DSN: >-
-        postgres://svc_chat:${SVC_CHAT_PASSWORD:?set SVC_CHAT_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=chat
+        postgres://svc_chat:${SVC_CHAT_PASSWORD:?set SVC_CHAT_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=chat
       CHAT_GRPC_ADDR: ":9501"
       CHAT_HEALTH_ADDR: ":9503"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -153,6 +162,8 @@ services:
       - "127.0.0.1:19501:9501"
       - "127.0.0.1:19503:9503"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -173,7 +184,7 @@ services:
     container_name: selaras-nutrition
     environment:
       NUTRITION_DATABASE_DSN: >-
-        postgres://svc_nutrition:${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=nutrition
+        postgres://svc_nutrition:${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=nutrition
       NUTRITION_GRPC_ADDR: ":9601"
       NUTRITION_HEALTH_ADDR: ":9603"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -182,6 +193,8 @@ services:
       - "127.0.0.1:19601:9601"
       - "127.0.0.1:19603:9603"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -202,7 +215,7 @@ services:
     container_name: selaras-dashboard
     environment:
       DASHBOARD_DATABASE_DSN: >-
-        postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
+        postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       DASHBOARD_GRPC_ADDR: ":9701"
       DASHBOARD_HEALTH_ADDR: ":9703"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -211,6 +224,8 @@ services:
       - "127.0.0.1:19701:9701"
       - "127.0.0.1:19703:9703"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -231,7 +246,7 @@ services:
     container_name: selaras-coaching
     environment:
       COACHING_DATABASE_DSN: >-
-        postgres://svc_coaching:${SVC_COACHING_PASSWORD:?set SVC_COACHING_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=coaching
+        postgres://svc_coaching:${SVC_COACHING_PASSWORD:?set SVC_COACHING_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=coaching
       COACHING_GRPC_ADDR: ":9401"
       COACHING_HEALTH_ADDR: ":9403"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -240,6 +255,8 @@ services:
       - "127.0.0.1:19401:9401"
       - "127.0.0.1:19403:9403"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -260,7 +277,7 @@ services:
     container_name: selaras-llm-worker
     environment:
       LLM_POSTGRES_DSN: >-
-        postgres://svc_llm:${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=llm
+        postgres://svc_llm:${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=llm
       KAFKA_BROKERS: kafka:9092
       # Mode fake HARUS diminta eksplisit. Nilai bawaan yang jatuh ke fake
       # berarti ada keadaan di mana pengguna dijawab teks yang dibuat-buat
@@ -276,6 +293,8 @@ services:
     ports:
       - "127.0.0.1:19402:9402"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:

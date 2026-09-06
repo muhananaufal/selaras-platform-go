@@ -78,6 +78,7 @@ export function completeProfile(token) {
     Object.assign(authHeaders(token), { tags: { name: "PATCH /profile" } }),
   );
   check(res, { "profile 200": (r) => r.status === 200 });
+  unexpected("PATCH /profile", res, 200);
   return res;
 }
 
@@ -105,12 +106,25 @@ export function startAssessment(token) {
     Object.assign(authHeaders(token), { tags: { name: "POST /risk-assessments" } }),
   );
   check(res, { "assessment 201": (r) => r.status === 201 });
+  unexpected("POST /risk-assessments", res, 201);
   return res;
+}
+
+// unexpected mencatat permintaan yang gagal beserta alasannya. Angka
+// kegagalan tanpa alasan tidak bisa diselidiki setelah larian selesai - dan
+// lima kegagalan dari enam ribu permintaan pernah lolos begitu saja.
+export function unexpected(name, res, want) {
+  if (res.status !== want) {
+    console.warn(
+      `${name}: status ${res.status} want ${want}; error=${res.error || "-"}; body=${String(res.body || "").slice(0, 200)}`,
+    );
+  }
 }
 
 export function get(token, path, name) {
   const res = http.get(url(path), Object.assign(authHeaders(token), { tags: { name } }));
   check(res, { [`${name} 200`]: (r) => r.status === 200 });
+  unexpected(name, res, 200);
   return res;
 }
 
@@ -121,6 +135,7 @@ export function patch(token, path, body, name) {
     Object.assign(authHeaders(token), { tags: { name } }),
   );
   check(res, { [`${name} 200`]: (r) => r.status === 200 });
+  unexpected(name, res, 200);
   return res;
 }
 

@@ -41,6 +41,56 @@ services:
         limits:
           memory: 512M
 
+  pgbouncer:
+    # PgBouncer di depan Postgres, mode transaksi (F9-27).
+    #
+    # Sembilan unit x kolam 10 x replika saat HPA aktif melampaui
+    # max_connections=100 Postgres jauh sebelum bebannya berarti - angkanya di
+    # docs/db-connections.md. PgBouncer memberi setiap (peran, basis data)
+    # kolam server kecil dan membiarkan klien membuka sebanyak yang ia mau.
+    #
+    # Peran per-service dan isolasi skema (ADR-006) TETAP: klien menyambung
+    # sebagai svc_<skema> dan PgBouncer memverifikasi kata sandinya lewat
+    # auth_query ke Postgres memakai auth_user - tidak ada daftar kata sandi
+    # kedua yang bisa menyimpang.
+    image: edoburu/pgbouncer:v1.25.2-p0
+    restart: unless-stopped
+    container_name: selaras-pgbouncer
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: "*"
+      DB_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      AUTH_TYPE: scram-sha-256
+      AUTH_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 8
+      # search_path dikirim pgx sebagai parameter startup; PgBouncer menolak
+      # yang tidak dikenalnya. Diabaikan di sini, dan itu aman: setiap peran
+      # svc_* punya search_path bawaan dari initdb (ALTER ROLE ... SET).
+      IGNORE_STARTUP_PARAMETERS: search_path
+      # pgx memakai prepared statement; mode transaksi hanya mendukungnya bila
+      # PgBouncer melacaknya sendiri (1.21+).
+      MAX_PREPARED_STATEMENTS: 200
+      # Konsol admin (SHOW POOLS, SHOW STATS) untuk pengukuran F9-26/27.
+      STATS_USERS: ${POSTGRES_USER:?set POSTGRES_USER}
+    ports:
+      - "127.0.0.1:16432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $$AUTH_USER"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
   kafka:
     image: apache/kafka:4.3.1
     restart: unless-stopped
