@@ -255,3 +255,50 @@ func TestTheFakeMatchesTheShapeItsPromptAsksFor(t *testing.T) {
 		}
 	}
 }
+
+// Dua mode gangguan untuk chaos F9-14. Keduanya milik penyedia palsu supaya
+// "Gemini lambat" dan "Gemini gagal" bisa dimainkan tanpa Gemini.
+
+func TestTheFakeCanBeSlowAndStillHonoursCancellation(t *testing.T) {
+	fake := llm.NewFake()
+	fake.Delay = 2 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	_, err := fake.Generate(ctx, request())
+	if err == nil {
+		t.Fatal("a slow fake must give up when the context expires, not answer after it")
+	}
+	if elapsed := time.Since(started); elapsed >= 2*time.Second {
+		t.Fatalf("the fake slept the full delay (%s) instead of stopping at cancellation", elapsed)
+	}
+
+	// Dengan waktu yang cukup, jawabannya datang - setelah jedanya.
+	fake.Delay = 50 * time.Millisecond
+	started = time.Now()
+	if _, err := fake.Generate(context.Background(), request()); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed < 50*time.Millisecond {
+		t.Fatalf("the answer came after %s, before the configured delay", elapsed)
+	}
+}
+
+func TestTheFakeCanFailTheFirstCalls(t *testing.T) {
+	fake := llm.NewFake()
+	fake.FailFirst = 2
+
+	for i := 1; i <= 2; i++ {
+		if _, err := fake.Generate(context.Background(), request()); err == nil {
+			t.Fatalf("call %d should have failed", i)
+		}
+	}
+	if _, err := fake.Generate(context.Background(), request()); err != nil {
+		t.Fatalf("call 3 should have succeeded, got: %v", err)
+	}
+	if got := fake.CallCount(); got != 3 {
+		t.Fatalf("failed calls must still be counted as calls, got %d", got)
+	}
+}

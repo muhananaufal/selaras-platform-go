@@ -38,6 +38,15 @@ type Fake struct {
 	// Model adalah nama yang dilaporkan sebagai penjawab.
 	Model string
 
+	// Delay menahan setiap jawaban selama durasi ini, dengan tetap menghormati
+	// pembatalan ctx. Mode "Gemini lambat" untuk chaos F9-14.
+	Delay time.Duration
+
+	// FailFirst membuat sekian panggilan pertama gagal, lalu selebihnya
+	// berhasil. Mode "Gemini sesekali gagal": yang diuji adalah jalur percobaan
+	// ulang worker, bukan sekadar jalur gagal.
+	FailFirst int
+
 	calls []Request
 }
 
@@ -64,11 +73,24 @@ func (f *Fake) Generate(ctx context.Context, req Request) (*Response, error) {
 
 	f.mu.Lock()
 	f.calls = append(f.calls, req)
+	call := len(f.calls)
 	err := f.Err
+	if err == nil && call <= f.FailFirst {
+		err = fmt.Errorf("fake provider fault: call %d of the first %d fails", call, f.FailFirst)
+	}
+	delay := f.Delay
 	answer := f.Answer
 	finish := f.FinishReason
 	model := f.Model
 	f.mu.Unlock()
+
+	if delay > 0 {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
 
 	if err != nil {
 		return nil, err

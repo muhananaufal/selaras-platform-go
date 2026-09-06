@@ -260,6 +260,9 @@ services:
       # berarti ada keadaan di mana pengguna dijawab teks yang dibuat-buat
       # tanpa ada yang tahu - lihat buildProvider di cmd/llm-worker.
       LLM_PROVIDER: ${LLM_PROVIDER:?set LLM_PROVIDER to gemini or fake}
+      # Gangguan penyedia palsu untuk chaos F9-14 (slow=<durasi>, flaky=<n>,
+      # error). Kosong berarti tidak ada gangguan; diisi oleh test/chaos/llm.sh.
+      LLM_FAKE_FAULT: ${LLM_FAKE_FAULT:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       METRICS_ADDR: ":9402"
