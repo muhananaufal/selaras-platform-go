@@ -16,6 +16,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Scope adalah ruang lingkup idempotensi konsumen ini.
@@ -149,7 +150,7 @@ func isMine(rec *kgo.Record) bool {
 }
 
 // handle memproses satu hasil.
-func (r *Results) handle(ctx context.Context, rec *kgo.Record) error {
+func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	// Disaring lebih dulu, sebelum apa pun dibongkar: pesan milik service lain
 	// bukan kegagalan, dan memperlakukannya sebagai kegagalan akan menahan
 	// offset dan menyumbat antrean untuk semua orang.
@@ -163,6 +164,11 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) error {
 			"offset", rec.Offset, "error", err)
 		return nil
 	}
+
+	// Span konsumen menjadi anak dari permintaan yang menulis event ini
+	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	defer func() { telemetry.End(span, err) }()
 
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_CurriculumCompleted:

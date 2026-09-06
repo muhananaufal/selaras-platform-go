@@ -83,6 +83,10 @@ func NewRouter(deps Deps) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
+	// Trace dibuka sebelum middleware lain, supaya penolakan oleh batas
+	// ukuran badan atau pembatasan laju pun tercatat sebagai bagian trace.
+	router.Use(middleware.Tracing("edge-gateway"))
+
 	// Batas ukuran badan dipasang GLOBAL, sebelum rute mana pun.
 	//
 	// Dipasang per rute, ia akan terlewat pada endpoint berikutnya yang

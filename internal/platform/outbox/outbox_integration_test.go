@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -172,5 +174,51 @@ func TestAnEventWithoutAnAggregateIsRefused(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("an event with no aggregate id was accepted")
+	}
+}
+
+// TestTheStoredEnvelopeCarriesTheWritingSpan menjaga jembatan trace lintas
+// broker (F9-05): konsumen hanya bisa menyambung ke permintaan asalnya bila
+// penulis outbox menyalin traceparent ke dalam envelope.
+func TestTheStoredEnvelopeCarriesTheWritingSpan(t *testing.T) {
+	pool, ctx := setup(t)
+	userID := uuid.New()
+
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(tracetest.NewNoopExporter()))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutting down the test provider: %v", err)
+		}
+	})
+	spanCtx, span := provider.Tracer("test").Start(ctx, "request")
+	defer span.End()
+
+	if err := pg.InTx(spanCtx, pool, func(q pg.Querier) error {
+		if err := insertUser(spanCtx, q, userID); err != nil {
+			return err
+		}
+		return outbox.NewWriter(q).Write(spanCtx, "user", userID.String(), envelope(t, userID.String()))
+	}); err != nil {
+		t.Fatalf("InTx: %v", err)
+	}
+
+	var payload []byte
+	if err := pool.QueryRow(ctx,
+		`SELECT payload FROM outbox WHERE aggregate_id = $1`, userID.String(),
+	).Scan(&payload); err != nil {
+		t.Fatalf("reading the row back: %v", err)
+	}
+	var back eventsv1.Envelope
+	if err := proto.Unmarshal(payload, &back); err != nil {
+		t.Fatalf("the stored bytes are not an envelope: %v", err)
+	}
+
+	wantTrace := span.SpanContext().TraceID().String()
+	if back.GetTraceId() != wantTrace {
+		t.Errorf("trace_id = %q, want %q", back.GetTraceId(), wantTrace)
+	}
+	wantParent := "00-" + wantTrace + "-" + span.SpanContext().SpanID().String() + "-01"
+	if back.GetTraceParent() != wantParent {
+		t.Errorf("trace_parent = %q, want %q", back.GetTraceParent(), wantParent)
 	}
 }

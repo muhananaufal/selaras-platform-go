@@ -14,6 +14,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Confirmations membaca user.deletion dan menutup saga yang sudah lengkap.
@@ -112,13 +113,18 @@ func (c *Confirmations) Run(ctx context.Context) error {
 	}
 }
 
-func (c *Confirmations) handle(ctx context.Context, rec *kgo.Record) error {
+func (c *Confirmations) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
 		c.log.ErrorContext(ctx, "a confirmation could not be decoded and was skipped",
 			"offset", rec.Offset, "error", err)
 		return nil
 	}
+
+	// Span konsumen menjadi anak dari permintaan yang menulis event ini
+	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	defer func() { telemetry.End(span, err) }()
 
 	confirmed := env.GetUserDeletionConfirmed()
 	if confirmed == nil {

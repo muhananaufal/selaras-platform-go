@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/idempotency"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Scope adalah ruang lingkup idempotensi worker ini.
@@ -172,7 +174,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 // transaksi untuk bagian yang menyentuh basis data. Panggilan ke penyedia
 // sengaja berada DI LUAR transaksi: ia bisa menunggu puluhan detik, dan
 // transaksi yang menganga selama itu menahan koneksi serta kunci tanpa alasan.
-func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
+func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
 		// Pesan yang tidak bisa dibaca tidak akan pernah bisa dibaca. Ia
@@ -182,6 +184,11 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 			"offset", rec.Offset, "error", err)
 		return nil
 	}
+
+	// Span konsumen menjadi anak dari permintaan yang menulis event ini
+	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	defer func() { telemetry.End(span, err) }()
 
 	key := idempotencyKeyOf(&env)
 	if key == "" {
@@ -379,12 +386,20 @@ func (c *Consumer) generate(
 		return nil, err
 	}
 
-	return c.provider.Generate(ctx, llm.Request{
+	// Panggilan ke penyedia adalah bagian terlama dari trace mana pun yang
+	// melewati worker ini; ia diberi span sendiri supaya durasinya terbaca
+	// terpisah dari klaim dan penyimpanan hasilnya.
+	ctx, span := telemetry.StartSpan(ctx, "llm.generate",
+		attribute.String("selaras.llm.provider", c.provider.Name()),
+		attribute.String("selaras.llm.template", tmpl.ID()))
+	answer, err := c.provider.Generate(ctx, llm.Request{
 		Prompt:        rendered,
 		PromptVersion: tmpl.ID(),
 		JSON:          true,
 		Temperature:   0.7,
 	})
+	telemetry.End(span, err)
+	return answer, err
 }
 
 // recordSuccess menyimpan hasil dan menerbitkan event selesainya.
