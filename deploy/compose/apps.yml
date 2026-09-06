@@ -46,7 +46,7 @@ services:
       # serentak (crypto.DefaultMaxConcurrent). GOMEMLIMIT membuat GC Go
       # mengembalikan memori sebelum menabrak plafon container, bukan
       # sesudahnya: tanpa ini RSS menempel di plafon sepanjang k6 (F9-10).
-      GOMEMLIMIT: 160MiB
+      GOMEMLIMIT: 256MiB
 
       # Alamat collector OTLP. KOSONG berarti trace tidak dikirim - dan itu
       # dinyatakan di log saat start, bukan gagal diam-diam. Diisi oleh
@@ -77,7 +77,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 192M
+          memory: 320M
 
   profile-svc:
     build:

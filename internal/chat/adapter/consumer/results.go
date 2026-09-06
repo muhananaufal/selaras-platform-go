@@ -208,3 +208,10 @@ func replyTextOf(raw string) (string, error) {
 	}
 	return payload.Text, nil
 }
+
+// Handle memproses satu record - dipakai daftar periksa aturan (D9) untuk
+// menyuntikkan event tanpa broker. Perilakunya sama persis dengan yang
+// dipanggil Run.
+func (r *Results) Handle(ctx context.Context, rec *kgo.Record) error {
+	return r.handle(ctx, rec)
+}

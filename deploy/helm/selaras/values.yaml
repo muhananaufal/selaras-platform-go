@@ -50,12 +50,16 @@ units:
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply.local
       FRONTEND_URL: http://localhost:3000
-      # argon2id 64 MiB x dua derivasi serentak; GC harus bekerja sebelum plafon.
-      GOMEMLIMIT: 160MiB
+      # argon2id 64 MiB x dua derivasi serentak, di atas RSS dasar ~30 MiB dan
+      # ruang kerja GC. 192 MiB di-OOM-kill dua kali saat suite e2e mendaftar
+      # akun berurutan di k3d (cgroup menghitung RSS penuh, bukan heap Go);
+      # 320 MiB memberi ruang, dan GOMEMLIMIT membuat GC bekerja jauh sebelum
+      # plafon.
+      GOMEMLIMIT: 256MiB
     secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY]
     resources:
-      requests: { cpu: 50m, memory: 96Mi }
-      limits: { memory: 192Mi }
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 320Mi }
     autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
 
   profile-svc:
