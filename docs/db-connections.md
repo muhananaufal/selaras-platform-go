@@ -98,3 +98,44 @@ dinyatakan sebagai dugaan, bukan bukti.
   peran × jumlah replika PgBouncer adalah angka yang dijaga di bawah 100.
 - `MaxConns 10` per unit tetap: ia kini membatasi koneksi ke PgBouncer,
   yang murah, bukan ke Postgres.
+
+## Replika baca (F9-32)
+
+`postgres-replica` di `core.yml`: streaming replication asinkron dari primer,
+salinan dasar diambil otomatis saat data kosong (`deploy/compose/replica/
+entrypoint.sh`), peran `replicator` hanya REPLICATION (`initdb/
+02-replication.sh`). Yang membacanya: **dashboard-svc**, lewat
+`DASHBOARD_READ_DSN` langsung ke replika — `Find` dan riwayat ke replika,
+proyeksi tetap ke primer (`dashboardpg.NewRepositoryWithReader`, dengan test
+yang membuktikan pemisahannya). Skenario k6 baca memanggil `GET /dashboard`,
+jadi pembacaan k6 ikut ke replika tanpa perubahan skenario.
+
+Diukur 2026-09-07, k6 tulis 10 VU selama 60 detik (1.682 permintaan,
+27,7/detik, nol gagal), sampel setiap 2 detik:
+
+| Ukuran | Nilai | Sumber |
+| :--- | ---: | :--- |
+| `write_lag` / `flush_lag` / `replay_lag` di akhir beban | **0,3 ms / 10,4 ms / 10,4 ms** | `pg_stat_replication` di primer |
+| `replay_lag` saat idle sebelum beban | 72 ms | idem |
+| `now() − pg_last_xact_replay_timestamp()`, maksimum 30 sampel | 2.683 ms | replika |
+| Replika menolak INSERT | ✅ `cannot execute INSERT in a read-only transaction` | |
+| `pg_is_in_recovery()` | `t` | |
+
+Dua angka lag itu mengukur hal yang berbeda, dan keduanya disebut supaya
+tidak ada yang memilih yang cantik: `pg_stat_replication` mengukur jarak
+antara primer dan replika untuk WAL yang SEDANG dikirim (10 ms), sementara
+selisih terhadap `pg_last_xact_replay_timestamp` ikut menghitung jeda saat
+tidak ada transaksi sama sekali. Dugaan yang paling masuk akal
+[inferensi] untuk 2,7 detik itu adalah sampel yang jatuh di celah antar
+batch penulisan k6 (satu VU menulis lalu tidur satu detik), bukan replika
+yang tertinggal 2,7 detik — `pg_stat_replication` di saat yang sama
+melaporkan puluhan milidetik. Belum dibuktikan dengan beban tulis yang
+rapat; dinyatakan sebagai dugaan. Yang berlaku untuk dasbor adalah angka
+pertama, dan sepuluh milidetik jauh di bawah lag proyeksi dasbor sendiri
+(444–920 ms, F7).
+
+Yang BELUM ada: replika di Helm/k3d (memori satu node sudah habis untuk
+KEDA dan replika HTTP; `values.yaml` menerima `DASHBOARD_READ_DSN` lewat
+Secret bila klaster punya replika), failover otomatis (replika tidak pernah
+dipromosikan sendiri), dan PgBouncer di depan replika (satu kolam kecil
+langsung, dinyatakan cukup untuk satu pembaca).
