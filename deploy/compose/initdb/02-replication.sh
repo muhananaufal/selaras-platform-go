@@ -21,5 +21,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-S
 SQL
 
 echo "host replication replicator all scram-sha-256" >> "$PGDATA/pg_hba.conf"
-pg_ctl reload -D "$PGDATA" >/dev/null
+# pg_reload_conf lewat psql, bukan pg_ctl: pg_ctl menolak berjalan sebagai
+# root, dan skrip ini juga dipakai manual di primer yang sudah ada.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "SELECT pg_reload_conf();" >/dev/null
 echo "  replication role and pg_hba entry created"

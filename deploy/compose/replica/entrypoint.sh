@@ -20,7 +20,9 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
   mkdir -p "$PGDATA"
   chown postgres:postgres "$PGDATA"
   chmod 700 "$PGDATA"
-  PGPASSWORD="$REPLICATION_PASSWORD" su-exec postgres \
+  # gosu, bukan su-exec: image postgres:*-alpine membawa gosu (diperiksa
+  # di dalam image-nya, bukan diingat).
+  PGPASSWORD="$REPLICATION_PASSWORD" gosu postgres \
     pg_basebackup -h "$PRIMARY_HOST" -U replicator -D "$PGDATA" -Fp -Xs -R -c fast
   echo "replica: base backup done; starting as hot standby"
 fi
