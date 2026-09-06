@@ -57,12 +57,52 @@ func FastParamsForTests() Params {
 	return Params{Memory: 8 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 }
 
+// DefaultMaxConcurrent membatasi berapa derivasi argon2id yang boleh berjalan
+// bersamaan dalam satu proses.
+//
+// Setiap derivasi dengan DefaultParams memegang 64 MiB. Tanpa batas, sepuluh
+// pendaftaran serentak berarti 640 MiB - dan container identity-svc dibatasi
+// jauh di bawah itu. Ini terlihat saat k6 (F9-10): RSS identity-svc menempel
+// di plafonnya sepanjang skenario tulis. Dua berarti puncak ~128 MiB untuk
+// hashing, dan pemanggil ketiga menunggu ratusan milidetik - jauh lebih
+// baik daripada proses yang di-OOM-kill di tengah pendaftaran orang lain.
+const DefaultMaxConcurrent = 2
+
+// deriveFunc adalah bentuk argon2.IDKey; ditukar hanya oleh test.
+type deriveFunc func(password, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte
+
 // Argon2idHasher memasang domain.PasswordHasher.
 type Argon2idHasher struct {
 	params Params
+	slots  chan struct{}
+	derive deriveFunc
 }
 
-func NewArgon2idHasher(p Params) *Argon2idHasher { return &Argon2idHasher{params: p} }
+// NewArgon2idHasher membatasi derivasi serentak ke DefaultMaxConcurrent.
+func NewArgon2idHasher(p Params) *Argon2idHasher {
+	return NewBoundedArgon2idHasher(p, DefaultMaxConcurrent)
+}
+
+// NewBoundedArgon2idHasher membatasi derivasi serentak ke maxConcurrent.
+// Nilai di bawah satu diperlakukan sebagai satu: hasher yang tidak pernah
+// bisa menghitung bukan hasher.
+func NewBoundedArgon2idHasher(p Params, maxConcurrent int) *Argon2idHasher {
+	if maxConcurrent < 1 {
+		maxConcurrent = 1
+	}
+	return &Argon2idHasher{
+		params: p,
+		slots:  make(chan struct{}, maxConcurrent),
+		derive: argon2.IDKey,
+	}
+}
+
+// bounded menjalankan satu derivasi di dalam batas serentak.
+func (h *Argon2idHasher) bounded(password, salt []byte, p Params, keyLen uint32) []byte {
+	h.slots <- struct{}{}
+	defer func() { <-h.slots }()
+	return h.derive(password, salt, p.Iterations, p.Memory, p.Parallelism, keyLen)
+}
 
 var _ domain.PasswordHasher = (*Argon2idHasher)(nil)
 
@@ -74,10 +114,7 @@ func (h *Argon2idHasher) Hash(pw domain.Password) (domain.PasswordHash, error) {
 		return "", fmt.Errorf("reading salt: %w", err)
 	}
 
-	key := argon2.IDKey(
-		[]byte(pw.Expose()), salt,
-		h.params.Iterations, h.params.Memory, h.params.Parallelism, h.params.KeyLength,
-	)
+	key := h.bounded([]byte(pw.Expose()), salt, h.params, h.params.KeyLength)
 
 	return domain.PasswordHash(fmt.Sprintf(
 		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
@@ -98,7 +135,7 @@ func (h *Argon2idHasher) Verify(stored domain.PasswordHash, candidate domain.Pas
 		return false, false, err
 	}
 
-	got := argon2.IDKey([]byte(candidate.Expose()), salt, p.Iterations, p.Memory, p.Parallelism, uint32(len(want)))
+	got := h.bounded([]byte(candidate.Expose()), salt, p, uint32(len(want)))
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return false, false, nil
 	}
