@@ -22,7 +22,10 @@ COMPOSE="docker compose --env-file $ROOT/.env -f $ROOT/deploy/compose/core.yml -
 UNITS="identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway pgbouncer backup"
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
+# psql_admin bicara ke basis data "postgres" (untuk DROP/CREATE), psql_app ke
+# basis data aplikasi (untuk menghitung isinya).
 psql_admin() { docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -tA -c "$1"; }
+psql_app() { docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "$1"; }
 started=$(date +%s)
 mark() { echo $(( $(date +%s) - started )); }
 
@@ -33,7 +36,7 @@ GLOBALS=$(docker run --rm -v selaras-core_backups:/backups alpine sh -c 'ls -1 /
 log "restoring from $LATEST (+ $GLOBALS)"
 
 # Angka sebelum: dipakai membandingkan setelah pulih.
-BEFORE=$(psql_admin "SELECT (SELECT count(*) FROM identity.users) || ' users, ' || (SELECT count(*) FROM assessment.risk_assessments) || ' assessments'" 2>/dev/null || echo "unknown")
+BEFORE=$(psql_app "SELECT (SELECT count(*) FROM identity.users) || ' users, ' || (SELECT count(*) FROM assessment.risk_assessments) || ' assessments'" 2>/dev/null || echo "unknown")
 log "before: $BEFORE"
 
 # 2. Semua yang memegang koneksi dimatikan.
@@ -71,7 +74,7 @@ for s in identity profile assessment coaching chat nutrition dashboard llm; do
 done
 log "ownership restored at +$(mark)s"
 
-AFTER=$(psql_admin "SELECT (SELECT count(*) FROM identity.users) || ' users, ' || (SELECT count(*) FROM assessment.risk_assessments) || ' assessments'")
+AFTER=$(psql_app "SELECT (SELECT count(*) FROM identity.users) || ' users, ' || (SELECT count(*) FROM assessment.risk_assessments) || ' assessments'")
 log "after: $AFTER"
 
 # 5. Semuanya dinyalakan lagi.
