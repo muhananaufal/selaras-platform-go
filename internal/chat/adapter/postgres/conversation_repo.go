@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/chat/domain"
@@ -130,6 +133,14 @@ func (r *Repository) CreateMessage(ctx context.Context, m *domain.Message) error
 	if _, err := r.db.Exec(ctx, q,
 		m.ID.String(), m.ConversationID.String(), string(m.Role), m.Content,
 		m.CreatedAt, m.UpdatedAt); err != nil {
+		// Foreign key yang gagal berarti percakapannya sudah tidak ada. Ia
+		// dinamai, bukan diteruskan sebagai galat SQL: pemanggil yang perlu
+		// membedakan "hilang" dari "rusak" - konsumen balasan LLM - hanya
+		// bisa melakukannya bila galatnya punya nama.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation {
+			return domain.ErrConversationNotFound
+		}
 		return fmt.Errorf("creating the message: %w", err)
 	}
 	return nil

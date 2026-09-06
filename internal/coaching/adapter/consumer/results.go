@@ -170,12 +170,37 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
+	err = r.dispatch(ctx, &env, rec)
+	if terminal(err) {
+		// Hasil untuk program atau thread yang sudah tidak ada. Mengulanginya
+		// tidak akan pernah berhasil, dan menahan offset untuknya berarti
+		// konsumen ini memundurkan diri setiap detik, selamanya - itu
+		// benar-benar terjadi pada nutrition dan chat setelah akun uji
+		// dihapus, dan trace-lah yang menyingkapkannya.
+		r.log.WarnContext(ctx, "a result arrived for a program or thread that no longer exists and was dropped",
+			"event_id", env.GetEventId(), "error", err)
+		return nil
+	}
+	return err
+}
+
+// terminal menyatakan galat yang tidak akan sembuh dengan mengulang.
+//
+// Hanya ketiadaan pemiliknya. Galat lain - Postgres tidak terjangkau,
+// transaksi bentrok - tetap dikembalikan supaya offset ditahan dan hasilnya
+// datang lagi.
+func terminal(err error) bool {
+	return errors.Is(err, domain.ErrProgramNotFound) || errors.Is(err, domain.ErrThreadNotFound)
+}
+
+// dispatch mengarahkan satu event ke penanganannya.
+func (r *Results) dispatch(ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record) error {
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_CurriculumCompleted:
 		return r.storeCurriculumOrReport(ctx, payload.CurriculumCompleted)
 
 	case *eventsv1.Envelope_ChatReplyCompleted:
-		return r.storeReply(ctx, &env, payload.ChatReplyCompleted, rec)
+		return r.storeReply(ctx, env, payload.ChatReplyCompleted, rec)
 
 	case *eventsv1.Envelope_LlmJobFailed:
 		return r.markFailed(ctx, payload.LlmJobFailed, rec)

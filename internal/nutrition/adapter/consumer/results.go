@@ -15,6 +15,7 @@ import (
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/adapter/cache"
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
@@ -174,15 +175,39 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
+	err = r.dispatch(ctx, &env, rec)
+	if terminal(err) {
+		// Hasil untuk sesuatu yang sudah tidak ada. Mengulanginya tidak akan
+		// pernah berhasil, dan menahan offset untuknya berarti konsumen ini
+		// memundurkan diri setiap detik, selamanya - itu benar-benar terjadi
+		// setelah akun uji dihapus, dan trace-lah yang menyingkapkannya.
+		r.log.WarnContext(ctx, "a result arrived for a guide that no longer exists and was dropped",
+			"event_id", env.GetEventId(), "error", err)
+		return nil
+	}
+	return err
+}
+
+// terminal menyatakan galat yang tidak akan sembuh dengan mengulang.
+//
+// Hanya ketiadaan pemiliknya. Galat lain - Postgres tidak terjangkau,
+// transaksi bentrok - tetap dikembalikan supaya offset ditahan dan hasilnya
+// datang lagi.
+func terminal(err error) bool {
+	return errors.Is(err, domain.ErrGuideNotFound)
+}
+
+// dispatch mengarahkan satu event ke penanganannya.
+func (r *Results) dispatch(ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record) error {
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_MealGuideCompleted:
-		return r.complete(ctx, &env, payload.MealGuideCompleted)
+		return r.complete(ctx, env, payload.MealGuideCompleted)
 
 	case *eventsv1.Envelope_LlmJobFailed:
-		return r.fail(ctx, &env, payload.LlmJobFailed, rec)
+		return r.fail(ctx, env, payload.LlmJobFailed, rec)
 
 	case *eventsv1.Envelope_ProfileUpdated:
-		return r.cacheLanguage(ctx, &env, payload.ProfileUpdated)
+		return r.cacheLanguage(ctx, env, payload.ProfileUpdated)
 
 	default:
 		// Event lain bukan urusan konsumen ini. Ia dilewati, bukan digagalkan -
