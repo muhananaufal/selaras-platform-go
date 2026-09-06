@@ -25,6 +25,7 @@ import (
 
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Schema adalah DDL tabel outbox, dipakai generator migrasi per service.
@@ -78,6 +79,11 @@ func (w *Writer) Write(
 		// lagi selamanya.
 		return errors.New("the envelope carries no event")
 	}
+
+	// Konteks trace disalin ke dalam envelope SEBELUM diserialkan. Relay
+	// tidak tahu apa-apa soal permintaan yang melahirkan baris ini; yang
+	// bisa menyeberang ke konsumen hanyalah yang ada di dalam payload (F9-05).
+	telemetry.InjectEnvelope(ctx, envelope)
 
 	payload, err := proto.Marshal(envelope)
 	if err != nil {

@@ -14,7 +14,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// startMetrics menyalakan endpoint metrik (F3-15).
+// startMetrics menyalakan telemetri: endpoint metrik (F3-15) dan trace (F9-05).
 //
 // Ia mengembalikan penghenti dan TIDAK pernah mengembalikan galat: telemetri
 // yang gagal disiapkan tidak boleh mematikan worker. Antrean yang tidak ada
@@ -29,27 +29,27 @@ func startMetrics(
 		addr = ":9402"
 	}
 
-	meters, err := telemetry.New("llm-worker")
+	tel, err := telemetry.Start(ctx, "llm-worker", log)
 	if err != nil {
-		log.Error("metrics are disabled; telemetry could not be set up", "error", err)
+		log.Error("metrics and traces are disabled; telemetry could not be set up", "error", err)
 		return func() {}
 	}
 
-	metrics, err := llmworker.NewMetrics(meters.Meter())
+	metrics, err := llmworker.NewMetrics(tel.Meter())
 	if err != nil {
 		log.Error("job metrics are disabled", "error", err)
 	} else {
 		consumer.WithMetrics(metrics)
 	}
 
-	if _, err := llmworker.NewLagReporter(meters.Meter(), client, ConsumerGroup); err != nil {
+	if _, err := llmworker.NewLagReporter(tel.Meter(), client, ConsumerGroup); err != nil {
 		// Lag adalah metrik yang paling sering ditanya saat ada masalah, jadi
 		// kehilangannya disebutkan terpisah - bukan digabung dengan yang lain.
 		log.Error("consumer lag will not be reported", "error", err)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", meters.Handler())
+	mux.Handle("/metrics", tel.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("ok")); err != nil {
@@ -79,7 +79,7 @@ func startMetrics(
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Error("shutting down the metrics endpoint", "error", err)
 		}
-		if err := meters.Shutdown(shutdownCtx); err != nil {
+		if err := tel.Shutdown(shutdownCtx); err != nil {
 			log.Error("shutting down telemetry", "error", err)
 		}
 	}

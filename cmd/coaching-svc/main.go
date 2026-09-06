@@ -25,6 +25,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 const (
@@ -33,7 +34,7 @@ const (
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, nil)))
 	slog.SetDefault(log)
 
 	if err := run(log); err != nil {
@@ -51,6 +52,22 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
+	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
+	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
+	// menyala, karena yang kedua terlihat.
+	tel, err := telemetry.Start(ctx, "coaching-svc", log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		if err := tel.Shutdown(flushCtx); err != nil {
+			log.Error("shutting down telemetry", "error", err)
+		}
+	}()
 
 	pool, err := pg.Open(ctx, pg.DefaultConfig(cfg.DatabaseDSN))
 	if err != nil {
@@ -100,7 +117,7 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOption())
 	coachingv1.RegisterCoachingServer(grpcServer, server)
 
 	healthServer := health.NewServer()
@@ -117,7 +134,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	httpServer := healthEndpoint(cfg.HealthAddr, probes)
+	httpServer := healthEndpoint(cfg.HealthAddr, probes, tel.Handler())
 	errs := make(chan error, 2)
 
 	go func() {
@@ -166,10 +183,14 @@ func run(log *slog.Logger) error {
 // healthEndpoint menerima probes dari luar, bukan membuatnya sendiri - lihat
 // alasannya di cmd/identity-svc: bentuk yang membuatnya sendiri membuat
 // SetReady mustahil dipanggil, dan readyz menjawab 503 selamanya.
-func healthEndpoint(addr string, probes *httpx.Health) *http.Server {
+func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
+
+	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
+	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{
 		Addr:              addr,

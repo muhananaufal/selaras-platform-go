@@ -16,6 +16,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/adapter/cache"
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Scope adalah ruang lingkup idempotensi konsumen ini.
@@ -156,7 +157,7 @@ func (r *Results) Run(ctx context.Context) error {
 }
 
 // handle memproses satu pesan.
-func (r *Results) handle(ctx context.Context, rec *kgo.Record) error {
+func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	if !isMine(rec) {
 		return nil
 	}
@@ -167,6 +168,11 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) error {
 			"offset", rec.Offset, "error", err)
 		return nil
 	}
+
+	// Span konsumen menjadi anak dari permintaan yang menulis event ini
+	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	defer func() { telemetry.End(span, err) }()
 
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_MealGuideCompleted:

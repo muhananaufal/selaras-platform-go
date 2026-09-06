@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -71,20 +72,31 @@ func ContextFromEnvelope(ctx context.Context, env *eventsv1.Envelope) context.Co
 // sebagai satu trace dari edge sampai worker (F9-07), bukan dua trace yang
 // harus dicocokkan orang secara manual.
 func StartConsumerSpan(
-	ctx context.Context, env *eventsv1.Envelope, topic, group, eventType string,
+	ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record,
 ) (context.Context, trace.Span) {
 	ctx = ContextFromEnvelope(ctx, env)
 
-	return otel.Tracer(scopeName).Start(ctx, topic+" process",
+	return otel.Tracer(scopeName).Start(ctx, rec.Topic+" process",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			attribute.String("messaging.system", "kafka"),
 			attribute.String("messaging.operation.type", "process"),
-			attribute.String("messaging.destination.name", topic),
-			attribute.String("messaging.consumer.group.name", group),
-			attribute.String("selaras.event.type", eventType),
+			attribute.String("messaging.destination.name", rec.Topic),
+			attribute.Int("messaging.destination.partition.id", int(rec.Partition)),
+			attribute.Int64("messaging.kafka.offset", rec.Offset),
+			attribute.String("selaras.event.type", headerOf(rec, "event_type")),
 			attribute.String("selaras.event.id", env.GetEventId()),
 		))
+}
+
+// headerOf membaca satu header record; kosong bila tidak ada.
+func headerOf(rec *kgo.Record, key string) string {
+	for _, h := range rec.Headers {
+		if h.Key == key {
+			return string(h.Value)
+		}
+	}
+	return ""
 }
 
 // StartSpan membuka span internal biasa - untuk pekerjaan yang tidak

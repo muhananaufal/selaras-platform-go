@@ -12,7 +12,12 @@ import (
 
 // Config adalah seluruh yang dibutuhkan edge-gateway untuk menyala.
 type Config struct {
-	HTTPAddr     string
+	HTTPAddr string
+
+	// AdminAddr melayani metrik dan probe, terpisah dari port publik. Metrik
+	// di port yang sama dengan API berarti metrik terbuka untuk siapa pun
+	// yang bisa menjangkau API - dan itu semua orang.
+	AdminAddr    string
 	IdentityAddr string
 	ProfileAddr  string
 	RedisURL     string
@@ -43,6 +48,7 @@ type Config struct {
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		HTTPAddr:       envOr("EDGE_HTTP_ADDR", ":8080"),
+		AdminAddr:      envOr("EDGE_ADMIN_ADDR", ":8081"),
 		IdentityAddr:   os.Getenv("IDENTITY_GRPC_TARGET"),
 		ProfileAddr:    os.Getenv("PROFILE_GRPC_TARGET"),
 		RedisURL:       os.Getenv("REDIS_URL"),

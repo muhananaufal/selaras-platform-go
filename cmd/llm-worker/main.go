@@ -23,6 +23,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // ConsumerGroup tetap. Mengubahnya berarti group baru yang mulai dari awal
@@ -30,7 +31,7 @@ import (
 const ConsumerGroup = "llm-worker"
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, nil)))
 
 	if err := run(log); err != nil {
 		log.Error("llm-worker stopped", "error", err)

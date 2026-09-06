@@ -27,6 +27,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Eraser menghapus seluruh data satu pengguna di sebuah unit.
@@ -158,13 +159,18 @@ func (c *Consumer) Run(ctx context.Context) error {
 }
 
 // handle memproses satu permintaan penghapusan.
-func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
+func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
 		c.log.ErrorContext(ctx, "a deletion request could not be decoded and was skipped",
 			"service", c.service, "offset", rec.Offset, "error", err)
 		return nil
 	}
+
+	// Span konsumen menjadi anak dari permintaan yang menulis event ini
+	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	defer func() { telemetry.End(span, err) }()
 
 	req := env.GetUserDeletionRequested()
 	if req == nil {
@@ -186,7 +192,7 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) error {
 	// Ini inti keandalan saga ini. Konfirmasi yang commit tanpa penghapusannya
 	// membuat akun dinyatakan terhapus dengan datanya masih utuh - kebohongan
 	// yang tidak akan pernah terlihat, karena tidak ada lagi yang mencarinya.
-	err := pg.InTx(ctx, c.pool, func(q pg.Querier) error {
+	err = pg.InTx(ctx, c.pool, func(q pg.Querier) error {
 		if err := c.erase(ctx, q, req.GetUserId(), req.GetUserProfileId()); err != nil {
 			return err
 		}

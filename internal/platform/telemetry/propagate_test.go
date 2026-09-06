@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -97,8 +98,10 @@ func TestStartConsumerSpanIsAChildOfTheEnvelopeTrace(t *testing.T) {
 	telemetry.InjectEnvelope(ctx, env)
 	producer.End()
 
-	_, consumer := telemetry.StartConsumerSpan(context.Background(), env,
-		"llm.jobs", "llm-worker", "meal_guide_requested")
+	_, consumer := telemetry.StartConsumerSpan(context.Background(), env, &kgo.Record{
+		Topic: "llm.jobs", Partition: 2, Offset: 41,
+		Headers: []kgo.RecordHeader{{Key: "event_type", Value: []byte("meal_guide_requested")}},
+	})
 	telemetry.End(consumer, nil)
 
 	spans := exporter.GetSpans()
@@ -125,10 +128,9 @@ func TestStartConsumerSpanIsAChildOfTheEnvelopeTrace(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"messaging.destination.name":    "llm.jobs",
-		"messaging.consumer.group.name": "llm-worker",
-		"selaras.event.type":            "meal_guide_requested",
-		"selaras.event.id":              "evt-3",
+		"messaging.destination.name": "llm.jobs",
+		"selaras.event.type":         "meal_guide_requested",
+		"selaras.event.id":           "evt-3",
 	}
 	for _, attr := range got.Attributes {
 		if expected, ok := want[string(attr.Key)]; ok {
@@ -147,7 +149,7 @@ func TestStartConsumerSpanStartsANewTraceWhenTheEnvelopeHasNone(t *testing.T) {
 	exporter := recordingProvider(t)
 
 	_, span := telemetry.StartConsumerSpan(context.Background(),
-		&eventsv1.Envelope{EventId: "evt-4"}, "user.deletion", "profile-deletion", "user_deletion_requested")
+		&eventsv1.Envelope{EventId: "evt-4"}, &kgo.Record{Topic: "user.deletion"})
 	telemetry.End(span, nil)
 
 	spans := exporter.GetSpans()

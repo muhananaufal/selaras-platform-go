@@ -34,12 +34,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 const shutdownGrace = 15 * time.Second
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, nil)))
 	slog.SetDefault(log)
 
 	if err := run(log); err != nil {
@@ -57,6 +58,22 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
+	// pertama pun sudah tercatat. Kegagalannya menghentikan start: gateway
+	// yang tidak bisa diamati lebih berbahaya daripada gateway yang tidak
+	// menyala, karena yang kedua terlihat.
+	tel, err := telemetry.Start(ctx, "edge-gateway", log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		if err := tel.Shutdown(flushCtx); err != nil {
+			log.Error("shutting down telemetry", "error", err)
+		}
+	}()
 
 	verifier, err := token.NewVerifier(cfg.VerifyKey, cfg.TokenIssuer)
 	if err != nil {
@@ -224,12 +241,20 @@ func run(log *slog.Logger) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	admin := adminEndpoint(cfg.AdminAddr, probes, tel.Handler())
+
 	probes.SetReady(true)
 
-	errs := make(chan error, 1)
+	errs := make(chan error, 2)
 	go func() {
 		log.Info("serving http", "addr", cfg.HTTPAddr)
 		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			errs <- err
+		}
+	}()
+	go func() {
+		log.Info("serving metrics and probes", "addr", cfg.AdminAddr)
+		if err := admin.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}
 	}()
@@ -249,11 +274,37 @@ func run(log *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 
+	if err := admin.Shutdown(shutdownCtx); err != nil {
+		log.Error("shutting down the admin endpoint", "error", err)
+	}
 	return server.Shutdown(shutdownCtx)
 }
 
+// adminEndpoint melayani metrik dan probe di port yang tidak publik.
+//
+// Probe tetap ada di port publik juga - load balancer memeriksanya di sana -
+// dan diulang di sini supaya port admin bisa dipakai sendirian oleh
+// Prometheus dan orkestrator tanpa menyentuh port API.
+func adminEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", probes.Live)
+	mux.HandleFunc("GET /readyz", probes.Ready)
+	mux.Handle("GET /metrics", metrics)
+
+	return &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+}
+
 func dial(target string) (*grpc.ClientConn, error) {
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		telemetry.GRPCDialOption())
 	if err != nil {
 		return nil, fmt.Errorf("creating the client for %s: %w", target, err)
 	}

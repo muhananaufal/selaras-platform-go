@@ -38,6 +38,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/mail"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // shutdownGrace membatasi berapa lama permintaan yang sedang berjalan boleh
@@ -45,7 +46,7 @@ import (
 const shutdownGrace = 15 * time.Second
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(os.Stdout, nil)))
 	slog.SetDefault(log)
 
 	if err := run(log); err != nil {
@@ -66,6 +67,22 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
+	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
+	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
+	// menyala, karena yang kedua terlihat.
+	tel, err := telemetry.Start(ctx, "identity-svc", log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		if err := tel.Shutdown(flushCtx); err != nil {
+			log.Error("shutting down telemetry", "error", err)
+		}
+	}()
 
 	pool, err := pg.Open(ctx, pg.DefaultConfig(cfg.DatabaseDSN))
 	if err != nil {
@@ -147,7 +164,7 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOption())
 	identityv1.RegisterIdentityServer(grpcServer, server)
 
 	// Health check dan reflection keduanya dinyalakan. Reflection membuat
@@ -169,7 +186,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	httpServer := healthEndpoint(cfg.HealthAddr, probes)
+	httpServer := healthEndpoint(cfg.HealthAddr, probes, tel.Handler())
 	errs := make(chan error, 2)
 
 	go func() {
@@ -317,10 +334,14 @@ func buildServer(
 // SetReady tidak mungkin dipanggil dan readyz menjawab 503 selamanya - pod
 // yang tidak pernah menerima trafik. Bentuk itu membuat kekeliruannya tak
 // terhindarkan; bentuk ini membuatnya mustahil.
-func healthEndpoint(addr string, probes *httpx.Health) *http.Server {
+func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
+
+	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
+	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{
 		Addr:              addr,
@@ -347,7 +368,9 @@ func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error
 		return unavailableProfiles{}, func() {}, nil
 	}
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		telemetry.GRPCDialOption())
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating the profile-svc client: %w", err)
 	}

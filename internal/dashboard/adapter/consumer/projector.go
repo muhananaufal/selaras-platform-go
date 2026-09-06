@@ -15,6 +15,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/dashboard/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/dashboard/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
 // Scope adalah ruang lingkup idempotensi proyektor ini.
@@ -123,7 +124,7 @@ func (p *Projector) Run(ctx context.Context) error {
 }
 
 // handle memproyeksikan satu event.
-func (p *Projector) handle(ctx context.Context, rec *kgo.Record) error {
+func (p *Projector) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
 		// Pesan yang tidak bisa dibaca tidak akan pernah bisa dibaca. Ia
@@ -132,6 +133,11 @@ func (p *Projector) handle(ctx context.Context, rec *kgo.Record) error {
 			"topic", rec.Topic, "offset", rec.Offset, "error", err)
 		return nil
 	}
+
+	// Span konsumen menjadi anak dari permintaan yang menulis event ini
+	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	defer func() { telemetry.End(span, err) }()
 
 	occurredAt := env.GetOccurredAt().AsTime()
 	if occurredAt.IsZero() {
