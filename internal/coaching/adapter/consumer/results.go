@@ -15,7 +15,6 @@ import (
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
-	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
@@ -46,78 +45,7 @@ func NewResults(client *kgo.Client, svc *app.Service, log *slog.Logger) (*Result
 
 // Run membaca sampai ctx selesai.
 func (r *Results) Run(ctx context.Context) error {
-	r.log.InfoContext(ctx, "coaching result consumer started", "scope", Scope)
-
-	for {
-		if ctx.Err() != nil {
-			r.log.InfoContext(ctx, "coaching result consumer stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
-			return nil
-		}
-
-		fetches := r.client.PollFetches(ctx)
-		if ctx.Err() != nil {
-			r.log.InfoContext(ctx, "coaching result consumer stopped")
-			//nolint:nilerr // Idem.
-			return nil
-		}
-
-		if errs := fetches.Errors(); len(errs) > 0 {
-			for _, e := range errs {
-				r.log.ErrorContext(ctx, "fetching coaching results failed",
-					"topic", e.Topic, "partition", e.Partition, "error", e.Err)
-			}
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(time.Second):
-			}
-			continue
-		}
-
-		var handled int
-		rewinder := kafka.NewRewinder()
-
-		fetches.EachRecord(func(rec *kgo.Record) {
-			if ctx.Err() != nil {
-				return
-			}
-			if err := r.handle(ctx, rec); err != nil {
-				r.log.ErrorContext(ctx, "handling a coaching result failed",
-					"offset", rec.Offset, "partition", rec.Partition, "error", err)
-				rewinder.Failed(rec)
-			}
-			handled++
-		})
-
-		if handled == 0 {
-			continue
-		}
-		if rewinder.Any() {
-			// Offset ditahan supaya pesan yang gagal datang lagi setelah
-			// rebalance atau restart. Pesan lain di batch ikut terkirim ulang;
-			// penyimpanannya idempoten, dan itu harga yang jauh lebih murah
-			// daripada hasil yang hilang.
-			r.log.WarnContext(ctx, "holding offsets so failed results are redelivered",
-				"handled", handled)
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
-			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
-			rewinder.Rewind(r.client)
-
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(time.Second):
-			}
-			continue
-		}
-
-		if err := r.client.CommitUncommittedOffsets(ctx); err != nil {
-			r.log.ErrorContext(ctx, "committing offsets failed", "error", err)
-		}
-	}
+	return loop(ctx, r.client, r.log, "coaching result", r.handle)
 }
 
 // aggregateTypeOf membaca jenis agregat dari header pesannya.

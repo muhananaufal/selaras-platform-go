@@ -93,3 +93,42 @@ func startResultConsumer(
 // ResultGroup tetap. Mengubahnya berarti group baru yang membaca ulang seluruh
 // riwayat llm.results.
 const ResultGroup = "coaching-results"
+
+// AssessmentGroup adalah consumer group untuk assessment.completed.
+//
+// Terpisah dari milik dasbor: keduanya membaca topic yang sama dan masing-
+// masing harus melihat SETIAP event.
+const AssessmentGroup = "coaching-assessments"
+
+// startAssessmentConsumer membaca assessment.completed menjadi rujukan lunak
+// (F4-06). Tanpanya, slug analisis yang dikirim klien tidak pernah dikenali
+// dan setiap program tersimpan tanpa sumbernya.
+func startAssessmentConsumer(
+	ctx context.Context, log *slog.Logger, svc *app.Service, brokers string,
+) (func(), error) {
+	if brokers == "" {
+		log.Warn("KAFKA_BROKERS is not set; assessments will never be known to coaching")
+		return func() {}, nil
+	}
+
+	client, err := kafka.NewConsumer(
+		kafka.Config{Brokers: brokers, ClientID: "coaching-assessments"},
+		AssessmentGroup, outbox.TopicAssessmentCompleted)
+	if err != nil {
+		return nil, err
+	}
+
+	assessments, err := consumer.NewAssessments(client, svc, log)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+
+	go func() {
+		if err := assessments.Run(ctx); err != nil {
+			log.Error("the coaching assessment consumer stopped", "error", err)
+		}
+	}()
+
+	return client.Close, nil
+}
