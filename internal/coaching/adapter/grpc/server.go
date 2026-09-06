@@ -204,6 +204,8 @@ func toStatus(ctx context.Context, op string, err error) error {
 		return status.Error(codes.NotFound, "no such thread")
 	case errors.Is(err, domain.ErrTaskNotFound):
 		return status.Error(codes.NotFound, "no such task")
+	case errors.Is(err, domain.ErrAssessmentNotFound):
+		return status.Error(codes.NotFound, "no such risk assessment")
 
 	// Konflik keadaan: 409 di sisi HTTP.
 	case errors.Is(err, domain.ErrActiveProgramExists):

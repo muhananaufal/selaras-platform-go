@@ -27,14 +27,13 @@ type StartProgramCommand struct {
 	UserID string
 
 	// AssessmentSlug boleh kosong: program bisa dimulai tanpa penilaian.
-	AssessmentSlug string
-
-	// AssessmentID dan AssessmentSnapshot diisi pemanggil dari assessment-svc.
 	//
-	// Coaching TIDAK memanggil assessment sendiri di sini: itu akan
-	// mengembalikan kopling sinkron yang justru dihilangkan pemisahan service.
-	AssessmentID       string
-	AssessmentSnapshot map[string]any
+	// Bila diisi, ia diresolusi dari catatan lokal coaching_assessments yang
+	// diisi konsumen assessment.completed (F4-06) - BUKAN dengan memanggil
+	// assessment-svc: itu akan mengembalikan kopling sinkron yang justru
+	// dihilangkan pemisahan service. Slug yang belum tercatat, atau milik
+	// pengguna lain, menghasilkan ErrAssessmentNotFound.
+	AssessmentSlug string
 
 	Difficulty string
 
@@ -77,6 +76,13 @@ func (s *Service) StartProgram(
 	result := &StartProgramResult{}
 
 	err = s.uow.Do(ctx, func(r Repositories) error {
+		// Sumber analisisnya diresolusi LEBIH DULU: slug yang tidak dikenal
+		// harus menolak permintaan sebelum apa pun disentuh.
+		source, err := s.assessmentFor(ctx, r, owner, cmd.AssessmentSlug)
+		if err != nil {
+			return err
+		}
+
 		// D2: program aktif sebelumnya DIJEDA, bukan dihapus dan bukan
 		// ditolak. Perilaku sistem lama dipertahankan - meski fungsinya di
 		// sana bernama cancelProgram, yang dilakukannya adalah mengubah status
@@ -103,8 +109,10 @@ func (s *Service) StartProgram(
 		if err != nil {
 			return err
 		}
-		program.RiskAssessmentID = cmd.AssessmentID
-		program.AssessmentSnapshot = cmd.AssessmentSnapshot
+		if source != nil {
+			program.RiskAssessmentID = source.ID
+			program.AssessmentSnapshot = source.Snapshot
+		}
 
 		if err := r.Programs().Create(ctx, program); err != nil {
 			return err
@@ -329,4 +337,24 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// assessmentFor meresolusi slug analisis menjadi rujukannya.
+//
+// nil tanpa galat berarti program dimulai tanpa analisis. Analisis milik
+// pengguna lain diperlakukan seperti yang tidak ada (S9).
+func (s *Service) assessmentFor(
+	ctx context.Context, r Repositories, owner domain.UserID, slug string,
+) (*domain.AssessmentRef, error) {
+	if slug == "" {
+		return nil, nil
+	}
+	ref, err := r.Assessments().FindBySlug(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if !ref.BelongsTo(owner) {
+		return nil, domain.ErrAssessmentNotFound
+	}
+	return ref, nil
 }
