@@ -116,7 +116,10 @@ Dua perbaikan, keduanya di commit yang sama dengan laporan ini:
    fungsi derivasi dan mengukur puncak serentak; mutasi "batas 64" membuatnya
    merah.
 2. `GOMEMLIMIT=160MiB` di compose untuk identity-svc, supaya GC mulai bekerja
-   keras sebelum plafon, bukan sesudahnya.
+   keras sebelum plafon, bukan sesudahnya. Di k3d angka ini terbukti masih
+   kurang — cgroup Kubernetes membunuh pod di 192 MiB dua kali saat suite e2e
+   mendaftar akun berurutan (B25) — dan keduanya dinaikkan menjadi
+   `GOMEMLIMIT=256MiB` dengan plafon 320 MiB, di chart dan compose.
 
 Angka ini juga masuk ke F9-26 (koneksi dan memori per replika) dan FinOps:
 identity-svc adalah unit termahal per permintaan, dan bukan karena Postgres.
@@ -166,3 +169,95 @@ task k6 -- mixed
 
 Rincian per rute: Grafana → dashboard "Selaras — ikhtisar platform", atau
 kueri Prometheus yang disebut di atas.
+
+## Autoscaling di k3d (F9-23, F9-24, F9-25)
+
+Diukur 2026-09-07 pada klaster k3d satu node (`task k3d:all`), stack yang
+sama dengan compose ditambah metrics-server bawaan k3s dan KEDA 2.20.
+
+### Scale-to-zero dan cold-start (F9-23)
+
+llm-worker turun ke **0 replika** 60 detik setelah antrean kosong
+(`cooldownPeriod`). Lalu satu pesan chat dikirim ke sistem yang workernya
+tidak ada:
+
+```
+05:57:37.286  llm-worker readyReplicas= (kosong)
+05:57:37.423  pesan dikirim, percakapan 7deeqcwtw7pjmp2u
+05:57:45.752  balasan tiba setelah 8348 ms
+```
+
+**Cold-start job pertama: 8,3 detik**, terurai kira-kira menjadi polling
+KEDA (≤ 10 s, rata-rata 5 s), pod dijadwalkan dan menyala (~1–2 s), relay
+outbox (≤ 1 s), dan pekerjaannya sendiri (milidetik dengan penyedia `fake`).
+Dengan pekerjaan yang sudah punya worker, balasan tiba dalam ~1 s (F7).
+Delapan detik adalah harga scale-to-zero, dan itulah alasan
+`values-cloud.yaml` memakai `minReplicaCount: 1` — cold-start ini layak di
+lingkungan lokal, tidak layak untuk pengguna sungguhan (ADR-014 aturan 5).
+
+Dua hal yang ditemukan karena mencobanya: trigger berbasis metrik
+`kafka_consumer_lag` dari Prometheus **tidak bisa membangunkan worker** —
+metriknya diterbitkan worker, dan worker yang tidak ada tidak menerbitkan
+apa pun (B24); diganti scaler `kafka` KEDA yang membaca lag dari broker. Dan
+startup probe llm-worker gagal 404 karena ia hanya punya `/healthz` (kini
+ada `/readyz`).
+
+### Naik lalu turun kembali (F9-24)
+
+k6 skenario baca dengan **60 VU** selama 4 menit terhadap
+`http://127.0.0.1:28080` (NodePort edge), HPA CPU target 60 % dari request.
+Jumlah replika disampel setiap 10 detik:
+
+| Waktu | edge | identity | profile | assessment | dashboard | nutrition |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 05:58:20 (sebelum beban) | 1 | 2¹ | 1 | 1 | 1 | 1 |
+| 05:59:22 (+45 s beban) | **2** | 1 | **2** | 1 | 1 | 1 |
+| 05:59:32 | **3** | **3** | 2 | **2** | **3** | **3** |
+| 05:59:56 | **4** (maks) | 3 | 2 | 2 | 3 | 3 |
+| 06:00:18 | 4 | 3 | **3** | **3** | 3 | 3 |
+| 06:01:23 (dataran) | 4 | 3 | 3 | 3 | 3 | 3 |
+| 06:02:43 (beban berakhir) | 4 | 3 | 3 | 2 | 3 | 3 |
+| 06:03:17 | 4 | 3 | 2 | 2 | 2 | 3 |
+| 06:04:19 | 3 | 3 | 1 | 1 | 1 | 2 |
+| 06:06:40 | 2 | 2 | 1 | 1 | 1 | 1 |
+
+¹ identity masih 2 dari pendaftaran suite e2e sebelumnya, sedang turun.
+
+Event HPA menyebut alasannya persis: naik karena
+`cpu resource utilization (percentage of request) above target`, turun
+karena `All metrics below target`, satu pod per menit sesuai kebijakan
+`scaleDown` di chart. **Replika naik lalu turun kembali, terekam** — bukan
+`kubectl get hpa` sesaat (ADR-014 aturan 3).
+
+Angka bebannya sendiri:
+
+| | Nilai |
+| :--- | ---: |
+| Permintaan | 29.290 dalam 4 menit (121/s) |
+| Gagal | **5,24 %** (1.536) |
+| p50 / p95 / p99 | 17 ms / **5 s** / 5,5 s |
+| `POST /register` p95 | 5,1 s |
+
+Lima detik adalah tenggat upstream gateway (`rpc.DefaultUpstreamTimeout`):
+pada 60 VU, node empat core ini **jenuh** — k6, edge, tujuh service,
+Postgres, Kafka, dan k3s berebut CPU yang sama — dan permintaan yang tidak
+sempat dilayani berakhir 504, bukan menggantung. Itu perilaku yang
+dirancang (chaos F9-13), tetapi angkanya menunjukkan ambang SLO baca
+(p95 < 25 ms) dilanggar jauh sebelum HPA mencapai maksimum.
+
+### Batas jujur k3d (F9-25, ADR-014 aturan 4)
+
+Pada satu node, replika kedua sampai keempat **berbagi CPU host yang sama**
+dengan replika pertama, k6, dan seluruh dependensi. Menambah replika tidak
+menambah core. Yang dibuktikan di atas adalah **mekanismenya**: metrik
+dibaca, ambang dilewati, replika ditambah, beban turun, replika dikurangi
+dengan kebijakan yang dinyatakan. Yang TIDAK dibuktikan adalah bahwa
+kapasitas bertambah — dan angka p95 5 s di atas adalah bukti bahwa ia
+memang tidak bertambah di sini. Grafik replika naik tanpa kalimat ini adalah
+klaim yang menyesatkan; kalimat ini adalah bagian dari hasilnya.
+
+Ambang HPA 60 % adalah angka awal, bukan turunan SLO (ADR-014 aturan 2
+belum terpenuhi): menurunkannya dari SLO menuntut kurva "utilisasi vs p95"
+pada node yang tidak berbagi CPU dengan pemberi bebannya — pengukuran yang
+hanya bermakna di klaster dengan lebih dari satu node. Dicatat di RFC
+penutup sebagai hutang yang tidak bisa dibayar di laptop ini.
