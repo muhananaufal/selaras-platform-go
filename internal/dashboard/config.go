@@ -12,6 +12,11 @@ type Config struct {
 	HealthAddr  string
 	DatabaseDSN string
 
+	// ReadDSN, bila terisi, adalah replika baca untuk Find (F9-32). Kosong
+	// berarti membaca dari sambungan yang sama dengan menulis - bentuk yang
+	// dipakai lingkungan tanpa replika, dan itu sah, bukan kesalahan.
+	ReadDSN string
+
 	// KafkaBrokers kosong berarti service berjalan tanpa outbox: pembacaan
 	// tetap dilayani, dan setiap use case yang menerbitkan event DITOLAK
 	// dengan pesan yang menyebutkan sebabnya.
@@ -26,6 +31,7 @@ func LoadConfig() (Config, error) {
 		GRPCAddr:     envOr("DASHBOARD_GRPC_ADDR", ":9701"),
 		HealthAddr:   envOr("DASHBOARD_HEALTH_ADDR", ":9702"),
 		DatabaseDSN:  os.Getenv("DASHBOARD_DATABASE_DSN"),
+		ReadDSN:      os.Getenv("DASHBOARD_READ_DSN"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
 	}
 	if cfg.DatabaseDSN == "" {
