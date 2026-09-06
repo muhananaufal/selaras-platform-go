@@ -36,6 +36,7 @@ type Repositories interface {
 	Programs() domain.ProgramRepository
 	Curricula() domain.CurriculumRepository
 	Threads() domain.ThreadRepository
+	Assessments() domain.AssessmentRepository
 	Events() EventWriter
 }
 

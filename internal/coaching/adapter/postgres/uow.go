@@ -58,6 +58,10 @@ func (t *transactional) Threads() domain.ThreadRepository {
 	return NewThreadRepository(t.q)
 }
 
+func (t *transactional) Assessments() domain.AssessmentRepository {
+	return NewAssessmentRepository(t.q)
+}
+
 func (t *transactional) Events() app.EventWriter {
 	if t.events == nil {
 		// Tanpa penulis event, use case yang menerbitkan sesuatu akan panik.
