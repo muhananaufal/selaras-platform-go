@@ -218,6 +218,10 @@ services:
         postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       DASHBOARD_GRPC_ADDR: ":9701"
       DASHBOARD_HEALTH_ADDR: ":9703"
+      # Replika baca (F9-32): langsung ke replika, bukan lewat PgBouncer -
+      # kolam bacanya kecil dan replika-nya satu.
+      DASHBOARD_READ_DSN: >-
+        postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
     ports:

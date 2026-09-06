@@ -26,6 +26,8 @@ services:
       SVC_NUTRITION_PASSWORD: ${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}
       SVC_DASHBOARD_PASSWORD: ${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}
       SVC_LLM_PASSWORD: ${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}
+      # Peran replikasi untuk replika baca (initdb/02-replication.sh, F9-32).
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
     ports:
       - "127.0.0.1:15432:5432"
     volumes:
@@ -36,6 +38,39 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  postgres-replica:
+    # Replika baca lewat streaming replication (F9-32). Hanya dashboard-svc
+    # yang membacanya (DASHBOARD_READ_DSN); penulisan tetap ke primer, dan
+    # replika menolak menulis. Lag replikasinya diukur di
+    # docs/db-connections.md.
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    container_name: selaras-postgres-replica
+    entrypoint: ["/bin/bash", "/replica-entrypoint.sh"]
+    environment:
+      PRIMARY_HOST: postgres
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
+      # Dibaca entrypoint image hanya saat initdb - yang tidak pernah terjadi
+      # di replika (datanya salinan primer) - tetapi ia menolak start tanpanya.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql
+      - ./replica/entrypoint.sh:/replica-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U replicator -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     deploy:
       resources:
         limits:
@@ -180,4 +215,5 @@ services:
 
 volumes:
   postgres-data:
+  postgres-replica-data:
   kafka-data:
