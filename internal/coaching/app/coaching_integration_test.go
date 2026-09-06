@@ -35,7 +35,7 @@ func setup(t *testing.T) *harness {
 	t.Helper()
 
 	pool := pgtest.Open(t, "coaching")
-	pgtest.Truncate(t, pool, "coaching_programs", "outbox")
+	pgtest.Truncate(t, pool, "coaching_programs", "coaching_assessments", "outbox")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
