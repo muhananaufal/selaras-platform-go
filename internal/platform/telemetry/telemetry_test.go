@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -207,5 +209,29 @@ func TestStartInstallsBaggagePropagation(t *testing.T) {
 	}
 	if !hasBaggage {
 		t.Error("baggage propagation is not installed")
+	}
+}
+
+// Metrik proses dan runtime WAJIB ada di setiap /metrics: FinOps (F9-16) dan
+// ambang HPA (F9-21) dihitung darinya, dan docker stats tidak ada di klaster.
+func TestMetricsExposeProcessAndRuntimeCollectors(t *testing.T) {
+	t.Setenv(telemetry.EndpointVariable, "")
+	tel, err := telemetry.Start(context.Background(), "test-svc", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := tel.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+	})
+
+	rec := httptest.NewRecorder()
+	tel.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, name := range []string{"process_cpu_seconds_total", "process_resident_memory_bytes", "go_goroutines"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("/metrics does not expose %s", name)
+		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -46,6 +47,15 @@ func New(serviceName string) (*Meters, error) {
 	// membawa metrik dari pustaka mana pun yang kebetulan terpasang, dan
 	// tabrakan namanya baru terlihat saat proses gagal start.
 	registry := prometheus.NewRegistry()
+
+	// Metrik proses dan runtime Go ikut disajikan: CPU-detik, RSS, goroutine,
+	// dan GC. Tanpa keduanya, "berapa biaya seribu permintaan" (F9-16) dan
+	// "berapa request yang dibutuhkan HPA" (F9-21) hanya bisa dijawab dari
+	// docker stats - yang tidak ada di klaster.
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
 
 	exporter, err := otelprom.New(otelprom.WithRegisterer(registry))
 	if err != nil {
