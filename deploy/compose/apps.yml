@@ -39,6 +39,12 @@ services:
       IDENTITY_GRPC_ADDR: ":9101"
       IDENTITY_HEALTH_ADDR: ":9102"
 
+      # argon2id memegang 64 MiB per derivasi dan hasher membatasinya ke dua
+      # serentak (crypto.DefaultMaxConcurrent). GOMEMLIMIT membuat GC Go
+      # mengembalikan memori sebelum menabrak plafon container, bukan
+      # sesudahnya: tanpa ini RSS menempel di plafon sepanjang k6 (F9-10).
+      GOMEMLIMIT: 160MiB
+
       # Alamat collector OTLP. KOSONG berarti trace tidak dikirim - dan itu
       # dinyatakan di log saat start, bukan gagal diam-diam. Diisi oleh
       # `task up:full`, yang juga menyalakan collectornya; tanpa collector,
