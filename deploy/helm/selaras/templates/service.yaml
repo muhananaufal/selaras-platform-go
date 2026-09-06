@@ -1,0 +1,32 @@
+{{- range $unit, $u := .Values.units }}
+{{- $ctx := dict "root" $ "unit" $unit }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $unit }}
+  labels:
+    {{- include "selaras.labels" $ctx | nindent 4 }}
+spec:
+  type: {{ ($u.service).type | default "ClusterIP" }}
+  selector:
+    {{- include "selaras.selector" $ctx | nindent 4 }}
+  ports:
+    {{- if $u.grpcPort }}
+    - name: grpc
+      port: {{ $u.grpcPort }}
+      targetPort: grpc
+      appProtocol: grpc
+    {{- end }}
+    {{- if $u.httpPort }}
+    - name: http
+      port: {{ $u.httpPort }}
+      targetPort: http
+      {{- if ($u.service).nodePort }}
+      nodePort: {{ $u.service.nodePort }}
+      {{- end }}
+    {{- end }}
+    - name: health
+      port: {{ $u.healthPort }}
+      targetPort: health
+{{- end }}

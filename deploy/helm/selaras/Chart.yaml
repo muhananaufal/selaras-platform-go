@@ -1,0 +1,6 @@
+apiVersion: v2
+name: selaras
+description: Sembilan unit platform Selaras (F9-01). Dependensi (Postgres, Kafka, Redis, PgBouncer) dan observability ada di deploy/k8s, bukan di chart ini - siklus hidupnya lain.
+type: application
+version: 0.1.0
+appVersion: "dev"

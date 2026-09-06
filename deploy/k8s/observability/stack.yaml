@@ -1,0 +1,296 @@
+# Observability di klaster lokal (F9-06): collector, Tempo, Prometheus,
+# Grafana. Loki dan Alloy TIDAK dipasang di k3d - keduanya ~600 MB yang lebih
+# berguna untuk KEDA, metrics-server, dan replika saat pembuktian autoscaling;
+# log dibaca lewat kubectl logs. Di compose (deploy/compose/full.yml)
+# keduanya ada.
+#
+# Konfigurasi collector dan Tempo identik dengan compose; Prometheus memakai
+# penemuan pod lewat anotasi prometheus.io/* yang dipasang chart. Dashboard
+# Grafana datang dari ConfigMap grafana-dashboards yang dibuat infra.sh dari
+# deploy/grafana/dashboards/ - satu sumber, dua lingkungan.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: otel-collector, namespace: observability }
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4317 }
+          http: { endpoint: 0.0.0.0:4318 }
+    processors:
+      memory_limiter: { check_interval: 1s, limit_mib: 180, spike_limit_mib: 40 }
+      batch: { timeout: 2s, send_batch_size: 512 }
+    exporters:
+      otlp/tempo:
+        endpoint: tempo:4317
+        tls: { insecure: true }
+    service:
+      telemetry:
+        metrics:
+          level: basic
+          readers:
+            - pull: { exporter: { prometheus: { host: 0.0.0.0, port: 8888 } } }
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/tempo]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: otel-collector, namespace: observability }
+spec:
+  selector: { app: otel-collector }
+  ports:
+    - { name: otlp-grpc, port: 4317 }
+    - { name: otlp-http, port: 4318 }
+    - { name: metrics, port: 8888 }
+---
+# Alamat yang dipakai unit di namespace selaras: otel-collector:4317 (values.yaml).
+# Service tanpa selector di namespace selaras meneruskannya ke namespace
+# observability lewat ExternalName - unit tidak perlu tahu namespace-nya.
+apiVersion: v1
+kind: Service
+metadata: { name: otel-collector, namespace: selaras }
+spec:
+  type: ExternalName
+  externalName: otel-collector.observability.svc.cluster.local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: otel-collector, namespace: observability }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: otel-collector } }
+  template:
+    metadata:
+      labels: { app: otel-collector }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8888", prometheus.io/path: /metrics }
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.159.0
+          args: ["--config=/etc/otel/config.yaml"]
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: metrics, containerPort: 8888 }
+          volumeMounts: [{ name: config, mountPath: /etc/otel, readOnly: true }]
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      volumes:
+        - name: config
+          configMap: { name: otel-collector }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: tempo, namespace: observability }
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc: { endpoint: 0.0.0.0:4317 }
+    storage:
+      trace:
+        backend: local
+        wal: { path: /var/tempo/wal }
+        local: { path: /var/tempo/blocks }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: tempo, namespace: observability }
+spec:
+  selector: { app: tempo }
+  ports:
+    - { name: otlp-grpc, port: 4317 }
+    - { name: http, port: 3200 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: tempo, namespace: observability }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: tempo } }
+  template:
+    metadata: { labels: { app: tempo } }
+    spec:
+      containers:
+        - name: tempo
+          image: grafana/tempo:3.0.3
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: http, containerPort: 3200 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/tempo, readOnly: true }
+            - { name: data, mountPath: /var/tempo }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+      volumes:
+        - name: config
+          configMap: { name: tempo }
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus, namespace: observability }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: prometheus }
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics, services, endpoints, pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: prometheus }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: prometheus }
+subjects: [{ kind: ServiceAccount, name: prometheus, namespace: observability }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: prometheus, namespace: observability }
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      # Setiap pod beranotasi prometheus.io/scrape=true, di namespace mana pun.
+      # Label `unit` diisi dari app.kubernetes.io/name supaya dashboard yang
+      # sama dengan compose bekerja tanpa diubah.
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs: [{ role: pod }]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: replace
+            target_label: unit
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus, namespace: observability }
+spec:
+  selector: { app: prometheus }
+  ports: [{ name: http, port: 9090 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus, namespace: observability }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.14.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.retention.time=2d
+          ports: [{ name: http, containerPort: 9090 }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus, readOnly: true }
+            - { name: data, mountPath: /prometheus }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: config
+          configMap: { name: prometheus }
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: grafana-provisioning, namespace: observability }
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - { name: Prometheus, uid: prometheus, type: prometheus, access: proxy, url: http://prometheus:9090, isDefault: true }
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://tempo:3200
+        jsonData:
+          serviceMap: { datasourceUid: prometheus }
+          nodeGraph: { enabled: true }
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: selaras
+        folder: Selaras
+        type: file
+        allowUiUpdates: false
+        options: { path: /var/lib/grafana/dashboards }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: grafana, namespace: observability }
+spec:
+  type: NodePort
+  selector: { app: grafana }
+  ports: [{ name: http, port: 3000, nodePort: 30300 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grafana, namespace: observability }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grafana } }
+  template:
+    metadata: { labels: { app: grafana } }
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2.1
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: grafana-admin, key: password } }
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "false" }
+            - { name: GF_USERS_ALLOW_SIGN_UP, value: "false" }
+          ports: [{ name: http, containerPort: 3000 }]
+          volumeMounts:
+            - { name: provisioning-ds, mountPath: /etc/grafana/provisioning/datasources, readOnly: true }
+            - { name: provisioning-db, mountPath: /etc/grafana/provisioning/dashboards, readOnly: true }
+            - { name: dashboards, mountPath: /var/lib/grafana/dashboards, readOnly: true }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+      volumes:
+        - name: provisioning-ds
+          configMap: { name: grafana-provisioning, items: [{ key: datasources.yaml, path: datasources.yaml }] }
+        - name: provisioning-db
+          configMap: { name: grafana-provisioning, items: [{ key: dashboards.yaml, path: dashboards.yaml }] }
+        - name: dashboards
+          configMap: { name: grafana-dashboards }

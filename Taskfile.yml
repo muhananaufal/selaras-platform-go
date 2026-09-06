@@ -210,6 +210,46 @@ tasks:
     cmds:
       - docker run --rm -v selaras-core_backups:/backups alpine ls -la /backups
 
+  # ---------------------------------------------------------------- k3d
+  k3d:up:
+    desc: Create the local k3d cluster from deploy/k3d/cluster.yaml (F9-04)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "export PATH=\/.local/bin:\ && cd {{.PROJECT_WSL}} && k3d cluster create --config deploy/k3d/cluster.yaml"
+
+  k3d:down:
+    desc: Delete the local k3d cluster
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "export PATH=\/.local/bin:\ && k3d cluster delete selaras"
+
+  k3d:secrets:
+    desc: Create the two Secrets (infra + units) in the cluster from .env, never from the chart
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "export PATH=\/.local/bin:\ && cd {{.PROJECT_WSL}} && bash deploy/k3d/secrets.sh"
+
+  k3d:infra:
+    desc: Apply Postgres, Kafka, Redis, Mailpit, PgBouncer and the observability stack
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "export PATH=\/.local/bin:\ && cd {{.PROJECT_WSL}} && bash deploy/k3d/infra.sh"
+
+  k3d:import:
+    desc: Build every unit image and import it into the cluster
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "export PATH=\/.local/bin:\ && cd {{.PROJECT_WSL}} && bash deploy/k3d/import.sh"
+
+  k3d:deploy:
+    desc: Install or upgrade the selaras chart with values-local.yaml
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "export PATH=\/.local/bin:\ && cd {{.PROJECT_WSL}} && helm upgrade --install selaras deploy/helm/selaras -n selaras -f deploy/helm/selaras/values-local.yaml --wait --timeout 5m"
+
+  k3d:all:
+    desc: One command - cluster, secrets, infra, images, chart (F9-04)
+    cmds:
+      - task: k3d:up
+      - task: k3d:secrets
+      - task: k3d:infra
+      - task: k3d:import
+      - task: k3d:deploy
+
   partitions:
     desc: Maintain monthly partitions for every partitioned table (F9-29)
     # DSN admin yang boleh menyentuh kedelapan skema: partisi dibuat dengan

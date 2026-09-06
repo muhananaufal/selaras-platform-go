@@ -49,6 +49,13 @@ LABEL org.opencontainers.image.title="selaras-${UNIT}" \
 
 COPY --from=build /out/app /app
 
+# Berkas migrasi ikut di SETIAP image (beberapa puluh KB), supaya image
+# `migrate` bisa dibangun dari Dockerfile yang sama dan berjalan sebagai Job
+# di klaster (deploy/k8s/jobs/migrate.yaml). cmd/migrate membaca
+# file://migrations/<service> relatif terhadap WORKDIR.
+COPY migrations /migrations
+WORKDIR /
+
 # Berjalan sebagai nonroot (uid 65532) yang sudah disediakan image dasar.
 USER nonroot:nonroot
 EXPOSE 8080

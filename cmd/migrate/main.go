@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -48,7 +49,7 @@ func run(service, direction, dsn string, forceTo int) error {
 		return errors.New("no dsn: pass -dsn or set MIGRATE_DSN")
 	}
 
-	m, err := migrate.New("file://migrations/"+service, dsn)
+	m, err := migrate.New("file://migrations/"+service, normalizeDSN(dsn))
 	if err != nil {
 		return fmt.Errorf("opening migrations for %s: %w", service, err)
 	}
@@ -89,4 +90,19 @@ func run(service, direction, dsn string, forceTo int) error {
 		return nil
 	}
 	return err
+}
+
+// normalizeDSN menerima DSN yang sama dengan yang dipakai unit.
+//
+// golang-migrate memilih driver dari skema URL, dan driver pgx/v5 mendaftar
+// sebagai "pgx5". Unit memakai "postgres://" - dan memaksa operator menulis
+// DSN yang berbeda hanya untuk migrasi adalah cara mengundang migrasi ke
+// basis data yang keliru. Skema lain dibiarkan apa adanya.
+func normalizeDSN(dsn string) string {
+	for _, prefix := range []string{"postgres://", "postgresql://"} {
+		if strings.HasPrefix(dsn, prefix) {
+			return "pgx5://" + strings.TrimPrefix(dsn, prefix)
+		}
+	}
+	return dsn
 }
