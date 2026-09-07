@@ -15,7 +15,7 @@ master plan §3 adalah ukurannya.
 | :--- | :--- | :--- | :--- |
 | 1 | 32 endpoint di gateway, tervalidasi kontrak | ✅ | `api/openapi/edge-v1.yaml`, `vacuum lint` di CI |
 | 2 | Paritas SCORE2 pada seluruh golden vector | ✅ | 288 vektor, `internal/assessment/domain/score` |
-| 3 | Test + CI hijau, lint bersih, nol TODO/kredensial/`interface{}` | ✅ lokal, **⚠️ CI di GitHub baru berjalan sekali** (2 Sep, `develop`: build+lint+kontrak gRPC+secret scan hijau, kontrak REST merah - kini lulus lokal; commitlint merah karena aturan yang tidak cocok praktik, disesuaikan) | 47 paket hijau, `golangci-lint` 0 isu; CI hanya terpicu di `main`/`develop` |
+| 3 | Test + CI hijau, lint bersih, nol TODO/kredensial/`interface{}` | ✅ | CI `develop` 2026-09-07 hijau di enam job: build+test (-race), lint, kontrak gRPC, kontrak REST, secret scan, e2e+acceptance+k6 di runner ([run 34084849776](https://github.com/muhananaufal/selaras-platform-go/actions/runs/34084849776)); larian sebelumnya merah karena `go install vacuum` dan `.env` runner tanpa `REPLICATION_PASSWORD` - keduanya cacat CI, bukan sistem |
 | 4 | Satu perintah menyalakan sistem, satu lagi menjalankan k6 | ✅ | `task up:full` / `task k3d:all`, `task k6 -- read` |
 | 5 | Trace satu request menembus ≥ 3 unit, utuh di Tempo | ✅ | `docs/observability.md`: 6 span, 3 unit |
 | 6 | Job LLM dua kali dengan kunci sama → satu hasil | ✅ | `internal/llmworker` (F3), e2e |
@@ -28,8 +28,7 @@ master plan §3 adalah ukurannya.
 | 13 | Autoscaling terbukti di bawah beban, batas k3d dinyatakan | ✅ | `docs/performance-report.md` §autoscaling |
 | 14 | Backup dipulihkan, bukan diasumsikan | ✅ | `docs/runbook/restore-drill.md`: 29 detik, e2e hijau sesudahnya |
 
-Dua belas setengah dari empat belas. Yang setengah dan yang tanda seru
-dibahas di §3.
+Tiga belas setengah dari empat belas. Yang setengah dibahas di §3.
 
 ## 2. Yang berhasil — dan mengapa
 
@@ -83,13 +82,13 @@ keputusan pemilik mesin. Akibatnya SLO (F9-11) diturunkan dari Go sendiri
 kegagalan sistem: rencana menaruh pengukuran yang menyentuh lingkungan orang
 lain di jalur kritis tanpa alternatif.
 
-**CI di GitHub baru berjalan sekali, di `develop`, lima hari lalu.** Pemicunya
-hanya push ke `main`/`develop` dan PR, sementara seluruh F2-F9 hidup di satu
-feature branch - jadi job unit yang hanya memigrasi empat skema sejak F4
-tidak pernah ketahuan merah di runner. Diperbaiki di F9-17 dan dibuktikan
-lokal; pembuktian di runner menunggu merge ke `develop`. Sembilan fase tanpa
-CI luar adalah hutang yang tidak terlihat justru karena semuanya berjalan di
-satu laptop.
+**CI di GitHub baru berjalan sungguhan setelah F9.** Pemicunya hanya push ke
+`main`/`develop` dan PR, sementara seluruh F2-F9 hidup di satu feature
+branch - sembilan fase tanpa CI luar. Begitu `develop` di-fast-forward, dua
+job merah karena hal yang hanya terlihat di runner: `go install vacuum`
+ditolak toolchain, dan `.env` sekali-pakai belum tahu replika baca butuh
+kata sandi. Larian berikutnya hijau di enam job. Pelajarannya di §4 butir 1
+tetap berlaku: pipeline yang tidak berjalan tidak ada.
 
 **Pipeline CD belum pernah men-deploy ke cloud.** `cd.yml` teruji di
 bagian yang bisa diuji di k3d (Dockerfile, chart, Job migrasi, urutan);
@@ -165,8 +164,7 @@ biaya MENJALANKAN sesuatu berulang kali, dan itu biaya yang layak.
 - Menerima bahwa kriteria 9 tidak terpenuhi dan memutuskan: jalankan B2-07
   (satu sore dengan Laravel di container), atau nyatakan SLO Go sebagai SLO
   final.
-- Mendorong repositori dan membiarkan CI berjalan; memperbaiki apa yang
-  merah di sana sebelum menyebut kriteria 3 selesai.
+- (Selesai: CI berjalan dan hijau di `develop`; kriteria 3 ditutup.)
 - Memutuskan nasib B26 dan pengukuran token: keduanya kecil, keduanya
   hutang yang dinyatakan.
 

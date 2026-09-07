@@ -1,5 +1,7 @@
 # Selaras Platform (Go)
 
+[![ci](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml)
+
 Sembilan unit Go — satu gateway REST, tujuh service domain, satu worker LLM —
 hasil migrasi dari monolit Laravel `selaras-backend-api` (32 endpoint, nol
 test). Dibangun seolah produksi sejak baris pertama (ADR-016): setiap klaim
