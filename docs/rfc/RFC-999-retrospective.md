@@ -15,7 +15,7 @@ master plan §3 adalah ukurannya.
 | :--- | :--- | :--- | :--- |
 | 1 | 32 endpoint di gateway, tervalidasi kontrak | ✅ | `api/openapi/edge-v1.yaml`, `vacuum lint` di CI |
 | 2 | Paritas SCORE2 pada seluruh golden vector | ✅ | 288 vektor, `internal/assessment/domain/score` |
-| 3 | Test + CI hijau, lint bersih, nol TODO/kredensial/`interface{}` | ✅ lokal, **⚠️ CI belum pernah berjalan di GitHub** | 47 paket hijau, `golangci-lint` 0 isu; repositori belum didorong |
+| 3 | Test + CI hijau, lint bersih, nol TODO/kredensial/`interface{}` | ✅ lokal, **⚠️ CI di GitHub baru berjalan sekali** (2 Sep, `develop`: build+lint+kontrak gRPC+secret scan hijau, kontrak REST merah - kini lulus lokal; commitlint merah karena aturan yang tidak cocok praktik, disesuaikan) | 47 paket hijau, `golangci-lint` 0 isu; CI hanya terpicu di `main`/`develop` |
 | 4 | Satu perintah menyalakan sistem, satu lagi menjalankan k6 | ✅ | `task up:full` / `task k3d:all`, `task k6 -- read` |
 | 5 | Trace satu request menembus ≥ 3 unit, utuh di Tempo | ✅ | `docs/observability.md`: 6 span, 3 unit |
 | 6 | Job LLM dua kali dengan kunci sama → satu hasil | ✅ | `internal/llmworker` (F3), e2e |
@@ -83,12 +83,13 @@ keputusan pemilik mesin. Akibatnya SLO (F9-11) diturunkan dari Go sendiri
 kegagalan sistem: rencana menaruh pengukuran yang menyentuh lingkungan orang
 lain di jalur kritis tanpa alternatif.
 
-**CI tidak pernah berjalan di GitHub.** Repositori belum didorong; job unit
-CI hanya memigrasi empat skema sejak F4 dan akan merah pada paket chat,
-coaching, nutrition, dashboard, e2e, dan acceptance (CI=true membuat mereka
-menolak melewati diri). Diperbaiki di F9-17 tanpa pernah dibuktikan hijau
-di runner sungguhan. Sembilan fase tanpa CI luar adalah hutang yang tidak
-terlihat justru karena semuanya berjalan di satu laptop.
+**CI di GitHub baru berjalan sekali, di `develop`, lima hari lalu.** Pemicunya
+hanya push ke `main`/`develop` dan PR, sementara seluruh F2-F9 hidup di satu
+feature branch - jadi job unit yang hanya memigrasi empat skema sejak F4
+tidak pernah ketahuan merah di runner. Diperbaiki di F9-17 dan dibuktikan
+lokal; pembuktian di runner menunggu merge ke `develop`. Sembilan fase tanpa
+CI luar adalah hutang yang tidak terlihat justru karena semuanya berjalan di
+satu laptop.
 
 **Pipeline CD belum pernah men-deploy ke cloud.** `cd.yml` teruji di
 bagian yang bisa diuji di k3d (Dockerfile, chart, Job migrasi, urutan);
@@ -143,7 +144,7 @@ Yang bisa dihitung dari repositori dan sesi ini:
 | Ukuran | Nilai |
 | :--- | ---: |
 | Commit di `feature/20260902-f1-identity-domain` | 120 (`git rev-list --count HEAD`) |
-| ADR | 24 |
+| ADR | 25 |
 | Temuan sistem lama dan milik sendiri | B1–B26, S1–S11, T1–T14, D1–D12 |
 | Paket Go dengan test | 47 |
 | Runbook | 15 |
