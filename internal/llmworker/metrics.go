@@ -10,6 +10,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+
+	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
 
 // Metrics adalah tiga angka yang menjawab "apakah antreannya sehat" (F3-15).
@@ -32,7 +34,20 @@ type Metrics struct {
 	// yang berhasil dan yang gagal harus bisa dibandingkan tanpa menjumlahkan
 	// deret yang berbeda.
 	outcomes metric.Int64Counter
+
+	// tokens menghitung token yang DILAPORKAN penyedia, per jenis (masukan,
+	// keluaran, pikiran), penyedia, dan templat. Ini angka yang FinOps
+	// (docs/finops.md) tunggu sejak F9: sebelum ini biaya per pekerjaan
+	// ditaksir dari ukuran templat dibagi empat.
+	tokens metric.Int64Counter
 }
+
+// Jenis token untuk atribut penghitung.
+const (
+	TokensInput    = "input"
+	TokensOutput   = "output"
+	TokensThoughts = "thoughts"
+)
 
 // Outcome adalah nilai atribut untuk penghitung hasil.
 const (
@@ -62,7 +77,13 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 		return nil, fmt.Errorf("building the outcome counter: %w", err)
 	}
 
-	return &Metrics{duration: duration, outcomes: outcomes}, nil
+	tokens, err := meter.Int64Counter("llm_tokens_total",
+		metric.WithDescription("Tokens reported by the LLM provider, by kind, provider, and template"))
+	if err != nil {
+		return nil, fmt.Errorf("building the token counter: %w", err)
+	}
+
+	return &Metrics{duration: duration, outcomes: outcomes, tokens: tokens}, nil
 }
 
 // Observe mencatat satu pekerjaan yang selesai.
@@ -77,6 +98,28 @@ func (m *Metrics) Observe(ctx context.Context, outcome string, took time.Duratio
 	attrs := metric.WithAttributes(attribute.String("outcome", outcome))
 	m.outcomes.Add(ctx, 1, attrs)
 	m.duration.Record(ctx, took.Seconds(), attrs)
+}
+
+// ObserveUsage mencatat token satu jawaban.
+//
+// Nol tidak dicatat: penyedia palsu tidak melaporkan token, dan deret bernilai
+// nol untuknya akan terbaca seolah pekerjaan itu gratis.
+func (m *Metrics) ObserveUsage(ctx context.Context, provider, template string, u llm.Usage) {
+	if m == nil || u.Total() == 0 {
+		return
+	}
+	for kind, n := range map[string]int{
+		TokensInput: u.InputTokens, TokensOutput: u.OutputTokens, TokensThoughts: u.ThoughtsTokens,
+	} {
+		if n == 0 {
+			continue
+		}
+		m.tokens.Add(ctx, int64(n), metric.WithAttributes(
+			attribute.String("kind", kind),
+			attribute.String("provider", provider),
+			attribute.String("template", template),
+		))
+	}
 }
 
 // LagReporter melaporkan consumer lag secara berkala.
