@@ -269,11 +269,15 @@ jobs:
           # Kontrak dikunci di B1: perubahan yang merusak konsumen harus
           # datang sebagai versi paket baru, bukan suntingan di tempat.
           #
-          # Cabang dasar dibaca dari clone lokal (fetch-depth 0), BUKAN dari
-          # github.repositoryUrl: yang terakhir berbentuk git://, yang tidak
-          # lagi dilayani GitHub - job ini merah di setiap PR, termasuk PR
-          # Dependabot yang tidak menyentuh satu proto pun.
-          breaking_against: ${{ github.event_name == 'pull_request' && format('.git#branch={0}', github.base_ref) || '' }}
+          # breaking_against TIDAK ditimpa: bawaan buf-action sudah membandingkan
+          # dengan cabang dasar PR (dan commit sebelumnya pada push). Dua
+          # timpaan sebelumnya sama-sama merah di PR Dependabot - github.repositoryUrl
+          # berbentuk git:// yang tidak lagi dilayani GitHub, dan .git#branch=main
+          # menuntut ref lokal yang tidak dibuat checkout PR.
+          #
+          # Komentar di PR dimatikan: workflow ini sengaja hanya contents: read,
+          # dan buf-action gagal saat mencoba menulis komentar dengan izin itu.
+          pr_comment: false
 
   openapi:
     name: rest contract
