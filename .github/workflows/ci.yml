@@ -268,7 +268,12 @@ jobs:
           version: 1.72.0
           # Kontrak dikunci di B1: perubahan yang merusak konsumen harus
           # datang sebagai versi paket baru, bukan suntingan di tempat.
-          breaking_against: ${{ github.event_name == 'pull_request' && format('{0}#branch={1}', github.repositoryUrl, github.base_ref) || '' }}
+          #
+          # Cabang dasar dibaca dari clone lokal (fetch-depth 0), BUKAN dari
+          # github.repositoryUrl: yang terakhir berbentuk git://, yang tidak
+          # lagi dilayani GitHub - job ini merah di setiap PR, termasuk PR
+          # Dependabot yang tidak menyentuh satu proto pun.
+          breaking_against: ${{ github.event_name == 'pull_request' && format('.git#branch={0}', github.base_ref) || '' }}
 
   openapi:
     name: rest contract
