@@ -24,7 +24,7 @@ master plan §3 adalah ukurannya.
 | 9 | Angka k6 Go tersanding Laravel | **❌ separuh** | Go lengkap; **Laravel tidak pernah diukur** (B2-07) |
 | 10 | RFC penutup | ✅ | berkas ini |
 | 11 | S1–S11 ditutup dengan test | ✅ | `test/acceptance` |
-| 12 | D1–D12 punya test penerimaan bernama | ✅ | `test/acceptance`; **D6 ternyata belum dijaga** dan ditambahkan |
+| 12 | D1–D12 punya test penerimaan bernama | ✅ | `test/acceptance`; **D6 ternyata belum dijaga** dan ditambahkan; **D3 ternyata tidak pernah ditegakkan** (B27) dan diperbaiki di gerbang keluar |
 | 13 | Autoscaling terbukti di bawah beban, batas k3d dinyatakan | ✅ | `docs/performance-report.md` §autoscaling |
 | 14 | Backup dipulihkan, bukan diasumsikan | ✅ | `docs/runbook/restore-drill.md`: 29 detik, e2e hijau sesudahnya |
 
@@ -55,9 +55,14 @@ nyata muncul hanya karena sesuatu dijalankan sungguhan:
 - scale-to-zero yang tidak bisa bangun (B24) — metrik lag diterbitkan oleh
   yang seharusnya dibangunkan;
 - Kafka yang menulis ke `/tmp` (B23) — chaos `kill`+`start` lulus dan tetap
-  tidak menangkapnya.
-Keempatnya punya test sekarang. Tidak satu pun bisa ditulis sebelum
-kejadiannya.
+  tidak menangkapnya;
+- slug analisis yang tidak pernah diresolusi (B27) — F4-06 berstatus ✅
+  selama lima fase; test penerimaan D3 yang menemukannya, dan itu pun baru
+  setelah test D2-nya sendiri dikoreksi;
+- compose yang menyala tanpa topic (B28) — gerbang keluar F9 merah di tiga
+  suite tanpa satu baris kode yang salah.
+Keenamnya punya test atau penjaga sekarang. Tidak satu pun bisa ditulis
+sebelum kejadiannya.
 
 **Penyedia LLM palsu dengan mode gangguan.** Seluruh jalur percobaan ulang,
 mati, dan 202-yang-tetap-instan dibuktikan tanpa satu pun panggilan Gemini

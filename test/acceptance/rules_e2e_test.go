@@ -140,6 +140,35 @@ func (a *api) startProgram() (int, map[string]any) {
 	return a.do(http.MethodPost, "/coaching/programs", map[string]any{"difficulty": "Standar & Konsisten"})
 }
 
+// startProgramFrom memulai program yang bersumber dari satu hasil analisis.
+//
+// Coaching mengenal analisis lewat event assessment.completed (F4-06), jadi
+// ada jeda antara 201 dari /risk-assessments dan saat slug-nya bisa dipakai:
+// 404 selama jeda itu dicoba lagi selama beberapa detik, bukan diasumsikan
+// tidak ada.
+func (a *api) startProgramFrom(assessmentSlug string) (int, map[string]any) {
+	a.t.Helper()
+	body := map[string]any{"difficulty": "Standar & Konsisten", "risk_assessment_slug": assessmentSlug}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		code, resp := a.do(http.MethodPost, "/coaching/programs", body)
+		if code != http.StatusNotFound || time.Now().After(deadline) {
+			return code, resp
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func statusOf(t *testing.T, body map[string]any) string {
+	t.Helper()
+	data, _ := body["data"].(map[string]any)
+	status, _ := data["status"].(string)
+	if status == "" {
+		t.Fatalf("no status in %v", body)
+	}
+	return status
+}
+
 func slugOf(t *testing.T, body map[string]any) string {
 	t.Helper()
 	data, _ := body["data"].(map[string]any)
@@ -178,19 +207,41 @@ func TestD01_ANewLoginRevokesTheOlderSession(t *testing.T) {
 	}
 }
 
-// D2 - Satu program aktif per pengguna: memulai yang kedua ditolak 409.
-// D3 - Satu program per hasil analisis: penilaian yang sama tidak bisa dipakai
-// dua kali, juga 409.
+// D2 - Satu program aktif per pengguna. Memulai yang kedua TIDAK ditolak:
+// seperti sistem lama (`initiateProgram`), program aktif sebelumnya dijeda dan
+// yang baru menjadi satu-satunya yang aktif. Yang dijaga adalah "satu aktif",
+// bukan "tidak boleh memulai lagi" - itu perbedaan yang sempat saya salah
+// tulis sebagai 409, dan test inilah yang menangkapnya.
+// D3 - Satu program per hasil analisis: penilaian yang sudah dipakai satu
+// program ditolak 409, sekalipun program itu sudah dijeda.
 func TestD02_D03_OneActiveProgramPerUserAndPerAssessment(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
-	a.startAssessment()
+	assessment := a.startAssessment()
 
-	if code, body := a.startProgram(); code != http.StatusAccepted {
+	code, body := a.startProgramFrom(assessment)
+	if code != http.StatusAccepted {
 		t.Fatalf("the first program answered %d: %v", code, body)
 	}
-	if code, body := a.startProgram(); code != http.StatusConflict {
-		t.Fatalf("D2: a second program while one is active answered %d, want 409: %v", code, body)
+	first := slugOf(t, body)
+
+	code, body = a.startProgram()
+	if code != http.StatusAccepted {
+		t.Fatalf("D2: a second program answered %d, want 202 with the first one paused: %v", code, body)
+	}
+	if got := statusOf(t, body); got != "active" {
+		t.Fatalf("D2: the new program must be the active one, got %q", got)
+	}
+	code, body = a.do(http.MethodGet, "/coaching/programs/"+first, nil)
+	if code != http.StatusOK {
+		t.Fatalf("reading the first program answered %d: %v", code, body)
+	}
+	if got := statusOf(t, body); got != "paused" {
+		t.Fatalf("D2: the previous program must be paused, got %q", got)
+	}
+
+	if code, body := a.startProgramFrom(assessment); code != http.StatusConflict {
+		t.Fatalf("D3: reusing an assessment answered %d, want 409: %v", code, body)
 	}
 }
 

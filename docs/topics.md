@@ -10,6 +10,15 @@ go run ./cmd/topics -brokers 127.0.0.1:19092
 
 Perintah itu boleh dijalankan berkali-kali. Topic yang sudah ada dibiarkan.
 
+Ia TIDAK perlu dijalankan tangan untuk lingkungan yang dikelola repo ini:
+di compose, service `topics` (`deploy/compose/apps.yml`) menjalankannya pada
+setiap `up`, dan setiap unit yang menyentuh Kafka menunggu ia SELESAI
+(`service_completed_successfully`); di k3d, Job `topics`
+(`deploy/k3d/infra.sh`) melakukan hal yang sama. Sebelum service itu ada,
+container Kafka yang dibuat ulang menyala tanpa satu topic pun dan seluruh
+relay outbox gagal `UNKNOWN_TOPIC_OR_PARTITION` sampai seseorang ingat
+perintah di atas (B28).
+
 ## Mengapa jumlah partisi tidak boleh diubah sembarangan
 
 Jumlah partisi adalah **batas atas paralelisme konsumen** (ADR-014 aturan 1).
