@@ -37,3 +37,14 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+# Aturan alert (alerts.yml) dan ke mana alert dikirim. Aturannya diuji
+# promtool di CI; penerimanya Mailpit (alertmanager.yml), supaya alert yang
+# menyala benar-benar terlihat, bukan diasumsikan.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]

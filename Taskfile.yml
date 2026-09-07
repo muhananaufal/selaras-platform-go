@@ -282,6 +282,11 @@ tasks:
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker run --rm --network selaras-core_default -v {{.PROJECT_WSL}}/test/k6:/k6:ro -e BASE_URL=http://edge-gateway:8080 grafana/k6:1.8.1 run /k6/scenarios/{{.CLI_ARGS}}.js"
 
+  alerts:test:
+    desc: Check and unit-test the Prometheus alert rules, and validate the Alertmanager config
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/compose/observability/test.sh
+
   topics:
     desc: Create the platform's Kafka topics, then read them back from the broker
     cmds:

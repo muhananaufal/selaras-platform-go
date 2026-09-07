@@ -164,6 +164,16 @@ data:
   prometheus.yml: |
     global:
       scrape_interval: 15s
+      evaluation_interval: 15s
+    # Aturan yang SAMA dengan compose (deploy/compose/observability/alerts.yml),
+    # dimuat dari ConfigMap prometheus-rules yang dibuat infra.sh dari berkas
+    # itu - satu sumber, dua lingkungan.
+    rule_files:
+      - /etc/prometheus/rules/alerts.yml
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ["alertmanager:9093"]
     scrape_configs:
       # Setiap pod beranotasi prometheus.io/scrape=true, di namespace mana pun.
       # Label `unit` diisi dari app.kubernetes.io/name supaya dashboard yang
@@ -219,6 +229,7 @@ spec:
           ports: [{ name: http, containerPort: 9090 }]
           volumeMounts:
             - { name: config, mountPath: /etc/prometheus, readOnly: true }
+            - { name: rules, mountPath: /etc/prometheus/rules, readOnly: true }
             - { name: data, mountPath: /prometheus }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
@@ -226,6 +237,8 @@ spec:
       volumes:
         - name: config
           configMap: { name: prometheus }
+        - name: rules
+          configMap: { name: prometheus-rules }
         - name: data
           emptyDir: {}
 ---
@@ -294,3 +307,71 @@ spec:
           configMap: { name: grafana-provisioning, items: [{ key: dashboards.yaml, path: dashboards.yaml }] }
         - name: dashboards
           configMap: { name: grafana-dashboards }
+---
+# Alertmanager: penerima surel ke Mailpit di namespace selaras, sama dengan
+# compose - alert yang menyala di klaster terlihat di UI Mailpit (port
+# 30825 di k3d), bukan diasumsikan. Di cloud, receiver ini diganti (PagerDuty,
+# Slack) lewat ConfigMap ini saja; aturannya tidak berubah.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: alertmanager, namespace: observability }
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: mailpit.selaras.svc.cluster.local:1025
+      smtp_from: alerts@selaras.local
+      smtp_require_tls: false
+      resolve_timeout: 5m
+    route:
+      receiver: mailpit
+      group_by: [alertname, unit]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 1h
+      routes:
+        - matchers: [severity = page]
+          group_wait: 10s
+          repeat_interval: 1h
+        - matchers: [severity = ticket]
+          group_wait: 5m
+          repeat_interval: 12h
+    receivers:
+      - name: mailpit
+        email_configs:
+          - to: oncall@selaras.local
+            send_resolved: true
+---
+apiVersion: v1
+kind: Service
+metadata: { name: alertmanager, namespace: observability }
+spec:
+  selector: { app: alertmanager }
+  ports: [{ name: http, port: 9093 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: alertmanager, namespace: observability }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: alertmanager } }
+  template:
+    metadata: { labels: { app: alertmanager } }
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.34.0
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+          ports: [{ name: http, containerPort: 9093 }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/alertmanager, readOnly: true }
+            - { name: data, mountPath: /alertmanager }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+      volumes:
+        - name: config
+          configMap: { name: alertmanager }
+        - name: data
+          emptyDir: {}

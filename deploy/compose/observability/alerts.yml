@@ -1,0 +1,138 @@
+# Aturan alert Prometheus - diturunkan dari SLO, bukan dikarang.
+#
+# Sumber ambangnya adalah test/k6/lib/slo.js (F9-11): kegagalan < 1 %, p95
+# campuran < 50 ms, pendaftaran p95 < 1,5 s. Alert di sini menyala saat
+# sistem yang HIDUP melanggar angka yang sama yang membuat k6 gagal di CI.
+# Aturan yang tidak punya SLO di belakangnya - unit mati, pekerjaan mati,
+# antrean diparkir - menyebut alasannya sendiri.
+#
+# Setiap aturan punya unit test di alerts_test.yml (promtool test rules) dan
+# dijalankan di CI; aturan yang tidak pernah terbukti menyala adalah aturan
+# yang tidak ada. Berkas ini dipakai apa adanya oleh compose (full.yml) dan
+# disalin ke ConfigMap di deploy/k8s/observability/stack.yaml.
+groups:
+  - name: selaras-availability
+    rules:
+      # Multi-window burn rate (Google SRE Workbook, bab 5) untuk SLO
+      # ketersediaan 99 %: rasio galat 5xx terhadap seluruh permintaan.
+      # Jendela pendek (5m) menangkap ledakan, jendela panjang (1h)
+      # memastikan ia bukan satu batch k6 yang kebetulan; keduanya harus
+      # menyala. Burn rate 14,4 berarti seluruh anggaran galat sebulan
+      # habis dalam dua hari.
+      - record: selaras:http_error_ratio:5m
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+            /
+          clamp_min(sum(rate(http_server_request_duration_seconds_count[5m])), 1e-9)
+      - record: selaras:http_error_ratio:1h
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1h]))
+            /
+          clamp_min(sum(rate(http_server_request_duration_seconds_count[1h])), 1e-9)
+      - alert: SelarasErrorBudgetBurningFast
+        expr: |
+          selaras:http_error_ratio:5m > (14.4 * 0.01)
+            and
+          selaras:http_error_ratio:1h > (14.4 * 0.01)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "5xx di atas 14,4 kali anggaran galat (SLO 99 %)"
+          description: "Rasio 5xx 5m={{ $value | humanizePercentage }}; anggaran sebulan habis dalam dua hari pada laju ini. Lihat docs/runbook/edge-gateway.md."
+      # Jendela panjang untuk pembakaran lambat: 6 kali anggaran (habis dalam
+      # lima hari) selama enam jam dengan konfirmasi 30 menit. Ini yang
+      # menangkap "3 % galat terus-menerus" yang tidak cukup untuk page.
+      - record: selaras:http_error_ratio:30m
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[30m]))
+            /
+          clamp_min(sum(rate(http_server_request_duration_seconds_count[30m])), 1e-9)
+      - record: selaras:http_error_ratio:6h
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[6h]))
+            /
+          clamp_min(sum(rate(http_server_request_duration_seconds_count[6h])), 1e-9)
+      - alert: SelarasErrorBudgetBurningSlowly
+        expr: |
+          selaras:http_error_ratio:30m > (6 * 0.01)
+            and
+          selaras:http_error_ratio:6h > (6 * 0.01)
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "5xx di atas 6 kali anggaran galat selama enam jam"
+          description: "Rasio 5xx 30m={{ $value | humanizePercentage }}; anggaran sebulan habis dalam lima hari pada laju ini."
+
+  - name: selaras-latency
+    rules:
+      # p95 seluruh rute selain pendaftaran, dibandingkan dengan SLO
+      # campuran k6 (50 ms). Pendaftaran dikecualikan karena argon2id
+      # memang 375 ms (slo.js), dan punya alert sendiri.
+      - alert: SelarasLatencyAboveSLO
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route!="/api/v1/register"}[5m]))
+          ) > 0.050
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "p95 HTTP di atas SLO 50 ms selama 10 menit"
+          description: "p95={{ $value | humanizeDuration }}. Regresi satu orde biasanya query tanpa indeks atau panggilan gRPC yang menjadi dua; bandingkan dengan docs/performance-report.md."
+      - alert: SelarasRegisterLatencyAboveSLO
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route="/api/v1/register"}[5m]))
+          ) > 1.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "p95 pendaftaran di atas 1,5 s"
+          description: "Hasher argon2id dibatasi dua derivasi serentak (identity-svc); antrean di belakangnya berarti identity-svc butuh replika, bukan CPU."
+
+  - name: selaras-units
+    rules:
+      # `up` adalah satu-satunya sinyal yang tidak butuh lalu lintas: unit
+      # yang mati pada pukul tiga pagi tanpa pengguna tetap terlihat.
+      - alert: SelarasUnitDown
+        expr: up{job=~"selaras|kubernetes-pods"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Unit {{ $labels.unit }} tidak bisa ditarik metriknya selama 2 menit"
+          description: "Runbook: docs/runbook/{{ $labels.unit }}.md. Di compose: docker compose ps; di klaster: kubectl -n selaras get pods."
+
+  - name: selaras-llm
+    rules:
+      # Pekerjaan yang mati adalah pekerjaan pengguna yang hilang; sejak
+      # ADR-025 kuota TIDAK lagi mematikan pekerjaan, jadi setiap `dead`
+      # berarti prompt/jawaban yang memang bermasalah dan layak dilihat.
+      - alert: SelarasLLMJobsDying
+        expr: increase(llm_jobs_total{outcome="dead"}[15m]) > 0
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanize }} pekerjaan LLM mati dalam 15 menit"
+          description: "SELECT id, kind, last_error FROM llm.llm_jobs WHERE status='dead' ORDER BY updated_at DESC; runbook docs/runbook/llm-worker.md gejala 2."
+      # Antrean yang diparkir terus-menerus berarti kuota harian, bukan
+      # per-menit (ADR-025): tidak ada yang bisa dilakukan worker, hanya
+      # manusia yang bisa menaikkan tingkat penagihan.
+      - alert: SelarasLLMQueueParked
+        expr: |
+          sum(increase(llm_jobs_total{outcome="parked"}[30m])) > 0
+            and
+          sum(increase(llm_jobs_total{outcome="completed"}[30m])) == 0
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Worker LLM diparkir 30 menit tanpa satu pun pekerjaan selesai"
+          description: "Kuota penyedia habis dan tidak pulih; nama kuotanya ada di log worker (`quota ...`). Pekerjaan menunggu, tidak mati."
+      # Lag yang tumbuh sementara worker hidup: throughput penyedia lebih
+      # rendah dari laju permintaan. KEDA menambah replika sampai 12
+      # (jumlah partisi); di atas itu hanya kuota penyedia yang menentukan.
+      - alert: SelarasLLMBacklogGrowing
+        expr: sum(kafka_consumer_lag) > 100 and delta(sum(kafka_consumer_lag)[15m:1m]) > 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Backlog llm.jobs {{ $value | humanize }} dan masih tumbuh"
+          description: "Bandingkan dengan replika worker (maks 12, docs/topics.md) dan llm_job_duration_seconds; runbook docs/runbook/llm-worker.md gejala 3."

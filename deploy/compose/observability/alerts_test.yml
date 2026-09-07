@@ -1,0 +1,190 @@
+# Unit test aturan alert (promtool test rules). Setiap alert dibuktikan
+# MENYALA pada deret yang melanggar dan DIAM pada deret yang sehat; aturan
+# yang hanya diperiksa sintaksnya tidak membuktikan apa pun.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- Ketersediaan: 5xx 20 % selama satu jam menyalakan page (14,4 x anggaran 1 %); 0,5 % tidak.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
+        values: '0+800x90'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="503"}'
+        values: '0+200x90'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SelarasErrorBudgetBurningFast
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations:
+              summary: "5xx di atas 14,4 kali anggaran galat (SLO 99 %)"
+              description: "Rasio 5xx 5m=20%; anggaran sebulan habis dalam dua hari pada laju ini. Lihat docs/runbook/edge-gateway.md."
+
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
+        values: '0+995x90'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="503"}'
+        values: '0+5x90'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SelarasErrorBudgetBurningFast
+        exp_alerts: []
+
+  # --- Latensi: seluruh permintaan di bucket 100 ms (p95 ~ 100 ms) selama
+  # 15 menit menyalakan ticket; seluruhnya di bucket 10 ms tidak. Bucket
+  # mengikuti bawaan OpenTelemetry (0.005, 0.01, 0.025, 0.05, 0.1, ...).
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.05"}'
+        values: '0+0x20'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.1"}'
+        values: '0+100x20'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="+Inf"}'
+        values: '0+100x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: SelarasLatencyAboveSLO
+        exp_alerts:
+          - exp_labels: { severity: ticket }
+            exp_annotations:
+              summary: "p95 HTTP di atas SLO 50 ms selama 10 menit"
+              description: "p95=97.5ms. Regresi satu orde biasanya query tanpa indeks atau panggilan gRPC yang menjadi dua; bandingkan dengan docs/performance-report.md."
+
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.01"}'
+        values: '0+100x20'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.05"}'
+        values: '0+100x20'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="+Inf"}'
+        values: '0+100x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: SelarasLatencyAboveSLO
+        exp_alerts: []
+
+  # --- Pendaftaran lambat TIDAK menyalakan alert latensi umum (ia
+  # dikecualikan), tetapi menyalakan alert pendaftaran bila > 1,5 s.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="1"}'
+        values: '0+0x20'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="2.5"}'
+        values: '0+10x20'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="+Inf"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: SelarasLatencyAboveSLO
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: SelarasRegisterLatencyAboveSLO
+        exp_alerts:
+          - exp_labels: { severity: ticket }
+            exp_annotations:
+              summary: "p95 pendaftaran di atas 1,5 s"
+              description: "Hasher argon2id dibatasi dua derivasi serentak (identity-svc); antrean di belakangnya berarti identity-svc butuh replika, bukan CPU."
+
+  # --- Unit mati 2 menit menyalakan page dengan nama unitnya.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="selaras",unit="coaching-svc"}'
+        values: '1 1 0 0 0 0'
+      - series: 'up{job="selaras",unit="edge-gateway"}'
+        values: '1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SelarasUnitDown
+        exp_alerts:
+          - exp_labels: { severity: page, job: selaras, unit: coaching-svc }
+            exp_annotations:
+              summary: "Unit coaching-svc tidak bisa ditarik metriknya selama 2 menit"
+              description: "Runbook: docs/runbook/coaching-svc.md. Di compose: docker compose ps; di klaster: kubectl -n selaras get pods."
+
+  # --- LLM: satu pekerjaan mati menyala seketika; parkir 30 menit tanpa
+  # yang selesai menyala; parkir yang diselingi pekerjaan selesai tidak.
+  - interval: 1m
+    input_series:
+      - series: 'llm_jobs_total{job="selaras",unit="llm-worker",outcome="dead"}'
+        values: '0 0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SelarasLLMJobsDying
+        exp_alerts:
+          - exp_labels: { severity: ticket, job: selaras, unit: llm-worker, outcome: dead }
+            exp_annotations:
+              summary: "1 pekerjaan LLM mati dalam 15 menit"
+              description: "SELECT id, kind, last_error FROM llm.llm_jobs WHERE status='dead' ORDER BY updated_at DESC; runbook docs/runbook/llm-worker.md gejala 2."
+
+  - interval: 1m
+    input_series:
+      - series: 'llm_jobs_total{job="selaras",unit="llm-worker",outcome="parked"}'
+        values: '0+1x70'
+      - series: 'llm_jobs_total{job="selaras",unit="llm-worker",outcome="completed"}'
+        values: '5+0x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SelarasLLMQueueParked
+        exp_alerts:
+          - exp_labels: { severity: ticket }
+            exp_annotations:
+              summary: "Worker LLM diparkir 30 menit tanpa satu pun pekerjaan selesai"
+              description: "Kuota penyedia habis dan tidak pulih; nama kuotanya ada di log worker (`quota ...`). Pekerjaan menunggu, tidak mati."
+
+  - interval: 1m
+    input_series:
+      - series: 'llm_jobs_total{job="selaras",unit="llm-worker",outcome="parked"}'
+        values: '0+1x70'
+      - series: 'llm_jobs_total{job="selaras",unit="llm-worker",outcome="completed"}'
+        values: '0+1x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SelarasLLMQueueParked
+        exp_alerts: []
+
+  # --- Pembakaran lambat: 8 % galat selama tujuh jam menyalakan ticket
+  # (bukan page), dan 0,5 % tidak.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
+        values: '0+920x420'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="503"}'
+        values: '0+80x420'
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: SelarasErrorBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: { severity: ticket }
+            exp_annotations:
+              summary: "5xx di atas 6 kali anggaran galat selama enam jam"
+              description: "Rasio 5xx 30m=8%; anggaran sebulan habis dalam lima hari pada laju ini."
+      - eval_time: 7h
+        alertname: SelarasErrorBudgetBurningFast
+        exp_alerts: []
+
+  # --- Backlog llm.jobs yang tumbuh selama 15 menit menyalakan ticket;
+  # backlog besar yang datar tidak (worker sedang mengejar, bukan tertinggal).
+  - interval: 1m
+    input_series:
+      - series: 'kafka_consumer_lag{job="selaras",unit="llm-worker",topic="llm.jobs",partition="0"}'
+        values: '50+10x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: SelarasLLMBacklogGrowing
+        exp_alerts:
+          - exp_labels: { severity: ticket }
+            exp_annotations:
+              summary: "Backlog llm.jobs 450 dan masih tumbuh"
+              description: "Bandingkan dengan replika worker (maks 12, docs/topics.md) dan llm_job_duration_seconds; runbook docs/runbook/llm-worker.md gejala 3."
+  - interval: 1m
+    input_series:
+      - series: 'kafka_consumer_lag{job="selaras",unit="llm-worker",topic="llm.jobs",partition="0"}'
+        values: '400+0x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: SelarasLLMBacklogGrowing
+        exp_alerts: []

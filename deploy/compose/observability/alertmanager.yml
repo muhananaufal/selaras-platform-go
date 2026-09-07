@@ -1,0 +1,35 @@
+# Alertmanager untuk lingkungan lokal: penerimanya SUREL KE MAILPIT.
+#
+# Bukan receiver kosong. Alert yang tidak pernah sampai ke mana pun tidak
+# bisa dibuktikan bekerja; dengan Mailpit, setiap alert yang menyala terlihat
+# di http://127.0.0.1:18025 seperti surel reset kata sandi - dan chaos yang
+# mematikan satu unit (test/chaos/service.sh) bisa dituntut menghasilkan
+# satu surel. Di klaster, receiver-nya diganti lewat ConfigMap
+# (deploy/k8s/observability/stack.yaml) tanpa mengubah aturannya.
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: alerts@selaras.local
+  smtp_require_tls: false
+  resolve_timeout: 5m
+
+route:
+  receiver: mailpit
+  group_by: [alertname, unit]
+  # Page dikirim segera dan diulang tiap jam selama masih menyala; ticket
+  # dikumpulkan lima menit supaya satu insiden menjadi satu surel.
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  routes:
+    - matchers: [severity = page]
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers: [severity = ticket]
+      group_wait: 5m
+      repeat_interval: 12h
+
+receivers:
+  - name: mailpit
+    email_configs:
+      - to: oncall@selaras.local
+        send_resolved: true
