@@ -68,6 +68,27 @@ type Response struct {
 	// karena batas token bukan jawaban yang selesai, dan membedakannya
 	// mencegah laporan setengah jadi tersimpan sebagai laporan utuh.
 	FinishReason string
+
+	// Usage adalah token yang dilaporkan penyedia untuk jawaban ini. Nol
+	// berarti penyedianya tidak melaporkan apa-apa (penyedia palsu), BUKAN
+	// gratis; FinOps membedakan keduanya lewat nama penyedianya.
+	Usage Usage
+}
+
+// Usage adalah hitungan token satu panggilan, sebagaimana dilaporkan penyedia.
+//
+// Dilaporkan, bukan ditaksir: taksiran byte/4 di docs/finops.md adalah yang
+// digantikan angka ini. Thoughts dipisah karena model yang berpikir
+// (Gemini 3.x) menagihnya sebagai keluaran walau teksnya tidak pernah sampai.
+type Usage struct {
+	InputTokens    int
+	OutputTokens   int
+	ThoughtsTokens int
+}
+
+// Total adalah seluruh token yang ditagih untuk panggilan itu.
+func (u Usage) Total() int {
+	return u.InputTokens + u.OutputTokens + u.ThoughtsTokens
 }
 
 // Truncated menyatakan jawabannya terpotong.

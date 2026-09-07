@@ -43,6 +43,14 @@ type generateResponse struct {
 	} `json:"promptFeedback"`
 
 	ModelVersion string `json:"modelVersion"`
+
+	// UsageMetadata: nama bidang diverifikasi dari jawaban nyata
+	// gemini-3.8-flash pada 2026-09-07, bukan dari ingatan.
+	UsageMetadata struct {
+		PromptTokenCount     int `json:"promptTokenCount"`
+		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		ThoughtsTokenCount   int `json:"thoughtsTokenCount"`
+	} `json:"usageMetadata"`
 }
 
 func buildRequest(req llm.Request) generateRequest {
@@ -111,6 +119,11 @@ func decode(raw []byte, req llm.Request) (*llm.Response, error) {
 		Model:         model,
 		PromptVersion: req.PromptVersion,
 		FinishReason:  candidate.FinishReason,
+		Usage: llm.Usage{
+			InputTokens:    parsed.UsageMetadata.PromptTokenCount,
+			OutputTokens:   parsed.UsageMetadata.CandidatesTokenCount,
+			ThoughtsTokens: parsed.UsageMetadata.ThoughtsTokenCount,
+		},
 	}, nil
 }
 
