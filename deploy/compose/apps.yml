@@ -68,6 +68,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       # Image-nya distroless dan tidak punya shell, curl, atau wget. Probe
       # HTTP dikerjakan dari luar oleh siapa pun yang memerlukannya; di sini
@@ -103,6 +105,10 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -137,6 +143,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -168,6 +176,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -199,6 +209,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -234,6 +246,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -265,6 +279,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -303,6 +319,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:
@@ -366,3 +384,23 @@ services:
       resources:
         limits:
           memory: 128M
+
+  # Topic Kafka dibuat SEBELUM unit mana pun menyala - padanan Job `topics`
+  # di k3d (deploy/k3d/infra.sh), yang selama ini tidak punya kembaran di
+  # compose. Yang mengajarkannya: perbaikan B23 (KAFKA_LOG_DIRS) membuat
+  # container Kafka dibuat ulang dengan volume kosong, seluruh topic hilang,
+  # dan setiap relay outbox gagal dengan UNKNOWN_TOPIC_OR_PARTITION sampai
+  # `task topics` dijalankan tangan. cmd/topics idempoten, jadi ia aman
+  # berjalan pada setiap `up`; unit menunggu ia SELESAI, bukan sekadar mulai.
+  topics:
+    build:
+      context: ../..
+      args:
+        UNIT: topics
+    restart: "no"
+    container_name: selaras-topics
+    environment:
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
