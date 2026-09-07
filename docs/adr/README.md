@@ -28,3 +28,8 @@ Bukti yang menopangnya ada di Evidence Ledger pada dokumen rencana di repo Larav
 | 017 | Meninjau tiga pilihan dengan data terukur |
 | 018 | Lingkungan kerja: Windows untuk kode, WSL untuk Docker |
 | 019 | Temuan baru saat porting: diperbaiki di tempat, dengan pagar |
+| 020 | Token EdDSA; pencabutan lewat penghitung generasi |
+| 021 | Kontrak identity dikoreksi agar tidak melawan ADR-007 |
+| 022 | RPC profil berkunci `user_id`, bukan `user_profile_id` |
+| 023 | Service tidak mempercayai identitas yang sekadar dikirimkan |
+| 024 | Pemilik sumber daya adalah pengguna, bukan profilnya |
