@@ -127,13 +127,26 @@ tasks:
     # bergantung pada penjadwalan, dan karena itu kadang lolos.
     # dotenv memuat berkas ke environment proses, tetapi nilainya TIDAK
     # tersedia untuk templating {{...}} - karena itu DSN dirakit oleh shell.
+    #
+    # Unit aplikasi WAJIB mati (task down:apps) saat suite ini berjalan:
+    # relay outbox unit yang hidup membaca tabel yang sama dengan test relay
+    # (FOR UPDATE SKIP LOCKED) dan mencuri barisnya - kegagalan yang bergantung
+    # pada penjadwalan, terlihat di gerbang keluar F9. Job unit CI tidak
+    # menyalakan unit; e2e dan acceptance yang membutuhkannya punya task sendiri.
     dotenv: ['.env']
     cmds:
+      - >-
+        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -qE '^selaras-(identity|profile|assessment|coaching|chat|nutrition|dashboard|llm-worker)$'; then
+          echo 'application units are running; stop them first (task down:apps) - their outbox relays steal rows from the relay tests' >&2; exit 1;
+        fi
       - >-
         TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
         TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=profile"
         TEST_DSN_ASSESSMENT="postgres://svc_assessment:$SVC_ASSESSMENT_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=assessment"
         TEST_DSN_COACHING="postgres://svc_coaching:$SVC_COACHING_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=coaching"
+        TEST_DSN_CHAT="postgres://svc_chat:$SVC_CHAT_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=chat"
+        TEST_DSN_NUTRITION="postgres://svc_nutrition:$SVC_NUTRITION_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=nutrition"
+        TEST_DSN_DASHBOARD="postgres://svc_dashboard:$SVC_DASHBOARD_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=dashboard"
         TEST_DSN_LLM="postgres://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=llm"
         TEST_KAFKA_BROKERS="127.0.0.1:19092"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
@@ -150,7 +163,7 @@ tasks:
   down:apps:
     desc: Stop the application units, leaving the dependencies running
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc edge-gateway"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway topics"
 
   keygen:
     desc: Print a matching pair of token signing and verification keys
