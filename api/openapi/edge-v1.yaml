@@ -641,8 +641,12 @@ paths:
       tags: [coaching]
       summary: Mulai program coaching
       description: |
-        Membatalkan program aktif sebelumnya. Kurikulum digenerasi model,
-        jadi program lahir dengan curriculum_status pending.
+        Program aktif sebelumnya DIJEDA (bukan dibatalkan; D2). Kurikulum
+        digenerasi model, jadi program lahir dengan curriculum_status pending.
+        risk_assessment_slug opsional: bila diisi, analisis itu menjadi sumber
+        program dan hanya boleh dipakai satu program (D3); coaching mengenal
+        analisis lewat event, jadi slug yang baru saja dibuat bisa menjawab 404
+        selama beberapa detik.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -651,10 +655,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [risk_assessment_slug, difficulty]
+              required: [difficulty]
               properties:
                 risk_assessment_slug: { type: string }
-                difficulty: { type: string, enum: [gentle, standard, intense] }
+                difficulty:
+                  type: string
+                  description: Nama tingkat sebagaimana ditampilkan ke pengguna, sama dengan sistem lama.
+                  enum: ["Santai & Bertahap", "Standar & Konsisten", "Intensif & Menantang"]
       responses:
         '202':
           description: Program dibuat; kurikulum sedang disusun
@@ -663,13 +670,15 @@ paths:
               schema:
                 type: object
                 properties:
-                  program: { type: object }
-                  job: { $ref: '#/components/schemas/Accepted' }
+                  data:
+                    type: object
+                    description: Program dengan status, curriculum_status pending, dan source_assessment bila dimulai dari analisis.
         '409':
           description: Sudah ada program dari analisis yang sama
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
   /coaching/programs/{slug}:
