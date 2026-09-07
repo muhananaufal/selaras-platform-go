@@ -57,6 +57,11 @@ func (c *Confirmations) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
+			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
+			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			if recovered := kafka.RecoverRecreatedTopics(c.client, errs); len(recovered) > 0 {
+				c.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
+			}
 			for _, e := range errs {
 				c.log.ErrorContext(ctx, "fetching confirmations failed",
 					"topic", e.Topic, "error", e.Err)
