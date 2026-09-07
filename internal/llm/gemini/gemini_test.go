@@ -333,3 +333,44 @@ func TestAClientWithoutAKeyIsRefused(t *testing.T) {
 		t.Fatal("a client with no model was created")
 	}
 }
+
+// TestTokenUsageIsReported: angka token datang dari penyedia, bukan ditaksir.
+// Bentuk usageMetadata di sini disalin dari jawaban nyata gemini-3.8-flash.
+func TestTokenUsageIsReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"{}"}],"role":"model"},"finishReason":"STOP"}],`+
+			`"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":2,"totalTokenCount":110,"thoughtsTokenCount":100},`+
+			`"modelVersion":"gemini-3.8-flash"}`)
+	}))
+	defer srv.Close()
+
+	got, err := client(t, srv, nil).Generate(context.Background(), request())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	want := llm.Usage{InputTokens: 8, OutputTokens: 2, ThoughtsTokens: 100}
+	if got.Usage != want {
+		t.Fatalf("usage came back as %+v, want %+v", got.Usage, want)
+	}
+	if got.Usage.Total() != 110 {
+		t.Fatalf("total is %d, want 110 (the provider's totalTokenCount)", got.Usage.Total())
+	}
+}
+
+// Penyedia yang tidak melaporkan token memberi nol, bukan galat.
+func TestMissingUsageIsZero(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, answer(`{}`))
+	}))
+	defer srv.Close()
+
+	got, err := client(t, srv, nil).Generate(context.Background(), request())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if got.Usage != (llm.Usage{}) {
+		t.Fatalf("usage should be zero without usageMetadata, got %+v", got.Usage)
+	}
+}
