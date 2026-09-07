@@ -30,8 +30,10 @@ urutan masuk.
   yang dikirim gateway; batasnya adalah jaringan (ClusterIP, port terikat
   `127.0.0.1` di compose). ADR-023 menetapkan bentuk perbaikannya (verifikasi
   token per service atau mTLS); belum diterapkan.
-- **Tidak ada NetworkPolicy** di chart Helm. Pod mana pun di klaster dapat
-  menjangkau service mana pun.
+- **NetworkPolicy ada di chart** (`templates/networkpolicy.yaml`): ingress
+  ditolak untuk semua unit, dibuka hanya sesuai grafik `*_GRPC_TARGET` dan
+  port probe dari namespace observability. Egress sengaja terbuka; penegakan
+  bergantung pada CNI (k3s menegakkannya, belum dibuktikan hidup di sini).
 - Tinjauan keamanan terakhir (2026-09-07) tidak menemukan temuan HIGH/MEDIUM;
   dua observasi di bawah ambang dicatat di RFC-999.
 

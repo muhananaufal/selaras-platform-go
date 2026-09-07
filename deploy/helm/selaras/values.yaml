@@ -33,6 +33,20 @@ rateLimit:
   authRequests: ""
   llmRequests: ""
 
+# Batas jaringan (templates/networkpolicy.yaml): ingress ditolak untuk semua
+# unit, lalu dibuka hanya sesuai grafik *_GRPC_TARGET di atas dan port probe
+# dari namespace observability. Egress terbuka, alasannya di template-nya.
+# Membutuhkan CNI yang menegakkan NetworkPolicy (k3s: ya, lewat pengendali
+# bawaannya).
+networkPolicy:
+  enabled: true
+  observabilityNamespace: observability
+
+# Satu pod boleh pergi kapan pun; pada tiga replika, dua tetap melayani.
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
 units:
   identity-svc:
     grpcPort: 9101
