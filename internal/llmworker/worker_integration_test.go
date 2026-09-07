@@ -3,6 +3,7 @@ package llmworker_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"sync"
@@ -121,6 +122,8 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 	if err != nil {
 		t.Fatalf("NewConsumer: %v", err)
 	}
+	// Jeda kuota dipendekkan: kebijakan bawaannya satu menit (ADR-025).
+	consumer.WithQuotaCooldown(func(int) time.Duration { return 300 * time.Millisecond })
 
 	h := &harness{
 		pool: pool, provider: provider, consumer: consumer, client: consumerClient,
@@ -374,7 +377,7 @@ func TestTheSameJobTwiceIsDoneOnce(t *testing.T) {
 // TestAFailingProviderLeavesTheJobFailed menjaga kegagalan terlihat.
 func TestAFailingProviderLeavesTheJobFailed(t *testing.T) {
 	h := newHarness(t)
-	h.provider.Err = llm.ErrRateLimited
+	h.provider.Err = errProviderDown
 
 	assessmentID := uuid.NewString()
 	h.send(t, assessmentID, "key-"+assessmentID)
@@ -498,7 +501,7 @@ func TestTheOffsetIsCommittedSoWorkIsNotRepeated(t *testing.T) {
 // percobaan ketiga ia menjadi dead beserta event kegagalannya.
 func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 	h := newHarness(t)
-	h.provider.Err = llm.ErrRateLimited
+	h.provider.Err = errProviderDown
 
 	assessmentID := uuid.NewString()
 	h.send(t, assessmentID, "key-"+assessmentID)
@@ -563,7 +566,7 @@ func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 //     dan pekerjaan yang selalu gagal akan dicoba selamanya.
 func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	h := newHarness(t)
-	h.provider.Err = llm.ErrRateLimited
+	h.provider.Err = errProviderDown
 
 	assessmentID := uuid.NewString()
 	h.send(t, assessmentID, "key-"+assessmentID)
@@ -807,4 +810,59 @@ func (h *harness) totalOutboxRows(t *testing.T) int {
 		t.Fatalf("counting outbox rows: %v", err)
 	}
 	return n
+}
+
+// errProviderDown adalah kegagalan penyedia yang BUKAN kuota: jalur coba-ulang
+// lalu dead. Kuota punya jalurnya sendiri (ADR-025, test di bawah).
+var errProviderDown = errors.New("fake provider is down")
+
+// TestAQuotaRefusalParksTheJobInsteadOfKillingIt adalah ADR-025 / B30.
+//
+// Penyedia menolak karena kuota; pekerjaan TIDAK boleh mati, TIDAK boleh
+// menghabiskan percobaan, dan harus selesai sendiri begitu kuotanya pulih -
+// tanpa restart, tanpa tangan manusia.
+func TestAQuotaRefusalParksTheJobInsteadOfKillingIt(t *testing.T) {
+	h := newHarness(t)
+	h.provider.Err = llm.ErrRateLimited
+
+	assessmentID := uuid.NewString()
+	h.send(t, assessmentID, "key-"+assessmentID)
+
+	// Diparkir: baris pekerjaan ada, klaimnya sudah dilepas, dan percobaannya
+	// tetap nol - bukan satu.
+	if err := h.runUntil(t, 60*time.Second, func() bool {
+		if h.countJobs(t, assessmentID) != 1 {
+			return false
+		}
+		var claims int
+		if err := h.pool.QueryRow(h.ctx, `SELECT count(*) FROM processed_messages`).Scan(&claims); err != nil {
+			t.Fatalf("counting claims: %v", err)
+		}
+		return claims == 0
+	}); err != nil {
+		t.Fatalf("Run returned %v", err)
+	}
+	if got := h.attemptsOf(t, assessmentID); got != 0 {
+		t.Fatalf("a quota refusal consumed %d attempts, want 0", got)
+	}
+	if got := h.statusOf(t, assessmentID); got == llmworker.StatusDead || got == llmworker.StatusFailed {
+		t.Fatalf("a quota refusal left the job %s", got)
+	}
+
+	// Kuota pulih. Worker yang sama, tanpa restart, harus menyelesaikannya.
+	h.provider.SetErr(nil)
+	if err := h.runUntil(t, 60*time.Second, func() bool {
+		return h.statusOf(t, assessmentID) == llmworker.StatusCompleted
+	}); err != nil {
+		t.Fatalf("the parked job never completed: %v", err)
+	}
+	if got := h.countJobs(t, assessmentID); got != 1 {
+		t.Fatalf("parking produced %d job rows, want 1", got)
+	}
+	if got := h.attemptsOf(t, assessmentID); got != 0 {
+		t.Fatalf("the completed job records %d failed attempts, want 0", got)
+	}
+	if events := h.dlqEventsFor(t, assessmentID); events != 0 {
+		t.Fatalf("parking published %d failure events, want 0", events)
+	}
 }

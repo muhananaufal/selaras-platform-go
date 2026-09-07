@@ -53,6 +53,33 @@ type Consumer struct {
 	// tidak berperilaku lain - dan memaksanya wajib akan membuat test harus
 	// menyiapkan meter yang tidak diuji apa pun.
 	metrics *Metrics
+
+	// cooldown menentukan berapa lama worker berhenti mengambil pekerjaan
+	// setelah penyedia menolak karena kuota (ADR-025). Argumennya jumlah
+	// penolakan beruntun; nol setelah satu jawaban berhasil.
+	cooldown func(consecutive int) time.Duration
+
+	// quotaHits menghitung penolakan kuota beruntun. Hanya disentuh loop Run.
+	quotaHits int
+}
+
+// DefaultQuotaCooldown adalah kebijakan bawaan: satu menit, berlipat dua
+// setiap penolakan beruntun, paling lama lima belas menit.
+//
+// Satu menit karena kuota per-menit pulih dalam satu menit; lima belas menit
+// karena kuota per-hari tidak pulih berapa pun lamanya menunggu, dan satu
+// permintaan gagal setiap lima belas menit adalah harga yang murah untuk
+// pekerjaan yang tidak pernah mati.
+func DefaultQuotaCooldown(consecutive int) time.Duration {
+	const base, ceiling = time.Minute, 15 * time.Minute
+	if consecutive <= 1 {
+		return base
+	}
+	d := base << (consecutive - 1)
+	if d > ceiling || d <= 0 {
+		return ceiling
+	}
+	return d
 }
 
 // NewConsumer merangkai worker.
@@ -78,7 +105,17 @@ func NewConsumer(
 	return &Consumer{
 		client: client, pool: pool, provider: provider,
 		prompts: prompts, jobs: NewRepository(), log: log,
+		cooldown: DefaultQuotaCooldown,
 	}, nil
+}
+
+// WithQuotaCooldown mengganti kebijakan jeda kuota; dipakai test supaya tidak
+// menunggu satu menit.
+func (c *Consumer) WithQuotaCooldown(f func(consecutive int) time.Duration) *Consumer {
+	if f != nil {
+		c.cooldown = f
+	}
+	return c
 }
 
 // WithMetrics memasang instrumen antrean (F3-15).
@@ -140,6 +177,8 @@ func (c *Consumer) Run(ctx context.Context) error {
 		}
 
 		var handled int
+		rewinder := kafka.NewRewinder()
+		var pause time.Duration
 		fetches.EachRecord(func(rec *kgo.Record) {
 			// ctx.Err() diperiksa PER PESAN, bukan hanya per putaran. Satu
 			// batch bisa memuat ratusan pesan yang masing-masing menunggu
@@ -148,14 +187,47 @@ func (c *Consumer) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return
 			}
-			if err := c.handle(ctx, rec); err != nil {
+			err := c.handle(ctx, rec)
+			var parked *parkedError
+			switch {
+			case err == nil:
+			case errors.As(err, &parked):
+				// Penyedia menolak karena kuota (ADR-025): pekerjaannya dilepas,
+				// offsetnya ditahan, dan worker berhenti sejenak - bukan mencatat
+				// kegagalan yang mendekatkannya ke mati.
+				c.quotaHits++
+				if d := c.cooldown(c.quotaHits); d > pause {
+					pause = d
+				}
+				c.log.WarnContext(ctx, "the provider is out of quota; parking the queue",
+					"consecutive", c.quotaHits, "cooldown", pause, "error", parked.cause)
+				rewinder.Failed(rec)
+			default:
+				// Galat lain - Postgres tidak terjangkau saat klaim, misalnya -
+				// menahan offset supaya pesannya datang lagi. Sebelum ini offset
+				// tetap dikomit dan pekerjaannya hilang diam-diam.
 				c.log.ErrorContext(ctx, "handling a job failed",
 					"offset", rec.Offset, "partition", rec.Partition, "error", err)
+				rewinder.Failed(rec)
 			}
 			handled++
 		})
 
 		if handled == 0 {
+			continue
+		}
+		if rewinder.Any() {
+			// Sama seperti konsumen lain: tidak mengomit saja tidak cukup,
+			// franz-go tidak mengirim ulang di dalam sesi yang sama.
+			rewinder.Rewind(c.client)
+			if pause < time.Second {
+				pause = time.Second
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(pause):
+			}
 			continue
 		}
 
@@ -210,7 +282,14 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		// TAHU, bukan dibiarkan menunggu tanpa akhir.
 		c.log.ErrorContext(ctx, "a message carried no usable LLM request",
 			"event_id", env.GetEventId(), "error", err)
-		return c.announceUnusable(ctx, &env, rec, err)
+		if err := c.announceUnusable(ctx, &env, rec, err); err != nil {
+			// Tetap dilewati, bukan ditahan: menahan offset untuk pesan yang
+			// memang bukan milik siapa pun menyumbat antrean selamanya (lihat
+			// test-nya). Kegagalan mengumumkannya dicatat, itu saja.
+			c.log.ErrorContext(ctx, "an unusable request could not be announced and was skipped",
+				"event_id", env.GetEventId(), "error", err)
+		}
+		return nil
 	}
 
 	// Tahap satu: klaim. Kalau kuncinya sudah pernah dipakai, pekerjaannya
@@ -255,6 +334,7 @@ func (c *Consumer) work(
 	for attempt := job.Attempts; attempt < MaxAttempts; attempt++ {
 		answer, genErr := c.generate(ctx, req)
 		if genErr == nil {
+			c.quotaHits = 0
 			err := c.recordSuccess(ctx, job, req, answer)
 			if err == nil {
 				c.metrics.Observe(ctx, OutcomeCompleted, time.Since(started))
@@ -269,6 +349,17 @@ func (c *Consumer) work(
 			// sebagai duplikat.
 			c.metrics.Observe(ctx, OutcomeAbandoned, time.Since(started))
 			return c.abandon(ctx, job, genErr)
+		}
+
+		if errors.Is(genErr, llm.ErrRateLimited) {
+			// Kuota, bukan kegagalan pekerjaan (ADR-025). Klaimnya dilepas
+			// supaya pengiriman ulang mengerjakannya lagi, penghitung percobaan
+			// tidak disentuh, dan loop Run yang memutuskan berapa lama diam.
+			c.metrics.Observe(ctx, OutcomeParked, time.Since(started))
+			if err := c.release(ctx, job); err != nil {
+				return err
+			}
+			return &parkedError{cause: genErr}
 		}
 
 		dead := attempt+1 >= MaxAttempts
@@ -309,6 +400,16 @@ func (c *Consumer) abandon(ctx context.Context, job *Job, cause error) error {
 	c.log.WarnContext(ctx, "a job was abandoned mid-flight and will be retried after restart",
 		"job_id", job.ID, "attempts", job.Attempts, "error", cause)
 
+	return c.release(ctx, job)
+}
+
+// release melepas klaim sebuah pekerjaan supaya pengiriman berikutnya
+// mengerjakannya lagi, alih-alih dilewati sebagai duplikat.
+//
+// Context terpisah: pemanggilnya bisa datang dengan ctx yang sudah dibatalkan
+// (shutdown), dan pelepasan yang gagal meninggalkan klaim yang menutup kuncinya
+// selamanya.
+func (c *Consumer) release(ctx context.Context, job *Job) error {
 	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
@@ -320,6 +421,15 @@ func (c *Consumer) abandon(ctx context.Context, job *Job, cause error) error {
 		return guard.Release(releaseCtx, job.Key)
 	})
 }
+
+// parkedError menandai pekerjaan yang dilepas karena kuota penyedia habis.
+type parkedError struct{ cause error }
+
+func (e *parkedError) Error() string {
+	return "parked until the provider quota recovers: " + e.cause.Error()
+}
+
+func (e *parkedError) Unwrap() error { return e.cause }
 
 // claim membuat pekerjaan baru bila kuncinya belum pernah dipakai.
 func (c *Consumer) claim(

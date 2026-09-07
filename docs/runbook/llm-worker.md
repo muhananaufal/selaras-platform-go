@@ -73,6 +73,15 @@ WHERE aggregate_id = '<assessment id>';
 Itu **perilaku yang benar**, bukan kerusakan: pekerjaan sudah dicoba tiga kali
 dan penyedianya tetap menolak. `last_error` menyebutkan alasannya.
 
+Yang TIDAK pernah menjadi `dead`: penolakan kuota (`429`, `llm.ErrRateLimited`).
+Sejak ADR-025 pekerjaan seperti itu **diparkir** - klaimnya dilepas, offsetnya
+ditahan, worker diam satu menit lalu berlipat sampai lima belas menit, dan
+pekerjaannya dikerjakan lagi begitu penyedia menerima. Tandanya di log:
+`the provider is out of quota; parking the queue` dengan `consecutive` dan
+`cooldown`; di metrik: `llm_jobs_total{outcome="parked"}`. Bila `consecutive`
+terus naik berjam-jam, kuotanya harian - periksa tingkat penagihan proyek
+(`quota` di pesan galat menyebut namanya), bukan worker-nya.
+
 Baca isinya dari topic:
 
 ```bash
