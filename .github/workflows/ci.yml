@@ -225,7 +225,14 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Install vacuum
-        run: go install github.com/daveshanley/vacuum@v0.30.1
+        # Biner rilis, bukan `go install`: go.mod vacuum menuntut Go 1.25.7
+        # sementara GOTOOLCHAIN=local menahan toolchain pada go.mod repo ini,
+        # dan `go install` menolak dengan galat yang hanya terlihat di runner.
+        run: |
+          curl -sSfL -o /tmp/vacuum.tar.gz https://github.com/daveshanley/vacuum/releases/download/v0.30.1/vacuum_0.30.1_linux_x86_64.tar.gz
+          tar -xzf /tmp/vacuum.tar.gz -C /tmp vacuum
+          sudo install -m 0755 /tmp/vacuum /usr/local/bin/vacuum
+          vacuum version
       - name: Lint the public REST contract
         run: vacuum lint -d api/openapi/edge-v1.yaml -r .vacuum-ruleset.yaml --fail-severity error
 
@@ -266,6 +273,7 @@ jobs:
             echo "POSTGRES_DB=selaras"
             echo "POSTGRES_HOST=127.0.0.1"
             echo "POSTGRES_PORT=15432"
+            echo "REPLICATION_PASSWORD=ci-not-a-secret"
             for s in IDENTITY PROFILE ASSESSMENT COACHING CHAT NUTRITION DASHBOARD LLM; do echo "SVC_${s}_PASSWORD=ci-not-a-secret"; done
             echo "KAFKA_BROKERS=127.0.0.1:19092"
             echo "REDIS_ADDR=127.0.0.1:16379"
@@ -314,4 +322,4 @@ jobs:
 
       - name: Logs on failure
         if: failure()
-        run: docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml logs --tail=100
+        run: docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml logs --tail=100 || true
