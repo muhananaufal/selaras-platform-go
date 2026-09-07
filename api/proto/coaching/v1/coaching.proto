@@ -74,7 +74,6 @@ enum GraduationStatus {
 }
 
 enum TaskType {
-
   TASK_TYPE_UNSPECIFIED = 0;
   TASK_TYPE_MAIN_MISSION = 1;
   TASK_TYPE_BONUS_CHALLENGE = 2;

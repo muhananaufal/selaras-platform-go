@@ -52,8 +52,10 @@ tasks:
 
   # ---------------------------------------------------------------- contract
   proto:lint:
-    desc: Lint protobuf definitions
-    cmds: [buf lint]
+    desc: Lint and format-check protobuf definitions (CI runs the same format check on pull requests)
+    cmds:
+      - buf lint
+      - buf format --diff --exit-code
 
   proto:breaking:
     desc: Detect breaking changes against develop
