@@ -1,0 +1,8 @@
+# Setiap perubahan ditinjau pemelihara; kontrak dan keputusan arsitektur
+# disebut eksplisit supaya perubahannya tidak lewat tanpa disadari.
+*                     @muhananaufal
+/api/                 @muhananaufal
+/docs/adr/            @muhananaufal
+/migrations/          @muhananaufal
+/deploy/              @muhananaufal
+/.github/             @muhananaufal

@@ -1,0 +1,38 @@
+# Pembaruan dependensi otomatis, dikelompokkan supaya tidak menjadi
+# puluhan PR per minggu. Setiap PR tetap melewati CI penuh; action dipin
+# ke SHA di workflow, dan Dependabot memperbarui SHA beserta komentar tag-nya.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: docker
+    directory: /deploy/compose
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      compose-images:
+        patterns: ["*"]
