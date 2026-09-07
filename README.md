@@ -136,3 +136,7 @@ docs/adr · rfc · runbook   dan laporan pengukuran
 
 Rencana migrasi, evidence ledger, backlog 200-an task, dan katalog temuan
 sistem lama ada di repo Laravel pada `docs/migration-plan/`.
+
+## Lisensi
+
+MIT — lihat [`LICENSE`](LICENSE). Celah keamanan dilaporkan lewat [`SECURITY.md`](SECURITY.md), bukan issue publik.
