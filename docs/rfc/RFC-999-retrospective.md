@@ -138,7 +138,7 @@ Yang bisa dihitung dari repositori dan sesi ini:
 
 | Ukuran | Nilai |
 | :--- | ---: |
-| Commit di `feature/20260902-f1-identity-domain` | 113 (`git rev-list --count HEAD`) |
+| Commit di `feature/20260902-f1-identity-domain` | 120 (`git rev-list --count HEAD`) |
 | ADR | 24 |
 | Temuan sistem lama dan milik sendiri | B1–B26, S1–S11, T1–T14, D1–D12 |
 | Paket Go dengan test | 47 |
