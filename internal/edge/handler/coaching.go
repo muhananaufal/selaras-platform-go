@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
-	commonv1 "github.com/muhananaufal/selaras-platform-go/gen/common/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/httperr"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/middleware"
 )
@@ -97,9 +96,7 @@ func (h *Coaching) StartProgram(c *gin.Context) {
 		RiskAssessmentSlug: body.AssessmentSlug,
 		Difficulty:         difficultyFromName(body.Difficulty),
 	}
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.coaching.StartProgram(c.Request.Context(), req)
 	if err != nil {
@@ -240,9 +237,7 @@ func (h *Coaching) StartThread(c *gin.Context) {
 		Message:     body.Message,
 		Title:       body.Title,
 	}
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.coaching.StartThread(c.Request.Context(), req)
 	if err != nil {
@@ -272,9 +267,7 @@ func (h *Coaching) SendMessage(c *gin.Context) {
 		UserId:     claims.UserID.String(),
 		Message:    body.Message,
 	}
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.coaching.SendThreadMessage(c.Request.Context(), req)
 	if err != nil {

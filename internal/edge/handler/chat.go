@@ -93,9 +93,7 @@ func (h *Chat) Store(c *gin.Context) {
 		UserId:  claims.UserID.String(),
 		Message: body.Message,
 	}
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.chat.CreateConversation(c.Request.Context(), req)
 	if err != nil {
@@ -190,9 +188,7 @@ func (h *Chat) SendMessage(c *gin.Context) {
 		UserId:           claims.UserID.String(),
 		Message:          body.Message,
 	}
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.chat.SendMessage(c.Request.Context(), req)
 	if err != nil {
