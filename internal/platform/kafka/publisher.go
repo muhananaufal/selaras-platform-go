@@ -90,6 +90,10 @@ func (p *Publisher) Publish(ctx context.Context, msgs []Message) ([]int, error) 
 			continue
 		}
 		if res.Err != nil {
+			// Topic yang dibuat ulang di broker (B26): id lamanya dibuang supaya
+			// percobaan berikutnya - tick relay berikutnya - menyambung ke yang
+			// baru, alih-alih mengulang galat yang sama setiap detik selamanya.
+			ForgetRecreatedTopic(p.client, msgs[i].Topic, res.Err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("publishing to %s: %w", msgs[i].Topic, res.Err)
 			}

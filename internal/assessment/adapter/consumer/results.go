@@ -21,6 +21,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/idempotency"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
@@ -82,6 +83,11 @@ func (r *Results) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
+			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
+			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			if recovered := kafka.RecoverRecreatedTopics(r.client, errs); len(recovered) > 0 {
+				r.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
+			}
 			for _, e := range errs {
 				r.log.ErrorContext(ctx, "fetching results failed",
 					"topic", e.Topic, "partition", e.Partition, "error", e.Err)
