@@ -1,0 +1,88 @@
+{{- if .Values.networkPolicy.enabled }}
+{{/*
+Batas jaringan di dalam namespace (SECURITY.md, "yang belum dijaga" sebelum
+ini). Ingress ditolak untuk seluruh unit, lalu dibuka HANYA sesuai grafik
+panggilan yang sudah ada di values: sebuah unit boleh menerima gRPC hanya
+dari unit yang punya <unit>:<port> sebagai *_GRPC_TARGET-nya. Grafiknya
+tidak ditulis dua kali - ia dibaca dari env yang sama yang dipakai unit
+untuk menyambung, jadi tidak bisa menyimpang.
+
+Egress SENGAJA dibiarkan terbuka. Menguncinya berarti menyebut DNS, Postgres,
+PgBouncer, Kafka, Redis, Mailpit, collector, dan penyedia LLM di luar
+klaster satu per satu; nilainya kecil dibanding ingress (ancaman yang
+ditutup ingress adalah "pod bocor membaca data pengguna lain" - ADR-023),
+dan salah satu baris membuat unit menyala tetapi tidak bisa bekerja.
+*/}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: selaras-default-deny-ingress
+  labels:
+    app.kubernetes.io/part-of: selaras
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: selaras
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+{{- range $unit, $u := .Values.units }}
+{{- $ctx := dict "root" $ "unit" $unit }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $unit }}-ingress
+  labels:
+    {{- include "selaras.labels" $ctx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "selaras.selector" $ctx | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    # Port probe/metrik: hanya dari namespace observability (Prometheus).
+    # kubelet menjalankan probe dari node, bukan dari pod, dan NetworkPolicy
+    # tidak menghalanginya.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.observabilityNamespace }}
+      ports:
+        - port: {{ $u.healthPort }}
+          protocol: TCP
+    {{- if $u.httpPort }}
+    # HTTP publik gateway: dari mana pun - ia memang pintu masuknya, dan yang
+    # menjaganya adalah token, bukan alamat asal.
+    - ports:
+        - port: {{ $u.httpPort }}
+          protocol: TCP
+    {{- end }}
+    {{- if $u.grpcPort }}
+    {{- $callers := list }}
+    {{- $prefix := printf "%s:" $unit }}
+    {{- range $caller, $c := $.Values.units }}
+      {{- range $k, $v := $c.env }}
+        {{- if and (hasSuffix "_GRPC_TARGET" $k) (hasPrefix $prefix (toString $v)) }}
+          {{- $callers = append $callers $caller }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if $callers }}
+    # gRPC: hanya dari unit yang menyebut {{ $unit }} sebagai target-nya.
+    - from:
+        {{- range $caller := $callers | uniq | sortAlpha }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $caller }}
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+        {{- end }}
+      ports:
+        - port: {{ $u.grpcPort }}
+          protocol: TCP
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

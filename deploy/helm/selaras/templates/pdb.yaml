@@ -1,0 +1,23 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $unit, $u := .Values.units }}
+{{- $ctx := dict "root" $ "unit" $unit }}
+---
+{{/*
+maxUnavailable, bukan minAvailable: dengan minReplicas 1, minAvailable: 1
+membuat satu-satunya pod tidak bisa dievakuasi dan node drain menggantung
+selamanya. maxUnavailable: 1 mengizinkan satu pod pergi kapan pun, dan pada
+tiga replika menjamin dua tetap melayani selama rolling update atau drain.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $unit }}
+  labels:
+    {{- include "selaras.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: {{ $.Values.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "selaras.selector" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

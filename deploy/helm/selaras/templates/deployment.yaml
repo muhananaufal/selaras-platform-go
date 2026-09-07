@@ -34,6 +34,16 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 20
+      # Replika disebar antar node bila ada lebih dari satu; di k3d satu node
+      # ini tidak berpengaruh (ScheduleAnyway), di cloud ia mencegah dua
+      # replika unit yang sama berbagi node yang mati bersama.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "selaras.selector" $ctx | nindent 14 }}
       containers:
         - name: {{ $unit }}
           image: {{ include "selaras.image" $ctx | quote }}

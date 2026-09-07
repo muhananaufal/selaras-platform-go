@@ -238,6 +238,24 @@ jobs:
         working-directory: deploy/compose/observability
         run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
 
+  # Chart Helm diperlakukan seperti kode: lint ketat untuk kedua profil nilai,
+  # lalu manifest hasil render divalidasi terhadap skema Kubernetes
+  # (kubeconform). CRD KEDA tidak punya skema di sana dan dilewati eksplisit.
+  chart:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - name: Lint both value profiles
+        run: |
+          helm lint --strict deploy/helm/selaras -f deploy/helm/selaras/values-local.yaml
+          helm lint --strict deploy/helm/selaras -f deploy/helm/selaras/values-cloud.yaml
+      - name: Render and validate against the Kubernetes schema
+        run: |
+          helm template selaras deploy/helm/selaras -n selaras -f deploy/helm/selaras/values-cloud.yaml > /tmp/rendered.yaml
+          docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 -strict -summary -ignore-missing-schemas -kubernetes-version 1.33.0 < /tmp/rendered.yaml
+
   contract:
     name: contract
     runs-on: ubuntu-latest
