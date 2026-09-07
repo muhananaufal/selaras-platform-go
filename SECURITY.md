@@ -14,6 +14,7 @@ urutan masuk.
 | Jaminan | Mekanisme | Bukti |
 | :--- | :--- | :--- |
 | Token tidak bisa dipalsukan atau ditukar algoritmanya | JWT EdDSA; hanya identity-svc memegang kunci privat; `WithValidMethods`, `exp` wajib | `internal/identity/adapter/token/jwt.go`, ADR-020 |
+| Service tidak mempercayai `user_id` yang sekadar dikirim | Interceptor gRPC memverifikasi token dan mencocokkan `sub` dengan `user_id` lewat refleksi proto | `internal/platform/authn`, ADR-026, `test/e2e/security_test.go` |
 | Logout dan reset kata sandi berlaku seketika | Penghitung generasi di Redis, **gagal-tertutup** saat Redis tak terjangkau | `internal/edge/middleware/auth.go` |
 | Sumber daya orang lain terlihat tidak ada, bukan terlarang | Setiap handler memasangkan slug dengan `sub` token; 404, bukan 403 (S9) | `test/acceptance/rules_e2e_test.go` |
 | Reset kata sandi tidak bisa ditebak atau dipakai ulang | Token 32 byte `crypto/rand`, disimpan sebagai SHA-256, sekali pakai, kedaluwarsa | `internal/identity/domain/password_reset.go` |
@@ -26,10 +27,12 @@ urutan masuk.
 
 ## Yang belum dijaga, dan dinyatakan
 
-- **gRPC internal tidak berautentikasi.** Service mempercayai `user_id`
-  yang dikirim gateway; batasnya adalah jaringan (ClusterIP, port terikat
-  `127.0.0.1` di compose). ADR-023 menetapkan bentuk perbaikannya (verifikasi
-  token per service atau mTLS); belum diterapkan.
+- **gRPC internal kini berautentikasi (ADR-026).** Setiap service memverifikasi
+  token pengguna dengan kunci publik dan menuntut `sub` sama dengan `user_id`;
+  dibuktikan `test/e2e/security_test.go` langsung ke port gRPC. Yang belum:
+  pencabutan (generasi) hanya diperiksa gateway, dan token melintas PLAINTEXT
+  di jaringan internal - mTLS menjadi keharusan bila jaringan itu tidak lagi
+  sepenuhnya dikuasai.
 - **NetworkPolicy ada di chart** (`templates/networkpolicy.yaml`): ingress
   ditolak untuk semua unit, dibuka hanya sesuai grafik `*_GRPC_TARGET` dan
   port probe dari namespace observability. Egress sengaja terbuka; penegakan

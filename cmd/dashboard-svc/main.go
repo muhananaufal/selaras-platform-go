@@ -24,6 +24,7 @@ import (
 	dashboardgrpc "github.com/muhananaufal/selaras-platform-go/internal/dashboard/adapter/grpc"
 	dashboardpg "github.com/muhananaufal/selaras-platform-go/internal/dashboard/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/dashboard/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
@@ -135,7 +136,14 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	grpcServer := grpc.NewServer(telemetry.GRPCServerOption())
+	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
+	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	verifier, err := authn.VerifierFromEnv()
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOption(),
+		grpc.ChainUnaryInterceptor(authn.UnaryServerInterceptor(verifier)))
 	dashboardv1.RegisterDashboardServer(grpcServer, server)
 
 	healthServer := health.NewServer()

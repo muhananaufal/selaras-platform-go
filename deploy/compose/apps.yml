@@ -95,6 +95,9 @@ services:
       # Tanpa ini, event profile.updated menumpuk di outbox tanpa terkirim,
       # dan cache di assessment-svc tidak pernah terisi (F2-16).
       KAFKA_BROKERS: kafka:9092
+      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
+      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
       PROFILE_HEALTH_ADDR: ":9202"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
     ports:
@@ -133,6 +136,9 @@ services:
       # Tanpa ini, permintaan personalisasi DITOLAK alih-alih diterima lalu
       # hilang - lihat startEventing di cmd/assessment-svc.
       KAFKA_BROKERS: kafka:9092
+      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
+      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19301:9301"
       - "127.0.0.1:19302:9302"
@@ -166,6 +172,9 @@ services:
       CHAT_HEALTH_ADDR: ":9503"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
+      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19501:9501"
       - "127.0.0.1:19503:9503"
@@ -199,6 +208,9 @@ services:
       NUTRITION_HEALTH_ADDR: ":9603"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
+      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19601:9601"
       - "127.0.0.1:19603:9603"
@@ -236,6 +248,9 @@ services:
         postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
+      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19701:9701"
       - "127.0.0.1:19703:9703"
@@ -269,6 +284,9 @@ services:
       COACHING_HEALTH_ADDR: ":9403"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
+      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19401:9401"
       - "127.0.0.1:19403:9403"

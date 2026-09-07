@@ -32,6 +32,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/rpc"
@@ -306,6 +307,8 @@ func dial(target string) (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		telemetry.GRPCDialOption(),
+		// Token pengguna diteruskan ke hilir (ADR-026).
+		grpc.WithChainUnaryInterceptor(authn.UnaryClientInterceptor()),
 		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
 		// baru mati membuat pemanggilnya menggantung, bukan gagal.
 		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))

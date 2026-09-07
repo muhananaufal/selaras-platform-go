@@ -34,3 +34,4 @@ Bukti yang menopangnya ada di Evidence Ledger pada dokumen rencana di repo Larav
 | 023 | Service tidak mempercayai identitas yang sekadar dikirimkan |
 | 024 | Pemilik sumber daya adalah pengguna, bukan profilnya |
 | 025 | Kuota penyedia LLM memarkir pekerjaan, bukan mematikannya |
+| 026 | Setiap service memverifikasi token pengguna sendiri |

@@ -22,6 +22,7 @@ import (
 	chatgrpc "github.com/muhananaufal/selaras-platform-go/internal/chat/adapter/grpc"
 	chatpg "github.com/muhananaufal/selaras-platform-go/internal/chat/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/chat/app"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
@@ -111,7 +112,14 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	grpcServer := grpc.NewServer(telemetry.GRPCServerOption())
+	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
+	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	verifier, err := authn.VerifierFromEnv()
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOption(),
+		grpc.ChainUnaryInterceptor(authn.UnaryServerInterceptor(verifier)))
 	chatv1.RegisterChatServer(grpcServer, server)
 
 	healthServer := health.NewServer()

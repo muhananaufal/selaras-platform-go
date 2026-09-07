@@ -34,6 +34,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/mail"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
@@ -130,7 +131,18 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	profiles, closeProfiles, err := dialProfiles(cfg.ProfileAddr, log)
+	// Token sekali pakai untuk panggilan identity -> profile yang terjadi
+	// SEBELUM pengguna memegang token (pendaftaran, login): profile-svc tidak
+	// punya jalur khusus, ia memverifikasi token ini seperti token pengguna
+	// biasa (ADR-026). Umurnya tiga puluh detik - sepuluh kali batas panggilan.
+	bootstrap, err := token.NewIssuer(cfg.SigningKey, cfg.TokenIssuer, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	mint := profileclient.Minter(func(id domain.UserID) (string, error) {
+		return bootstrap.Issue(domain.Claims{UserID: id, Role: domain.RoleUser, Generation: 1})
+	})
+	profiles, closeProfiles, err := dialProfiles(cfg.ProfileAddr, mint, log)
 	if err != nil {
 		return err
 	}
@@ -165,7 +177,14 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	grpcServer := grpc.NewServer(telemetry.GRPCServerOption())
+	// ADR-026: RPC berpengguna (GetMe, DeleteAccount, ...) harus membawa token
+	// yang sub-nya sama dengan user_id; kunci publiknya sudah ada di atas.
+	authVerifier, err := authn.NewVerifier(publicKey, cfg.TokenIssuer)
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOption(),
+		grpc.ChainUnaryInterceptor(authn.UnaryServerInterceptor(authVerifier)))
 	identityv1.RegisterIdentityServer(grpcServer, server)
 
 	// Health check dan reflection keduanya dinyalakan. Reflection membuat
@@ -362,7 +381,7 @@ func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *ht
 // TIDAK boleh menolak menyala karena tetangganya belum siap. Kegagalannya
 // muncul per panggilan, dan setiap pemanggilnya sudah dirancang menghadapi
 // kegagalan itu (ADR-002 aturan 1 dan 2).
-func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error) {
+func dialProfiles(target string, mint profileclient.Minter, log *slog.Logger) (profileClient, func(), error) {
 	if target == "" {
 		log.Warn("profile-svc is not configured; profiles will not be created",
 			"variable", "PROFILE_GRPC_TARGET", "task", "F1-31")
@@ -372,6 +391,8 @@ func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		telemetry.GRPCDialOption(),
+		// Token pengguna diteruskan ke hilir (ADR-026).
+		grpc.WithChainUnaryInterceptor(authn.UnaryClientInterceptor()),
 		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
 		// baru mati membuat pemanggilnya menggantung, bukan gagal.
 		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
@@ -379,7 +400,7 @@ func dialProfiles(target string, log *slog.Logger) (profileClient, func(), error
 		return nil, nil, fmt.Errorf("creating the profile-svc client: %w", err)
 	}
 
-	client, err := profileclient.New(conn)
+	client, err := profileclient.New(conn, mint)
 	if err != nil {
 		if closeErr := conn.Close(); closeErr != nil {
 			err = errors.Join(err, closeErr)

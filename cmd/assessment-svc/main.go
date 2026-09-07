@@ -28,6 +28,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
@@ -98,6 +99,8 @@ func run(log *slog.Logger) error {
 	profileConn, err := grpc.NewClient(cfg.ProfileAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		telemetry.GRPCDialOption(),
+		// Token pengguna diteruskan ke hilir (ADR-026).
+		grpc.WithChainUnaryInterceptor(authn.UnaryClientInterceptor()),
 		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
 		// baru mati membuat pemanggilnya menggantung, bukan gagal.
 		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
@@ -169,7 +172,14 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	grpcServer := grpc.NewServer(telemetry.GRPCServerOption())
+	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
+	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	verifier, err := authn.VerifierFromEnv()
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOption(),
+		grpc.ChainUnaryInterceptor(authn.UnaryServerInterceptor(verifier)))
 	assessmentv1.RegisterAssessmentServer(grpcServer, server)
 
 	healthServer := health.NewServer()
