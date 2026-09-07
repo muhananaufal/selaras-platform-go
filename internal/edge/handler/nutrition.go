@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	commonv1 "github.com/muhananaufal/selaras-platform-go/gen/common/v1"
 	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/httperr"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/middleware"
@@ -193,9 +192,7 @@ func (h *Nutrition) GenerateDailyGuide(c *gin.Context) {
 			SocialContext:     social,
 		},
 	}
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.nutrition.GenerateDailyGuide(c.Request.Context(), req)
 	if err != nil {

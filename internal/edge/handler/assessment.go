@@ -221,9 +221,7 @@ func (h *Assessment) Personalize(c *gin.Context) {
 	// Kunci idempotensi dari klien dihormati bila ada. Klien yang mengirim
 	// ulang permintaan yang sama - karena jaringannya putus, misalnya - tidak
 	// membayar dua kali.
-	if key := c.GetHeader("Idempotency-Key"); key != "" {
-		req.IdempotencyKey = &commonv1.IdempotencyKey{Value: key}
-	}
+	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.assessments.RequestPersonalization(c.Request.Context(), req)
 	if err != nil {
