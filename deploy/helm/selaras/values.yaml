@@ -78,7 +78,7 @@ units:
     env:
       PROFILE_GRPC_ADDR: ":9201"
       PROFILE_HEALTH_ADDR: ":9202"
-    secretEnv: [PROFILE_DATABASE_DSN]
+    secretEnv: [PROFILE_DATABASE_DSN, JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 128Mi }
@@ -91,7 +91,7 @@ units:
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       PROFILE_GRPC_TARGET: profile-svc:9201
-    secretEnv: [ASSESSMENT_DATABASE_DSN]
+    secretEnv: [ASSESSMENT_DATABASE_DSN, JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 50m, memory: 48Mi }
       limits: { memory: 160Mi }
@@ -103,7 +103,7 @@ units:
     env:
       COACHING_GRPC_ADDR: ":9401"
       COACHING_HEALTH_ADDR: ":9403"
-    secretEnv: [COACHING_DATABASE_DSN]
+    secretEnv: [COACHING_DATABASE_DSN, JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
@@ -115,7 +115,7 @@ units:
     env:
       CHAT_GRPC_ADDR: ":9501"
       CHAT_HEALTH_ADDR: ":9503"
-    secretEnv: [CHAT_DATABASE_DSN]
+    secretEnv: [CHAT_DATABASE_DSN, JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
@@ -128,7 +128,7 @@ units:
       NUTRITION_GRPC_ADDR: ":9601"
       NUTRITION_HEALTH_ADDR: ":9603"
       NUTRITION_TIMEZONE: Asia/Jakarta
-    secretEnv: [NUTRITION_DATABASE_DSN]
+    secretEnv: [NUTRITION_DATABASE_DSN, JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
@@ -140,7 +140,7 @@ units:
     env:
       DASHBOARD_GRPC_ADDR: ":9701"
       DASHBOARD_HEALTH_ADDR: ":9703"
-    secretEnv: [DASHBOARD_DATABASE_DSN]
+    secretEnv: [DASHBOARD_DATABASE_DSN, JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }

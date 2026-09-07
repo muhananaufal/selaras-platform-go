@@ -1,7 +1,8 @@
 # ADR-023 — Service tidak mempercayai identitas yang sekadar dikirimkan
 
-**Status.** Diterima. Dibuat saat mengerjakan F2-15, setelah aturan yang sama muncul untuk
-ketiga kalinya.
+**Status.** Diterima; bentuk verifikasinya dituntaskan ADR-026 (setiap service
+memverifikasi token sendiri). Dibuat saat mengerjakan F2-15, setelah aturan yang sama
+muncul untuk ketiga kalinya.
 
 ---
 

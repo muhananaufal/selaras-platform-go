@@ -10,6 +10,7 @@ import (
 
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/httperr"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 )
 
 // Kunci konteks tempat klaim disimpan setelah token diterima.
@@ -50,6 +51,12 @@ func Authenticate(tokens TokenVerifier, revocations domain.RevocationChecker) gi
 			unauthorized(c)
 			return
 		}
+
+		// Token mentah ditaruh di ctx SEBELUM pemeriksaan pencabutan: pemeriksa
+		// itu bertanya ke identity-svc lewat gRPC atas nama pengguna ini, dan
+		// identity-svc kini menuntut token yang sub-nya sama (ADR-026). Tanda
+		// tangannya sudah terbukti di atas; yang belum adalah pencabutannya.
+		c.Request = c.Request.WithContext(authn.WithToken(c.Request.Context(), raw))
 
 		current, err := revocations.IsCurrent(c.Request.Context(), claims.UserID, claims.Generation)
 		if err != nil {

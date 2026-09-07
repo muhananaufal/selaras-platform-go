@@ -46,8 +46,9 @@ flowchart LR
 | Penghapusan akun | Saga dengan kompensasi, 14 probe verifikasi | [ADR-011](docs/adr/ADR-011-penghapusan-akun-sebagai-saga-dengan-kompensasi.md) |
 | Skala | HPA untuk HTTP, KEDA (lag Kafka) untuk worker | [ADR-014](docs/adr/ADR-014-autoscaling-hpa-untuk-http-keda-lag-based-untuk-.md) |
 | Kuota LLM | Pekerjaan diparkir saat kuota habis, bukan dimatikan | [ADR-025](docs/adr/ADR-025-kuota-penyedia-llm-memarkir-pekerjaan-bukan-mematikannya.md) |
+| Autentikasi antar-service | Setiap service memverifikasi token pengguna dengan kunci publik; `sub` harus sama dengan `user_id` | [ADR-026](docs/adr/ADR-026-setiap-service-memverifikasi-token-pengguna-sendiri.md) |
 
-Dua puluh lima ADR, masing-masing dengan **pembatal** — kondisi yang membuat
+Dua puluh enam ADR, masing-masing dengan **pembatal** — kondisi yang membuat
 keputusannya gugur: [`docs/adr/`](docs/adr/README.md). Mengapa sistemnya
 dipecah, dan apa yang dijanjikan: [RFC-000](docs/rfc/RFC-000-platform-decomposition.md).
 Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-retrospective.md).
@@ -68,6 +69,7 @@ Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-re
 | Token LLM sungguhan | Diukur dari `usageMetadata` Gemini: token "pikiran" model 3.x 3–4× token jawaban | [`docs/finops.md`](docs/finops.md) |
 | Alert diturunkan dari SLO dan benar-benar menyala | Unit dimatikan → `page` di Prometheus dan surel di Mailpit dalam 2 menit 20 detik; 8 aturan, tiap aturan ber-unit-test (`promtool test rules`) di CI | [`docs/observability.md`](docs/observability.md) |
 | Chart Helm dikeraskan | NetworkPolicy default-deny + izin dari grafik `*_GRPC_TARGET`, PDB, spread antar node, non-root/read-only/drop ALL; `helm lint --strict` + kubeconform di CI | [`deploy/helm/selaras/templates/`](deploy/helm/selaras/templates/) |
+| gRPC internal tidak lagi mempercayai `user_id` | Langsung ke port gRPC profile-svc: tanpa token → `Unauthenticated`, token orang lain → `PermissionDenied`, pemilik sendiri lolos | [`test/e2e/security_test.go`](test/e2e/security_test.go) |
 | Aturan domain D1–D12 dan celah keamanan S1–S11 dari sistem lama | Satu test penerimaan bernama per aturan | [`test/acceptance/`](test/acceptance/) |
 
 Yang **belum** terbukti, sengaja tidak disembunyikan: baseline k6 sistem lama
