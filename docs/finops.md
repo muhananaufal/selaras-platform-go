@@ -105,6 +105,46 @@ pernah dijalankan di sini. Metrik `llm_job_duration_seconds` ada; metrik
 token masuk/keluar per job adalah tambahan yang dibutuhkan sebelum angka ini
 boleh dipakai untuk menagih siapa pun.
 
+### Yang diukur (2026-09-07, gemini-3.8-flash, kunci tingkat gratis)
+
+Metrik `llm_tokens_total{kind,provider,template}` (F9, commit `a24c408`)
+membaca `usageMetadata` dari jawaban penyedia — bukan taksiran. Diambil dari
+`/metrics` llm-worker setelah suite e2e dijalankan dengan `LLM_PROVIDER=gemini`
+[fakta: `llm_tokens_total` dan `llm_jobs_total`, dibaca 2026-09-07]:
+
+| Templat | Pekerjaan selesai | Masukan / pekerjaan | Keluaran / pekerjaan | **Pikiran** / pekerjaan | Taksiran byte/4 di atas |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| chat_reply.v1 | 4 | 406 | 94 | **359** | ~600 masuk, ~200 keluar |
+| daily_guide.v1 | 2 | 562 | 355 | **1.148** | ~800 masuk, ~800 keluar |
+| personalization, curriculum, graduation, thread reply | 0 | — | — | — | belum terukur |
+
+Tiga hal yang taksiran tidak tahu dan pengukuran tahu:
+
+1. **Token "pikiran" mendominasi.** Gemini 3.x adalah model yang berpikir
+   (`thinking: true` di metadata modelnya); token pikirannya 3–4× token
+   jawaban dan ditagih sebagai keluaran. Kolom "keluaran" di tabel taksiran
+   di atas kurang 4–5× untuk model ini. Harga per token model 3.x TIDAK
+   tercantum di tabel harga di atas (yang dibuka hanya halaman 2.5); biaya
+   dolar per pekerjaan untuk 3.8-flash belum bisa dihitung tanpa membuka
+   halamannya, dan tidak ditebak di sini.
+2. **Masukan lebih kecil dari taksiran** (406 vs ~600; 562 vs ~800): rasio
+   byte/token untuk teks Indonesia di tokenizer ini lebih dekat ke 3 daripada
+   4 — untuk arah masukan, taksiran lama konservatif.
+3. **Kuota tingkat gratis adalah 20 permintaan per hari per model**
+   (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20`,
+   dibaca dari body 429 yang sesungguhnya). Satu larian suite e2e memakainya
+   habis: dari 39 pekerjaan, 6 selesai, 10 mati, 23 gagal-lalu-diulang
+   (`llm_jobs_total`). Kurikulum dan panduan menu di e2e gagal bukan karena
+   kodenya, melainkan karena kuota — dan itu menyingkap dua cacat klien
+   (B30): jeda `retryDelay` yang diminta penyedia diabaikan, dan kuota yang
+   habis tidak disebut namanya di galat. Keduanya diperbaiki (`cb0dc12`).
+   Yang BELUM: pekerjaan yang jatuh pada kuota harian tetap mati setelah tiga
+   percobaan dalam hitungan detik — worker belum punya cara "parkir sampai
+   kuota pulih". Ini keputusan rancangan, dicatat sebagai hutang.
+
+Empat templat lain menunggu kuota berikutnya (atau tingkat berbayar): lima
+permintaan cukup, dijalankan satu per satu, bukan lewat suite penuh.
+
 Biaya per pekerjaan dengan perkiraan di atas, Gemini 2.5 Flash:
 
 | Pekerjaan | Biaya per 1 pekerjaan | Per 1.000 pekerjaan |

@@ -105,10 +105,14 @@ batasnya) dipenuhi; aturan 2 tidak.
 Skenario ini seharusnya tidak terjadi di produksi, tetapi "seharusnya tidak"
 adalah kalimat yang RFC-000 janjikan untuk tidak dipakai. Belum diperbaiki.
 
-**Token LLM tidak pernah diukur.** FinOps menghitung biaya per pekerjaan
-dari ukuran templat ÷ 4 — inferensi yang dinyatakan, tetapi tetap
-inferensi. Metrik token masuk/keluar per job adalah tambahan kecil yang
-belum ada.
+**Token LLM baru terukur sebagian.** FinOps menghitung biaya per pekerjaan
+dari ukuran templat ÷ 4 sampai gerbang keluar; metrik `llm_tokens_total`
+kini membaca `usageMetadata` penyedia, dan larian nyata pertama
+(gemini-3.8-flash, kunci tingkat gratis 20 permintaan/hari) mengukur dua
+dari enam templat sebelum kuotanya habis — sekaligus menyingkap B30 (jeda
+`retryDelay` diabaikan, kuota harian membunuh pekerjaan). Empat templat
+menunggu kuota berikutnya; token "pikiran" model 3.x ternyata 3–4× token
+jawaban, sesuatu yang taksiran ÷ 4 tidak mungkin tahu.
 
 ## 4. Yang akan dikerjakan berbeda
 
