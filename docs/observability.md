@@ -175,3 +175,48 @@ tetap menjaga itu setelah bidang trace ditambahkan.
 - **Retensi Tempo memakai bawaan 3.x (336 jam).** Blok `compactor` tingkat
   atas dari Tempo 2 sudah tidak ada di 3.x, dan container menolak start
   dengannya — dicatat supaya orang berikutnya tidak menabraknya.
+
+## Alert dari SLO, dan bukti bahwa ia menyala
+
+Aturannya di `deploy/compose/observability/alerts.yml` — satu berkas untuk
+compose (mount) dan k3d (ConfigMap `prometheus-rules`, dibuat `infra.sh` dari
+berkas yang sama). Ambangnya bukan karangan: rasio galat, p95 campuran, dan
+p95 pendaftaran diturunkan dari `test/k6/lib/slo.js`; unit mati, pekerjaan
+LLM mati, antrean diparkir (ADR-025), dan backlog yang tumbuh menyebut
+alasannya sendiri di komentar aturannya.
+
+| Alert | Ambang | Keparahan |
+| :--- | :--- | :--- |
+| `SelarasErrorBudgetBurningFast` | 5xx > 14,4 × anggaran 1 % pada 5m **dan** 1h (anggaran sebulan habis dalam 2 hari) | page |
+| `SelarasErrorBudgetBurningSlowly` | 5xx > 6 × anggaran pada 30m **dan** 6h (habis dalam 5 hari) | ticket |
+| `SelarasLatencyAboveSLO` | p95 HTTP (selain pendaftaran) > 50 ms selama 10m | ticket |
+| `SelarasRegisterLatencyAboveSLO` | p95 pendaftaran > 1,5 s selama 10m | ticket |
+| `SelarasUnitDown` | `up == 0` selama 2m | page |
+| `SelarasLLMJobsDying` | ada pekerjaan `dead` dalam 15m | ticket |
+| `SelarasLLMQueueParked` | diparkir 30m tanpa satu pun selesai | ticket |
+| `SelarasLLMBacklogGrowing` | lag > 100 dan naik selama 15m | ticket |
+
+Setiap aturan punya unit test di `alerts_test.yml` (`promtool test rules`):
+deret yang melanggar harus menyalakannya dengan anotasi yang persis, deret
+yang sehat harus diam. Dijalankan di CI (job `alert rules`) dan lokal
+(`task alerts:test`), dengan image Prometheus/Alertmanager yang sama dengan
+yang dijalankan. Penerimanya di lokal adalah **surel ke Mailpit** — alert yang
+menyala benar-benar terlihat, bukan diasumsikan.
+
+Bukti hidup, 2026-09-07 (compose, `docker stop selaras-coaching`):
+
+| Waktu | Kejadian | Sumber |
+| :--- | :--- | :--- |
+| 13:42:44 | coaching-svc dihentikan | skrip |
+| 13:42:54 | `SelarasUnitDown{unit="coaching-svc"}` **pending** | `GET /api/v1/alerts` |
+| 13:45:02 | **firing** (tepat `for: 2m` + satu evaluasi) | idem |
+| 13:45:04 | surel `[FIRING:1] SelarasUnitDown coaching-svc (… selaras page)` tiba | Mailpit `/api/v1/search` |
+| 13:47:56 | coaching-svc dinyalakan lagi | skrip |
+| 13:48:17 | alert hilang dari `/api/v1/alerts` | idem |
+| 13:50:04 | surel `[RESOLVED] SelarasUnitDown coaching-svc` tiba (mengikuti `group_interval: 5m`) | Mailpit |
+
+Dari mati sampai orang diberi tahu: **2 menit 20 detik**, seluruhnya jeda
+yang disengaja (`for: 2m` supaya restart rapi tidak membangunkan siapa pun,
+`group_wait: 10s` untuk page). Yang belum dibuktikan hidup: alert burn-rate
+dan latensi — keduanya butuh lalu lintas 5xx atau lambat yang berkelanjutan;
+keduanya dibuktikan lewat unit test aturan, bukan lewat kejadian.

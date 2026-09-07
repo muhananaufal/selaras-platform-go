@@ -29,6 +29,7 @@ services:
       - --storage.tsdb.retention.time=7d
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:19090:9090"
@@ -36,6 +37,24 @@ services:
       resources:
         limits:
           memory: 512M
+
+  # Alert yang menyala dikirim sebagai surel ke Mailpit (http://127.0.0.1:18025).
+  # Aturannya di observability/alerts.yml, diuji promtool di CI dan lewat
+  # `task alerts:test`; bukti alert hidup ada di docs/observability.md.
+  alertmanager:
+    image: prom/alertmanager:v0.34.0
+    container_name: selaras-alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:19093:9093"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
   tempo:
     image: grafana/tempo:3.0.3

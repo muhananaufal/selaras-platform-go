@@ -66,6 +66,7 @@ Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-re
 | Autoscaling di k3d | edge 1→4 replika, service 1→3 di bawah 60 VU; batas satu node dinyatakan | [`docs/performance-report.md`](docs/performance-report.md) |
 | Koneksi Postgres saat replika bertambah | PgBouncer mode transaksi: ≤ 64 koneksi ke Postgres berapa pun replikanya; replika baca lag 10 ms | [`docs/db-connections.md`](docs/db-connections.md) |
 | Token LLM sungguhan | Diukur dari `usageMetadata` Gemini: token "pikiran" model 3.x 3–4× token jawaban | [`docs/finops.md`](docs/finops.md) |
+| Alert diturunkan dari SLO dan benar-benar menyala | Unit dimatikan → `page` di Prometheus dan surel di Mailpit dalam 2 menit 20 detik; 8 aturan, tiap aturan ber-unit-test (`promtool test rules`) di CI | [`docs/observability.md`](docs/observability.md) |
 | Aturan domain D1–D12 dan celah keamanan S1–S11 dari sistem lama | Satu test penerimaan bernama per aturan | [`test/acceptance/`](test/acceptance/) |
 
 Yang **belum** terbukti, sengaja tidak disembunyikan: baseline k6 sistem lama

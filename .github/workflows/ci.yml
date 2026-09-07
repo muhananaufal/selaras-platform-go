@@ -220,6 +220,24 @@ jobs:
       - name: Scan the module
         run: govulncheck ./...
 
+  # Aturan alert diperlakukan seperti kode: sintaksnya diperiksa, setiap
+  # alert dibuktikan menyala dan diam pada deret uji (promtool test rules),
+  # dan konfigurasi Alertmanager divalidasi. Image yang sama dengan yang
+  # dijalankan compose/k8s, supaya versi PromQL-nya sama.
+  alerts:
+    name: alert rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check and unit-test the rules
+        working-directory: deploy/compose/observability
+        run: |
+          docker run --rm -v "$PWD:/rules:ro" --entrypoint promtool prom/prometheus:v3.14.0 check rules /rules/alerts.yml
+          docker run --rm -v "$PWD:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v3.14.0 test rules alerts_test.yml
+      - name: Validate the Alertmanager config
+        working-directory: deploy/compose/observability
+        run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
+
   contract:
     name: contract
     runs-on: ubuntu-latest
