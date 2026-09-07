@@ -56,6 +56,7 @@ const (
 	OutcomeDead      = "dead"
 	OutcomeSkipped   = "skipped"
 	OutcomeAbandoned = "abandoned"
+	OutcomeParked    = "parked"
 )
 
 // NewMetrics membuat instrumennya.

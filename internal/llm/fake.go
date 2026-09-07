@@ -243,3 +243,14 @@ func fakeWeeks() []map[string]any {
 	}
 	return weeks
 }
+
+// SetErr mengganti galat yang dikembalikan setiap panggilan berikutnya.
+//
+// Ia ada untuk test yang mengubah nasib penyedia DI TENGAH worker berjalan
+// (kuota habis, lalu pulih); menulis f.Err langsung dari goroutine lain adalah
+// data race yang ditangkap -race di CI.
+func (f *Fake) SetErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Err = err
+}
