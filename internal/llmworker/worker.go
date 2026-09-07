@@ -398,6 +398,19 @@ func (c *Consumer) generate(
 		JSON:          true,
 		Temperature:   0.7,
 	})
+	if err == nil {
+		// Token dicatat di tiga tempat yang masing-masing punya pembaca: span
+		// (satu trace), metrik (agregat FinOps), dan log (satu pekerjaan).
+		span.SetAttributes(
+			attribute.Int("selaras.llm.tokens.input", answer.Usage.InputTokens),
+			attribute.Int("selaras.llm.tokens.output", answer.Usage.OutputTokens),
+			attribute.Int("selaras.llm.tokens.thoughts", answer.Usage.ThoughtsTokens))
+		c.metrics.ObserveUsage(ctx, c.provider.Name(), tmpl.ID(), answer.Usage)
+		c.log.InfoContext(ctx, "llm answer received",
+			"provider", c.provider.Name(), "model", answer.Model, "template", tmpl.ID(),
+			"tokens_input", answer.Usage.InputTokens, "tokens_output", answer.Usage.OutputTokens,
+			"tokens_thoughts", answer.Usage.ThoughtsTokens, "finish_reason", answer.FinishReason)
+	}
 	telemetry.End(span, err)
 	return answer, err
 }
