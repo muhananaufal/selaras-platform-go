@@ -289,6 +289,16 @@ tasks:
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/helm/lint.sh
 
+  postman:build:
+    desc: Rebuild test/postman/selaras.postman_collection.json from build.js
+    cmds:
+      - node test/postman/build.js test/postman/selaras.postman_collection.json
+
+  postman:run:
+    desc: Run the Postman collection against the running local stack with Newman
+    cmds:
+      - npx --yes newman run test/postman/selaras.postman_collection.json --timeout-request 30000
+
   alerts:test:
     desc: Check and unit-test the Prometheus alert rules, and validate the Alertmanager config
     cmds:
