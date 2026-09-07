@@ -374,3 +374,113 @@ func TestMissingUsageIsZero(t *testing.T) {
 		t.Fatalf("usage should be zero without usageMetadata, got %+v", got.Usage)
 	}
 }
+
+// quota429 adalah body 429 yang benar-benar dikirim gemini-3.8-flash pada
+// 2026-09-07, dipendekkan pada pesan bebasnya saja.
+const quota429 = `{"error":{"code":429,"message":"You exceeded your current quota.","status":"RESOURCE_EXHAUSTED",` +
+	`"details":[{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"x","url":"y"}]},` +
+	`{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"m",` +
+	`"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-3.8-flash"},"quotaValue":"20"}]},` +
+	`{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"%s"}]}}`
+
+// TestTheProvidersRetryDelayIsHonoured: jeda yang diminta 429 dipakai, bukan
+// backoff milidetik sendiri - mengulang lebih cepat hanya membakar percobaan.
+func TestTheProvidersRetryDelayIsHonoured(t *testing.T) {
+	var calls atomic.Int32
+	var gaps []time.Time
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		gaps = append(gaps, time.Now())
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprintf(w, quota429, "300ms")
+			return
+		}
+		fmt.Fprint(w, answer("after the delay"))
+	}))
+	defer srv.Close()
+
+	got, err := client(t, srv, nil).Generate(context.Background(), request())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if got.Text != "after the delay" {
+		t.Fatalf("answer %q", got.Text)
+	}
+	if len(gaps) != 2 {
+		t.Fatalf("%d attempts, want 2", len(gaps))
+	}
+	if waited := gaps[1].Sub(gaps[0]); waited < 300*time.Millisecond {
+		t.Fatalf("the second attempt came after %v, want at least the 300ms the provider asked for", waited)
+	}
+}
+
+// Jeda yang diminta tidak boleh melampaui Timeout: "coba lagi besok" tidak
+// boleh menahan partisi worker sampai besok.
+func TestARetryDelayIsCappedByTheTimeout(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprintf(w, quota429, "3600s")
+			return
+		}
+		fmt.Fprint(w, answer("ok"))
+	}))
+	defer srv.Close()
+
+	started := time.Now()
+	_, err := client(t, srv, func(c *gemini.Config) { c.Timeout = 200 * time.Millisecond }).
+		Generate(context.Background(), request())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if took := time.Since(started); took > 2*time.Second {
+		t.Fatalf("waited %v; the hour the provider asked for must be capped by the timeout", took)
+	}
+}
+
+// Kuota yang habis disebut namanya: per hari dan per menit menuntut tindakan
+// yang berbeda, dan pesan bebasnya tidak membedakan keduanya.
+func TestTheExhaustedQuotaIsNamed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, quota429, "1ms")
+	}))
+	defer srv.Close()
+
+	_, err := client(t, srv, nil).Generate(context.Background(), request())
+	if err == nil {
+		t.Fatal("a quota that never lifts must be reported")
+	}
+	if !strings.Contains(err.Error(), "GenerateRequestsPerDayPerProjectPerModel-FreeTier") {
+		t.Fatalf("the error does not name the quota: %v", err)
+	}
+	if !errors.Is(err, llm.ErrRateLimited) {
+		t.Fatalf("a 429 must still read as a rate limit: %v", err)
+	}
+}
+
+// Retry-After di header menang atas retryDelay di body.
+func TestRetryAfterHeaderWins(t *testing.T) {
+	var calls atomic.Int32
+	var gaps []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		gaps = append(gaps, time.Now())
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprint(w, `{"error":{"message":"high demand"}}`)
+			return
+		}
+		fmt.Fprint(w, answer("ok"))
+	}))
+	defer srv.Close()
+
+	if _, err := client(t, srv, nil).Generate(context.Background(), request()); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if waited := gaps[1].Sub(gaps[0]); waited < time.Second {
+		t.Fatalf("waited %v, want at least the 1s Retry-After", waited)
+	}
+}

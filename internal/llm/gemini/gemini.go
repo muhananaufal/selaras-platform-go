@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -134,10 +135,27 @@ func (c *Client) Generate(ctx context.Context, req llm.Request) (*llm.Response, 
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(c.backoff(attempt)):
+		case <-time.After(c.wait(attempt, err)):
 		}
 	}
 	return nil, fmt.Errorf("gemini gave up after %d attempts: %w", c.cfg.MaxAttempts, lastErr)
+}
+
+// wait adalah jeda sebelum percobaan berikutnya: backoff sendiri, atau jeda
+// yang diminta penyedia bila lebih panjang. Mengulang lebih cepat daripada
+// yang diminta hanya membakar percobaan pada jawaban 429 yang sama - itulah
+// yang terjadi pada larian nyata pertama (docs/finops.md). Dibatasi Timeout
+// supaya permintaan "coba lagi besok" tidak menahan partisi selamanya.
+func (c *Client) wait(attempt int, err error) time.Duration {
+	d := c.backoff(attempt)
+	var api *apiError
+	if errors.As(err, &api) && api.retryAfter > d {
+		d = api.retryAfter
+	}
+	if d > c.cfg.Timeout {
+		d = c.cfg.Timeout
+	}
+	return d
 }
 
 // backoff menghitung jeda sebelum percobaan berikutnya.
@@ -207,7 +225,7 @@ func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, e
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, statusError(httpResp.StatusCode, raw)
+		return nil, statusError(httpResp.StatusCode, raw, httpResp.Header)
 	}
 	return decode(raw, req)
 }
@@ -223,10 +241,23 @@ func (e *transportError) Unwrap() error { return e.err }
 type apiError struct {
 	status  int
 	message string
+
+	// quota menyebutkan kuota MANA yang habis (google.rpc.QuotaFailure), bila
+	// ada. "Per hari" dan "per menit" menuntut tindakan yang berbeda, dan
+	// pesan bebasnya tidak membedakan keduanya.
+	quota string
+
+	// retryAfter adalah jeda yang DIMINTA penyedia (google.rpc.RetryInfo atau
+	// header Retry-After). Nol berarti tidak diminta.
+	retryAfter time.Duration
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("gemini answered %d: %s", e.status, e.message)
+	msg := fmt.Sprintf("gemini answered %d: %s", e.status, e.message)
+	if e.quota != "" {
+		msg += " (quota " + e.quota + ")"
+	}
+	return msg
 }
 
 func (e *apiError) Unwrap() error {
@@ -254,19 +285,44 @@ func retryable(err error) bool {
 	return false
 }
 
-func statusError(status int, raw []byte) error {
+func statusError(status int, raw []byte, header http.Header) error {
+	// Bentuk google.rpc.Status. Nama bidang diverifikasi dari jawaban 429
+	// nyata gemini-3.8-flash pada 2026-09-07 (kuota gratis 20 permintaan per
+	// hari per model), bukan dari ingatan.
 	var envelope struct {
 		Error struct {
 			Message string `json:"message"`
+			Details []struct {
+				RetryDelay string `json:"retryDelay"`
+				Violations []struct {
+					QuotaID string `json:"quotaId"`
+				} `json:"violations"`
+			} `json:"details"`
 		} `json:"error"`
 	}
 
-	message := strings.TrimSpace(string(raw))
+	out := &apiError{status: status, message: strings.TrimSpace(string(raw))}
 	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Error.Message != "" {
-		message = envelope.Error.Message
+		out.message = envelope.Error.Message
+		for _, d := range envelope.Error.Details {
+			if d.RetryDelay != "" {
+				if delay, err := time.ParseDuration(d.RetryDelay); err == nil && delay > 0 {
+					out.retryAfter = delay
+				}
+			}
+			if len(d.Violations) > 0 && d.Violations[0].QuotaID != "" {
+				out.quota = d.Violations[0].QuotaID
+			}
+		}
 	}
-	if len(message) > 500 {
-		message = message[:500] + "..."
+	if len(out.message) > 500 {
+		out.message = out.message[:500] + "..."
 	}
-	return &apiError{status: status, message: message}
+
+	// Retry-After (detik) menang bila ada: ia yang dibaca proxy dan CDN di
+	// depan penyedia, dan lebih dekat ke keadaan sebenarnya.
+	if secs, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After"))); err == nil && secs > 0 {
+		out.retryAfter = time.Duration(secs) * time.Second
+	}
+	return out
 }
