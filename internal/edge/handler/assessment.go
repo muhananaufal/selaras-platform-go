@@ -22,7 +22,7 @@ func NewAssessment(assessments assessmentv1.AssessmentClient) *Assessment {
 	return &Assessment{assessments: assessments}
 }
 
-// assessmentView adalah bentuk yang dijanjikan kontrak REST.
+// assessmentView is the shape the REST contract promises.
 type assessmentView struct {
 	Slug           string        `json:"slug"`
 	ModelUsed      string        `json:"model_used"`
@@ -30,16 +30,16 @@ type assessmentView struct {
 	ResolvedValues *resolvedView `json:"resolved_values"`
 	CreatedAt      string        `json:"created_at"`
 
-	// PersonalizationStatus adalah satu-satunya cara klien membedakan
-	// "sedang dikerjakan" dari "gagal" dan dari "belum pernah diminta"
-	// (F3-12). Tanpa ini, ketiganya terlihat sama: laporan yang tidak ada.
+	// PersonalizationStatus is the only way a client can tell "in progress"
+	// from "failed" and from "never requested" (F3-12). Without it, all three
+	// look the same: a report that is not there.
 	PersonalizationStatus string `json:"personalization_status"`
 
-	// PersonalizedReport adalah laporannya, apa adanya.
+	// PersonalizedReport is the report, as it is.
 	//
-	// json.RawMessage, bukan map: laporan yang di-decode lalu di-encode ulang
-	// kehilangan urutan kuncinya dan mengubah angka yang tidak bisa
-	// direpresentasikan float64. Yang disimpan sudah JSON; ia diteruskan.
+	// json.RawMessage, not a map: a report decoded and re-encoded loses its
+	// key order and alters numbers that float64 cannot represent. What is
+	// stored is already JSON; it is passed through.
 	PersonalizedReport json.RawMessage `json:"personalized_report,omitempty"`
 }
 
@@ -51,8 +51,8 @@ type resolvedView struct {
 	TotalCholesterol      float64 `json:"total_cholesterol"`
 	HDLCholesterol        float64 `json:"hdl_cholesterol"`
 
-	// Ketiganya null di luar jalur diabetes. Mengirimnya sebagai nol akan
-	// menampilkan HbA1c nol - angka yang mustahil dan tampak seperti data.
+	// All three are null outside the diabetes path. Sending them as zero would
+	// display an HbA1c of zero - an impossible number that looks like data.
 	HbA1c           *float64 `json:"hba1c"`
 	SerumCreatinine *float64 `json:"serum_creatinine"`
 	EGFR            *float64 `json:"egfr"`
@@ -77,8 +77,8 @@ func (h *Assessment) Start(c *gin.Context) {
 		return
 	}
 
-	// user_id dari klaim yang sudah diverifikasi, bukan dari badan permintaan
-	// (ADR-023). assessment-svc yang menanyakan id profilnya sendiri.
+	// user_id from the verified claims, not from the request body (ADR-023).
+	// assessment-svc is the one that asks for its own profile id.
 	resp, err := h.assessments.StartAssessment(c.Request.Context(), &assessmentv1.StartAssessmentRequest{
 		UserId: claims.UserID.String(),
 		Input:  input,
@@ -111,7 +111,7 @@ func (h *Assessment) Show(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOf(resp.GetAssessment()))
 }
 
-// Index mengembalikan riwayat penilaian.
+// Index returns the assessment history.
 func (h *Assessment) Index(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -128,8 +128,8 @@ func (h *Assessment) Index(c *gin.Context) {
 		return
 	}
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi daftar akan gagal alih-alih menampilkan riwayat kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the list fails instead of showing an empty history.
 	out := make([]assessmentView, 0, len(resp.GetAssessments()))
 	for _, a := range resp.GetAssessments() {
 		out = append(out, viewOf(a))
@@ -146,9 +146,9 @@ func viewOf(a *assessmentv1.RiskAssessment) assessmentView {
 	}
 
 	if report := a.GetPersonalizedReportJson(); report != "" {
-		// Diperiksa dulu, bukan diteruskan begitu saja. Byte yang bukan JSON
-		// akan membuat SELURUH respons tidak bisa di-parse klien - satu baris
-		// yang rusak di basis data menjatuhkan endpoint-nya.
+		// Checked first, not passed through blindly. Bytes that are not JSON
+		// would make the WHOLE response unparseable for the client - one corrupt
+		// row in the database takes the endpoint down.
 		if json.Valid([]byte(report)) {
 			view.PersonalizedReport = json.RawMessage(report)
 		}
@@ -173,10 +173,10 @@ func viewOf(a *assessmentv1.RiskAssessment) assessmentView {
 	return view
 }
 
-// modelName memetakan enum ke nama yang dipakai sistem lama di API-nya.
+// modelName maps the enum to the name the legacy system used in its API.
 //
-// UNSPECIFIED menjadi string kosong, bukan "SCORE2". Data yang rusak tidak
-// boleh terlihat seperti penilaian biasa.
+// UNSPECIFIED becomes an empty string, not "SCORE2". Corrupt data must not
+// look like an ordinary assessment.
 func modelName(m assessmentv1.RiskModel) string {
 	switch m {
 	case assessmentv1.RiskModel_RISK_MODEL_SCORE2:
@@ -190,22 +190,22 @@ func modelName(m assessmentv1.RiskModel) string {
 	}
 }
 
-// personalizationView adalah tiket yang dikembalikan segera.
+// personalizationView is the ticket returned immediately.
 type personalizationView struct {
 	JobID  string `json:"job_id"`
 	Status string `json:"status"`
 }
 
-// Personalize meminta laporan personalisasi dibuat.
+// Personalize asks for a personalisation report to be produced.
 //
-// Ia menjawab 202 Accepted, BUKAN 200 dengan laporannya. Ini perbedaan yang
-// terlihat klien dibandingkan sistem lama, dan ia disengaja: jalur lama
-// menahan permintaan HTTP selama Gemini berpikir - sampai 300 detik menurut
-// konfigurasinya - sehingga satu kegagalan penyedia menjadi kegagalan
-// permintaan, dan tidak ada yang bisa mencoba ulang tanpa pengguna menekan
-// tombolnya lagi.
+// It answers 202 Accepted, NOT 200 with the report. This is a
+// client-visible difference from the legacy system, and it is deliberate:
+// the old path held the HTTP request while Gemini thought - up to 300
+// seconds according to its configuration - so one provider failure became a
+// request failure, and nothing could retry without the user pressing the
+// button again.
 //
-// Laporannya diambil lewat GET /risk-assessments/{slug} seperti biasa.
+// The report is fetched through GET /risk-assessments/{slug} as usual.
 func (h *Assessment) Personalize(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -218,9 +218,9 @@ func (h *Assessment) Personalize(c *gin.Context) {
 		UserId: claims.UserID.String(),
 	}
 
-	// Kunci idempotensi dari klien dihormati bila ada. Klien yang mengirim
-	// ulang permintaan yang sama - karena jaringannya putus, misalnya - tidak
-	// membayar dua kali.
+	// The client's idempotency key is honoured when present. A client that
+	// resends the same request - because its network dropped, say - does not
+	// pay twice.
 	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))
 
 	resp, err := h.assessments.RequestPersonalization(c.Request.Context(), req)
@@ -231,7 +231,7 @@ func (h *Assessment) Personalize(c *gin.Context) {
 
 	status := http.StatusAccepted
 	if resp.GetStatus() == assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED {
-		// Sudah ada laporannya. 200, bukan 202: tidak ada yang perlu ditunggu.
+		// The report already exists. 200, not 202: there is nothing to wait for.
 		status = http.StatusOK
 	}
 
@@ -241,7 +241,7 @@ func (h *Assessment) Personalize(c *gin.Context) {
 	})
 }
 
-// personalizationStatusName memetakan enum ke nama yang dibaca klien.
+// personalizationStatusName maps the enum to the name the client reads.
 func personalizationStatusName(s assessmentv1.PersonalizationStatus) string {
 	switch s {
 	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED:
@@ -253,9 +253,9 @@ func personalizationStatusName(s assessmentv1.PersonalizationStatus) string {
 	case assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_FAILED:
 		return statusFailed
 	default:
-		// UNSPECIFIED tidak dipetakan ke salah satu keadaan nyata. Klien yang
-		// menerima "pending" untuk keadaan yang tidak diketahui akan menunggu
-		// sesuatu yang mungkin tidak pernah datang.
+		// UNSPECIFIED is not mapped to any real state. A client receiving
+		// "pending" for an unknown state would wait for something that may never
+		// come.
 		return statusUnknown
 	}
 }

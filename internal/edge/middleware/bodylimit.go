@@ -8,28 +8,28 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/httperr"
 )
 
-// MaxBodyBytes adalah batas ukuran badan permintaan.
+// MaxBodyBytes is the request body size limit.
 //
-// Satu megabyte. Badan terbesar yang sah di API ini adalah kuesioner penilaian
-// risiko - beberapa puluh bidang - dan pesan chat yang dibatasi 16 KiB di
-// domainnya. Satu megabyte memberi ruang berlipat-lipat di atas keduanya sambil
-// tetap menghentikan yang tidak masuk akal.
+// One megabyte. The largest legitimate body in this API is the risk assessment
+// questionnaire - a few dozen fields - and a chat message bounded to 16 KiB in
+// its domain. One megabyte leaves many times that headroom above both while
+// still stopping the unreasonable.
 //
-// Tanpa batas, satu permintaan bisa memaksa gateway membaca seluruh badan ke
-// memori sebelum ada validasi apa pun yang sempat berjalan - dan cara termurah
-// menjatuhkan sebuah service adalah mengirimkannya sesuatu yang sangat besar.
+// Without a limit, one request could force the gateway to read the whole body
+// into memory before any validation had a chance to run - and the cheapest way
+// to take a service down is to send it something very large.
 const MaxBodyBytes int64 = 1 << 20
 
-// LimitBody menolak badan permintaan yang terlalu besar.
+// LimitBody refuses request bodies that are too large.
 //
-// Ia memasang http.MaxBytesReader, yang menghentikan pembacaan DI TENGAH JALAN
-// alih-alih membaca seluruhnya lalu mengukurnya. Membaca dulu baru mengukur
-// tidak melindungi apa pun: memorinya sudah terpakai saat ukurannya diketahui.
+// It installs http.MaxBytesReader, which stops reading MIDWAY instead of
+// reading everything and then measuring. Reading first and measuring afterwards
+// protects nothing: the memory is already spent by the time the size is known.
 //
-// Content-Length yang menyatakan ukuran besar ditolak lebih awal lagi, tanpa
-// membaca satu byte pun. Header itu tidak dipercaya sebagai kebenaran - pembaca
-// berbatas di bawah tetap menjaga permintaan yang berbohong - tetapi menolak
-// yang jujur lebih awal menghemat pekerjaan.
+// A Content-Length declaring a large size is refused earlier still, without
+// reading a single byte. That header is not trusted as the truth - the bounded
+// reader below still guards against a request that lies - but refusing the
+// honest ones early saves work.
 func LimitBody() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Body == nil {
@@ -47,11 +47,11 @@ func LimitBody() gin.HandlerFunc {
 	}
 }
 
-// tooLarge menjawab dengan bentuk galat yang sama seperti penolakan lain.
+// tooLarge answers with the same error shape as every other refusal.
 //
-// Bentuk yang seragam adalah intinya: klien yang menangani galat lewat bidang
-// `code` tidak boleh menemukan satu endpoint yang menjawab dengan bentuk lain,
-// karena penanganan galat yang bercabang selalu punya cabang yang tidak diuji.
+// The uniform shape is the point: a client handling errors through the `code`
+// field must not find one endpoint answering in a different shape, because
+// branching error handling always has a branch that is never tested.
 func tooLarge(c *gin.Context) {
 	httperr.Write(c, http.StatusRequestEntityTooLarge, httperr.CodeInvalidArgument,
 		"The request body is too large.")

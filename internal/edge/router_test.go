@@ -38,10 +38,10 @@ import (
 	profileapp "github.com/muhananaufal/selaras-platform-go/internal/profile/app"
 )
 
-// Seluruh tumpukan dijalankan: gateway HTTP, kedua service gRPC, dan Postgres
-// sungguhan. Yang dipalsu hanya pemeriksa pencabutan - ia sudah diuji
-// terpisah terhadap Redis sungguhan, dan menghadirkannya di sini hanya
-// menambah satu dependensi tanpa menambah yang dibuktikan.
+// The whole stack runs: the HTTP gateway, both gRPC services, and a real
+// Postgres. Only the revocation checker is faked - it is already tested
+// separately against a real Redis, and bringing it in here would add one
+// dependency without adding anything proven.
 type stack struct {
 	server      *httptest.Server
 	links       *capturedLinks
@@ -56,8 +56,8 @@ func (c *capturedLinks) SendResetLink(_ context.Context, _ identitydomain.Email,
 	return nil
 }
 
-// stubRevocations menyimpan generasi di memori dan gagal-tertutup, sama
-// seperti yang sungguhan.
+// stubRevocations keeps generations in memory and fails closed, just like
+// the real one.
 type stubRevocations struct {
 	generations map[string]int64
 	fail        bool
@@ -73,8 +73,7 @@ func (s *stubRevocations) IsCurrent(_ context.Context, userID identitydomain.Use
 	}
 	current, ok := s.generations[userID.String()]
 	if !ok {
-		// Belum pernah terlihat berarti generasi pertama, seperti pengguna
-		// yang baru mendaftar.
+		// Never seen means the first generation, like a user who just registered.
 		return gen == 1, nil
 	}
 	return current == gen, nil
@@ -122,8 +121,8 @@ func newStack(t *testing.T) *stack {
 	return build(t, nil)
 }
 
-// newStackWithGoogle menambahkan penyedia palsu ke tumpukan yang sama, supaya
-// alur sosial diuji lewat jalur yang persis sama dengan alur lainnya.
+// newStackWithGoogle adds the fake provider to the same stack, so the social
+// flow is tested through exactly the same path as every other flow.
 func newStackWithGoogle(t *testing.T) *stack {
 	t.Helper()
 	return build(t, newFakeGoogle(t))
@@ -150,7 +149,7 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 		t.Fatalf("NewVerifier: %v", err)
 	}
 
-	// profile-svc lebih dulu, karena identity-svc memanggilnya.
+	// profile-svc first, because identity-svc calls it.
 	profileSvc, err := profileapp.NewService(profilepg.NewProfileRepository(profilePool), time.Now)
 	if err != nil {
 		t.Fatalf("profile NewService: %v", err)
@@ -214,9 +213,9 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 		identityv1.RegisterIdentityServer(s, identityServer)
 	}))
 
-	// Redis sungguhan: state dan kode penyerahan disimpan di sana, dan
-	// keduanya bergantung pada GETDEL yang atomik - sifat yang tidak bisa
-	// dibuktikan oleh palsuan dalam memori.
+	// A real Redis: the state and handoff codes are stored there, and both
+	// depend on GETDEL being atomic - a property an in-memory fake cannot
+	// prove.
 	redisClient := redistest.Open(t)
 
 	probes := httpx.NewHealth()
@@ -238,9 +237,9 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 	return &stack{server: server, links: links, revocations: revocations, google: google}
 }
 
-// socialVerifier memakai verifier Google yang SUNGGUHAN, diarahkan ke JWKS
-// penyedia palsu. Yang dipalsu hanya penyedianya; verifikasi tanda tangan,
-// audience, penerbit, dan email_verified semuanya berjalan.
+// socialVerifier uses the REAL Google verifier, pointed at the fake
+// provider's JWKS. Only the provider is faked; signature, audience, issuer,
+// and email_verified verification all run.
 func socialVerifier(t *testing.T, google *fakeGoogle) identitygrpc.SocialIdentityVerifier {
 	t.Helper()
 	if google == nil {
@@ -255,8 +254,8 @@ func socialVerifier(t *testing.T, google *fakeGoogle) identitygrpc.SocialIdentit
 	return verifier
 }
 
-// buildSocialHandler merakit alur OAuth di edge, atau nil bila tidak ada
-// penyedia - persis seperti lingkungan tanpa kredensial.
+// buildSocialHandler assembles the OAuth flow at the edge, or nil when
+// there is no provider - exactly like an environment without credentials.
 func buildSocialHandler(
 	t *testing.T,
 	google *fakeGoogle,
@@ -381,6 +380,6 @@ func (s *stack) registerUser(t *testing.T, email string) string {
 	return token
 }
 
-// errNoAnswer sengaja bertipe sendiri, bukan errors.New, supaya test bisa
-// membedakannya dari galat apa pun yang mungkin datang dari lapisan lain.
+// errNoAnswer deliberately has its own type, not errors.New, so the test
+// can tell it apart from any error that may come from another layer.
 var _ error = errNoAnswer

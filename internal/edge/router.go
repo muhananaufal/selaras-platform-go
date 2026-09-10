@@ -1,4 +1,4 @@
-// Package edge merakit gateway REST publik.
+// Package edge assembles the public REST gateway.
 package edge
 
 import (
@@ -17,86 +17,87 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 )
 
-// Deps adalah seluruh yang dibutuhkan router.
+// Deps is everything the router needs.
 type Deps struct {
 	Identity identityv1.IdentityClient
 	Profiles profilev1.ProfileClient
-	// Chat boleh nil: lingkungan tanpa chat-svc tetap melayani sisanya, dan
-	// rute chat TIDAK dipasang.
+	// Chat may be nil: an environment without chat-svc still serves the rest,
+	// and the chat routes are NOT mounted.
 	Chat *handler.Chat
 
-	// Coaching boleh nil: lingkungan tanpa coaching-svc tetap melayani sisanya,
-	// dan rute coaching TIDAK dipasang. 404 jauh lebih jujur daripada 500 dari
-	// klien yang tidak menyambung ke mana-mana.
+	// Coaching may be nil: an environment without coaching-svc still serves the
+	// rest, and the coaching routes are NOT mounted. 404 is far more honest
+	// than 500 from a client connected to nothing.
 	Coaching    *handler.Coaching
 	Tokens      middleware.TokenVerifier
 	Revocations domain.RevocationChecker
 	Probes      *httpx.Health
 	Now         func() time.Time
 
-	// Assessments boleh nil: lingkungan tanpa assessment-svc tetap melayani
-	// autentikasi dan profil. Rutenya tidak dipasang, jadi jawabannya 404.
+	// Assessments may be nil: an environment without assessment-svc still
+	// serves authentication and profiles. The routes are not mounted, so the
+	// answer is 404.
 	Assessments *handler.Assessment
 
-	// Regions memetakan negara ke wilayah risiko untuk tampilan profil
-	// (F1-12). Boleh nil.
+	// Regions maps a country to its risk region for the profile view (F1-12).
+	// May be nil.
 	Regions assessmentv1.AssessmentClient
 
-	// Dashboards boleh nil: lingkungan tanpa dashboard-svc tetap melayani
-	// sisanya, dan rute /dashboard TIDAK dipasang.
+	// Dashboards may be nil: an environment without dashboard-svc still serves
+	// the rest, and the /dashboard route is NOT mounted.
 	Dashboards *handler.Dashboard
 
-	// Nutrition boleh nil: lingkungan tanpa nutrition-svc tetap melayani
-	// sisanya, dan rute culinary TIDAK dipasang.
+	// Nutrition may be nil: an environment without nutrition-svc still serves
+	// the rest, and the culinary routes are NOT mounted.
 	Nutrition *handler.Nutrition
 
-	// Social boleh nil: lingkungan tanpa kredensial penyedia tetap
-	// melayani pendaftaran lewat kata sandi. Rutenya tidak dipasang sama
-	// sekali, sehingga jawabannya 404 - bukan endpoint yang ada tetapi
-	// selalu gagal.
+	// Social may be nil: an environment without provider credentials still
+	// serves password registration. The routes are not mounted at all, so the
+	// answer is 404 - not an endpoint that exists but always fails.
 	Social *handler.Social
 
-	// Limiter boleh nil: lingkungan tanpa Redis tetap melayani, tanpa
-	// pembatasan laju. Itu dinyatakan di log saat start-up, bukan diam-diam -
-	// jalur autentikasi tanpa pembatasan adalah tempat menebak kata sandi.
+	// Limiter may be nil: an environment without Redis still serves, without
+	// rate limiting. That is stated in the log at start-up, not silently - an
+	// authentication path without a limit is where passwords get guessed.
 	Limiter *middleware.Limiter
 }
 
-// passthrough adalah middleware yang tidak melakukan apa-apa.
+// passthrough is a middleware that does nothing.
 //
-// Dipakai saat pembatasan laju tidak terpasang. Ia ada supaya daftar rutenya
-// tetap berbentuk sama di kedua keadaan - dua cabang pendaftaran rute berarti
-// satu di antaranya suatu saat kehilangan sebuah endpoint.
+// Used when rate limiting is not installed. It exists so the route list keeps
+// the same shape in both states - two branches of route registration means
+// one of them eventually loses an endpoint.
 func passthrough() gin.HandlerFunc {
 	return func(c *gin.Context) { c.Next() }
 }
 
-// NewRouter merakit seluruh rute.
+// NewRouter assembles every route.
 //
-// Rute publik dan rute terproteksi dipisahkan menjadi dua grup, bukan
-// ditandai satu per satu. Menandai satu per satu berarti rute baru menjadi
-// publik secara bawaan setiap kali seseorang lupa menambahkan middleware -
-// dan lupa itu tidak menghasilkan galat apa pun, hanya endpoint terbuka.
+// Public and protected routes are split into two groups, not marked one by
+// one. Marking one by one means a new route is public by default whenever
+// someone forgets to add the middleware - and that forgetting produces no
+// error, only an open endpoint.
 func NewRouter(deps Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	// Trace dibuka sebelum middleware lain, supaya penolakan oleh batas
-	// ukuran badan atau pembatasan laju pun tercatat sebagai bagian trace.
+	// The trace is opened before any other middleware, so even a refusal by
+	// the body size limit or the rate limiter is recorded as part of the
+	// trace.
 	router.Use(middleware.Tracing("edge-gateway"))
 
-	// Batas ukuran badan dipasang GLOBAL, sebelum rute mana pun.
+	// The body size limit is installed GLOBALLY, before any route.
 	//
-	// Dipasang per rute, ia akan terlewat pada endpoint berikutnya yang
-	// ditambahkan seseorang - dan endpoint yang terlewat itulah yang akan
-	// dipakai untuk mengirimkan sesuatu yang sangat besar.
+	// Installed per route, it would be missed on the next endpoint someone
+	// adds - and that missed endpoint is exactly the one that would be used to
+	// send something very large.
 	router.Use(middleware.LimitBody())
 
-	// 404 dan 405 dijawab dengan bentuk galat yang sama seperti selebihnya.
-	// Bawaan Gin mengirim badan teks kosong, sehingga klien yang mengurai
-	// JSON justru gagal justru pada jalur galat.
+	// 404 and 405 are answered with the same error shape as the rest. Gin's
+	// default sends an empty text body, so a client parsing JSON fails
+	// precisely on the error path.
 	router.NoRoute(func(c *gin.Context) {
 		httperr.Write(c, http.StatusNotFound, httperr.CodeNotFound, "No such endpoint.")
 	})
@@ -111,12 +112,12 @@ func NewRouter(deps Deps) *gin.Engine {
 	auth := handler.NewAuth(deps.Identity)
 	profiles := handler.NewProfile(deps.Profiles, deps.Regions, deps.Now)
 
-	// Prefiks dipertahankan dari sistem lama; frontend memanggil /api/v1.
+	// The prefix is kept from the legacy system; the frontend calls /api/v1.
 	api := router.Group("/api/v1")
 
-	// authLimit membatasi setiap jalur yang membandingkan kredensial atau
-	// mengirim surel. Nil berarti pembatasan tidak dipasang - lingkungan tanpa
-	// Redis tetap melayani, dan itu dinyatakan di log saat start-up.
+	// authLimit limits every path that compares credentials or sends email.
+	// Nil means no limiter is installed - an environment without Redis still
+	// serves, and that is stated in the log at start-up.
 	authLimit := passthrough()
 	llmLimit := passthrough()
 	if deps.Limiter != nil {
@@ -144,12 +145,11 @@ func NewRouter(deps Deps) *gin.Engine {
 	{
 		protected.POST("/logout", auth.Logout)
 
-		// DELETE, bentuk yang sama dengan sistem lama (ADR-005). Yang berubah
-		// adalah kode jawabannya - 202, bukan 200 - karena penghapusannya
-		// menyeberangi enam unit dan belum selesai saat permintaan dijawab.
-		// Penghapusan akun membandingkan kata sandi, jadi ia dibatasi seperti
-		// jalur autentikasi lain - tanpa itu, ia menjadi tempat menebak kata
-		// sandi yang tidak terbatas.
+		// DELETE, the same shape as the legacy system (ADR-005). What changes is
+		// the answer code - 202, not 200 - because the deletion crosses six units
+		// and is not finished when the request is answered. Account deletion
+		// compares a password, so it is limited like every other authentication
+		// path - without that, it becomes an unlimited place to guess passwords.
 		protected.DELETE("/delete-account", authLimit, auth.DeleteAccount)
 		protected.GET("/me", handler.Me)
 		protected.GET("/profile", profiles.Show)
@@ -160,18 +160,17 @@ func NewRouter(deps Deps) *gin.Engine {
 			protected.GET("/risk-assessments", deps.Assessments.Index)
 			protected.GET("/risk-assessments/:slug", deps.Assessments.Show)
 
-			// PATCH, bukan POST: bentuknya dipertahankan dari sistem lama supaya
-			// klien yang ada tidak perlu berubah (ADR-005). Yang berubah adalah
-			// jawabannya - 202 dengan job_id, bukan laporannya - dan itu dicatat
-			// sebagai pengecualian yang disengaja.
+			// PATCH, not POST: the shape is kept from the legacy system so existing
+			// clients need not change (ADR-005). What changes is the answer - 202
+			// with a job_id, not the report - and that is recorded as a deliberate
+			// exception.
 			protected.PATCH("/risk-assessments/:slug/personalize", llmLimit, deps.Assessments.Personalize)
-			// Dua belas endpoint coaching. Bentuk URL-nya dipertahankan dari
-			// sistem lama supaya klien yang ada tidak perlu berubah (ADR-005).
+			// Twelve coaching endpoints. The URL shapes are kept from the legacy
+			// system so existing clients need not change (ADR-005).
 			//
-			// Yang BERUBAH adalah kode jawabannya: memulai program, membuka
-			// thread, dan mengirim pesan kini menjawab 202 Accepted karena
-			// hasilnya datang belakangan - sistem lama menahan permintaan HTTP
-			// selama Gemini bekerja.
+			// What CHANGES is the answer code: starting a program, opening a thread,
+			// and sending a message now answer 202 Accepted because the result comes
+			// later - the legacy system held the HTTP request while Gemini worked.
 			if deps.Coaching != nil {
 				mountCoaching(protected, deps.Coaching, llmLimit)
 			}
@@ -185,8 +184,8 @@ func NewRouter(deps Deps) *gin.Engine {
 			}
 
 			if deps.Dashboards != nil {
-				// Satu endpoint, seluruh halaman utama. Bentuk URL-nya
-				// dipertahankan dari sistem lama (ADR-005).
+				// One endpoint, the whole home page. The URL shape is kept from the
+				// legacy system (ADR-005).
 				protected.GET("/dashboard", deps.Dashboards.Show)
 			}
 
@@ -196,15 +195,15 @@ func NewRouter(deps Deps) *gin.Engine {
 	return router
 }
 
-// mountCoaching memasang dua belas endpoint coaching.
+// mountCoaching mounts the twelve coaching endpoints.
 //
-// Terpisah dari NewRouter supaya daftar rutenya terbaca sebagai satu daftar,
-// bukan tersembunyi di tengah perakitan yang lain. Bentuk URL-nya dipertahankan
-// dari sistem lama supaya klien yang ada tidak perlu berubah (ADR-005).
+// Separate from NewRouter so the route list reads as one list, not hidden in
+// the middle of the rest of the assembly. The URL shapes are kept from the
+// legacy system so existing clients need not change (ADR-005).
 //
-// Yang BERUBAH adalah kode jawabannya: memulai program, membuka thread, dan
-// mengirim pesan kini menjawab 202 Accepted karena hasilnya datang belakangan.
-// Sistem lama menahan permintaan HTTP selama Gemini bekerja.
+// What CHANGES is the answer code: starting a program, opening a thread, and
+// sending a message now answer 202 Accepted because the result comes later. The
+// legacy system held the HTTP request while Gemini worked.
 func mountCoaching(r gin.IRouter, h *handler.Coaching, limit gin.HandlerFunc) {
 	group := r.Group("/coaching")
 
@@ -223,11 +222,11 @@ func mountCoaching(r gin.IRouter, h *handler.Coaching, limit gin.HandlerFunc) {
 	group.PATCH("/tasks/:id/toggle-task-status", h.ToggleTaskStatus)
 }
 
-// mountChat memasang enam endpoint percakapan asisten umum.
+// mountChat mounts the six general-assistant conversation endpoints.
 //
-// Bentuk URL-nya dipertahankan dari sistem lama (ADR-005). Yang berubah adalah
-// kode jawabannya: membuat percakapan dengan pesan dan mengirim pesan kini
-// menjawab 202 Accepted, karena balasannya datang belakangan.
+// The URL shapes are kept from the legacy system (ADR-005). What changes is
+// the answer code: creating a conversation with a message and sending a
+// message now answer 202 Accepted, because the reply comes later.
 func mountChat(r gin.IRouter, h *handler.Chat, limit gin.HandlerFunc) {
 	group := r.Group("/chat")
 
@@ -239,12 +238,12 @@ func mountChat(r gin.IRouter, h *handler.Chat, limit gin.HandlerFunc) {
 	group.DELETE("/conversations/:slug", h.Destroy)
 }
 
-// mountNutrition memasang tiga endpoint culinary.
+// mountNutrition mounts the three culinary endpoints.
 //
-// Bentuk URL-nya dipertahankan dari sistem lama (ADR-005). Yang BERUBAH adalah
-// kode jawaban pembuatan panduan: 202 Accepted, karena panduannya datang
-// belakangan. Sistem lama menahan permintaan HTTP selama Gemini bekerja, dengan
-// timeout 180 detik (B14).
+// The URL shapes are kept from the legacy system (ADR-005). What CHANGES is the
+// answer code of guide generation: 202 Accepted, because the guide comes later.
+// The legacy system held the HTTP request while Gemini worked, with a
+// 180-second timeout (B14).
 func mountNutrition(r gin.IRouter, h *handler.Nutrition, limit gin.HandlerFunc) {
 	group := r.Group("/culinary")
 

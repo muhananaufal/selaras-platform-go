@@ -21,7 +21,7 @@ type Chat struct {
 
 func NewChat(chat chatv1.ChatClient) *Chat { return &Chat{chat: chat} }
 
-// Bentuk yang dijanjikan kontrak REST.
+// The shape the REST contract promises.
 type conversationView struct {
 	Slug      string `json:"slug"`
 	Title     string `json:"title"`
@@ -35,15 +35,15 @@ type chatMessageView struct {
 	CreatedAt string          `json:"created_at"`
 }
 
-// pageView menyampaikan token halaman berikutnya apa adanya.
+// pageView passes the next-page token through as it is.
 //
-// Token itu OPAQUE: klien mengirimkannya kembali tanpa membacanya, dan apa yang
-// ada di dalamnya boleh berubah tanpa mengubah klien.
+// The token is OPAQUE: the client sends it back without reading it, and what is
+// inside may change without changing the client.
 type pageView struct {
 	NextPageToken string `json:"next_page_token,omitempty"`
 }
 
-// Index mengembalikan daftar percakapan milik pemanggil.
+// Index returns the caller's conversations.
 func (h *Chat) Index(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -71,10 +71,11 @@ func (h *Chat) Index(c *gin.Context) {
 	}{items, pageView{NextPageToken: resp.GetPage().GetNextPageToken()}})
 }
 
-// Store membuat percakapan baru.
+// Store creates a new conversation.
 //
-// Ia menjawab 202 bila pesannya ikut - balasannya datang belakangan - dan 201
-// bila percakapannya dibuat kosong, karena tidak ada yang perlu ditunggu.
+// It answers 202 when a message is included - the reply comes later - and 201
+// when the conversation is created empty, because there is nothing to wait
+// for.
 func (h *Chat) Store(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -168,7 +169,7 @@ func (h *Chat) Update(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOfConversation(resp.GetConversation()))
 }
 
-// SendMessage menulis pesan dan meminta balasannya.
+// SendMessage writes a message and requests its reply.
 func (h *Chat) SendMessage(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -196,11 +197,11 @@ func (h *Chat) SendMessage(c *gin.Context) {
 		return
 	}
 
-	// 202: balasan model datang belakangan, lewat percakapan yang sama.
+	// 202: the model's reply comes later, through the same conversation.
 	writeData(c, http.StatusAccepted, viewOfChatMessage(resp.GetMessage()))
 }
 
-// Destroy menghapus percakapan beserta pesannya.
+// Destroy deletes a conversation together with its messages.
 func (h *Chat) Destroy(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -218,18 +219,18 @@ func (h *Chat) Destroy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// pageRequestFrom membaca permintaan halaman dari query string.
+// pageRequestFrom reads the page request from the query string.
 //
-// Ukuran yang tidak bisa dibaca menjadi nol, dan nol berarti "pakai bawaan
-// service" - bukan "tidak ada isinya". Menolak permintaannya karena satu
-// parameter salah ketik hanya membuat daftar berhenti bekerja.
+// An unreadable size becomes zero, and zero means "use the service default"
+// - not "no content". Refusing the request over one mistyped parameter only
+// makes the list stop working.
 func pageRequestFrom(c *gin.Context) *commonv1.PageRequest {
 	out := &commonv1.PageRequest{PageToken: c.Query("page_token")}
 
 	if raw := c.Query("page_size"); raw != "" {
-		// ParseInt dengan lebar 32 bit, bukan Atoi lalu dikonversi: yang kedua
-		// membungkus angka besar menjadi nilai kecil atau negatif di platform
-		// 64-bit, dan "page_size=4294967297" menjadi 1 tanpa ada yang tahu.
+		// ParseInt with a 32-bit width, not Atoi followed by a conversion: the
+		// latter wraps large numbers into small or negative values on 64-bit
+		// platforms, and "page_size=4294967297" becomes 1 without anyone knowing.
 		if size, err := strconv.ParseInt(raw, 10, 32); err == nil && size > 0 {
 			out.PageSize = int32(size)
 		}
@@ -262,8 +263,8 @@ func viewOfChatMessage(m *chatv1.ChatMessage) chatMessageView {
 		out.CreatedAt = ts.AsTime().Format(time.RFC3339)
 	}
 
-	// Diperiksa dulu: byte yang bukan JSON akan membuat SELURUH respons tidak
-	// bisa di-parse klien, sehingga satu baris rusak menjatuhkan endpoint-nya.
+	// Checked first: bytes that are not JSON would make the WHOLE response
+	// unparseable for the client, so one corrupt row takes the endpoint down.
 	if raw := m.GetContentJson(); raw != "" && json.Valid([]byte(raw)) {
 		out.Content = json.RawMessage(raw)
 	}

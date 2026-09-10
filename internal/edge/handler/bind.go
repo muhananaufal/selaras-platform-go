@@ -10,11 +10,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/httperr"
 )
 
-// bind mengurai badan JSON dan menjawab 422 bila cacat.
+// bind parses the JSON body and answers 422 if it is malformed.
 //
-// Nilai baliknya boolean, bukan error, karena jawabannya sudah dikirim: setiap
-// pemanggil hanya perlu tahu apakah ia boleh melanjutkan. Bentuk itu membuat
-// pola "tulis galat lalu lupa return" tidak mungkin ditulis.
+// Its return value is a boolean, not an error, because the answer has already
+// been sent: every caller only needs to know whether it may continue. That
+// shape makes the "write the error and forget to return" pattern impossible to
+// write.
 func bind(c *gin.Context, target any) bool {
 	if err := c.ShouldBindJSON(target); err != nil {
 		httperr.WriteValidation(c, fieldErrors(err))
@@ -23,13 +24,13 @@ func bind(c *gin.Context, target any) bool {
 	return true
 }
 
-// fieldErrors menerjemahkan galat validator menjadi bentuk per-bidang yang
-// sudah dipakai frontend hari ini.
+// fieldErrors translates validator errors into the per-field shape the
+// frontend already uses today.
 //
-// Galat yang bukan dari validator - JSON yang rusak, misalnya - tidak punya
-// bidang untuk ditunjuk, dan pesannya TIDAK diteruskan: pesan pengurai JSON
-// membawa offset byte dan nama tipe Go, yang tidak berguna bagi klien dan
-// membocorkan bentuk internalnya.
+// Errors that are not from the validator - broken JSON, say - have no field
+// to point at, and their message is NOT passed on: JSON parser messages
+// carry byte offsets and Go type names, which are useless to a client and
+// leak the internal shape.
 func fieldErrors(err error) map[string][]string {
 	var invalid validator.ValidationErrors
 	if !errors.As(err, &invalid) {
@@ -46,11 +47,10 @@ func fieldErrors(err error) map[string][]string {
 	return fields
 }
 
-// jsonName mengubah nama bidang Go menjadi nama yang dikirim klien.
+// jsonName turns a Go field name into the name the client sends.
 //
-// Klien mengirim snake_case dan tidak pernah melihat nama Go-nya; galat yang
-// menyebut "PasswordConfirmation" memaksa pembacanya menebak bidang mana yang
-// dimaksud.
+// The client sends snake_case and never sees the Go name; an error naming
+// "PasswordConfirmation" forces its reader to guess which field is meant.
 func jsonName(field string) string {
 	var out strings.Builder
 	for i, r := range field {
@@ -81,10 +81,10 @@ func messageFor(err validator.FieldError) string {
 	}
 }
 
-// bearer mengambil token dari header Authorization.
+// bearer takes the token from the Authorization header.
 //
-// Ia menganggap header-nya sudah lolos middleware autentikasi, jadi ia tidak
-// memvalidasi ulang - yang dibutuhkan hanya nilainya untuk diteruskan.
+// It assumes the header has already passed the authentication middleware, so
+// it does not re-validate - all it needs is the value to pass on.
 func bearer(header string) string {
 	_, value, found := strings.Cut(strings.TrimSpace(header), " ")
 	if !found {

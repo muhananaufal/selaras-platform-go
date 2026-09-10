@@ -21,20 +21,20 @@ const (
 	googleKeyID    = "google-test-key"
 )
 
-// fakeGoogle berdiri untuk penyedia: ia menerbitkan JWKS, menukar kode
-// otorisasi, dan menandatangani ID token. Seluruh alur diuji tanpa jaringan.
+// fakeGoogle stands in for the provider: it publishes a JWKS, exchanges
+// authorisation codes, and signs ID tokens. The whole flow is tested without
+// a network.
 type fakeGoogle struct {
 	key    *rsa.PrivateKey
 	server *httptest.Server
 
-	// subject dan email menentukan siapa yang "masuk" pada pertukaran
-	// berikutnya.
+	// subject and email determine who "signs in" on the next exchange.
 	subject       string
 	email         string
 	emailVerified bool
 
-	// refuseExchange membuat endpoint token menolak, seperti penyedia yang
-	// menerima kode yang tidak dikenalnya.
+	// refuseExchange makes the token endpoint refuse, like a provider
+	// receiving a code it does not recognise.
 	refuseExchange bool
 }
 
@@ -109,8 +109,8 @@ func newFakeGoogle(t *testing.T) *fakeGoogle {
 	return g
 }
 
-// startSignIn memanggil endpoint redirect dan mengembalikan state yang
-// diterbitkan, seperti yang akan dibaca peramban dari header Location.
+// startSignIn calls the redirect endpoint and returns the issued state, as
+// a browser would read it from the Location header.
 func (s *stack) startSignIn(t *testing.T) string {
 	t.Helper()
 
@@ -139,8 +139,8 @@ func (s *stack) startSignIn(t *testing.T) string {
 	return state
 }
 
-// noRedirect mencegah klien mengikuti pengalihan, sehingga test bisa
-// memeriksa header Location itu sendiri.
+// noRedirect keeps the client from following redirects, so the test can
+// inspect the Location header itself.
 func noRedirect(s *stack) *http.Client {
 	client := *s.server.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -149,13 +149,12 @@ func noRedirect(s *stack) *http.Client {
 	return &client
 }
 
-// callback memanggil endpoint callback dan mengembalikan yang benar-benar
-// diperiksa test: status dan header Location.
+// callback calls the callback endpoint and returns what the tests actually
+// inspect: the status and the Location header.
 //
-// Ia sengaja TIDAK mengembalikan *http.Response. Badan yang menyeberang
-// keluar dari helper harus ditutup oleh setiap pemanggil, dan satu pemanggil
-// yang lupa membocorkan koneksi - kekeliruan yang tidak pernah menggagalkan
-// satu test pun.
+// It deliberately does NOT return *http.Response. A body that crosses out of
+// a helper has to be closed by every caller, and one caller that forgets
+// leaks a connection - a mistake that never fails a single test.
 func (s *stack) callback(t *testing.T, query string) (int, string) {
 	t.Helper()
 
@@ -176,8 +175,8 @@ func (s *stack) callback(t *testing.T, query string) (int, string) {
 	return resp.StatusCode, resp.Header.Get("Location")
 }
 
-// F1-34 dan F1-23 sekaligus: alur masuk sosial lengkap, dengan state yang
-// diverifikasi dan token yang TIDAK pernah lewat query string.
+// F1-34 and F1-23 at once: the complete social sign-in flow, with the state
+// verified and the token NEVER passing through the query string.
 func TestTheWholeSocialSignInFlow(t *testing.T) {
 	s := newStackWithGoogle(t)
 
@@ -188,8 +187,9 @@ func TestTheWholeSocialSignInFlow(t *testing.T) {
 		t.Fatalf("callback status = %d; want 302", status)
 	}
 
-	// Menutup S6. Sistem lama mengalihkan dengan access_token di query
-	// string, yang masuk ke log server, riwayat peramban, dan Referer.
+	// Closes S6. The legacy system redirected with the access_token in the
+	// query string, which ends up in server logs, browser history, and
+	// Referer.
 	if strings.Contains(location, "access_token") {
 		t.Fatalf("the redirect carries a token: %s", location)
 	}
@@ -208,7 +208,7 @@ func TestTheWholeSocialSignInFlow(t *testing.T) {
 		t.Fatal("no access token was returned")
 	}
 
-	// Tokennya harus benar-benar bekerja.
+	// The token has to really work.
 	status, me := s.do(t, http.MethodGet, "/api/v1/me", token, nil)
 	if status != http.StatusOK {
 		t.Fatalf("me status = %d; want 200 (%v)", status, me)
@@ -219,8 +219,8 @@ func TestTheWholeSocialSignInFlow(t *testing.T) {
 	}
 }
 
-// Menutup S11. Callback yang state-nya tidak kami terbitkan harus ditolak
-// sebelum apa pun terjadi.
+// Closes S11. A callback whose state we did not issue has to be refused
+// before anything happens.
 func TestACallbackWithoutAValidStateIsRefused(t *testing.T) {
 	s := newStackWithGoogle(t)
 
@@ -244,8 +244,8 @@ func TestACallbackWithoutAValidStateIsRefused(t *testing.T) {
 	}
 }
 
-// State sekali pakai. Callback kedua dengan state yang sama harus ditolak -
-// kalau tidak, sebuah state yang bocor bisa dipakai berkali-kali.
+// State is one-time. A second callback with the same state has to be
+// refused - otherwise a leaked state could be used over and over.
 func TestAStateCannotBeUsedTwice(t *testing.T) {
 	s := newStackWithGoogle(t)
 
@@ -260,7 +260,7 @@ func TestAStateCannotBeUsedTwice(t *testing.T) {
 	}
 }
 
-// Kode penyerahan juga sekali pakai: ia sempat melewati peramban.
+// The handoff code is one-time as well: it has passed through the browser.
 func TestAHandoffCodeCannotBeUsedTwice(t *testing.T) {
 	s := newStackWithGoogle(t)
 
@@ -287,8 +287,8 @@ func TestAnInventedHandoffCodeIsRefused(t *testing.T) {
 	}
 }
 
-// State yang gagal DILARANG menyebabkan panggilan ke penyedia. Kalau boleh,
-// endpoint ini menjadi alat memaksa permintaan keluar atas nama kami.
+// A failed state MUST NOT cause a call to the provider. If it could, this
+// endpoint becomes a tool for forcing outbound requests in our name.
 func TestAnUnverifiedStateNeverReachesTheProvider(t *testing.T) {
 	s := newStackWithGoogle(t)
 	s.google.refuseExchange = true
@@ -314,8 +314,8 @@ func TestAProviderThatRefusesTheCodeFailsGracefully(t *testing.T) {
 	}
 }
 
-// Alamat yang belum diverifikasi penyedia ditolak, dan pesannya tidak
-// menyebut mengapa (F1-11).
+// An address the provider has not verified is refused, and the message does
+// not say why (F1-11).
 func TestAnUnverifiedGoogleAddressIsRefused(t *testing.T) {
 	s := newStackWithGoogle(t)
 	s.google.emailVerified = false
@@ -349,8 +349,8 @@ func TestAnUnknownProviderIsNotFound(t *testing.T) {
 	}
 }
 
-// Lingkungan tanpa kredensial penyedia tidak memasang rutenya sama sekali,
-// sehingga jawabannya 404 - bukan endpoint yang ada tetapi selalu gagal.
+// An environment without provider credentials does not mount the routes at
+// all, so the answer is 404 - not an endpoint that exists but always fails.
 func TestWithoutAProviderTheRoutesDoNotExist(t *testing.T) {
 	s := newStack(t)
 

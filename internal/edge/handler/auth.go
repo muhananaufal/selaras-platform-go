@@ -1,4 +1,4 @@
-// Package handler memetakan kontrak REST publik ke panggilan gRPC.
+// Package handler maps the public REST contract to gRPC calls.
 package handler
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/middleware"
 )
 
-// Auth melayani endpoint autentikasi.
+// Auth serves the authentication endpoints.
 type Auth struct {
 	identity identityv1.IdentityClient
 }
@@ -50,10 +50,9 @@ func (h *Auth) Register(c *gin.Context) {
 		return
 	}
 
-	// Konfirmasi kata sandi diperiksa DI SINI, bukan di identity-svc.
-	// Mengetik ulang kata sandi adalah pemeriksaan antarmuka: ia menjaga
-	// pengguna dari salah ketik, dan tempatnya di lapisan yang memang
-	// menerima keduanya dari peramban.
+	// The password confirmation is checked HERE, not in identity-svc. Retyping
+	// a password is an interface check: it protects the user from a typo, and
+	// its place is the layer that actually receives both from the browser.
 	if req.Password != req.PasswordConfirmation {
 		httperr.WriteValidation(c, map[string][]string{
 			"password": {"The password confirmation does not match."},
@@ -92,17 +91,17 @@ func (h *Auth) Login(c *gin.Context) {
 }
 
 func (h *Auth) Logout(c *gin.Context) {
-	// Kehadiran klaim yang sudah diverifikasi adalah yang membuktikan
-	// permintaan ini sah; isinya sendiri tidak dipakai di sini.
+	// The presence of verified claims is what proves this request is
+	// legitimate; their content itself is not used here.
 	if _, ok := middleware.ClaimsFrom(c); !ok {
 		httperr.Write(c, http.StatusUnauthorized, httperr.CodeUnauthenticated, "Unauthenticated.")
 		return
 	}
 
-	// Token mentah yang dikirim ulang, bukan id pengguna dari klaim.
-	// identity-svc tidak boleh mempercayai id yang sekadar dikirimkan: kalau
-	// ia mau, siapa pun yang bisa menjangkau service itu bisa mengeluarkan
-	// pengguna mana pun dari sesinya hanya dengan menebak id.
+	// The raw token is sent along, not the user id from the claims.
+	// identity-svc must not trust an id that is merely sent to it: if it did,
+	// anyone who can reach that service could sign any user out of their
+	// session just by guessing an id.
 	raw := bearer(c.GetHeader("Authorization"))
 
 	if _, err := h.identity.Logout(c.Request.Context(), &identityv1.LogoutRequest{
@@ -119,10 +118,10 @@ type passwordResetRequest struct {
 	Email string `json:"email" binding:"required,email"`
 }
 
-// RequestPasswordReset selalu menjawab 202, terlepas dari apakah alamatnya
-// terdaftar. Membedakan keduanya mengubah endpoint ini menjadi alat
-// pencacahan akun, dan itulah yang dilakukan sistem lama lewat aturan
-// `exists:users,email`.
+// RequestPasswordReset always answers 202, regardless of whether the
+// address is registered. Telling the two apart turns this endpoint into an
+// account enumeration tool, and that is what the legacy system did through
+// its `exists:users,email` rule.
 func (h *Auth) RequestPasswordReset(c *gin.Context) {
 	var req passwordResetRequest
 	if !bind(c, &req) {
@@ -181,11 +180,11 @@ func successFrom(token *identityv1.TokenPair, user *identityv1.User) authSuccess
 	}
 }
 
-// roleName memetakan enum kontrak ke string yang dijanjikan REST.
+// roleName maps the contract enum to the string REST promises.
 //
-// ROLE_UNSPECIFIED menjadi string kosong, bukan "user". Nilai nol protobuf
-// berarti "tidak dinyatakan", dan memetakannya ke peran nyata akan membuat
-// data yang rusak terlihat seperti pengguna biasa.
+// ROLE_UNSPECIFIED becomes an empty string, not "user". The protobuf zero
+// value means "not stated", and mapping it to a real role would make
+// corrupt data look like an ordinary user.
 func roleName(r identityv1.Role) string {
 	switch r {
 	case identityv1.Role_ROLE_USER:
@@ -197,12 +196,12 @@ func roleName(r identityv1.Role) string {
 	}
 }
 
-// DeleteAccount memulai penghapusan akun secara permanen.
+// DeleteAccount starts the permanent deletion of an account.
 //
-// Ia menjawab 202, bukan 204: penghapusannya menyeberangi enam unit dan belum
-// selesai saat permintaan ini dijawab. Menjawab 204 akan mengatakan "sudah
-// hilang" pada saat datanya masih ada di mana-mana - dan klien yang memercayai
-// itu akan menampilkan halaman perpisahan sebelum apa pun benar-benar terhapus.
+// It answers 202, not 204: the deletion crosses six units and is not finished
+// when this request is answered. Answering 204 would say "already gone" while
+// the data is still everywhere - and a client that believes it would show a
+// farewell page before anything is really deleted.
 func (h *Auth) DeleteAccount(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -211,11 +210,11 @@ func (h *Auth) DeleteAccount(c *gin.Context) {
 	}
 
 	var body struct {
-		// Kata sandi WAJIB, dan di sini ia benar-benar dibandingkan.
+		// The password is REQUIRED, and here it is really compared.
 		//
-		// Sistem lama mewajibkannya di aturan validasi lalu tidak pernah
-		// memeriksanya (S2): siapa pun yang memegang token sah bisa menghapus
-		// akun secara permanen dengan mengirim string apa pun.
+		// The legacy system required it in the validation rules and then never
+		// checked it (S2): anyone holding a valid token could permanently delete
+		// the account by sending any string.
 		Password string `json:"password" binding:"required"`
 	}
 	if !bind(c, &body) {
@@ -223,8 +222,8 @@ func (h *Auth) DeleteAccount(c *gin.Context) {
 	}
 
 	resp, err := h.identity.DeleteAccount(c.Request.Context(), &identityv1.DeleteAccountRequest{
-		// Id datang dari token yang sudah diverifikasi gateway, bukan dari
-		// badan permintaan (ADR-023).
+		// The id comes from the token the gateway verified, not from the request
+		// body (ADR-023).
 		UserId:   claims.UserID.String(),
 		Password: body.Password,
 	})
@@ -236,9 +235,9 @@ func (h *Auth) DeleteAccount(c *gin.Context) {
 	writeData(c, http.StatusAccepted, struct {
 		SagaID string `json:"saga_id"`
 
-		// Dinyatakan apa adanya: penghapusannya berjalan, belum selesai.
-		// Klien yang menampilkan "akun Anda telah dihapus" pada saat ini
-		// mengatakan sesuatu yang belum benar.
+		// Stated as it is: the deletion is running, not finished. A client that
+		// shows "your account has been deleted" at this point says something that
+		// is not yet true.
 		Status string `json:"status"`
 	}{resp.GetSagaId(), "in_progress"})
 }

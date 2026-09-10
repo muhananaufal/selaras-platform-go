@@ -20,12 +20,12 @@ import (
 type Profile struct {
 	profiles profilev1.ProfileClient
 
-	// regions memetakan negara ke wilayah kalibrasi SCORE2.
+	// regions maps a country to its SCORE2 calibration region.
 	//
-	// Ia milik assessment-svc, bukan profile-svc: risk_region adalah konsep
-	// klinis, bukan demografis (ADR-002 aturan 3). Boleh nil - lingkungan
-	// tanpa assessment-svc mengirim risk_region null, dan itu jawaban jujur
-	// untuk nilai yang belum bisa dihitung.
+	// It belongs to assessment-svc, not profile-svc: risk_region is a clinical
+	// concept, not a demographic one (ADR-002 rule 3). May be nil - an
+	// environment without assessment-svc sends risk_region as null, and that
+	// is the honest answer for a value that cannot be computed yet.
 	regions assessmentv1.AssessmentClient
 
 	now func() time.Time
@@ -39,12 +39,12 @@ func NewProfile(
 	return &Profile{profiles: profiles, regions: regions, now: now}
 }
 
-// profileView adalah bentuk yang dijanjikan kontrak REST.
+// profileView is the shape the REST contract promises.
 //
-// Setiap bidang yang boleh kosong bertipe pointer, sehingga ia keluar sebagai
-// null - bukan sebagai string kosong, dan sama sekali bukan sebagai tanggal
-// hari ini. Inilah lapisan tempat B6 lahir di sistem lama: penyimpanannya
-// benar, penyajiannya yang merusak.
+// Every field that may be empty is a pointer, so it comes out as null - not
+// as an empty string, and certainly not as today's date. This is the layer
+// where B6 was born in the legacy system: the storage was right, the
+// presentation was what broke it.
 type profileView struct {
 	Email              *string `json:"email"`
 	FirstName          *string `json:"first_name"`
@@ -52,20 +52,21 @@ type profileView struct {
 	Sex                *string `json:"sex"`
 	CountryOfResidence *string `json:"country_of_residence"`
 
-	// ISO-8601, bukan d/m/Y yang dipakai sistem lama. Perubahan ini
-	// disengaja dan dinyatakan sebagai temuan B13: d/m/Y ambigu terhadap
-	// m/d/Y, tidak bisa diurutkan sebagai string, dan bergantung locale.
+	// ISO-8601, not the d/m/Y the legacy system used. This change is
+	// deliberate and declared as finding B13: d/m/Y is ambiguous against
+	// m/d/Y, cannot be sorted as a string, and depends on the locale.
 	DateOfBirth *string `json:"date_of_birth"`
 
-	// Umur null ketika tanggal lahirnya belum diisi. Sistem lama menampilkan
-	// 0, karena Carbon::parse(null) mengembalikan waktu sekarang.
+	// The age is null while the date of birth is not filled in. The legacy
+	// system showed 0, because Carbon::parse(null) returns the current time.
 	Age *int `json:"age"`
 
-	// risk_region selalu null di sini untuk sementara. Ia konsep klinis milik
-	// assessment-svc yang memetakan negara lewat tabel kalibrasi SCORE2
-	// (ADR-002 aturan 3), dan service itu belum ada - lihat F1-12. Bidangnya
-	// tetap muncul karena kontraknya menjanjikannya; yang ditunda hanya
-	// isinya, dan null adalah jawaban jujur untuk "belum bisa dihitung".
+	// risk_region is always null here for now. It is a clinical concept owned
+	// by assessment-svc, which maps a country through the SCORE2 calibration
+	// table (ADR-002 rule 3), and that service does not exist yet - see F1-12.
+	// The field still appears because the contract promises it; only its
+	// content is deferred, and null is the honest answer for "cannot be
+	// computed yet".
 	RiskRegion *string `json:"risk_region"`
 
 	Language string `json:"language"`
@@ -82,10 +83,9 @@ func (h *Profile) Show(c *gin.Context) {
 		UserId: claims.UserID.String(),
 	})
 	if err != nil {
-		// Profil yang belum ada BUKAN 404 di sini. Sistem lama menjawab
-		// `data: null` dengan status 200, dan frontend sudah menanganinya;
-		// mengubahnya menjadi 404 akan memecahkan layar yang hari ini
-		// bekerja.
+		// A profile that does not exist yet is NOT a 404 here. The legacy system
+		// answered `data: null` with status 200, and the frontend already handles
+		// that; turning it into a 404 would break a screen that works today.
 		if status.Code(err) == codes.NotFound {
 			writeDataWithMessage(c, http.StatusOK, "User profile not yet created.", nil)
 			return
@@ -146,11 +146,11 @@ func (h *Profile) Update(c *gin.Context) {
 	writeDataWithMessage(c, http.StatusOK, "Profile updated successfully!", h.view(c, resp.GetProfile(), claims.Email))
 }
 
-// view menerima email dari klaim, bukan dari profile-svc.
+// view takes the email from the claims, not from profile-svc.
 //
-// Email adalah data identity, bukan demografis (ADR-002), jadi profile-svc
-// memang tidak memilikinya. Ia sampai ke sini lewat klaim token, sehingga
-// endpoint ini tetap tidak memanggil siapa pun untuk mengisinya.
+// Email is identity data, not demographic (ADR-002), so profile-svc indeed
+// does not own it. It reaches here through the token claims, so this
+// endpoint still calls nobody to fill it in.
 func (h *Profile) view(c *gin.Context, p *profilev1.UserProfile, email string) profileView {
 	view := profileView{
 		Email:              emptyToNil(email),
@@ -174,12 +174,12 @@ func (h *Profile) view(c *gin.Context, p *profilev1.UserProfile, email string) p
 	return view
 }
 
-// riskRegion menanyakan wilayah kalibrasi ke assessment-svc.
+// riskRegion asks assessment-svc for the calibration region.
 //
-// Kegagalannya menghasilkan null, bukan galat: wilayah risiko adalah
-// keterangan tambahan pada profil, dan menggagalkan seluruh pembacaan profil
-// karena satu service tetangga terganggu akan mengubah gangguan kecil menjadi
-// layar yang tidak bisa dibuka.
+// Its failure yields null, not an error: the risk region is supplementary
+// information on a profile, and failing the whole profile read because one
+// neighbouring service is disrupted would turn a small disruption into a
+// screen that cannot open.
 func (h *Profile) riskRegion(c *gin.Context, country string) *string {
 	if h.regions == nil || country == "" {
 		return nil
@@ -195,11 +195,11 @@ func (h *Profile) riskRegion(c *gin.Context, country string) *string {
 	return emptyToNil(resp.GetRiskRegion())
 }
 
-// ageOn menghitung umur dari tanggal ISO-8601.
+// ageOn computes an age from an ISO-8601 date.
 //
-// Ia mengembalikan nilai kedua alih-alih nol saat tanggalnya tidak bisa
-// diurai. Nol adalah umur yang mungkin, jadi memakainya sebagai penanda
-// kegagalan adalah persis kekeliruan B6 yang sedang ditutup.
+// It returns a second value instead of zero when the date cannot be parsed.
+// Zero is a possible age, so using it as a failure marker is exactly the B6
+// mistake being closed.
 func ageOn(iso string, on time.Time) (int, bool) {
 	born, err := time.Parse(time.DateOnly, iso)
 	if err != nil {
@@ -236,10 +236,10 @@ func sexToProto(raw string) (profilev1.Sex, error) {
 	}
 }
 
-// Me mengembalikan identitas dari klaim, tanpa satu pun panggilan jaringan.
+// Me returns the identity from the claims, without a single network call.
 //
-// Inilah yang dibeli ADR-007: klaim sudah membawa user_id dan
-// user_profile_id, jadi endpoint ini tidak perlu bertanya ke siapa pun.
+// This is what ADR-007 buys: the claims already carry user_id and
+// user_profile_id, so this endpoint need not ask anyone.
 func Me(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {

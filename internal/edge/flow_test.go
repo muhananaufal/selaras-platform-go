@@ -11,8 +11,8 @@ func uniqueEmail() string {
 	return fmt.Sprintf("edge-%d@user.co", time.Now().UnixNano())
 }
 
-// F1-18. Alur lengkap lewat HTTP sungguhan: daftar, pakai token, keluar,
-// lalu buktikan token yang sama sudah tidak berlaku.
+// F1-18. The full flow over real HTTP: register, use the token, log out,
+// then prove the same token no longer works.
 func TestTheWholeAuthFlowOverHTTP(t *testing.T) {
 	s := newStack(t)
 	email := uniqueEmail()
@@ -29,15 +29,15 @@ func TestTheWholeAuthFlowOverHTTP(t *testing.T) {
 		t.Fatalf("logout status = %d; want 200", status)
 	}
 
-	// Menutup separuh ADR-012: logout yang tidak benar-benar mencabut adalah
-	// tipuan, dan tokennya tetap berlaku sampai kedaluwarsa sendiri.
+	// Closes half of ADR-012: a logout that does not really revoke is a sham,
+	// and the token stays valid until it expires on its own.
 	status, _ = s.do(t, http.MethodGet, "/api/v1/me", token, nil)
 	if status != http.StatusUnauthorized {
 		t.Errorf("the token still works after logout: status = %d", status)
 	}
 }
 
-// D1: login berhasil mengakhiri sesi sebelumnya.
+// D1: a successful login ends the previous session.
 func TestLoggingInAgainEndsTheEarlierSession(t *testing.T) {
 	s := newStack(t)
 	email := uniqueEmail()
@@ -60,7 +60,8 @@ func TestLoggingInAgainEndsTheEarlierSession(t *testing.T) {
 	}
 }
 
-// F1-32. Profil dibuat saat pendaftaran, dibaca kosong, diisi, dibaca lagi.
+// F1-32. The profile is created at registration, read empty, filled in,
+// read again.
 func TestTheProfileFlowOverHTTP(t *testing.T) {
 	s := newStack(t)
 	token := s.registerUser(t, uniqueEmail())
@@ -75,8 +76,8 @@ func TestTheProfileFlowOverHTTP(t *testing.T) {
 		t.Fatalf("data = %v; want an object", body["data"])
 	}
 
-	// Menutup B6 di ujung yang dilihat klien. Sistem lama mengirim tanggal
-	// hari ini dan umur 0 di sini.
+	// Closes B6 at the end the client sees. The legacy system sent today's
+	// date and an age of 0 here.
 	for _, field := range []string{"first_name", "last_name", "date_of_birth", "age", "sex", "country_of_residence"} {
 		if value, present := data[field]; !present || value != nil {
 			t.Errorf("%s = %v; want null on an untouched profile", field, value)
@@ -104,7 +105,7 @@ func TestTheProfileFlowOverHTTP(t *testing.T) {
 	if data["first_name"] != "Sri" {
 		t.Errorf("first name = %v; want Sri", data["first_name"])
 	}
-	// ISO-8601, bukan d/m/Y. Perubahan yang dinyatakan sebagai temuan B13.
+	// ISO-8601, not d/m/Y. A change declared as finding B13.
 	if data["date_of_birth"] != "1990-05-17" {
 		t.Errorf("date of birth = %v; want ISO-8601", data["date_of_birth"])
 	}
@@ -116,9 +117,9 @@ func TestTheProfileFlowOverHTTP(t *testing.T) {
 	}
 }
 
-// Setiap rute terproteksi harus benar-benar terproteksi. Rute yang lupa
-// dipasangi middleware tidak menghasilkan galat apa pun - hanya endpoint
-// terbuka yang tidak ada yang menyadarinya.
+// Every protected route has to be really protected. A route that forgot its
+// middleware produces no error at all - only an open endpoint nobody
+// notices.
 func TestEveryProtectedRouteRefusesAnAnonymousCaller(t *testing.T) {
 	s := newStack(t)
 
@@ -160,10 +161,9 @@ func TestMalformedTokensAreRefusedTheSameWay(t *testing.T) {
 	}
 }
 
-// ADR-020 gagal-tertutup, dilihat dari luar. Pemeriksa yang tidak bisa
-// menjawab menghasilkan 503, bukan 401: kliennya tidak melakukan kesalahan,
-// dan 401 akan membuat aplikasi mengeluarkan penggunanya karena gangguan
-// sesaat di sisi kami.
+// ADR-020 fails closed, seen from the outside. A checker that cannot answer
+// yields 503, not 401: the client did nothing wrong, and 401 would make the
+// app sign its user out over a momentary hiccup on our side.
 func TestAnUnanswerableRevocationCheckRefusesWithoutBlamingTheClient(t *testing.T) {
 	s := newStack(t)
 	token := s.registerUser(t, uniqueEmail())
@@ -179,7 +179,7 @@ func TestAnUnanswerableRevocationCheckRefusesWithoutBlamingTheClient(t *testing.
 	}
 }
 
-// F1-10 lewat HTTP: minta reset, pakai tokennya, kata sandi lama mati.
+// F1-10 over HTTP: request a reset, use its token, the old password dies.
 func TestThePasswordResetFlowOverHTTP(t *testing.T) {
 	s := newStack(t)
 	email := uniqueEmail()
@@ -216,7 +216,7 @@ func TestThePasswordResetFlowOverHTTP(t *testing.T) {
 	}
 }
 
-// Meminta reset untuk alamat yang tidak terdaftar menjawab persis sama.
+// Requesting a reset for an unregistered address answers exactly the same.
 func TestRequestingAResetNeverRevealsWhetherTheAddressExists(t *testing.T) {
 	s := newStack(t)
 
@@ -238,7 +238,7 @@ func TestRequestingAResetNeverRevealsWhetherTheAddressExists(t *testing.T) {
 	}
 }
 
-// Setiap kegagalan masuk menjawab sama, sampai ke badan jawabannya.
+// Every failed login answers the same, down to the response body.
 func TestEveryLoginFailureLooksIdenticalOverHTTP(t *testing.T) {
 	s := newStack(t)
 	email := uniqueEmail()
@@ -279,9 +279,9 @@ func TestValidationFailsWithFieldLevelErrors(t *testing.T) {
 	}
 }
 
-// Bentuk galat 404 dan 405 harus sama seperti selebihnya. Bawaan Gin
-// mengirim badan teks kosong, sehingga klien yang mengurai JSON justru gagal
-// di jalur galat.
+// The shape of 404 and 405 errors has to match the rest. Gin's default sends
+// an empty text body, so a client parsing JSON fails precisely on the error
+// path.
 func TestUnknownRoutesAnswerInTheSameShape(t *testing.T) {
 	s := newStack(t)
 
@@ -315,11 +315,11 @@ func TestRegisteringTheSameAddressTwiceIsAConflict(t *testing.T) {
 	}
 }
 
-// Kontrak menjanjikan email di profil dan di /me. Ia data identity, bukan
-// demografis, jadi profile-svc tidak memilikinya - dan menanyakannya ke
-// identity-svc di setiap request adalah persis yang dihapus ADR-007. Ia
-// dibawa di klaim, sehingga kedua endpoint mengisinya tanpa memanggil siapa
-// pun.
+// The contract promises the email in the profile and in /me. It is identity
+// data, not demographic, so profile-svc does not own it - and asking
+// identity-svc for it on every request is exactly what ADR-007 removed. It
+// travels in the claims, so both endpoints fill it in without calling
+// anyone.
 func TestTheEmailReachesTheClientWithoutAnExtraCall(t *testing.T) {
 	s := newStack(t)
 	email := uniqueEmail()

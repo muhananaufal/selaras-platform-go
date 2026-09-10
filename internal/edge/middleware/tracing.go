@@ -5,16 +5,16 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
-// Tracing membuka satu span server per permintaan HTTP dan membaca
-// traceparent yang dibawa klien.
+// Tracing opens one server span per HTTP request and reads the traceparent the
+// client carries.
 //
-// Span-nya menjadi akar trace untuk hampir semua permintaan - klien web tidak
-// mengirim traceparent - dan dari sinilah trace mengalir ke service lewat gRPC
-// dan ke worker lewat Envelope (F9-05, F9-07).
+// Its span becomes the trace root for almost every request - web clients do
+// not send traceparent - and from here the trace flows to the services over
+// gRPC and to the workers through Envelope (F9-05, F9-07).
 //
-// Probe kesehatan tidak direkam. Ia datang setiap beberapa detik dari setiap
-// replika, dan merekamnya berarti sebagian besar span yang tersimpan adalah
-// span yang tidak pernah dicari siapa pun.
+// Health probes are not recorded. They arrive every few seconds from every
+// replica, and recording them would mean most stored spans are spans nobody
+// ever looks for.
 func Tracing(service string) gin.HandlerFunc {
 	return otelgin.Middleware(service, otelgin.WithGinFilter(func(c *gin.Context) bool {
 		path := c.Request.URL.Path

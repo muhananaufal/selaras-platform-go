@@ -7,13 +7,13 @@ import (
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 )
 
-// startAssessmentRequest adalah badan JSON yang dikirim frontend.
+// startAssessmentRequest is the JSON body the frontend sends.
 //
-// Nama bidangnya dipertahankan dari sistem lama supaya frontend tidak perlu
-// berubah. Nilainya tetap string berbahasa Indonesia karena itulah yang
-// dikirim antarmuka hari ini - yang berubah hanya apa yang terjadi setelahnya:
-// nilai yang tidak dikenal DITOLAK di sini alih-alih mengalir ke perhitungan
-// dan diam-diam berperilaku seperti nilai bawaan.
+// The field names are kept from the legacy system so the frontend need not
+// change. The values stay Indonesian strings because that is what the
+// interface sends today - what changes is only what happens afterwards: an
+// unknown value is REFUSED here instead of flowing into the computation and
+// silently behaving like a default.
 type startAssessmentRequest struct {
 	HasDiabetes   bool   `json:"has_diabetes"`
 	SmokingStatus string `json:"smoking_status" binding:"required"`
@@ -74,24 +74,23 @@ type scrProxyRequest struct {
 	FoamyUrine      string `json:"q_foamy_urine_scr"`
 }
 
-// answerRarely muncul sebagai jawaban bawaan di tiga pertanyaan berbeda.
-// Ia dikumpulkan supaya salah ketik di salah satunya gagal saat kompilasi,
-// bukan diam-diam menjadi jawaban yang tidak dikenal.
+// answerRarely appears as the default answer in three different questions.
+// It is collected so a typo in one of them fails at compile time instead of
+// silently becoming an unknown answer.
 const answerRarely = "Jarang"
 
-// ErrUnknownAnswer menandai jawaban yang tidak ada di daftar.
+// ErrUnknownAnswer marks an answer that is not on the list.
 //
-// Menutup separuh B12 di lapisan lain: sistem lama membandingkan string
-// mentah, jadi jawaban yang salah ketik atau berubah kata diam-diam gagal
-// cocok dan penyesuaiannya tidak berlaku. Di sini ia berhenti dengan galat
-// yang menyebut bidang dan nilainya.
+// Closes half of B12 at another layer: the legacy system compared raw
+// strings, so an answer with a typo or a changed word silently failed to
+// match and its adjustment did not apply. Here it stops with an error
+// naming the field and the value.
 var ErrUnknownAnswer = errors.New("unknown answer")
 
-// toProto memetakan badan permintaan ke pesan kontrak.
+// toProto maps the request body to the contract message.
 //
-// Setiap nilai yang tidak dikenal menghasilkan galat, bukan nilai bawaan.
-// Nilai bawaan yang diam adalah cara sebuah jawaban yang salah ketik
-// mengubah angka risiko tanpa siapa pun tahu.
+// Every unknown value yields an error, not a default. A silent default is
+// how a mistyped answer changes a risk number without anyone knowing.
 func (r startAssessmentRequest) toProto() (*assessmentv1.AssessmentInput, error) {
 	smoking, err := smokingStatusOf(r.SmokingStatus)
 	if err != nil {
@@ -169,9 +168,9 @@ func (r startAssessmentRequest) toProto() (*assessmentv1.AssessmentInput, error)
 		return in, nil
 	}
 
-	// Usia diagnosis WAJIB pada jalur diabetes: ia masuk langsung ke model
-	// sebagai (usia-50)/5, dan ketiadaannya akan dihitung sebagai nol - yang
-	// berarti didiagnosis pada usia nol.
+	// The age at diagnosis is REQUIRED on the diabetes path: it enters the
+	// model directly as (age-50)/5, and its absence would be computed as zero
+	// - meaning diagnosed at age zero.
 	if r.AgeAtDiabetesDiagnosis == nil {
 		return nil, fmt.Errorf("%w: age_at_diabetes_diagnosis is required when has_diabetes is true",
 			ErrUnknownAnswer)
@@ -218,11 +217,11 @@ func (r startAssessmentRequest) toProto() (*assessmentv1.AssessmentInput, error)
 	return in, nil
 }
 
-// parameterOf menyusun satu parameter klinis.
+// parameterOf composes one clinical parameter.
 //
-// Mode "manual" tanpa nilai ditolak. Sistem lama akan membaca null sebagai
-// nol dan menghitung dengan tekanan darah nol - angka yang mustahil dan tetap
-// menghasilkan hasil.
+// "manual" mode without a value is refused. The legacy system would read null
+// as zero and compute with a blood pressure of zero - an impossible number
+// that still yields a result.
 func parameterOf(mode string, value *float64, field string) (*assessmentv1.ClinicalParameter, error) {
 	switch mode {
 	case "manual":

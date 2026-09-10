@@ -6,7 +6,7 @@ import (
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 )
 
-// viewOfProgram memetakan program ke bentuk REST.
+// viewOfProgram maps a program to its REST shape.
 func viewOfProgram(p *coachingv1.CoachingProgram) programView {
 	if p == nil {
 		return programView{Weeks: []weekView{}, Threads: []threadView{}}
@@ -22,8 +22,8 @@ func viewOfProgram(p *coachingv1.CoachingProgram) programView {
 		EndDate:          p.GetEndDate(),
 		CurriculumStatus: curriculumName(p.GetCurriculumStatus()),
 
-		// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-		// mengiterasi daftar akan gagal alih-alih menampilkan daftar kosong.
+		// An empty slice, not nil: nil becomes `null` in JSON, and a client
+		// iterating the list fails instead of showing an empty list.
 		Weeks:   make([]weekView, 0, len(p.GetWeeks())),
 		Threads: make([]threadView, 0, len(p.GetThreads())),
 	}
@@ -53,9 +53,9 @@ func viewOfProgram(p *coachingv1.CoachingProgram) programView {
 		}
 	}
 
-	// Diperiksa dulu, bukan diteruskan begitu saja: byte yang bukan JSON akan
-	// membuat SELURUH respons tidak bisa di-parse klien, sehingga satu baris
-	// yang rusak menjatuhkan endpoint-nya.
+	// Checked first, not passed through blindly: bytes that are not JSON would
+	// make the WHOLE response unparseable for the client, so one corrupt row
+	// takes the endpoint down.
 	if raw := p.GetGraduationReportJson(); raw != "" && json.Valid([]byte(raw)) {
 		out.GraduationReport = json.RawMessage(raw)
 	}
@@ -98,10 +98,10 @@ func viewOfMessage(m *coachingv1.CoachingMessage) messageView {
 	return out
 }
 
-// programStatusName memetakan enum ke nama yang dipakai sistem lama.
+// programStatusName maps the enum to the name the legacy system used.
 //
-// UNSPECIFIED menjadi string kosong, bukan "active": baris yang rusak tidak
-// boleh terlihat seperti program yang sedang berjalan.
+// UNSPECIFIED becomes an empty string, not "active": a corrupt row must not
+// look like a running program.
 func programStatusName(s coachingv1.ProgramStatus) string {
 	switch s {
 	case coachingv1.ProgramStatus_PROGRAM_STATUS_ACTIVE:
@@ -117,10 +117,10 @@ func programStatusName(s coachingv1.ProgramStatus) string {
 	}
 }
 
-// difficultyName mengembalikan nilai Bahasa Indonesia yang dikirim klien.
+// difficultyName returns the Indonesian value the client sends.
 //
-// Ia bukan istilah internal: klien mengirimkannya apa adanya dan
-// menampilkannya apa adanya (kontrak sistem lama).
+// It is not an internal term: the client sends it as-is and displays it
+// as-is (the legacy contract).
 func difficultyName(d coachingv1.Difficulty) string {
 	switch d {
 	case coachingv1.Difficulty_DIFFICULTY_GENTLE:
@@ -134,7 +134,7 @@ func difficultyName(d coachingv1.Difficulty) string {
 	}
 }
 
-// difficultyFromName memetakan balik apa yang dikirim klien.
+// difficultyFromName maps back what the client sends.
 func difficultyFromName(raw string) coachingv1.Difficulty {
 	switch raw {
 	case "Santai & Bertahap":
@@ -144,9 +144,9 @@ func difficultyFromName(raw string) coachingv1.Difficulty {
 	case "Intensif & Menantang":
 		return coachingv1.Difficulty_DIFFICULTY_INTENSE
 	default:
-		// UNSPECIFIED ditolak service dengan pesan yang menyebutkan nilai yang
-		// sah - jauh lebih menolong daripada memilih bawaan diam-diam dan
-		// membuat pengguna mendapat program yang tidak ia minta.
+		// UNSPECIFIED is refused by the service with a message naming the valid
+		// values - far more helpful than silently picking a default and giving
+		// the user a program they did not ask for.
 		return coachingv1.Difficulty_DIFFICULTY_UNSPECIFIED
 	}
 }

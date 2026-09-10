@@ -4,28 +4,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Bentuk amplop jawaban adalah bagian dari kontrak, bukan detail penulisan.
-// Kuncinya dikumpulkan di sini supaya salah ketik - "mesage" alih-alih
-// "message" - gagal saat kompilasi, bukan diam-diam memecahkan klien yang
-// mencari kunci yang tidak pernah datang.
+// The shape of the response envelope is part of the contract, not a writing
+// detail. The keys are collected here so a typo - "mesage" instead of
+// "message" - fails at compile time instead of silently breaking a client
+// looking for a key that never arrives.
 const (
 	keyData    = "data"
 	keyMessage = "message"
 	keySuccess = "success"
 )
 
-// writeData mengirim satu sumber daya di dalam amplop `data`.
+// writeData sends one resource inside the `data` envelope.
 func writeData(c *gin.Context, status int, data any) {
 	c.JSON(status, gin.H{keyData: data})
 }
 
-// writeDataWithMessage dipakai endpoint yang sudah mengirim pesan bersama
-// datanya hari ini; bentuk itu dipertahankan supaya frontend tidak berubah.
+// writeDataWithMessage is used by endpoints that already send a message
+// along with their data today; that shape is kept so the frontend need not
+// change.
 func writeDataWithMessage(c *gin.Context, status int, message string, data any) {
 	c.JSON(status, gin.H{keyMessage: message, keyData: data})
 }
 
-// writeMessage mengirim jawaban yang tidak membawa sumber daya apa pun.
+// writeMessage sends an answer that carries no resource at all.
 func writeMessage(c *gin.Context, status int, message string) {
 	c.JSON(status, gin.H{keySuccess: true, keyMessage: message})
 }

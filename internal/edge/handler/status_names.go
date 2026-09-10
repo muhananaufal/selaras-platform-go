@@ -1,11 +1,11 @@
 package handler
 
-// Nama keadaan yang dipakai bersama beberapa endpoint.
+// State names shared by several endpoints.
 //
-// Ketiganya muncul di personalisasi penilaian, kurikulum coaching, dan laporan
-// kelulusan. Menamainya sekali membuat ketiganya tetap sama: klien yang
-// menangani "pending" dari satu endpoint dan "in_progress" dari endpoint lain
-// harus menulis dua cabang untuk satu keadaan.
+// All three appear in assessment personalisation, the coaching curriculum, and
+// the graduation report. Naming them once keeps the three the same: a client
+// handling "pending" from one endpoint and "in_progress" from another has to
+// write two branches for one state.
 const (
 	statusNotRequested = "not_requested"
 	statusPending      = "pending"
@@ -13,17 +13,17 @@ const (
 	statusReady        = "ready"
 	statusFailed       = "failed"
 
-	// statusUnknown dipakai untuk nilai enum yang tidak dikenali. Ia BUKAN
-	// keadaan nyata - ia penanda bahwa datanya di luar yang diketahui kode ini,
-	// dan klien tidak boleh memperlakukannya sebagai "sedang berjalan".
+	// statusUnknown is used for an unrecognised enum value. It is NOT a real
+	// state - it is a marker that the data is outside what this code knows, and
+	// a client must not treat it as "running".
 	statusUnknown = "unknown"
 )
 
-// Nama peran pengirim pesan.
+// The role names of a message sender.
 //
-// Ketiga endpoint yang menampilkan percakapan - chat umum, thread coaching, dan
-// autentikasi yang menyebut peran akun - memakai kata yang sama. Menamainya
-// sekali membuat ketiganya tetap sama.
+// The three endpoints that display conversations - general chat, coaching
+// threads, and authentication naming the account role - use the same words.
+// Naming them once keeps the three the same.
 const (
 	roleNameUser  = "user"
 	roleNameModel = "model"

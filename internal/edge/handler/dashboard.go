@@ -20,7 +20,7 @@ func NewDashboard(dashboard dashboardv1.DashboardClient) *Dashboard {
 	return &Dashboard{dashboard: dashboard}
 }
 
-// Bentuk yang dijanjikan kontrak REST.
+// The shape the REST contract promises.
 type assessmentSummaryView struct {
 	Slug           string  `json:"slug"`
 	AssessedOn     string  `json:"assessed_on"`
@@ -43,7 +43,7 @@ type riskTrendPointView struct {
 	RiskPercentage float64 `json:"risk_percentage"`
 }
 
-// Show mengembalikan seluruh halaman utama dalam satu panggilan.
+// Show returns the whole home page in one call.
 func (h *Dashboard) Show(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -74,10 +74,9 @@ func (h *Dashboard) Show(c *gin.Context) {
 	}
 
 	body := struct {
-		// Kosong berarti pengguna belum pernah menganalisis. Klien
-		// menampilkan pesan sambutan, sebagaimana sistem lama - dan itu
-		// dinyatakan lewat bidang tersendiri, bukan disimpulkan klien dari
-		// riwayat yang kosong.
+		// Empty means the user has never run an analysis. The client shows a
+		// welcome message, as the legacy system did - and that is stated through
+		// a dedicated field, not inferred by the client from an empty history.
 		HasAssessments bool `json:"has_assessments"`
 
 		LatestAssessment  *assessmentSummaryView  `json:"latest_assessment"`
@@ -87,9 +86,9 @@ func (h *Dashboard) Show(c *gin.Context) {
 		HealthTrend       string                  `json:"health_trend"`
 		TotalAssessments  int32                   `json:"total_assessments"`
 
-		// projected_at dibuka apa adanya: read-model bersifat eventually
-		// consistent, dan jeda yang disembunyikan tampak seperti bug. Klien
-		// yang menampilkan "diperbarui X menit lalu" bisa memakainya.
+		// projected_at is exposed as it is: the read-model is eventually
+		// consistent, and a hidden delay looks like a bug. A client showing
+		// "updated X minutes ago" can use it.
 		ProjectedAt string `json:"projected_at"`
 	}{
 		HasAssessments:    view.GetTotalAssessments() > 0,
@@ -133,11 +132,12 @@ func viewOfAssessmentSummary(a *dashboardv1.AssessmentSummary) assessmentSummary
 	}
 }
 
-// healthTrendName menerjemahkan arah tren.
+// healthTrendName translates the trend direction.
 //
-// "insufficient_data" DIBEDAKAN dari "stable", tidak seperti sistem lama yang
-// menjawab stable untuk analisis pertama. Klien yang menggambar panah mendatar
-// untuk stabil akan menggambarnya juga untuk orang yang belum punya pembanding.
+// "insufficient_data" is DISTINGUISHED from "stable", unlike the legacy system
+// which answered stable for the first analysis. A client drawing a flat arrow
+// for stable would draw it for someone who has nothing to compare against as
+// well.
 func healthTrendName(t dashboardv1.HealthTrend) string {
 	switch t {
 	case dashboardv1.HealthTrend_HEALTH_TREND_IMPROVING:

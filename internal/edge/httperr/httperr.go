@@ -1,4 +1,4 @@
-// Package httperr menerjemahkan galat dari service ke jawaban HTTP.
+// Package httperr translates errors from the services into HTTP answers.
 package httperr
 
 import (
@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Body adalah bentuk galat yang dijanjikan kontrak REST.
+// Body is the error shape the REST contract promises.
 type Body struct {
 	Success bool                `json:"success"`
 	Message string              `json:"message"`
@@ -20,9 +20,9 @@ type Body struct {
 	Errors  map[string][]string `json:"errors,omitempty"`
 }
 
-// Kode yang boleh keluar. Daftarnya tertutup dan cocok dengan enum di
-// edge-v1.yaml: kode yang tidak ada di sana adalah kontrak yang dilanggar
-// diam-diam, dan klien tidak punya cara menanganinya.
+// The codes allowed out. The list is closed and matches the enum in
+// edge-v1.yaml: a code not in there is a contract silently broken, and the
+// client has no way to handle it.
 const (
 	CodeInvalidArgument    = "INVALID_ARGUMENT"
 	CodeUnauthenticated    = "UNAUTHENTICATED"
@@ -30,25 +30,24 @@ const (
 	CodeAlreadyExists      = "ALREADY_EXISTS"
 	CodeFailedPrecondition = "FAILED_PRECONDITION"
 
-	// CodePermissionDenied dipakai saat pemanggilnya SUDAH terautentikasi
-	// tetapi tetap tidak boleh melakukannya - misalnya kata sandi yang keliru
-	// saat mengonfirmasi penghapusan akun.
+	// CodePermissionDenied is used when the caller IS authenticated but still
+	// may not do this - for instance a wrong password when confirming an
+	// account deletion.
 	//
-	// Sebelumnya jalur itu memakai FAILED_PRECONDITION, dan itu keliru: klien
-	// yang membedakan kesalahan berdasarkan kode akan memperlakukannya sebagai
-	// "keadaan belum siap" alih-alih "yang Anda ketik salah", lalu mencoba lagi
-	// dengan masukan yang sama persis.
+	// That path used to use FAILED_PRECONDITION, and that was wrong: a client
+	// that tells errors apart by code would treat it as "state not ready"
+	// instead of "what you typed is wrong", and then retry with exactly the
+	// same input.
 	CodePermissionDenied = "PERMISSION_DENIED"
 	CodeRateLimited      = "RATE_LIMITED"
 	CodeInternal         = "INTERNAL"
 	CodeUnavailable      = "UNAVAILABLE"
 )
 
-// Write mengirim jawaban galat dan menghentikan rantai handler.
+// Write sends the error answer and stops the handler chain.
 //
-// Abort dipanggil, bukan sekadar menulis: tanpa itu, middleware atau handler
-// berikutnya tetap berjalan dan bisa menulis badan kedua ke koneksi yang
-// sama.
+// Abort is called, not just a write: without it, the next middleware or
+// handler keeps running and can write a second body to the same connection.
 func Write(c *gin.Context, statusCode int, code, message string) {
 	c.AbortWithStatusJSON(statusCode, Body{
 		Success: false,
@@ -57,8 +56,8 @@ func Write(c *gin.Context, statusCode int, code, message string) {
 	})
 }
 
-// WriteValidation mengirim 422 beserta galat per bidang, bentuk yang sudah
-// dipakai frontend hari ini.
+// WriteValidation sends 422 with per-field errors, the shape the frontend
+// already uses today.
 func WriteValidation(c *gin.Context, fields map[string][]string) {
 	c.AbortWithStatusJSON(http.StatusUnprocessableEntity, Body{
 		Success: false,
@@ -68,15 +67,15 @@ func WriteValidation(c *gin.Context, fields map[string][]string) {
 	})
 }
 
-// FromGRPC menerjemahkan galat dari service di belakang gateway.
+// FromGRPC translates errors from the services behind the gateway.
 //
-// Pesan dari service internal TIDAK diteruskan apa adanya untuk kelas galat
-// yang tidak dikenali. Pesan internal membawa nama tabel, potongan kueri, dan
-// alamat host - semuanya berguna bagi orang yang sedang memetakan sistem ini,
-// dan tidak satu pun berguna bagi klien yang sah.
+// Messages from internal services are NOT passed through as they are for
+// unrecognised error classes. Internal messages carry table names, query
+// fragments, and host addresses - all useful to someone mapping this system,
+// and none of it useful to a legitimate client.
 //
-// Untuk kelas yang dikenali, pesannya memang sudah ditulis untuk dibaca
-// pemanggil di sisi service, jadi ia diteruskan.
+// For recognised classes, the message was written to be read by the caller on
+// the service side, so it is passed on.
 func FromGRPC(c *gin.Context, err error) {
 	st, ok := status.FromError(err)
 	if !ok {
@@ -88,9 +87,9 @@ func FromGRPC(c *gin.Context, err error) {
 	case codes.InvalidArgument:
 		Write(c, http.StatusUnprocessableEntity, CodeInvalidArgument, st.Message())
 
-	// Unauthenticated selalu satu pesan, tanpa keterangan tambahan.
-	// Membedakan "email tidak terdaftar" dari "kata sandi keliru" di sini
-	// akan membatalkan penyeragaman yang dikerjakan identity-svc.
+	// Unauthenticated is always one message, without further detail. Telling
+	// "email not registered" from "wrong password" here would undo the
+	// uniformity identity-svc worked for.
 	case codes.Unauthenticated:
 		Write(c, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated.")
 
@@ -109,9 +108,9 @@ func FromGRPC(c *gin.Context, err error) {
 	case codes.ResourceExhausted:
 		Write(c, http.StatusTooManyRequests, CodeRateLimited, "Too many requests.")
 
-	// Unimplemented adalah kemampuan yang memang belum ada, bukan kekeliruan
-	// klien. 501 mengatakannya persis, dan pesannya boleh lewat karena ia
-	// ditulis untuk dibaca manusia yang sedang mencoba memakainya.
+	// Unimplemented is a capability that simply does not exist yet, not a
+	// client mistake. 501 says exactly that, and the message may pass because
+	// it was written for a human trying to use it.
 	case codes.Unimplemented:
 		Write(c, http.StatusNotImplemented, CodeUnavailable, st.Message())
 
@@ -121,9 +120,9 @@ func FromGRPC(c *gin.Context, err error) {
 	case codes.DeadlineExceeded:
 		Write(c, http.StatusGatewayTimeout, CodeUnavailable, "The request took too long.")
 
-	// Pemanggil yang pergi bukan galat yang perlu dilaporkan ke siapa pun.
-	// Menulis jawaban ke koneksi yang sudah tertutup hanya menambah bising
-	// di log tanpa menolong siapa pun.
+	// A caller that went away is not an error worth reporting to anyone.
+	// Writing an answer to a connection that is already closed only adds noise
+	// to the log without helping anyone.
 	case codes.Canceled:
 		c.Abort()
 

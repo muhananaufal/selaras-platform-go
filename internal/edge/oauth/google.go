@@ -13,23 +13,23 @@ import (
 	"time"
 )
 
-// Alamat resmi Google. Keduanya bisa ditimpa supaya test bisa menyajikan
-// penyedia sendiri tanpa menyentuh jaringan.
+// Google's official addresses. Both can be overridden so tests can serve
+// their own provider without touching the network.
 const (
 	GoogleAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
-	// G101 menandai konstanta bernama "...TokenURL" sebagai kredensial.
-	// Ini alamat publik yang diterbitkan Google, bukan rahasia.
-	GoogleTokenURL = "https://oauth2.googleapis.com/token" //nolint:gosec // alamat publik, bukan kredensial
+	// G101 flags a constant named "...TokenURL" as a credential. This is a
+	// public address published by Google, not a secret.
+	GoogleTokenURL = "https://oauth2.googleapis.com/token" //nolint:gosec // public address, not a credential
 )
 
-// ErrExchangeFailed menandai penyedia yang menolak kode otorisasi.
+// ErrExchangeFailed marks a provider that refused the authorisation code.
 var ErrExchangeFailed = errors.New("the provider refused the authorisation code")
 
-// Google menukar kode otorisasi dengan ID token.
+// Google exchanges an authorisation code for an ID token.
 //
-// Ia TIDAK memverifikasi ID token itu - verifikasinya milik identity-svc,
-// yang memegang client id-nya dan memeriksa tanda tangan penyedia sendiri
-// (ADR-021 koreksi 3). Di sini token itu hanya diteruskan.
+// It does NOT verify that ID token - verification belongs to identity-svc,
+// which holds the client id and checks the provider's signature itself
+// (ADR-021 correction 3). Here the token is only passed on.
 type Google struct {
 	clientID     string
 	clientSecret string
@@ -39,13 +39,13 @@ type Google struct {
 	client       *http.Client
 }
 
-// GoogleConfig mengumpulkan yang dibutuhkan alur OAuth Google.
+// GoogleConfig collects what the Google OAuth flow needs.
 type GoogleConfig struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
 
-	// AuthURL dan TokenURL boleh kosong untuk memakai milik Google.
+	// AuthURL and TokenURL may be empty to use Google's own.
 	AuthURL  string
 	TokenURL string
 
@@ -76,7 +76,7 @@ func NewGoogle(cfg GoogleConfig) (*Google, error) {
 	return g, nil
 }
 
-// AuthCodeURL menyusun alamat halaman persetujuan penyedia.
+// AuthCodeURL composes the address of the provider's consent page.
 func (g *Google) AuthCodeURL(state string) string {
 	query := url.Values{
 		"client_id":     {g.clientID},
@@ -88,7 +88,7 @@ func (g *Google) AuthCodeURL(state string) string {
 	return g.authURL + "?" + query.Encode()
 }
 
-// Exchange menukar kode otorisasi dengan ID token.
+// Exchange exchanges an authorisation code for an ID token.
 func (g *Google) Exchange(ctx context.Context, code string) (string, error) {
 	if strings.TrimSpace(code) == "" {
 		return "", fmt.Errorf("%w: no code", ErrExchangeFailed)
@@ -119,8 +119,8 @@ func (g *Google) Exchange(ctx context.Context, code string) (string, error) {
 		}
 	}()
 
-	// Badan dibatasi, seperti pada JWKS: jawaban yang tidak wajar besar tidak
-	// boleh menghabiskan memori gateway.
+	// The body is bounded, as with JWKS: an unreasonably large answer must not
+	// exhaust the gateway's memory.
 	const maxTokenResponse = 1 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponse))
 	if err != nil {
@@ -128,8 +128,8 @@ func (g *Google) Exchange(ctx context.Context, code string) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// Badan jawaban penyedia TIDAK diteruskan ke pemanggil. Ia bisa
-		// membawa client id, dan pesan galatnya berguna hanya bagi kami.
+		// The provider's response body is NOT passed on to the caller. It may
+		// carry the client id, and its error message is useful only to us.
 		return "", fmt.Errorf("%w: the provider answered %s", ErrExchangeFailed, resp.Status)
 	}
 
@@ -140,9 +140,9 @@ func (g *Google) Exchange(ctx context.Context, code string) (string, error) {
 		return "", fmt.Errorf("%w: parsing the response: %w", ErrExchangeFailed, err)
 	}
 	if decoded.IDToken == "" {
-		// Tanpa ID token tidak ada yang bisa diverifikasi. Access token milik
-		// penyedia tidak membawa klaim apa pun, jadi menerimanya berarti
-		// mempercayai penyedia tanpa bukti.
+		// Without an ID token there is nothing to verify. The provider's access
+		// token carries no claims, so accepting it would mean trusting the
+		// provider without proof.
 		return "", fmt.Errorf("%w: the response carried no id_token", ErrExchangeFailed)
 	}
 	return decoded.IDToken, nil

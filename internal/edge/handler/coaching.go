@@ -20,7 +20,7 @@ func NewCoaching(coaching coachingv1.CoachingClient) *Coaching {
 	return &Coaching{coaching: coaching}
 }
 
-// Bentuk yang dijanjikan kontrak REST.
+// The shape the REST contract promises.
 type programView struct {
 	Slug             string            `json:"slug"`
 	Title            string            `json:"title"`
@@ -50,8 +50,8 @@ type weekView struct {
 }
 
 type taskView struct {
-	// ID adalah UUID dan muncul di URL: tugas dialamatkan langsung lewatnya,
-	// mengikuti bentuk URL sistem lama.
+	// ID is a UUID and appears in the URL: tasks are addressed directly
+	// through it, following the legacy URL shape.
 	ID          string `json:"id"`
 	TaskDate    string `json:"task_date"`
 	TaskType    string `json:"task_type"`
@@ -71,11 +71,11 @@ type messageView struct {
 	CreatedAt string          `json:"created_at"`
 }
 
-// StartProgram memulai program baru.
+// StartProgram starts a new program.
 //
-// Ia menjawab 202 Accepted, BUKAN 200 dengan kurikulumnya. Sistem lama menahan
-// permintaan HTTP selama Gemini merancang kurikulum; kurikulum di sini datang
-// belakangan, dan `curriculum_status` yang memberi tahu klien kapan ia siap.
+// It answers 202 Accepted, NOT 200 with the curriculum. The legacy system held
+// the HTTP request while Gemini designed the curriculum; here the curriculum
+// comes later, and `curriculum_status` tells the client when it is ready.
 func (h *Coaching) StartProgram(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -106,7 +106,7 @@ func (h *Coaching) StartProgram(c *gin.Context) {
 	writeData(c, http.StatusAccepted, viewOfProgram(resp.GetProgram()))
 }
 
-// ShowProgram memuat program lengkap.
+// ShowProgram loads the complete program.
 func (h *Coaching) ShowProgram(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -124,7 +124,7 @@ func (h *Coaching) ShowProgram(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOfProgram(resp.GetProgram()))
 }
 
-// ToggleProgramStatus memindahkan program antara active dan paused.
+// ToggleProgramStatus moves a program between active and paused.
 func (h *Coaching) ToggleProgramStatus(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -143,7 +143,7 @@ func (h *Coaching) ToggleProgramStatus(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOfProgram(resp.GetProgram()))
 }
 
-// DestroyProgram menghapus program beserta seluruh isinya.
+// DestroyProgram deletes a program with everything in it.
 func (h *Coaching) DestroyProgram(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -161,7 +161,7 @@ func (h *Coaching) DestroyProgram(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ToggleTaskStatus membalik status satu tugas.
+// ToggleTaskStatus flips the status of one task.
 func (h *Coaching) ToggleTaskStatus(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -180,7 +180,7 @@ func (h *Coaching) ToggleTaskStatus(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOfTask(resp.GetTask()))
 }
 
-// GraduationReport meminta atau mengambil laporan kelulusan.
+// GraduationReport requests or fetches the graduation report.
 func (h *Coaching) GraduationReport(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -206,8 +206,8 @@ func (h *Coaching) GraduationReport(c *gin.Context) {
 		out.Report = json.RawMessage(raw)
 	}
 
-	// 202 selama masih dibuat: klien yang menerima 200 tanpa laporan akan
-	// mengira laporannya memang kosong.
+	// 202 while it is still being produced: a client receiving 200 without a
+	// report would assume the report is simply empty.
 	code := http.StatusOK
 	if out.Report == nil {
 		code = http.StatusAccepted
@@ -215,7 +215,7 @@ func (h *Coaching) GraduationReport(c *gin.Context) {
 	writeData(c, code, out)
 }
 
-// StartThread membuka utas baru.
+// StartThread opens a new thread.
 func (h *Coaching) StartThread(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -247,7 +247,7 @@ func (h *Coaching) StartThread(c *gin.Context) {
 	writeData(c, http.StatusAccepted, viewOfThread(resp.GetThread()))
 }
 
-// SendMessage menulis pesan ke utas yang ada.
+// SendMessage writes a message to an existing thread.
 func (h *Coaching) SendMessage(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -275,11 +275,11 @@ func (h *Coaching) SendMessage(c *gin.Context) {
 		return
 	}
 
-	// 202: balasan model datang belakangan, lewat thread yang sama.
+	// 202: the model's reply comes later, through the same thread.
 	writeData(c, http.StatusAccepted, viewOfMessage(resp.GetMessage()))
 }
 
-// ShowThread memuat utas beserta percakapannya.
+// ShowThread loads a thread together with its conversation.
 func (h *Coaching) ShowThread(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -306,7 +306,7 @@ func (h *Coaching) ShowThread(c *gin.Context) {
 	}{viewOfThread(resp.GetThread()), messages})
 }
 
-// UpdateThread mengubah judul utas.
+// UpdateThread changes the title of a thread.
 func (h *Coaching) UpdateThread(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -332,7 +332,7 @@ func (h *Coaching) UpdateThread(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOfThread(resp.GetThread()))
 }
 
-// DestroyThread menghapus utas beserta pesannya.
+// DestroyThread deletes a thread together with its messages.
 func (h *Coaching) DestroyThread(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {

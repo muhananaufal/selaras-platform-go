@@ -10,27 +10,27 @@ import (
 	"time"
 )
 
-// Config adalah seluruh yang dibutuhkan edge-gateway untuk menyala.
+// Config is everything edge-gateway needs to start.
 type Config struct {
 	HTTPAddr string
 
-	// AdminAddr melayani metrik dan probe, terpisah dari port publik. Metrik
-	// di port yang sama dengan API berarti metrik terbuka untuk siapa pun
-	// yang bisa menjangkau API - dan itu semua orang.
+	// AdminAddr serves metrics and probes, separate from the public port.
+	// Metrics on the same port as the API means the metrics are open to anyone
+	// who can reach the API - and that is everyone.
 	AdminAddr    string
 	IdentityAddr string
 	ProfileAddr  string
 	RedisURL     string
 
-	// AssessmentAddr boleh kosong: lingkungan tanpa assessment-svc tetap
-	// melayani autentikasi dan profil.
+	// AssessmentAddr may be empty: an environment without assessment-svc still
+	// serves authentication and profiles.
 	AssessmentAddr string
 
-	// CoachingAddr boleh kosong: lingkungan tanpa coaching-svc tetap melayani
-	// sisanya, dan rute coaching tidak dipasang.
+	// CoachingAddr may be empty: an environment without coaching-svc still
+	// serves the rest, and the coaching routes are not mounted.
 	CoachingAddr string
 
-	// ChatAddr boleh kosong: rute chat tidak dipasang.
+	// ChatAddr may be empty: the chat routes are not mounted.
 	ChatAddr      string
 	NutritionAddr string
 	DashboardAddr string
@@ -40,11 +40,11 @@ type Config struct {
 	Social        SocialConfig
 }
 
-// LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
+// LoadConfig reads the configuration and refuses an incomplete one.
 //
-// Gateway hanya memegang kunci PUBLIK. Itu inti ADR-020: ia bisa memverifikasi
-// token, dan tidak bisa menerbitkan satu pun. Kalau ia memegang kunci privat,
-// setiap unit yang memverifikasi juga bisa mencetak token admin.
+// The gateway holds only the PUBLIC key. That is the core of ADR-020: it can
+// verify tokens, and it cannot issue a single one. If it held the private key,
+// every unit that verifies could also mint an admin token.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		HTTPAddr:       envOr("EDGE_HTTP_ADDR", ":8080"),
@@ -124,11 +124,11 @@ func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 	return d, nil
 }
 
-// SocialConfig menampung yang dibutuhkan alur masuk sosial.
+// SocialConfig holds what the social sign-in flow needs.
 //
-// Ia terpisah dan boleh kosong seluruhnya: lingkungan tanpa kredensial
-// penyedia tetap melayani pendaftaran lewat kata sandi, dan rutenya tidak
-// dipasang sama sekali - bukan endpoint yang ada tetapi selalu gagal.
+// It is separate and may be entirely empty: an environment without provider
+// credentials still serves password registration, and the routes are not
+// mounted at all - not an endpoint that exists but always fails.
 type SocialConfig struct {
 	GoogleClientID     string
 	GoogleClientSecret string
@@ -136,17 +136,18 @@ type SocialConfig struct {
 	FrontendURL        string
 }
 
-// Configured benar bila seluruh bagiannya terisi.
+// Configured is true when every part is filled in.
 //
-// Sebagian terisi adalah kekeliruan konfigurasi, bukan mode penyebaran:
-// client id tanpa secret akan menyalakan rutenya lalu gagal di pertukaran,
-// yang jauh lebih membingungkan daripada rute yang memang tidak ada.
+// Partially filled in is a configuration mistake, not a deployment mode: a
+// client id without a secret would mount the routes and then fail at the
+// exchange, which is far more confusing than a route that simply does not
+// exist.
 func (s SocialConfig) Configured() bool {
 	return s.GoogleClientID != "" && s.GoogleClientSecret != "" &&
 		s.GoogleRedirectURL != "" && s.FrontendURL != ""
 }
 
-// Missing menyebut bagian mana yang kurang, supaya pesannya menunjuk.
+// Missing names which parts are lacking, so the message points somewhere.
 func (s SocialConfig) Missing() []string {
 	var missing []string
 	for name, value := range map[string]string{

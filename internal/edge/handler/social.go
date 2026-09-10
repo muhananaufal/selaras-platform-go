@@ -15,7 +15,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/oauth"
 )
 
-// ProviderClient adalah yang dibutuhkan dari sebuah penyedia OAuth.
+// ProviderClient is what is needed from an OAuth provider.
 type ProviderClient interface {
 	AuthCodeURL(state string) string
 	Exchange(ctx context.Context, code string) (idToken string, err error)
@@ -43,10 +43,10 @@ func NewSocial(
 	}
 }
 
-// Redirect memulai alur dan menerbitkan parameter state.
+// Redirect starts the flow and issues the state parameter.
 //
-// Menutup separuh S11: sistem lama memanggil Socialite dengan stateless(),
-// yang mematikan verifikasi state sama sekali.
+// Closes half of S11: the legacy system called Socialite with stateless(),
+// which switched state verification off entirely.
 func (h *Social) Redirect(c *gin.Context) {
 	provider, ok := h.provider(c)
 	if !ok {
@@ -64,11 +64,11 @@ func (h *Social) Redirect(c *gin.Context) {
 	c.Redirect(http.StatusFound, provider.AuthCodeURL(state))
 }
 
-// Callback menerima jawaban penyedia dan menyerahkan kode sekali pakai.
+// Callback receives the provider's answer and hands over a one-time code.
 //
-// Ia SELALU berakhir dengan pengalihan ke frontend, termasuk saat gagal:
-// yang membuka alamat ini adalah peramban pengguna setelah dialihkan
-// penyedia, bukan kode yang mengurai JSON.
+// It ALWAYS ends with a redirect to the frontend, including on failure:
+// what opens this address is the user's browser after the provider
+// redirected it, not code that parses JSON.
 func (h *Social) Callback(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -77,17 +77,17 @@ func (h *Social) Callback(c *gin.Context) {
 		return
 	}
 
-	// State diperiksa SEBELUM kodenya ditukarkan. Callback yang state-nya
-	// tidak kami terbitkan tidak boleh menyebabkan satu pun panggilan ke
-	// penyedia - kalau boleh, endpoint ini menjadi alat memaksa permintaan
-	// keluar atas nama kami.
+	// The state is checked BEFORE the code is exchanged. A callback whose
+	// state we did not issue must not cause a single call to the provider - if
+	// it could, this endpoint becomes a tool for forcing outbound requests in
+	// our name.
 	if err := h.store.ConsumeState(ctx, c.Query("state"), c.Param("provider")); err != nil {
 		h.failToFrontend(c, "invalid_state", "The sign-in attempt could not be verified.")
 		return
 	}
 
-	// Penyedia melaporkan penolakan pengguna lewat parameter error. Itu
-	// bukan kegagalan sistem, dan tidak perlu dicatat sebagai galat.
+	// The provider reports the user's refusal through the error parameter.
+	// That is not a system failure, and need not be logged as an error.
 	if reason := c.Query("error"); reason != "" {
 		h.failToFrontend(c, "provider_declined", "Sign-in was cancelled.")
 		return
@@ -117,9 +117,9 @@ func (h *Social) Callback(c *gin.Context) {
 		return
 	}
 
-	// Kodenya diserahkan lewat FRAGMENT, bukan query string. Menutup S6:
-	// query string masuk ke log server, riwayat peramban, dan header
-	// Referer; fragment bahkan tidak pernah dikirim ke server mana pun.
+	// The code is handed over through the FRAGMENT, not the query string.
+	// Closes S6: query strings end up in server logs, browser history, and the
+	// Referer header; a fragment is never even sent to any server.
 	c.Redirect(http.StatusFound, h.frontendURL+"/auth/callback#code="+url.QueryEscape(code))
 }
 
@@ -127,7 +127,7 @@ type sessionRequest struct {
 	Code string `json:"code" binding:"required"`
 }
 
-// Session menukar kode sekali pakai dengan token akses.
+// Session exchanges the one-time code for an access token.
 func (h *Social) Session(c *gin.Context) {
 	var req sessionRequest
 	if !bind(c, &req) {
@@ -137,9 +137,8 @@ func (h *Social) Session(c *gin.Context) {
 	token, err := h.store.ConsumeHandoffCode(c.Request.Context(), req.Code)
 	if err != nil {
 		if errors.Is(err, oauth.ErrUnknownCode) {
-			// Tidak dikenal, sudah dipakai, dan sudah kedaluwarsa menjawab
-			// sama. Membedakannya memberi tahu penyerang bahwa tebakannya
-			// pernah benar.
+			// Unknown, already used, and expired answer the same. Telling them apart
+			// tells an attacker that a guess was once right.
 			httperr.Write(c, http.StatusUnauthorized, httperr.CodeUnauthenticated,
 				"That sign-in code is not valid.")
 			return
@@ -167,12 +166,12 @@ func (h *Social) provider(c *gin.Context) (ProviderClient, bool) {
 	return provider, true
 }
 
-// failToFrontend mengalihkan kembali ke frontend dengan kode galat yang
-// stabil, bukan dengan pesan yang bisa berubah.
+// failToFrontend redirects back to the frontend with a stable error code,
+// not with a message that may change.
 //
-// Pesan rincinya tinggal di log server. Yang sampai ke peramban hanya sebuah
-// label - cukup bagi frontend untuk memilih kalimat yang tepat, dan tidak
-// cukup bagi siapa pun untuk memetakan bagian mana dari alur yang gagal.
+// The detailed message stays in the server log. What reaches the browser is
+// only a label - enough for the frontend to pick the right sentence, and not
+// enough for anyone to map which part of the flow failed.
 func (h *Social) failToFrontend(c *gin.Context, code, _ string) {
 	c.Redirect(http.StatusFound, h.frontendURL+"/login#error="+url.QueryEscape(code))
 }

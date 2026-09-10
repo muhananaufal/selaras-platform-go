@@ -5,18 +5,18 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// idempotencyKeyFor mengikat kunci idempotensi klien ke pengguna yang
-// mengirimnya.
+// idempotencyKeyFor binds the client's idempotency key to the user who sent
+// it.
 //
-// Kunci dari header dipakai APA ADANYA sebagai kunci pekerjaan di hilir
-// (llm-worker, scope tunggal). Tanpa pengikatan ini, dua pengguna yang
-// kebetulan - atau sengaja - memakai kunci yang sama saling meniadakan:
-// pekerjaan kedua dibuang sebagai duplikat pekerjaan pertama. Pemisahnya
-// karakter kontrol, bukan ":", supaya id pengguna dan kunci klien tidak bisa
-// dirangkai menjadi kunci milik orang lain.
+// The key from the header is used AS-IS as the job key downstream
+// (llm-worker, single scope). Without this binding, two users who happen -
+// or choose - to use the same key cancel each other out: the second job is
+// dropped as a duplicate of the first. The separator is a control character,
+// not ":", so a user id and a client key cannot be strung together into
+// someone else's key.
 //
-// nil bila klien tidak mengirim kunci: use case di hilir menurunkan kuncinya
-// sendiri dari agregatnya.
+// nil when the client sends no key: the downstream use case derives its own
+// key from the aggregate.
 func idempotencyKeyFor(claims domain.Claims, header string) *commonv1.IdempotencyKey {
 	if header == "" {
 		return nil

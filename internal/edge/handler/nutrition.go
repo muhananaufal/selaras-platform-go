@@ -21,7 +21,7 @@ func NewNutrition(nutrition nutritionv1.NutritionClient) *Nutrition {
 	return &Nutrition{nutrition: nutrition}
 }
 
-// Bentuk yang dijanjikan kontrak REST.
+// The shape the REST contract promises.
 type preferencesView struct {
 	Allergies        string   `json:"allergies"`
 	BudgetLevel      string   `json:"budget_level"`
@@ -40,7 +40,7 @@ type mealGuideView struct {
 	CreatedAt string          `json:"created_at"`
 }
 
-// HubData mengembalikan preferensi dan riwayat dalam satu panggilan.
+// HubData returns the preferences and the history in one call.
 func (h *Nutrition) HubData(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -73,13 +73,13 @@ func (h *Nutrition) HubData(c *gin.Context) {
 	})
 }
 
-// UpdatePreferences menerapkan pembaruan PARSIAL.
+// UpdatePreferences applies a PARTIAL update.
 //
-// Bidang yang TIDAK ada di badan permintaan dibiarkan apa adanya. Itulah
-// sebabnya setiap bidang di sini pointer: dengan nilai biasa, "tidak dikirim"
-// dan "dikirim kosong" terlihat sama, dan satu PATCH yang hanya membawa alergi
-// akan menghapus selera serta peralatan dapur pengguna. Itu bug yang
-// benar-benar ada di sistem lama (B16).
+// Fields that are NOT in the request body are left as they are. That is why
+// every field here is a pointer: with plain values, "not sent" and "sent
+// empty" look the same, and one PATCH carrying only allergies would wipe the
+// user's tastes and kitchen equipment. That bug really existed in the legacy
+// system (B16).
 func (h *Nutrition) UpdatePreferences(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -136,10 +136,10 @@ func (h *Nutrition) UpdatePreferences(c *gin.Context) {
 	writeData(c, http.StatusOK, viewOfPreferences(resp.GetPreferences()))
 }
 
-// GenerateDailyGuide meminta panduan menu hari ini.
+// GenerateDailyGuide asks for today's menu guide.
 //
-// Ia menjawab 202: panduannya tiba belakangan, lewat hub. Sistem lama menahan
-// permintaan HTTP selama Gemini bekerja, dengan timeout 180 detik (B14).
+// It answers 202: the guide arrives later, through the hub. The legacy system
+// held the HTTP request while Gemini worked, with a 180-second timeout (B14).
 func (h *Nutrition) GenerateDailyGuide(c *gin.Context) {
 	claims, ok := middleware.ClaimsFrom(c)
 	if !ok {
@@ -159,15 +159,15 @@ func (h *Nutrition) GenerateDailyGuide(c *gin.Context) {
 		return
 	}
 
-	// Ketiga bidang WAJIB diteruskan apa adanya: nama yang tidak dikenali
-	// menjadi UNSPECIFIED, dan nutrition-svc menolaknya. Menolaknya di sini pula
-	// akan menggandakan aturan yang sama di dua tempat.
+	// The three REQUIRED fields are passed on as they are: an unrecognised name
+	// becomes UNSPECIFIED, and nutrition-svc refuses it. Refusing it here as well
+	// would duplicate the same rule in two places.
 	//
-	// Dua bidang OPSIONAL tidak bisa begitu: bagi keduanya UNSPECIFIED adalah
-	// nilai yang SAH, sehingga nama yang salah ketik akan lolos sebagai "tidak
-	// ada" - dan panduan mengabaikan hal yang justru diminta pengguna, tanpa satu
-	// pun tanda. Keduanya diperiksa di sini, satu-satunya tempat yang masih bisa
-	// membedakan "tidak dikirim" dari "dikirim salah".
+	// The two OPTIONAL fields cannot work that way: for them UNSPECIFIED is a
+	// VALID value, so a mistyped name would pass as "none" - and the guide would
+	// ignore exactly what the user asked for, without a single sign. Both are
+	// checked here, the only place that can still tell "not sent" from "sent
+	// wrong".
 	craving, ok := cravingTypeFromName(body.CravingType)
 	if !ok {
 		httperr.Write(c, http.StatusUnprocessableEntity, httperr.CodeInvalidArgument,
@@ -209,8 +209,8 @@ func (h *Nutrition) GenerateDailyGuide(c *gin.Context) {
 
 func viewOfPreferences(p *nutritionv1.CulinaryPreferences) preferencesView {
 	if p == nil {
-		// Daftar kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-		// mengiterasinya akan gagal alih-alih menampilkan daftar kosong.
+		// An empty list, not nil: nil becomes `null` in JSON, and a client
+		// iterating it fails instead of showing an empty list.
 		return preferencesView{TasteProfiles: []string{}, KitchenEquipment: []string{}}
 	}
 
@@ -246,20 +246,20 @@ func viewOfMealGuide(g *nutritionv1.DailyMealGuide) mealGuideView {
 		out.CreatedAt = ts.AsTime().Format(time.RFC3339)
 	}
 
-	// Diperiksa dulu: byte yang bukan JSON akan membuat SELURUH respons tidak
-	// bisa di-parse klien, sehingga satu baris rusak menjatuhkan endpoint-nya.
+	// Checked first: bytes that are not JSON would make the WHOLE response
+	// unparseable for the client, so one corrupt row takes the endpoint down.
 	if raw := g.GetGuideJson(); raw != "" && json.Valid([]byte(raw)) {
 		out.GuideData = json.RawMessage(raw)
 	}
 	return out
 }
 
-// Penerjemah nama <-> enum.
+// Name <-> enum translators.
 //
-// Nama-nama ini adalah kontrak REST-nya, dan sengaja kata kunci Inggris, bukan
-// label Indonesia sistem lama ("Hemat", "Masak di Rumah"). Label adalah urusan
-// tampilan; mengirimkannya lewat API berarti mengubah bahasa antarmuka menjadi
-// perubahan API.
+// These names are the REST contract, and deliberately English keywords, not
+// the Indonesian labels of the legacy system ("Hemat", "Masak di Rumah").
+// Labels are a display concern; sending them through the API turns a change of
+// interface language into an API change.
 
 func budgetLevelFromName(v string) (nutritionv1.BudgetLevel, bool) {
 	switch v {
@@ -348,13 +348,13 @@ func energyLevelFromName(v string) nutritionv1.EnergyLevel {
 	}
 }
 
-// cravingTypeFromName menerjemahkan keinginan kuliner.
+// cravingTypeFromName translates the culinary craving.
 //
-// Kosong SAH - tidak setiap orang sedang menginginkan sesuatu - tetapi nama
-// yang TIDAK dikenali ditolak, bukan diam-diam dijadikan "tidak ada". Nilai
-// yang salah ketik akan membuat panduan mengabaikan hal yang justru diminta
-// pengguna, tanpa satu pun tanda bahwa permintaannya hilang. Sistem lama pun
-// menolaknya (Rule::in), dan itu perilaku yang benar.
+// Empty is VALID - not everyone is craving something - but an UNRECOGNISED
+// name is refused, not silently turned into "none". A mistyped value would
+// make the guide ignore exactly what the user asked for, without a single
+// sign that the request was lost. The legacy system refused it too
+// (Rule::in), and that is the right behaviour.
 func cravingTypeFromName(v string) (nutritionv1.CravingType, bool) {
 	switch v {
 	case "":
@@ -372,7 +372,7 @@ func cravingTypeFromName(v string) (nutritionv1.CravingType, bool) {
 	}
 }
 
-// socialContextFromName mengikuti aturan yang sama dengan cravingTypeFromName.
+// socialContextFromName follows the same rule as cravingTypeFromName.
 func socialContextFromName(v string) (nutritionv1.SocialContext, bool) {
 	switch v {
 	case "":

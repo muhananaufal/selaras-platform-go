@@ -1,5 +1,5 @@
-// Package oauth memuat yang dibutuhkan gateway untuk alur masuk sosial:
-// parameter state, dan penyerahan kode sekali pakai.
+// Package oauth holds what the gateway needs for the social sign-in flow:
+// the state parameter, and the one-time code handoff.
 package oauth
 
 import (
@@ -14,12 +14,11 @@ import (
 )
 
 var (
-	// ErrUnknownState menandai callback yang state-nya tidak pernah kami
-	// terbitkan, sudah dipakai, atau sudah kedaluwarsa. Ketiganya sama bagi
-	// pemanggil.
+	// ErrUnknownState marks a callback whose state we never issued, was
+	// already used, or has expired. All three are the same to the caller.
 	ErrUnknownState = errors.New("unknown or expired state")
 
-	// ErrUnknownCode sama untuk kode penyerahan.
+	// ErrUnknownCode is the same for handoff codes.
 	ErrUnknownCode = errors.New("unknown or expired code")
 )
 
@@ -27,27 +26,26 @@ const (
 	statePrefix = "edge:oauth:state:"
 	codePrefix  = "edge:oauth:handoff:"
 
-	// secretBytes adalah 32 byte, 256 bit. Nilai-nilai ini melewati peramban
-	// dan alamat URL, jadi menebaknya harus benar-benar mustahil.
+	// secretBytes is 32 bytes, 256 bits. These values pass through browsers
+	// and URLs, so guessing them has to be truly impossible.
 	secretBytes = 32
 )
 
-// Store menyimpan nilai sekali pakai milik alur OAuth.
+// Store keeps the one-time values of the OAuth flow.
 //
-// Redis, bukan memori proses, dan itu bukan pilihan gaya: gateway berjalan
-// dalam beberapa replica, dan callback dari penyedia bisa mendarat di replica
-// mana pun. State yang disimpan di memori akan ditolak setiap kali callback
-// tidak kebetulan kembali ke replica yang menerbitkannya.
+// Redis, not process memory, and that is not a matter of style: the gateway
+// runs as several replicas, and the provider's callback can land on any of
+// them. State kept in memory would be refused every time the callback did not
+// happen to return to the replica that issued it.
 type Store struct {
 	client *goredis.Client
 
-	// stateTTL pendek: ia hanya perlu bertahan selama pengguna berada di
-	// halaman persetujuan penyedia.
+	// stateTTL is short: it only has to survive while the user is on the
+	// provider's consent page.
 	stateTTL time.Duration
 
-	// codeTTL jauh lebih pendek lagi. Kodenya sempat melewati peramban, dan
-	// satu-satunya yang menjaga jendela itu tetap sempit adalah masa
-	// berlakunya.
+	// codeTTL is far shorter still. The code has passed through the browser,
+	// and the only thing keeping that window narrow is its lifetime.
 	codeTTL time.Duration
 }
 
@@ -63,31 +61,31 @@ func NewStore(client *goredis.Client, stateTTL, codeTTL time.Duration) (*Store, 
 	return &Store{client: client, stateTTL: stateTTL, codeTTL: codeTTL}, nil
 }
 
-// NewState menerbitkan parameter state dan mengingatnya.
+// NewState issues a state parameter and remembers it.
 //
-// Menutup S11. Sistem lama memanggil Socialite dengan stateless(), yang
-// mematikan verifikasi state di kedua sisi alur - sehingga callback-nya
-// menerima kode dari mana pun. Penyerang bisa memaksa korban menyelesaikan
-// alur masuk dengan akun Google milik penyerang, dan sejak itu segala yang
-// dicatat korban masuk ke akun penyerang.
+// Closes S11. The legacy system called Socialite with stateless(), which
+// switched state verification off on both sides of the flow - so its
+// callback accepted a code from anywhere. An attacker could force a victim
+// to complete a sign-in with the attacker's Google account, and from then
+// on everything the victim recorded went into the attacker's account.
 func (s *Store) NewState(ctx context.Context, provider string) (string, error) {
 	value, err := secret()
 	if err != nil {
 		return "", err
 	}
-	// Nama penyedia ikut disimpan, sehingga state yang diterbitkan untuk satu
-	// penyedia tidak bisa dipakai menyelesaikan alur penyedia lain.
+	// The provider name is stored as well, so a state issued for one provider
+	// cannot be used to complete another provider's flow.
 	if err := s.client.Set(ctx, statePrefix+value, provider, s.stateTTL).Err(); err != nil {
 		return "", fmt.Errorf("storing the oauth state: %w", err)
 	}
 	return value, nil
 }
 
-// ConsumeState memeriksa state dan langsung membuangnya.
+// ConsumeState checks the state and discards it immediately.
 //
-// Pemeriksaan dan pembuangan berada dalam satu operasi atomik. Kalau
-// terpisah, dua callback yang tiba bersamaan sama-sama akan lolos - dan
-// state sekali pakai yang bisa dipakai dua kali bukan sekali pakai.
+// The check and the discard are one atomic operation. If they were
+// separate, two callbacks arriving at once would both pass - and a one-time
+// state that can be used twice is not one-time.
 func (s *Store) ConsumeState(ctx context.Context, value, provider string) error {
 	if value == "" {
 		return ErrUnknownState
@@ -106,12 +104,13 @@ func (s *Store) ConsumeState(ctx context.Context, value, provider string) error 
 	return nil
 }
 
-// NewHandoffCode menyimpan token akses di balik kode sekali pakai.
+// NewHandoffCode stores the access token behind a one-time code.
 //
-// Menutup S6. Sistem lama mengalihkan ke frontend dengan access_token di
-// query string, dan query string masuk ke log server, riwayat peramban, dan
-// header Referer. Yang diserahkan di sini hanyalah kode berumur detik, lewat
-// fragment - yang bahkan tidak pernah dikirim ke server mana pun.
+// Closes S6. The legacy system redirected to the frontend with the
+// access_token in the query string, and query strings end up in server logs,
+// browser history, and the Referer header. What is handed over here is only
+// a code living for seconds, through the fragment - which is never even sent
+// to any server.
 func (s *Store) NewHandoffCode(ctx context.Context, accessToken string) (string, error) {
 	if accessToken == "" {
 		return "", errors.New("refusing to hand off an empty token")
@@ -126,7 +125,7 @@ func (s *Store) NewHandoffCode(ctx context.Context, accessToken string) (string,
 	return code, nil
 }
 
-// ConsumeHandoffCode menukar kode dengan tokennya, sekali.
+// ConsumeHandoffCode exchanges the code for its token, once.
 func (s *Store) ConsumeHandoffCode(ctx context.Context, code string) (string, error) {
 	if code == "" {
 		return "", ErrUnknownCode
@@ -142,7 +141,7 @@ func (s *Store) ConsumeHandoffCode(ctx context.Context, code string) (string, er
 	return token, nil
 }
 
-// secret menghasilkan nilai acak yang aman ditempelkan ke URL.
+// secret produces a random value safe to put in a URL.
 func secret() (string, error) {
 	raw := make([]byte, secretBytes)
 	if _, err := rand.Read(raw); err != nil {
