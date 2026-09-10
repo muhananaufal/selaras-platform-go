@@ -10,18 +10,18 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// ProjectorGroup tetap.
+// ProjectorGroup is fixed.
 //
-// Mengubahnya berarti group baru yang membaca ULANG seluruh riwayat ketiga
-// topic - yang justru cara membangun ulang proyeksi ini dengan sengaja (F7-05),
-// dan karena itu tidak boleh terjadi karena kelalaian.
+// Changing it means a new group that REREADS the whole history of all three
+// topics - which is precisely how this projection is rebuilt deliberately
+// (F7-05), and therefore must not happen by accident.
 const ProjectorGroup = "dashboard-projector"
 
-// startProjector menyalakan proyektor read-model.
+// startProjector starts the read-model projector.
 //
-// Tanpa KAFKA_BROKERS ia tidak dinyalakan, dan itu bukan mode diam-diam:
-// dasbor tetap dilayani dari apa yang sudah terproyeksi, hanya berhenti
-// bergerak. Log saat start menyatakannya.
+// Without KAFKA_BROKERS it is not started, and that is not a silent mode:
+// the dashboard is still served from what has already been projected, it
+// just stops moving. The log at start states it.
 func startProjector(
 	ctx context.Context, log *slog.Logger, svc *app.Service, brokers string,
 ) (func(), error) {
@@ -31,9 +31,9 @@ func startProjector(
 		return func() {}, nil
 	}
 
-	// Tiga topic, satu proyeksi. Ketiganya membentuk satu halaman, dan
-	// membacanya lewat satu group membuat urutan pemrosesannya bisa dijelaskan
-	// - tiga konsumen terpisah akan saling mendahului tanpa alasan.
+	// Three topics, one projection. The three form one page, and reading them
+	// through one group makes the processing order explainable - three
+	// separate consumers would overtake each other for no reason.
 	client, err := kafka.NewConsumer(
 		kafka.Config{Brokers: brokers, ClientID: "dashboard-projector"},
 		ProjectorGroup,

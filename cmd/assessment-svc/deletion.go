@@ -12,18 +12,20 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// DeletionGroup tetap, dan berbeda dari group konsumen lain di service ini.
+// DeletionGroup is fixed, and different from the other consumer groups in
+// this service.
 //
-// Group yang dipakai bersama akan membuat kedua konsumen berebut partisi yang
-// sama: satu pesan hanya sampai ke salah satunya, dan yang tidak menerimanya
-// tidak akan pernah tahu ada yang harus dikerjakan.
+// A shared group would make the two consumers compete for the same
+// partitions: a message reaches only one of them, and the one that did not
+// receive it would never know there was something to do.
 const DeletionGroup = "assessment-deletion"
 
-// startDeletionConsumer menyalakan sisi unit dari saga penghapusan akun.
+// startDeletionConsumer starts this unit's side of the account deletion
+// saga.
 //
-// Tanpa KAFKA_BROKERS ia tidak dinyalakan, dan itu dinyatakan di log: tanpa
-// konsumen ini, setiap permintaan penghapusan akan menggantung menunggu unit
-// yang tidak pernah mendengarnya.
+// Without KAFKA_BROKERS it is not started, and that is stated in the log:
+// without this consumer, every deletion request would hang waiting for a
+// unit that never heard it.
 func startDeletionConsumer(
 	ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, brokers string,
 ) (func(), error) {

@@ -1,13 +1,13 @@
-// Command deletion-verify membuktikan tidak ada sisa data setelah akun dihapus.
+// Command deletion-verify proves no data remains after an account is deleted.
 //
-// Ia BUKAN bagian dari saga. Saga sudah menyatakan dirinya selesai lewat enam
-// konfirmasi, dan perkakas ini menanyakan hal yang berbeda: apakah pernyataan
-// itu benar. Keduanya harus terpisah - verifikasi yang memakai jalur yang sama
-// dengan yang diverifikasi hanya mengulang keyakinan yang sama.
+// It is NOT part of the saga. The saga has already declared itself finished
+// through six confirmations, and this tool asks a different question: whether
+// that declaration is true. The two have to be separate - a verification that
+// uses the same path as what it verifies only repeats the same belief.
 //
-// Setiap skema ditanyai dengan PERAN LOGIN-nya sendiri, bukan dengan superuser.
-// Menanyainya sebagai superuser akan menemukan baris yang tidak bisa dilihat
-// service-nya sendiri, dan itu menjawab pertanyaan yang tidak sedang diajukan.
+// Every schema is queried with its OWN LOGIN ROLE, not as the superuser.
+// Querying as the superuser would find rows the service itself cannot see, and
+// that answers a question that is not being asked.
 package main
 
 import (
@@ -25,24 +25,24 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// probe adalah satu pertanyaan: berapa baris milik pengguna ini di tabel ini.
+// probe is one question: how many rows belong to this user in this table.
 type probe struct {
 	schema string
 	table  string
 
-	// query memakai $1 untuk kuncinya. Kuncinya BERBEDA per unit - sebagian
-	// menyimpan user_id, sebagian user_profile_id - dan itu bukan
-	// ketidakkonsistenan yang perlu diseragamkan di sini: yang penting adalah
-	// menanyakan dengan kunci yang benar-benar dipakai tabelnya.
+	// query uses $1 for its key. The key DIFFERS per unit - some store
+	// user_id, some user_profile_id - and that is not an inconsistency to be
+	// unified here: what matters is asking with the key the table actually
+	// uses.
 	query string
 
-	// byProfile menandai probe yang memakai id profil, bukan id pengguna.
+	// byProfile marks a probe that uses the profile id, not the user id.
 	byProfile bool
 }
 
-// Nama skema sebagai konstanta: daftar probe menyebut sebagiannya beberapa
-// kali, dan salah ketik di salah satunya akan menghasilkan koneksi ke skema
-// yang tidak ada - kegagalan yang terbaca sebagai masalah jaringan.
+// Schema names as constants: the probe list mentions some of them several
+// times, and a typo in one would produce a connection to a schema that does
+// not exist - a failure that reads like a network problem.
 const (
 	schemaIdentity   = "identity"
 	schemaProfile    = "profile"
@@ -53,16 +53,16 @@ const (
 	schemaDashboard  = "dashboard"
 )
 
-// probes menyebutkan SETIAP tabel yang bisa memuat data pengguna.
+// probes names EVERY table that can hold user data.
 //
-// Daftar ini ditulis tangan dengan sengaja. Menurunkannya otomatis dari
-// information_schema akan ikut membawa tabel outbox, idempotensi, dan migrasi -
-// dan yang lebih buruk, ia akan terlihat lengkap tanpa seorang pun pernah
-// memutuskan tabel mana yang memuat data pribadi.
+// This list is written by hand deliberately. Deriving it automatically from
+// information_schema would drag in the outbox, idempotency, and migration
+// tables - and worse, it would look complete without anyone ever having decided
+// which tables hold personal data.
 //
-// Tabel yang isinya menggantung lewat ON DELETE CASCADE ikut disebut. Cascade
-// memang menghapusnya, tetapi verifikasi yang hanya memeriksa induknya
-// membuktikan cascade-nya berjalan hanya kalau kita sudah percaya ia berjalan.
+// Tables whose content hangs off ON DELETE CASCADE are named too. The cascade
+// does delete them, but a verification that checks only the parent proves the
+// cascade ran only if we already trust that it ran.
 var probes = []probe{
 	{schema: schemaIdentity, table: "users", query: `SELECT count(*) FROM users WHERE id = $1`},
 
@@ -111,8 +111,9 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Kode 1 saat ada sisa, bukan 0 dengan peringatan. Verifikasi yang keluar
-	// dengan sukses sambil melaporkan masalah akan lolos di pipeline mana pun.
+	// Exit code 1 when there are remnants, not 0 with a warning. A
+	// verification that exits successfully while reporting a problem would
+	// pass in any pipeline.
 	if leftovers > 0 {
 		os.Exit(1)
 	}
@@ -145,7 +146,7 @@ func run() (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Probe dikelompokkan per skema supaya tiap koneksi dibuka sekali.
+	// Probes are grouped by schema so each connection is opened once.
 	bySchema := map[string][]probe{}
 	for _, p := range probes {
 		bySchema[p.schema] = append(bySchema[p.schema], p)
@@ -194,10 +195,10 @@ func checkSchema(
 		key := userID
 		if p.byProfile {
 			if profileID == "" {
-				// Profil yang tidak pernah ada berarti tidak ada baris yang
-				// bisa berkunci padanya. Melewatinya jauh lebih jujur daripada
-				// menanyakannya dengan string kosong, yang akan ditolak
-				// Postgres dan terbaca sebagai kegagalan verifikasi.
+				// A profile that never existed means no row can be keyed on it.
+				// Skipping it is far more honest than asking with an empty string,
+				// which Postgres would refuse and which would read as a verification
+				// failure.
 				fmt.Printf("  %-12s %-24s skipped (no profile id was given)\n", schema, p.table)
 				continue
 			}
@@ -219,16 +220,16 @@ func checkSchema(
 	return found, nil
 }
 
-// dsnFor menyisipkan peran login, kata sandinya, dan search_path satu skema.
+// dsnFor inserts the login role, its password, and a single-schema search_path.
 //
-// Peran per skema, bukan satu superuser: menanyainya sebagai superuser akan
-// menemukan baris yang tidak bisa dilihat service-nya sendiri, dan itu
-// menjawab pertanyaan yang tidak sedang diajukan.
+// A role per schema, not one superuser: querying as the superuser would find
+// rows the service itself cannot see, and that answers a question that is not
+// being asked.
 //
-// Kata sandinya dibaca dari SVC_<SKEMA>_PASSWORD, konvensi yang sama dengan
-// seluruh platform - dan TANPA nilai bawaan (ADR-016). Verifikasi yang jatuh ke
-// kata sandi tebakan hanya bisa gagal menyambung, dan kegagalan itu akan
-// terbaca sebagai "tidak ada sisa data".
+// The password is read from SVC_<SCHEMA>_PASSWORD, the same convention as the
+// rest of the platform - and WITHOUT a default (ADR-016). A verification
+// falling back to a guessed password can only fail to connect, and that failure
+// would read as "no data remains".
 func dsnFor(prefix, schema string) (string, error) {
 	envVar := "SVC_" + strings.ToUpper(schema) + "_PASSWORD"
 	password := os.Getenv(envVar)

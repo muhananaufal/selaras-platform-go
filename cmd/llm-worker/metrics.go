@@ -14,12 +14,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// startMetrics menyalakan telemetri: endpoint metrik (F3-15) dan trace (F9-05).
+// startMetrics starts telemetry: the metrics endpoint (F3-15) and traces
+// (F9-05).
 //
-// Ia mengembalikan penghenti dan TIDAK pernah mengembalikan galat: telemetri
-// yang gagal disiapkan tidak boleh mematikan worker. Antrean yang tidak ada
-// yang mengerjakan jauh lebih mahal daripada grafik yang kosong - dan
-// kegagalannya dicatat, bukan disembunyikan.
+// It returns a stopper and NEVER returns an error: telemetry that fails to set
+// up must not kill the worker. A queue nobody is working on is far more
+// expensive than an empty graph - and the failure is logged, not hidden.
 func startMetrics(
 	ctx context.Context, log *slog.Logger,
 	consumer *llmworker.Consumer, client *kgo.Client,
@@ -43,8 +43,8 @@ func startMetrics(
 	}
 
 	if _, err := llmworker.NewLagReporter(tel.Meter(), client, ConsumerGroup); err != nil {
-		// Lag adalah metrik yang paling sering ditanya saat ada masalah, jadi
-		// kehilangannya disebutkan terpisah - bukan digabung dengan yang lain.
+		// Lag is the metric most often asked about when something is wrong, so
+		// losing it is mentioned separately - not lumped in with the rest.
 		log.Error("consumer lag will not be reported", "error", err)
 	}
 
@@ -53,17 +53,18 @@ func startMetrics(
 	ready := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("ok")); err != nil {
-			// Klien yang pergi di tengah jawaban bukan kerusakan, tetapi
-			// probe yang selalu putus adalah gejala - jadi ia dicatat.
+			// A client leaving in the middle of an answer is not breakage, but a
+			// probe that always disconnects is a symptom - so it is logged.
 			log.Warn("writing the health response", "error", err)
 		}
 	}
 	mux.HandleFunc("/healthz", ready)
-	// /readyz sama dengan /healthz: startMetrics dipanggil setelah broker
-	// di-ping dan konsumen dirakit, jadi endpoint ini ada berarti worker siap
-	// mengonsumsi. Chart (F9-03) memeriksa /readyz di setiap unit; tanpa ini
-	// startup probe llm-worker gagal 404 dan KEDA membangunkan pod yang
-	// tidak pernah dinyatakan hidup - itu terjadi di k3d.
+	// /readyz is the same as /healthz: startMetrics is called after the broker
+	// is pinged and the consumer is assembled, so the existence of this
+	// endpoint means the worker is ready to consume. The chart (F9-03) checks
+	// /readyz on every unit; without this, llm-worker's startup probe fails
+	// with 404 and KEDA wakes pods that are never declared alive - that
+	// happened on k3d.
 	mux.HandleFunc("/readyz", ready)
 
 	server := &http.Server{

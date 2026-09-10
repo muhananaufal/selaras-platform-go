@@ -13,17 +13,16 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// ConfirmationGroup tetap. Mengubahnya berarti group baru yang membaca ulang
-// seluruh riwayat user.deletion - dan memutar ulang konfirmasi lama aman
-// (sagalnya sudah tertutup, jawaban terlambat diabaikan) tetapi tidak ada
-// gunanya.
+// ConfirmationGroup is fixed. Changing it means a new group that rereads the
+// whole user.deletion history - and replaying old confirmations is safe (the
+// sagas are closed, late answers are ignored) but pointless.
 const ConfirmationGroup = "identity-deletion-confirmations"
 
-// startRelay menyalakan relay outbox identity-svc.
+// startRelay starts the identity-svc outbox relay.
 //
-// Tanpa KAFKA_BROKERS ia tidak dinyalakan, dan itu bukan mode diam-diam: baris
-// outbox tetap ditulis bersama sagalnya, jadi tidak ada permintaan yang
-// hilang - ia hanya menunggu sampai ada relay yang menjalankannya.
+// Without KAFKA_BROKERS it is not started, and that is not a silent mode:
+// outbox rows are still written along with their sagas, so no request is lost
+// - it just waits until a relay runs it.
 func startRelay(
 	ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, brokers string,
 ) (func(), error) {
@@ -60,11 +59,10 @@ func startRelay(
 	return producer.Close, nil
 }
 
-// startConfirmationConsumer mendengarkan jawaban keenam unit.
+// startConfirmationConsumer listens for the answers of all six units.
 //
-// Tanpa ini, setiap saga menggantung selamanya: unitnya menghapus datanya dan
-// menjawab, tetapi tidak ada yang menghitung jawabannya, dan akunnya tidak
-// pernah dihapus.
+// Without it, every saga hangs forever: the units delete their data and
+// answer, but nobody counts the answers, and the account is never deleted.
 func startConfirmationConsumer(
 	ctx context.Context, log *slog.Logger, uc *app.DeleteAccount, brokers string,
 ) (func(), error) {

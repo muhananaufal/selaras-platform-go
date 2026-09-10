@@ -8,15 +8,15 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// Yang di bawah ini mewakili tetangga yang belum ada. Semuanya menolak dengan
-// alasan yang menyebut task-nya, dan tidak satu pun berpura-pura berhasil.
+// What follows stands in for neighbours that do not exist yet. All of them
+// refuse with a reason naming the task, and not one pretends to succeed.
 //
-// Bedanya dengan penopang sementara: alur yang memakainya sudah dirancang
-// untuk menghadapi kegagalannya. profile-svc yang tidak ada diperlakukan
-// persis seperti profile-svc yang sedang mati, dan itu keadaan yang memang
-// sah (ADR-002 aturan 1, B7).
+// The difference from a temporary stub: the flows that use them are already
+// designed to face their failure. A profile-svc that does not exist is
+// treated exactly like a profile-svc that is down, and that is a valid state
+// (ADR-002 rule 1, B7).
 
-// unavailableProfiles berdiri untuk profile-svc, yang datang di F1-31.
+// unavailableProfiles stands in for profile-svc, which arrives in F1-31.
 type unavailableProfiles struct{}
 
 var errProfileServiceAbsent = errors.New("profile-svc is not wired yet; see F1-31")
@@ -29,11 +29,11 @@ func (unavailableProfiles) FindProfileID(context.Context, domain.UserID) (string
 	return "", errProfileServiceAbsent
 }
 
-// unavailableLinks berdiri untuk pengiriman surel, yang datang di F1-33.
+// unavailableLinks stands in for email sending, which arrives in F1-33.
 //
-// Ia mencatat pada tingkat ERROR, dan itu disengaja. Permintaan reset yang
-// tokennya tidak pernah terkirim adalah alur yang diam-diam tidak bekerja;
-// satu-satunya yang membuatnya terlihat adalah log yang keras.
+// It logs at the ERROR level, and that is deliberate. A reset request whose
+// token is never sent is a flow that silently does not work; the only thing
+// that makes it visible is a loud log.
 type unavailableLinks struct{}
 
 func (unavailableLinks) SendResetLink(ctx context.Context, to domain.Email, _ domain.ResetToken) error {
@@ -42,11 +42,12 @@ func (unavailableLinks) SendResetLink(ctx context.Context, to domain.Email, _ do
 	return errors.New("no mail transport is configured; see F1-33")
 }
 
-// localGenerationSource membaca generasi token dari basis data identity.
+// localGenerationSource reads the token generation from the identity
+// database.
 //
-// identity-svc adalah pemilik data itu, jadi ia bertanya ke penyimpanannya
-// sendiri - bukan memanggil dirinya lewat gRPC. Gateway-lah yang memakai
-// klien gRPC sebagai sumbernya.
+// identity-svc owns that data, so it asks its own storage - rather than
+// calling itself over gRPC. The gateway is the one that uses the gRPC
+// client as its source.
 type localGenerationSource struct {
 	users domain.UserRepository
 }
@@ -59,9 +60,9 @@ func (s localGenerationSource) CurrentGeneration(ctx context.Context, userID dom
 	return user.TokenGeneration(), nil
 }
 
-// profileClient adalah yang dibutuhkan identity-svc dari profile-svc:
-// membuat profil kosong, dan mencari id profil. Keduanya dipakai
-// best-effort, dan antarmuka sesempit ini membuat penopangnya sepele.
+// profileClient is what identity-svc needs from profile-svc: creating an
+// empty profile, and looking up a profile id. Both are used best-effort,
+// and an interface this narrow makes the stand-in trivial.
 type profileClient interface {
 	CreateEmptyProfile(ctx context.Context, userID domain.UserID) (string, error)
 	FindProfileID(ctx context.Context, userID domain.UserID) (string, error)

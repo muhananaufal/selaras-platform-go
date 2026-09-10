@@ -1,8 +1,8 @@
-// Command llm-worker mengerjakan permintaan LLM dari topic llm.jobs.
+// Command llm-worker performs the LLM requests from the llm.jobs topic.
 //
-// Ia juga menjalankan relay outbox-nya sendiri, sehingga hasil pekerjaan
-// terbit ke llm.results lewat jalur yang sama dengan event lain: satu transaksi
-// untuk hasil dan eventnya, relay terpisah yang memindahkannya.
+// It also runs its own outbox relay, so job results are published to
+// llm.results through the same path as every other event: one transaction for
+// the result and its event, a separate relay that moves it.
 package main
 
 import (
@@ -27,8 +27,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// ConsumerGroup tetap. Mengubahnya berarti group baru yang mulai dari awal
-// topic dan mengerjakan ulang seluruh riwayatnya.
+// ConsumerGroup is fixed. Changing it means a new group that starts from
+// the beginning of the topic and reworks its whole history.
 const ConsumerGroup = "llm-worker"
 
 func main() {
@@ -41,8 +41,8 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	// Sinyal ditangkap SEBELUM apa pun dibuka, sehingga Ctrl+C saat proses
-	// masih menyambung tetap menghentikannya alih-alih menunggu.
+	// Signals are caught BEFORE anything is opened, so a Ctrl+C while the
+	// process is still connecting still stops it instead of waiting.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -87,9 +87,9 @@ func run(log *slog.Logger) error {
 	}
 	defer producerClient.Close()
 
-	// Broker diuji SEKARANG, bukan pada pesan pertama. kgo.NewClient tidak
-	// menyambung; ia hanya menyiapkan. Tanpa ping, worker melapor sehat saat
-	// start dan baru gagal jauh kemudian.
+	// The broker is tested NOW, not on the first message. kgo.NewClient does
+	// not connect; it only prepares. Without the ping, the worker reports
+	// healthy at start and only fails much later.
 	pingCtx, cancelPing := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelPing()
 	if err := kafka.Ping(pingCtx, producerClient); err != nil {
@@ -101,9 +101,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri disiapkan setelah yang lain, dan kegagalannya TIDAK mematikan
-	// worker: metrik yang hilang jauh lebih ringan akibatnya daripada antrean
-	// yang tidak ada yang mengerjakan.
+	// Telemetry is set up after everything else, and its failure does NOT kill
+	// the worker: missing metrics are far lighter in consequence than a queue
+	// nobody is working on.
 	stopMetrics := startMetrics(ctx, log, consumer, consumerClient)
 	defer stopMetrics()
 
@@ -113,8 +113,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Keduanya berhenti pada ctx yang sama. Relay dijalankan di goroutine dan
-	// konsumen di goroutine utama, sehingga proses hidup selama konsumen hidup.
+	// Both stop on the same ctx. The relay runs in a goroutine and the consumer
+	// on the main goroutine, so the process lives as long as the consumer does.
 	relayDone := make(chan error, 1)
 	go func() { relayDone <- relay.Run(ctx) }()
 
@@ -125,9 +125,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Relay ditunggu sampai benar-benar berhenti. Keluar tanpa menunggunya
-	// berarti proses berakhir di tengah penerbitan, dan event yang sudah
-	// diterima broker tidak sempat ditandai terkirim.
+	// The relay is awaited until it has really stopped. Exiting without
+	// waiting for it means the process ends in the middle of publishing, and
+	// an event the broker has already accepted is not marked as sent.
 	select {
 	case err := <-relayDone:
 		return err
@@ -136,18 +136,18 @@ func run(log *slog.Logger) error {
 	}
 }
 
-// buildProvider memilih penyedia dari lingkungan.
+// buildProvider picks the provider from the environment.
 //
-// Mode "fake" hanya boleh dipakai di pengembangan, dan ia harus DIMINTA secara
-// eksplisit. Nilai bawaan yang jatuh ke fake berarti ada keadaan di mana
-// produksi menjawab pengguna dengan teks yang dibuat-buat tanpa ada yang tahu.
+// The "fake" mode may only be used in development, and it has to be REQUESTED
+// explicitly. A default that falls back to fake means there is a state in
+// which production answers users with made-up text without anyone knowing.
 func buildProvider(log *slog.Logger) (llm.Provider, error) {
 	switch mode := os.Getenv("LLM_PROVIDER"); mode {
 	case "fake":
 		log.Warn("using the fake LLM provider; answers are generated locally and are not real")
 		fake := llm.NewFake()
-		// Gangguan yang diminta, untuk chaos F9-14: "slow=<durasi>", "flaky=<n>",
-		// atau "error". Kosong berarti tidak ada gangguan.
+		// The requested fault, for chaos F9-14: "slow=<duration>", "flaky=<n>",
+		// or "error". Empty means no fault.
 		if spec := os.Getenv("LLM_FAKE_FAULT"); spec != "" {
 			if err := applyFault(fake, spec); err != nil {
 				return nil, err
@@ -161,18 +161,19 @@ func buildProvider(log *slog.Logger) (llm.Provider, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Nama model WAJIB dari konfigurasi, tanpa nilai bawaan (F3-16).
+		// The model name is REQUIRED from the configuration, with no default
+		// (F3-16).
 		//
-		// Bawaan yang ditulis di kode membuat nama model hidup di dua tempat.
-		// Yang menyusahkan bukan duplikasinya, melainkan bahwa mengganti model -
-		// hal yang seharusnya tidak menyentuh kode sama sekali - menjadi hal
-		// yang KADANG menyentuh kode, bergantung pada apakah seseorang ingat
-		// variabelnya sudah diisi.
+		// A default written in code makes the model name live in two places. The
+		// trouble is not the duplication but that changing the model - something
+		// that should not touch code at all - becomes something that SOMETIMES
+		// touches code, depending on whether someone remembers the variable was
+		// set.
 		//
-		// Dan model yang ditarik penyedia akan membuat setiap permintaan gagal
-		// di runtime dengan galat dari API, sementara variabel yang kosong
-		// tertangkap saat start-up. Itu perbedaan antara satu baris log saat
-		// menyalakan dan satu insiden.
+		// And a model withdrawn by the provider would make every request fail at
+		// run time with an API error, while an empty variable is caught at
+		// start-up. That is the difference between one log line at start and one
+		// incident.
 		model, err := required("GEMINI_MODEL")
 		if err != nil {
 			return nil, err
@@ -189,11 +190,11 @@ func buildProvider(log *slog.Logger) (llm.Provider, error) {
 	}
 }
 
-// required membaca variabel lingkungan yang tidak punya nilai bawaan.
+// required reads an environment variable that has no default.
 //
-// Tanpa bawaan dengan sengaja (ADR-016): proses yang menolak start jauh lebih
-// mudah dijelaskan daripada proses yang berjalan dengan konfigurasi yang tidak
-// pernah diniatkan siapa pun.
+// No default deliberately (ADR-016): a process that refuses to start is far
+// easier to explain than a process running with a configuration nobody ever
+// intended.
 func required(name string) (string, error) {
 	value := os.Getenv(name)
 	if value == "" {
@@ -202,7 +203,7 @@ func required(name string) (string, error) {
 	return value, nil
 }
 
-// duration membaca durasi dalam detik, dengan nilai bawaan.
+// duration reads a duration in seconds, with a default.
 func duration(name string, fallback time.Duration) time.Duration {
 	raw := os.Getenv(name)
 	if raw == "" {
@@ -215,12 +216,12 @@ func duration(name string, fallback time.Duration) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-// applyFault menyetel gangguan pada penyedia palsu dari LLM_FAKE_FAULT.
+// applyFault sets a fault on the fake provider from LLM_FAKE_FAULT.
 //
-// Tiga bentuk, dan hanya tiga: "slow=<durasi>" menunda setiap jawaban,
-// "flaky=<n>" menggagalkan n panggilan pertama, "error" menggagalkan semuanya.
-// Yang lain ditolak: worker yang menyala tanpa gangguan yang dikira sedang
-// diuji menghasilkan laporan chaos yang membuktikan hal yang salah.
+// Three shapes, and only three: "slow=<duration>" delays every answer,
+// "flaky=<n>" fails the first n calls, "error" fails all of them. Anything
+// else is refused: a worker that starts without the fault it is thought to be
+// testing produces a chaos report that proves the wrong thing.
 func applyFault(fake *llm.Fake, spec string) error {
 	kind, arg, hasArg := strings.Cut(spec, "=")
 	switch {

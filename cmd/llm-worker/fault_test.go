@@ -7,9 +7,10 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
 
-// applyFault dibaca dari LLM_FAKE_FAULT untuk chaos F9-14. Bentuknya sengaja
-// sempit - tiga kata, satu argumen - supaya salah ketik menolak start, bukan
-// diam-diam menjalankan worker tanpa gangguan yang dikira sedang diuji.
+// applyFault is read from LLM_FAKE_FAULT for chaos F9-14. Its shape is
+// deliberately narrow - three words, one argument - so a typo refuses the
+// start instead of silently running the worker without the fault it is
+// thought to be testing.
 func TestApplyFaultConfiguresTheFake(t *testing.T) {
 	cases := []struct {
 		spec      string

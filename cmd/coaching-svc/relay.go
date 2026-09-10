@@ -13,12 +13,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// startRelay menyalakan relay outbox profile-svc.
+// startRelay starts the coaching-svc outbox relay.
 //
-// Tanpa KAFKA_BROKERS ia tidak dinyalakan, dan itu bukan mode diam-diam: baris
-// outbox tetap ditulis bersama perubahan profilnya, jadi tidak ada event yang
-// hilang - ia hanya menunggu sampai relay ada yang menjalankannya. Log saat
-// start menyatakan keadaannya.
+// Without KAFKA_BROKERS it is not started, and that is not a silent mode:
+// outbox rows are still written along with their changes, so no event is lost
+// - it just waits until a relay runs it. The log at start states the
+// situation.
 func startRelay(
 	ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, brokers string,
 ) (func(), error) {
@@ -55,11 +55,11 @@ func startRelay(
 	return producer.Close, nil
 }
 
-// startResultConsumer menyalakan konsumen hasil LLM.
+// startResultConsumer starts the LLM result consumer.
 //
-// Terpisah dari relay: yang satu mengeluarkan event, yang lain menerimanya, dan
-// keduanya bisa gagal sendiri-sendiri. Tanpa broker, keduanya tidak dinyalakan
-// dan itu dinyatakan di log - bukan diam-diam.
+// Separate from the relay: one sends events out, the other receives them, and
+// each can fail on its own. Without a broker, neither is started and that is
+// stated in the log - not silently.
 func startResultConsumer(
 	ctx context.Context, log *slog.Logger, svc *app.Service, brokers string,
 ) (func(), error) {
@@ -90,19 +90,19 @@ func startResultConsumer(
 	return client.Close, nil
 }
 
-// ResultGroup tetap. Mengubahnya berarti group baru yang membaca ulang seluruh
-// riwayat llm.results.
+// ResultGroup is fixed. Changing it means a new group that rereads the whole
+// llm.results history.
 const ResultGroup = "coaching-results"
 
-// AssessmentGroup adalah consumer group untuk assessment.completed.
+// AssessmentGroup is the consumer group for assessment.completed.
 //
-// Terpisah dari milik dasbor: keduanya membaca topic yang sama dan masing-
-// masing harus melihat SETIAP event.
+// Separate from the dashboard's: both read the same topic and each has to
+// see EVERY event.
 const AssessmentGroup = "coaching-assessments"
 
-// startAssessmentConsumer membaca assessment.completed menjadi rujukan lunak
-// (F4-06). Tanpanya, slug analisis yang dikirim klien tidak pernah dikenali
-// dan setiap program tersimpan tanpa sumbernya.
+// startAssessmentConsumer reads assessment.completed into soft references
+// (F4-06). Without it, the analysis slug a client sends is never recognised
+// and every program is stored without its source.
 func startAssessmentConsumer(
 	ctx context.Context, log *slog.Logger, svc *app.Service, brokers string,
 ) (func(), error) {

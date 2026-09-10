@@ -1,17 +1,17 @@
-// Command dashboard-rebuild membangun ulang read-model dasbor dari awal topic.
+// Command dashboard-rebuild rebuilds the dashboard read-model from the start of
+// the topics.
 //
-// Ini bukan perkakas darurat yang ditulis setelah sesuatu rusak. Ia adalah
-// BUKTI bahwa read-model tidak memiliki apa pun: kalau seluruh isinya bisa
-// dihapus lalu dibangun kembali menjadi bentuk yang identik, maka tidak ada
-// satu fakta pun yang hanya ada di sana. Itulah yang membedakan read-model dari
-// cache yang perlahan menjadi sumber kebenaran karena tidak ada yang berani
-// menghapusnya.
+// This is not an emergency tool written after something broke. It is PROOF that
+// the read-model owns nothing: if all of its content can be deleted and rebuilt
+// into an identical shape, then not a single fact exists only there. That is
+// what separates a read-model from a cache that slowly becomes the source of
+// truth because nobody dares delete it.
 //
-// Ia memakai consumer group SENDIRI, terpisah dari proyektor yang berjalan.
-// Memakai group yang sama berarti memundurkan offset milik proses lain, dan
-// dua konsumen yang memproyeksikan hal yang sama ke baris yang sama akan
-// saling menimpa - aman, karena proyeksinya idempoten, tetapi mustahil
-// dijelaskan saat hasilnya ternyata berbeda.
+// It uses its OWN consumer group, separate from the running projector. Using
+// the same group would mean rewinding another process's offsets, and two
+// consumers projecting the same thing onto the same rows would overwrite each
+// other - safely, since the projection is idempotent, but impossible to explain
+// when the results turn out to differ.
 package main
 
 import (
@@ -34,14 +34,13 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// idleTimeout adalah berapa lama menunggu tanpa satu pesan pun sebelum
-// menyimpulkan seluruh riwayat sudah terbaca.
+// idleTimeout is how long to wait without a single message before concluding
+// the whole history has been read.
 //
-// Kafka tidak punya "sudah sampai akhir" yang bisa ditanyakan konsumen tanpa
-// menebak; yang ada hanya "tidak ada lagi yang datang". Batasnya dibuat bisa
-// diatur karena broker yang lambat membutuhkan lebih lama, dan menghentikan
-// pembangunan ulang terlalu dini menghasilkan proyeksi yang separuh - yang
-// jauh lebih buruk daripada menunggu sebentar lagi.
+// Kafka has no "reached the end" a consumer can ask about without guessing;
+// there is only "nothing more is coming". The bound is configurable because
+// a slow broker needs longer, and stopping a rebuild too early produces a
+// half projection - which is far worse than waiting a little longer.
 const defaultIdleTimeout = 10 * time.Second
 
 func main() {
@@ -62,7 +61,7 @@ func run(log *slog.Logger) error {
 	)
 	flag.Parse()
 
-	// Tanpa nilai bawaan (ADR-016).
+	// No default (ADR-016).
 	if *dsn == "" {
 		return errors.New("no dsn: pass -dsn or set DASHBOARD_DATABASE_DSN")
 	}
@@ -70,8 +69,8 @@ func run(log *slog.Logger) error {
 		return errors.New("no brokers: pass -brokers or set KAFKA_BROKERS")
 	}
 
-	// Penghapusan seluruh read-model TIDAK terjadi karena seseorang salah
-	// menekan panah atas di riwayat shell-nya.
+	// Deleting the whole read-model does NOT happen because someone pressed
+	// the up arrow in their shell history by mistake.
 	if !*confirm {
 		return errors.New("this deletes every projected row before rebuilding; pass -yes if that is what you want")
 	}
@@ -126,12 +125,12 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// truncate mengosongkan read-model.
+// truncate empties the read-model.
 //
-// Ketiga tabel dikosongkan dalam SATU transaksi. Kalau proses mati di antara
-// keduanya, yang tersisa adalah proyeksi yang separuh terhapus dengan posisi
-// yang mengaku lengkap - keadaan yang tidak bisa dibedakan dari proyeksi yang
-// benar tanpa membandingkannya dengan sumbernya.
+// All three tables are emptied in ONE transaction. If the process dies in
+// between, what remains is a half-deleted projection with a position claiming
+// to be complete - a state indistinguishable from a correct projection
+// without comparing it against its source.
 func truncate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
 	err := pg.InTx(ctx, pool, func(q pg.Querier) error {
 		for _, table := range []string{
@@ -151,15 +150,15 @@ func truncate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
 	return nil
 }
 
-// replay membaca ketiga topic dari awal dan memproyeksikan ulang seluruhnya.
+// replay reads all three topics from the start and re-projects everything.
 func replay(
 	ctx context.Context, log *slog.Logger, svc *app.Service,
 	brokers string, idle time.Duration,
 ) (int, error) {
-	// Group SENDIRI, dan sekali pakai. Ia dibuang setelah selesai, sehingga
-	// pembangunan ulang berikutnya juga mulai dari awal - group yang dipakai
-	// ulang akan mengingat offsetnya dan tidak membaca apa pun.
-	// NewConsumer sudah menyetel group baru untuk mulai dari awal topic.
+	// Its OWN group, and single-use. It is discarded once done, so the next
+	// rebuild also starts from the beginning - a reused group would remember
+	// its offsets and read nothing. NewConsumer already sets a new group to
+	// start from the beginning of the topic.
 	group := "dashboard-rebuild-" + uuid.NewString()
 
 	client, err := kafka.NewConsumer(

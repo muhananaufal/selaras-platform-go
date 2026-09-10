@@ -1,4 +1,4 @@
-// Command identity-svc melayani kontrak identity.v1 di atas gRPC.
+// Command identity-svc serves the identity.v1 contract over gRPC.
 package main
 
 import (
@@ -43,8 +43,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// shutdownGrace membatasi berapa lama permintaan yang sedang berjalan boleh
-// diselesaikan setelah sinyal berhenti diterima.
+// shutdownGrace bounds how long requests in flight may take to finish after
+// the stop signal is received.
 const shutdownGrace = 15 * time.Second
 
 func main() {
@@ -59,9 +59,9 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	// Sinyal ditangkap SEBELUM apa pun dibuka, supaya Ctrl-C selama start-up
-	// yang lambat tetap ditangani alih-alih membunuh proses di tengah
-	// pembukaan koneksi.
+	// Signals are caught BEFORE anything is opened, so a Ctrl-C during a slow
+	// start-up is still handled instead of killing the process in the middle
+	// of opening a connection.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -70,10 +70,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
-	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
-	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
-	// menyala, karena yang kedua terlihat.
+	// Telemetry is started before any other dependency is opened, so even the
+	// first connection is recorded. Its failure stops the start: a process
+	// that cannot be observed is more dangerous than a process that does not
+	// start, because the latter is visible.
 	tel, err := telemetry.Start(ctx, "identity-svc", log)
 	if err != nil {
 		return err
@@ -107,14 +107,14 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Kunci publik diturunkan dari kunci privat yang sama, jadi identity-svc
-	// bisa memverifikasi tokennya sendiri tanpa konfigurasi tambahan - dan
-	// tanpa mempercayai siapa pun soal siapa pemilik token yang dikirim.
+	// The public key is derived from the same private key, so identity-svc can
+	// verify its own tokens without extra configuration - and without trusting
+	// anyone about who owns a token that was sent.
 	publicKey, ok := cfg.SigningKey.Public().(ed25519.PublicKey)
 	if !ok {
-		// Tidak bisa terjadi dari konfigurasi yang lolos LoadConfig, tetapi
-		// type assertion yang gagal tanpa diperiksa akan panik - dan panik
-		// saat start-up jauh lebih sulit dibaca daripada satu kalimat.
+		// Cannot happen with a configuration that passed LoadConfig, but an
+		// unchecked type assertion that fails would panic - and a panic at
+		// start-up is far harder to read than one sentence.
 		return errors.New("the signing key did not yield an ed25519 public key")
 	}
 	verifier, err := token.NewVerifier(publicKey, cfg.TokenIssuer)
@@ -131,10 +131,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Token sekali pakai untuk panggilan identity -> profile yang terjadi
-	// SEBELUM pengguna memegang token (pendaftaran, login): profile-svc tidak
-	// punya jalur khusus, ia memverifikasi token ini seperti token pengguna
-	// biasa (ADR-026). Umurnya tiga puluh detik - sepuluh kali batas panggilan.
+	// A one-time token for the identity -> profile calls that happen BEFORE the
+	// user holds a token (registration, login): profile-svc has no special
+	// path, it verifies this token like an ordinary user token (ADR-026). Its
+	// lifetime is thirty seconds - ten times the call deadline.
 	bootstrap, err := token.NewIssuer(cfg.SigningKey, cfg.TokenIssuer, 30*time.Second)
 	if err != nil {
 		return err
@@ -153,9 +153,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Relay outbox dan konsumen konfirmasi: yang satu mengeluarkan permintaan
-	// penghapusan, yang lain menerima jawabannya. Keduanya bisa gagal
-	// sendiri-sendiri, jadi keduanya dinyalakan terpisah.
+	// The outbox relay and the confirmation consumer: one sends the deletion
+	// requests out, the other receives the answers. Each can fail on its own,
+	// so the two are started separately.
 	stopRelay, err := startRelay(ctx, log, pool, os.Getenv("KAFKA_BROKERS"))
 	if err != nil {
 		return err
@@ -169,16 +169,17 @@ func run(log *slog.Logger) error {
 	}
 	defer stopConfirmations()
 
-	// Saga yang menggantung dari proses sebelumnya tidak akan menyelesaikan
-	// dirinya sendiri: unitnya sudah dihubungi, dan yang belum menjawab tidak
-	// akan ditanya lagi. Satu-satunya cara ia terlihat adalah kalau seseorang
-	// diberi tahu saat start-up.
+	// A saga left hanging by a previous process will not finish itself: its
+	// units have been contacted, and those that did not answer will not be
+	// asked again. The only way it becomes visible is if someone is told at
+	// start-up.
 	deleteAccount.LogOutstandingSagas(ctx, log)
 
 	probes := httpx.NewHealth()
 
-	// ADR-026: RPC berpengguna (GetMe, DeleteAccount, ...) harus membawa token
-	// yang sub-nya sama dengan user_id; kunci publiknya sudah ada di atas.
+	// ADR-026: user-scoped RPCs (GetMe, DeleteAccount, ...) have to carry a
+	// token whose sub matches user_id; the public key is already available
+	// above.
 	authVerifier, err := authn.NewVerifier(publicKey, cfg.TokenIssuer)
 	if err != nil {
 		return err
@@ -187,18 +188,17 @@ func run(log *slog.Logger) error {
 		grpc.ChainUnaryInterceptor(authn.UnaryServerInterceptor(authVerifier)))
 	identityv1.RegisterIdentityServer(grpcServer, server)
 
-	// Health check dan reflection keduanya dinyalakan. Reflection membuat
-	// grpcurl bisa dipakai tanpa membawa berkas proto - itu satu-satunya cara
-	// memeriksa service ini dari luar tanpa menulis klien lebih dulu.
+	// Health check and reflection are both enabled. Reflection lets grpcurl be
+	// used without carrying the proto files - it is the only way to inspect
+	// this service from the outside without writing a client first.
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(grpcServer, healthServer)
 	reflection.Register(grpcServer)
 	healthServer.SetServingStatus("identity.v1.Identity", healthpb.HealthCheckResponse_SERVING)
 
-	// Siap dinyatakan setelah seluruh dependensi terbuka dan terbukti
-	// terjangkau - kolam Postgres dan Redis keduanya sudah di-ping di atas.
-	// Menyatakannya lebih awal berarti trafik datang sebelum ada yang bisa
-	// melayaninya.
+	// Ready is declared once every dependency is open and proven reachable -
+	// the Postgres pool and Redis have both been pinged above. Declaring it
+	// earlier means traffic arrives before anything can serve it.
 	probes.SetReady(true)
 
 	listener, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -227,9 +227,9 @@ func run(log *slog.Logger) error {
 		log.Info("shutting down")
 	}
 
-	// Kubernetes menandai pod tidak siap lebih dulu, tetapi sinyal bisa
-	// sampai sebelum load balancer sempat berhenti mengirim. Statusnya
-	// diturunkan di sini juga supaya probe yang datang saat itu jujur.
+	// Kubernetes marks the pod not-ready first, but the signal can arrive
+	// before the load balancer has had a chance to stop sending. The status is
+	// lowered here as well so probes arriving at that moment are honest.
 	healthServer.SetServingStatus("identity.v1.Identity", healthpb.HealthCheckResponse_NOT_SERVING)
 	probes.SetReady(false)
 
@@ -240,9 +240,9 @@ func run(log *slog.Logger) error {
 		log.Error("shutting down health endpoint", "error", err)
 	}
 
-	// GracefulStop menunggu permintaan yang sedang berjalan selesai. Ia
-	// dibatasi waktu: satu permintaan yang menggantung tidak boleh menahan
-	// pod selamanya dan menghabiskan grace period milik orkestratornya.
+	// GracefulStop waits for requests in flight to finish. It is time-bounded:
+	// one hanging request must not hold the pod forever and eat up the
+	// orchestrator's grace period.
 	stopped := make(chan struct{})
 	go func() {
 		grpcServer.GracefulStop()
@@ -278,9 +278,9 @@ func buildServer(
 		return nil, nil, err
 	}
 
-	// Verifier sosial dipilih di sini, sekali, berdasarkan konfigurasi.
-	// Lingkungan tanpa kredensial penyedia tetap menyala dengan satu jalur
-	// masuk; yang DILARANG hanya berpura-pura berhasil.
+	// The social verifier is chosen here, once, from the configuration. An
+	// environment without provider credentials still starts with one sign-in
+	// path; what is FORBIDDEN is only pretending to succeed.
 	var socialVerifier identitygrpc.SocialIdentityVerifier = social.Unconfigured{}
 	if cfg.GoogleClientID == "" {
 		log.Warn("social sign-in is not configured; GOOGLE_CLIENT_ID is unset")
@@ -318,12 +318,12 @@ func buildServer(
 		return nil, nil, err
 	}
 
-	// Penghapusan akun butuh pembanding kata sandi DAN penyimpanan saga.
+	// Account deletion needs the password comparer AND the saga storage.
 	//
-	// Ia dikembalikan terpisah karena konsumen konfirmasi memakainya juga, dan
-	// keduanya harus use case yang SAMA - aturan penutupan saga hanya boleh
-	// hidup di satu tempat, kalau tidak akun bisa dihapus lewat jalur yang
-	// menghitung konfirmasinya secara berbeda.
+	// It is returned separately because the confirmation consumer uses it too,
+	// and the two have to be the SAME use case - the saga closing rule may
+	// live in only one place, otherwise an account could be deleted through a
+	// path that counts its confirmations differently.
 	deleteAccount, err := app.NewDeleteAccount(users, sagas, hasher, profiles, revocations, uow, now, log)
 	if err != nil {
 		return nil, nil, err
@@ -348,19 +348,20 @@ func buildServer(
 	return server, deleteAccount, nil
 }
 
-// healthEndpoint menerima probes dari luar, bukan membuatnya sendiri.
+// healthEndpoint receives probes from outside rather than creating them
+// itself.
 //
-// Versi pertama membuatnya di dalam dan tidak mengembalikannya, sehingga
-// SetReady tidak mungkin dipanggil dan readyz menjawab 503 selamanya - pod
-// yang tidak pernah menerima trafik. Bentuk itu membuat kekeliruannya tak
-// terhindarkan; bentuk ini membuatnya mustahil.
+// The first version created them inside and did not return them, so
+// SetReady could not possibly be called and readyz answered 503 forever - a
+// pod that never received traffic. That shape made the mistake unavoidable;
+// this shape makes it impossible.
 func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
 
-	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
-	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	// Metrics are served on the probe port, not the gRPC port: neither is for
+	// users, and Prometheus already knows this address.
 	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{
@@ -373,14 +374,14 @@ func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *ht
 	}
 }
 
-// dialProfiles membuka koneksi ke profile-svc, atau mengembalikan penopang
-// yang menolak bila alamatnya tidak dikonfigurasi.
+// dialProfiles opens the connection to profile-svc, or returns a refusing
+// stand-in when its address is not configured.
 //
-// Koneksi gRPC dibuka malas, jadi tidak ada yang gagal di sini kalau
-// profile-svc sedang mati - dan itu justru yang diinginkan: identity-svc
-// TIDAK boleh menolak menyala karena tetangganya belum siap. Kegagalannya
-// muncul per panggilan, dan setiap pemanggilnya sudah dirancang menghadapi
-// kegagalan itu (ADR-002 aturan 1 dan 2).
+// gRPC connections are opened lazily, so nothing fails here if profile-svc
+// is down - and that is precisely what is wanted: identity-svc must NOT
+// refuse to start because its neighbour is not ready. The failure shows up
+// per call, and every caller is already designed to face that failure
+// (ADR-002 rules 1 and 2).
 func dialProfiles(target string, mint profileclient.Minter, log *slog.Logger) (profileClient, func(), error) {
 	if target == "" {
 		log.Warn("profile-svc is not configured; profiles will not be created",
@@ -391,10 +392,10 @@ func dialProfiles(target string, mint profileclient.Minter, log *slog.Logger) (p
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		telemetry.GRPCDialOption(),
-		// Token pengguna diteruskan ke hilir (ADR-026).
+		// The user's token is passed downstream (ADR-026).
 		grpc.WithChainUnaryInterceptor(authn.UnaryClientInterceptor()),
-		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
-		// baru mati membuat pemanggilnya menggantung, bukan gagal.
+		// A per-call deadline (chaos F9-13): without it, a service that has just
+		// died makes its callers hang instead of fail.
 		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating the profile-svc client: %w", err)
@@ -415,12 +416,12 @@ func dialProfiles(target string, mint profileclient.Minter, log *slog.Logger) (p
 	}, nil
 }
 
-// buildResetLinkSender merakit pengirim tautan reset, atau mengembalikan
-// penopang yang menolak bila lingkungan ini tidak punya server surel.
+// buildResetLinkSender assembles the reset link sender, or returns a
+// refusing stand-in when this environment has no mail server.
 //
-// Terisi SEBAGIAN menggagalkan start-up: host tanpa alamat pengirim akan
-// menyalakan service lalu gagal di permintaan reset pertama, jauh setelah
-// orang yang salah mengetiknya pergi.
+// PARTIALLY filled fails start-up: a host without a sender address would
+// start the service and then fail on the first reset request, long after
+// whoever mistyped it has left.
 func buildResetLinkSender(cfg identity.MailConfig, log *slog.Logger) (app.ResetLinkSender, error) {
 	if !cfg.Configured() {
 		if missing := cfg.Missing(); len(missing) < 4 {

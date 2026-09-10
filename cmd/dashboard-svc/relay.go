@@ -11,12 +11,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// startRelay menyalakan relay outbox dashboard-svc.
+// startRelay starts the dashboard-svc outbox relay.
 //
-// Tanpa KAFKA_BROKERS ia tidak dinyalakan, dan itu bukan mode diam-diam: baris
-// outbox tetap ditulis bersama perubahan panduannya, jadi tidak ada event yang
-// hilang - ia hanya menunggu sampai relay ada yang menjalankannya. Log saat
-// start menyatakan keadaannya.
+// Without KAFKA_BROKERS it is not started, and that is not a silent mode:
+// outbox rows are still written along with their changes, so no event is lost
+// - it just waits until a relay runs it. The log at start states the
+// situation.
 func startRelay(
 	ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, brokers string,
 ) (func(), error) {

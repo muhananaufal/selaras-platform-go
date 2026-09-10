@@ -1,10 +1,10 @@
-// Command migrate menjalankan migrasi skema untuk satu service.
+// Command migrate runs the schema migrations for one service.
 //
-// Ini pembungkus tipis di atas golang-migrate, bukan penggantinya. CLI resmi
-// golang-migrate mengompilasi seluruh driver basis data yang didukungnya -
-// sqlite, spanner, mongodb, dan selusin lainnya - dan menambahkannya sebagai
-// tool dependency akan menyeret semuanya ke dalam go.sum proyek ini. Yang
-// kita butuhkan hanya satu driver, jadi hanya satu yang diimpor.
+// This is a thin wrapper over golang-migrate, not a replacement. The
+// official golang-migrate CLI compiles in every database driver it supports
+// - sqlite, spanner, mongodb, and a dozen more - and adding it as a tool
+// dependency would drag all of them into this project's go.sum. We need only
+// one driver, so only one is imported.
 package main
 
 import (
@@ -42,9 +42,8 @@ func run(service, direction, dsn string, forceTo int) error {
 	if service == "" {
 		return errors.New("-service is required")
 	}
-	// Tanpa nilai bawaan, dan tanpa DSN cadangan. Migrasi yang menebak ke
-	// mana ia menulis adalah migrasi yang bisa menulis ke basis data yang
-	// keliru (ADR-016).
+	// No default, and no fallback DSN. A migration that guesses where it
+	// writes is a migration that can write to the wrong database (ADR-016).
 	if dsn == "" {
 		return errors.New("no dsn: pass -dsn or set MIGRATE_DSN")
 	}
@@ -53,9 +52,9 @@ func run(service, direction, dsn string, forceTo int) error {
 	if err != nil {
 		return fmt.Errorf("opening migrations for %s: %w", service, err)
 	}
-	// Close mengembalikan dua error - satu dari source, satu dari database -
-	// dan keduanya dilaporkan. Error saat menutup koneksi migrasi adalah
-	// justru saat kita paling ingin tahu.
+	// Close returns two errors - one from the source, one from the database -
+	// and both are reported. An error while closing the migration connection
+	// is exactly when we most want to know.
 	defer func() {
 		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
 			slog.Error("closing migrator", "source_error", srcErr, "database_error", dbErr)
@@ -70,12 +69,11 @@ func run(service, direction, dsn string, forceTo int) error {
 	case "drop":
 		err = m.Drop()
 	case "force":
-		// Sebuah migrasi yang terputus di tengah - koneksi putus, proses
-		// dimatikan - meninggalkan versi bertanda kotor, dan golang-migrate
-		// menolak berjalan sampai seseorang menyatakan versi mana yang
-		// sebenarnya berlaku. Ia tidak mengubah skema sama sekali; ia hanya
-		// membetulkan catatan, dan karena itu versinya harus disebut
-		// dengan sadar, bukan ditebak.
+		// A migration interrupted halfway - a dropped connection, a killed
+		// process - leaves the version marked dirty, and golang-migrate refuses
+		// to run until someone declares which version is actually in effect. It
+		// does not change the schema at all; it only corrects the record, and
+		// that is why the version has to be named consciously, not guessed.
 		if forceTo < 0 {
 			return errors.New("-direction force requires -force-version")
 		}
@@ -84,20 +82,20 @@ func run(service, direction, dsn string, forceTo int) error {
 		return fmt.Errorf("unknown direction %q: want up, down, drop, or force", direction)
 	}
 
-	// Tidak ada yang perlu dikerjakan bukan kegagalan; itulah yang membuat
-	// menjalankan migrasi dua kali aman di dalam skrip start-up.
+	// Nothing to do is not a failure; that is what makes running the
+	// migrations twice safe inside a start-up script.
 	if errors.Is(err, migrate.ErrNoChange) {
 		return nil
 	}
 	return err
 }
 
-// normalizeDSN menerima DSN yang sama dengan yang dipakai unit.
+// normalizeDSN accepts the same DSN the units use.
 //
-// golang-migrate memilih driver dari skema URL, dan driver pgx/v5 mendaftar
-// sebagai "pgx5". Unit memakai "postgres://" - dan memaksa operator menulis
-// DSN yang berbeda hanya untuk migrasi adalah cara mengundang migrasi ke
-// basis data yang keliru. Skema lain dibiarkan apa adanya.
+// golang-migrate picks the driver from the URL scheme, and the pgx/v5
+// driver registers as "pgx5". The units use "postgres://" - and forcing
+// operators to write a different DSN just for migrations is a way to invite
+// a migration into the wrong database. Other schemes are left as they are.
 func normalizeDSN(dsn string) string {
 	for _, prefix := range []string{"postgres://", "postgresql://"} {
 		if strings.HasPrefix(dsn, prefix) {

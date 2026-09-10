@@ -1,8 +1,8 @@
-// Command topics membuat topic platform, lalu membacanya kembali.
+// Command topics creates the platform topics, then reads them back.
 //
-// Ia bisa dijalankan berkali-kali: topic yang sudah ada dibiarkan apa adanya.
-// Yang dicetak di akhir adalah apa yang benar-benar ada di broker, bukan apa
-// yang barusan diminta - keduanya tidak selalu sama.
+// It can be run repeatedly: topics that already exist are left as they are.
+// What is printed at the end is what really exists on the broker, not what
+// was just requested - the two are not always the same.
 package main
 
 import (
@@ -52,12 +52,12 @@ func run(brokers string, replicas int16) error {
 		fmt.Printf("created %s\n", name)
 	}
 
-	// Dibaca kembali dari broker, lalu dicocokkan dengan yang diminta.
+	// Read back from the broker, then matched against what was requested.
 	found, err := kafka.WaitForTopics(ctx, client, wanted)
 	if err != nil {
-		// Dilaporkan, tetapi tidak langsung keluar: laporan per topic di
-		// bawah yang memberi tahu topic mana yang tidak pernah muncul, dan
-		// itu justru yang dibutuhkan saat ini gagal.
+		// Reported, but not exited immediately: the per-topic report below is
+		// what says which topic never appeared, and that is exactly what is
+		// needed when this fails.
 		fmt.Fprintf(os.Stderr, "topics: %v\n", err)
 	}
 

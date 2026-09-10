@@ -15,20 +15,19 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// ResultGroup tetap. Mengubahnya berarti group baru yang membaca ulang seluruh
-// riwayat llm.results dan menyimpan setiap laporan lagi - idempotensi
-// menahannya, tetapi pekerjaannya tetap terjadi.
+// ResultGroup is fixed. Changing it means a new group that rereads the whole
+// llm.results history and stores every report again - idempotency holds it
+// back, but the work still happens.
 const ResultGroup = "assessment-results"
 
-// startEventing menyalakan relay outbox dan konsumen hasil.
+// startEventing starts the outbox relay and the result consumer.
 //
-// Ia mengembalikan fungsi penghenti, bukan menyimpan keadaan global: pemanggil
-// yang memegang penghentinya tidak bisa lupa memanggilnya tanpa terlihat.
+// It returns a stop function rather than keeping global state: a caller
+// holding the stopper cannot forget to call it without that being visible.
 //
-// Tanpa KAFKA_BROKERS, keduanya TIDAK dinyalakan dan service tetap melayani
-// pembacaan. Itu bukan mode diam-diam: permintaan personalisasi ditolak di
-// RequestPersonalization, jadi tidak ada yang menunggu pekerjaan yang tidak
-// akan pernah keluar.
+// Without KAFKA_BROKERS, neither is started and the service still serves
+// reads. That is not a silent mode: personalisation requests are refused in
+// RequestPersonalization, so nobody waits for a job that will never leave.
 func startEventing(
 	ctx context.Context,
 	log *slog.Logger,

@@ -1,4 +1,4 @@
-// Command nutrition-svc melayani kontrak nutrition.v1 di atas gRPC.
+// Command nutrition-svc serves the nutrition.v1 contract over gRPC.
 package main
 
 import (
@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	// Basis distroless/static tidak memuat basis data zona waktu, sehingga
-	// LoadLocation di sana selalu gagal. Ia di-embed ke dalam binernya: satu
-	// berkas yang ikut, ditukar dengan waktu makan yang benar.
+	// The distroless/static base carries no time zone database, so
+	// LoadLocation always fails there. It is embedded into the binary: one
+	// file that comes along, in exchange for correct meal times.
 	_ "time/tzdata"
 
 	"google.golang.org/grpc"
@@ -61,10 +61,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
-	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
-	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
-	// menyala, karena yang kedua terlihat.
+	// Telemetry is started before any other dependency is opened, so even the
+	// first connection is recorded. Its failure stops the start: a process
+	// that cannot be observed is more dangerous than a process that does not
+	// start, because the latter is visible.
 	tel, err := telemetry.Start(ctx, "nutrition-svc", log)
 	if err != nil {
 		return err
@@ -83,22 +83,23 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// Penulis event dibangun DARI transaksi yang diberikan unit of work, bukan
-	// dari kolam koneksi. Yang kedua akan commit sendiri, dan eventnya bertahan
-	// meski perubahan yang memicunya batal.
+	// The event writer is built FROM the transaction the unit of work provides,
+	// not from the connection pool. The latter would commit on its own, and its
+	// event would survive even when the change that triggered it was rolled
+	// back.
 	events := func(q pg.Querier) app.EventWriter { return outbox.NewWriter(q) }
 	uow, err := nutritionpg.NewUnitOfWork(pool, events)
 	if err != nil {
 		return err
 	}
 
-	// Jam pengguna, bukan jam server.
+	// The users' clock, not the server's.
 	//
-	// Container berjalan di UTC. Menghitung waktu makan di sana membuat pukul
-	// 13.00 WIB tercatat sebagai sarapan - meleset tujuh jam dari maksud aturan
-	// D10. Zonanya dimuat SEKARANG dan kegagalannya menghentikan start-up: nama
-	// zona yang salah ketik akan jatuh ke UTC diam-diam, dan setiap panduan
-	// sesudahnya salah tanpa satu pun galat yang terlihat.
+	// Containers run in UTC. Computing the meal time there records 13:00 WIB as
+	// breakfast - seven hours off from what rule D10 means. The zone is loaded
+	// NOW and its failure stops start-up: a mistyped zone name would silently
+	// fall back to UTC, and every guide afterwards would be wrong without a
+	// single visible error.
 	location, err := time.LoadLocation(cfg.Timezone)
 	if err != nil {
 		return fmt.Errorf("loading timezone %q: %w", cfg.Timezone, err)
@@ -107,9 +108,9 @@ func run(log *slog.Logger) error {
 
 	clock := func() time.Time { return time.Now().In(location) }
 
-	// Bahasa dibaca dari cache yang diisi event profile.updated, bukan dengan
-	// memanggil profile-svc pada setiap permintaan (ADR-007). Membuat panduan
-	// menu tidak boleh mati hanya karena profile-svc mati.
+	// The language is read from the cache filled by profile.updated events,
+	// not by calling profile-svc on every request (ADR-007). Producing a menu
+	// guide must not die just because profile-svc is down.
 	svc, err := app.NewService(
 		nutritionpg.NewPreferencesRepository(pool),
 		nutritionpg.NewGuideRepository(pool),
@@ -144,8 +145,8 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
-	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	// Every user-scoped RPC has to carry a token whose sub matches the
+	// request's user_id (ADR-026); the public key comes from JWT_VERIFY_KEY.
 	verifier, err := authn.VerifierFromEnv()
 	if err != nil {
 		return err
@@ -159,8 +160,8 @@ func run(log *slog.Logger) error {
 	reflection.Register(grpcServer)
 	healthServer.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
 
-	// Siap dinyatakan setelah kolam koneksi terbukti terjangkau, bukan saat
-	// prosesnya menyala.
+	// Ready is declared once the connection pool has proven reachable, not
+	// when the process starts.
 	probes.SetReady(true)
 
 	listener, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -214,16 +215,16 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// healthEndpoint menerima probes dari luar, bukan membuatnya sendiri - lihat
-// alasannya di cmd/identity-svc: bentuk yang membuatnya sendiri membuat
-// SetReady mustahil dipanggil, dan readyz menjawab 503 selamanya.
+// healthEndpoint receives probes from outside rather than creating them
+// itself - see the reason in cmd/identity-svc: the shape that creates them
+// itself makes SetReady impossible to call, and readyz answers 503 forever.
 func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
 
-	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
-	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	// Metrics are served on the probe port, not the gRPC port: neither is for
+	// users, and Prometheus already knows this address.
 	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{

@@ -1,4 +1,4 @@
-// Command dashboard-svc melayani kontrak dashboard.v1 di atas gRPC.
+// Command dashboard-svc serves the dashboard.v1 contract over gRPC.
 package main
 
 import (
@@ -55,10 +55,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
-	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
-	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
-	// menyala, karena yang kedua terlihat.
+	// Telemetry is started before any other dependency is opened, so even the
+	// first connection is recorded. Its failure stops the start: a process
+	// that cannot be observed is more dangerous than a process that does not
+	// start, because the latter is visible.
 	tel, err := telemetry.Start(ctx, "dashboard-svc", log)
 	if err != nil {
 		return err
@@ -77,9 +77,9 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// Replika baca (F9-32), bila dikonfigurasi. Kolamnya dibuka dan di-ping
-	// seperti primer: replika yang tidak terjangkau saat start lebih baik
-	// menolak menyala daripada diam-diam melayani dari primer.
+	// The read replica (F9-32), if configured. Its pool is opened and pinged
+	// like the primary: a replica unreachable at start had better refuse to
+	// start than silently serve from the primary.
 	reader := pg.Querier(pool)
 	if cfg.ReadDSN != "" {
 		readPool, err := pg.Open(ctx, pg.DefaultConfig(cfg.ReadDSN))
@@ -104,13 +104,15 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Relay outbox DIBUTUHKAN, meski dasbor tidak memiliki satu fakta pun.
+	// The outbox relay is REQUIRED, even though the dashboard owns not a
+	// single fact.
 	//
-	// Versi pertama melewatkannya dengan alasan "service ini hanya membaca".
-	// Itu keliru: saga penghapusan akun menuntut setiap unit mengonfirmasi
-	// setelah datanya hilang, dan konfirmasi itu sebuah event. Tanpa relay,
-	// konfirmasinya tertulis di outbox lalu tidak pernah berangkat - dan saga
-	// menggantung selamanya menunggu unit yang sebenarnya sudah selesai.
+	// The first version skipped it on the grounds that "this service only
+	// reads". That was wrong: the account deletion saga demands that every
+	// unit confirm once its data is gone, and that confirmation is an event.
+	// Without a relay, the confirmation is written to the outbox and then
+	// never leaves - and the saga hangs forever waiting for a unit that has
+	// actually finished.
 	stopRelay, err := startRelay(ctx, log, pool, cfg.KafkaBrokers)
 	if err != nil {
 		return err
@@ -136,8 +138,8 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
-	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	// Every user-scoped RPC has to carry a token whose sub matches the
+	// request's user_id (ADR-026); the public key comes from JWT_VERIFY_KEY.
 	verifier, err := authn.VerifierFromEnv()
 	if err != nil {
 		return err
@@ -151,8 +153,8 @@ func run(log *slog.Logger) error {
 	reflection.Register(grpcServer)
 	healthServer.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
 
-	// Siap dinyatakan setelah kolam koneksi terbukti terjangkau, bukan saat
-	// prosesnya menyala.
+	// Ready is declared once the connection pool has proven reachable, not
+	// when the process starts.
 	probes.SetReady(true)
 
 	listener, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -206,16 +208,16 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// healthEndpoint menerima probes dari luar, bukan membuatnya sendiri - lihat
-// alasannya di cmd/identity-svc: bentuk yang membuatnya sendiri membuat
-// SetReady mustahil dipanggil, dan readyz menjawab 503 selamanya.
+// healthEndpoint receives probes from outside rather than creating them
+// itself - see the reason in cmd/identity-svc: the shape that creates them
+// itself makes SetReady impossible to call, and readyz answers 503 forever.
 func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
 
-	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
-	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	// Metrics are served on the probe port, not the gRPC port: neither is for
+	// users, and Prometheus already knows this address.
 	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{

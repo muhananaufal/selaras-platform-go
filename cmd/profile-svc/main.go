@@ -1,4 +1,4 @@
-// Command profile-svc melayani kontrak profile.v1 di atas gRPC.
+// Command profile-svc serves the profile.v1 contract over gRPC.
 package main
 
 import (
@@ -55,10 +55,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
-	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
-	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
-	// menyala, karena yang kedua terlihat.
+	// Telemetry is started before any other dependency is opened, so even the
+	// first connection is recorded. Its failure stops the start: a process
+	// that cannot be observed is more dangerous than a process that does not
+	// start, because the latter is visible.
 	tel, err := telemetry.Start(ctx, "profile-svc", log)
 	if err != nil {
 		return err
@@ -81,10 +81,10 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// Penerbitan event dipasang bila brokernya ada. Ketiganya sekaligus atau
-	// tidak sama sekali: sebagian yang terpasang berarti perubahan profil
-	// tersimpan tanpa disiarkan, dan cache di sisi lain basi tanpa ada yang
-	// tahu.
+	// Event publishing is installed when the broker is present. All three at
+	// once or not at all: partially installed would mean profile changes
+	// stored without being announced, and the cache on the other side going
+	// stale without anyone knowing.
 	svc = svc.WithEvents(
 		profilepg.NewUnitOfWork(pool),
 		func(q pg.Querier) domain.ProfileRepository { return profilepg.NewProfileRepository(q) },
@@ -112,8 +112,8 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
-	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	// Every user-scoped RPC has to carry a token whose sub matches the
+	// request's user_id (ADR-026); the public key comes from JWT_VERIFY_KEY.
 	verifier, err := authn.VerifierFromEnv()
 	if err != nil {
 		return err
@@ -127,8 +127,8 @@ func run(log *slog.Logger) error {
 	reflection.Register(grpcServer)
 	healthServer.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
 
-	// Siap dinyatakan setelah kolam koneksi terbukti terjangkau, bukan saat
-	// prosesnya menyala.
+	// Ready is declared once the connection pool has proven reachable, not
+	// when the process starts.
 	probes.SetReady(true)
 
 	listener, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -182,16 +182,16 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// healthEndpoint menerima probes dari luar, bukan membuatnya sendiri - lihat
-// alasannya di cmd/identity-svc: bentuk yang membuatnya sendiri membuat
-// SetReady mustahil dipanggil, dan readyz menjawab 503 selamanya.
+// healthEndpoint receives probes from outside rather than creating them
+// itself - see the reason in cmd/identity-svc: the shape that creates them
+// itself makes SetReady impossible to call, and readyz answers 503 forever.
 func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
 
-	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
-	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	// Metrics are served on the probe port, not the gRPC port: neither is for
+	// users, and Prometheus already knows this address.
 	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{

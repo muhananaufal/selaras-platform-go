@@ -1,4 +1,4 @@
-// Command assessment-svc melayani kontrak assessment.v1 di atas gRPC.
+// Command assessment-svc serves the assessment.v1 contract over gRPC.
 package main
 
 import (
@@ -61,10 +61,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
-	// pertama pun sudah tercatat. Kegagalannya menghentikan start: proses
-	// yang tidak bisa diamati lebih berbahaya daripada proses yang tidak
-	// menyala, karena yang kedua terlihat.
+	// Telemetry is started before any other dependency is opened, so even the
+	// first connection is recorded. Its failure stops the start: a process
+	// that cannot be observed is more dangerous than a process that does not
+	// start, because the latter is visible.
 	tel, err := telemetry.Start(ctx, "assessment-svc", log)
 	if err != nil {
 		return err
@@ -77,11 +77,11 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
-	// Konstanta klinis dimuat SEBELUM apa pun dibuka.
+	// The clinical constants are loaded BEFORE anything is opened.
 	//
-	// Konstanta yang tidak lengkap berarti service ini akan menghitung angka
-	// yang salah, bukan gagal - jadi kegagalannya harus terjadi di sini,
-	// saat belum ada yang bisa dirugikan.
+	// Incomplete constants mean this service would compute wrong numbers, not
+	// fail - so its failure has to happen here, while nobody can be harmed
+	// yet.
 	constants, err := score.Load()
 	if err != nil {
 		return fmt.Errorf("loading the clinical constants: %w", err)
@@ -99,10 +99,10 @@ func run(log *slog.Logger) error {
 	profileConn, err := grpc.NewClient(cfg.ProfileAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		telemetry.GRPCDialOption(),
-		// Token pengguna diteruskan ke hilir (ADR-026).
+		// The user's token is passed downstream (ADR-026).
 		grpc.WithChainUnaryInterceptor(authn.UnaryClientInterceptor()),
-		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
-		// baru mati membuat pemanggilnya menggantung, bukan gagal.
+		// A per-call deadline (chaos F9-13): without it, a service that has just
+		// died makes its callers hang instead of fail.
 		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
 	if err != nil {
 		return fmt.Errorf("creating the profile-svc client: %w", err)
@@ -118,8 +118,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Cache profil di depan klien gRPC-nya (F2-16, ADR-007). Urutannya tidak
-	// boleh dibalik: cache lebih dulu, panggilan gRPC hanya sebagai jaring.
+	// The profile cache in front of its gRPC client (F2-16, ADR-007). The
+	// order must not be reversed: the cache first, the gRPC call only as a
+	// safety net.
 	cachedProfiles, err := cache.NewSource(pool, profiles, log)
 	if err != nil {
 		return err
@@ -134,16 +135,17 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// Penulis outbox dibangun DARI transaksi yang diberikan unit of work,
-	// bukan dari kolam koneksi. Yang kedua akan commit sendiri, dan eventnya
-	// bertahan meski perubahan bisnisnya batal.
+	// The outbox writer is built FROM the transaction the unit of work
+	// provides, not from the connection pool. The latter would commit on its
+	// own, and its event would survive even when the business change was
+	// rolled back.
 	events := func(q pg.Querier) app.EventWriter { return outbox.NewWriter(q) }
 	statuses := func(q pg.Querier) app.StatusWriter { return assessmentpg.NewRepository(q) }
 	svc = svc.WithStatusWriter(statuses)
 
-	// Repository transaksional: penilaian dan event pengumumannya ditulis dalam
-	// satu transaksi, sehingga dasbor tidak pernah melewatkan penilaian yang
-	// sudah tersimpan (E10).
+	// A transactional repository: the assessment and its announcement event are
+	// written in one transaction, so the dashboard never misses an assessment
+	// that was stored (E10).
 	svc = svc.WithRepositoryFor(func(q pg.Querier) domain.Repository {
 		return assessmentpg.NewRepository(q)
 	})
@@ -160,10 +162,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Kafka menyusul BILA dikonfigurasi. Tanpa KAFKA_BROKERS, service ini
-	// tetap melayani pembacaan dan perhitungan - yang tidak boleh terjadi
-	// adalah menerima permintaan personalisasi yang tidak akan pernah keluar
-	// dari outbox, dan itu ditolak di RequestPersonalization.
+	// Kafka follows IF configured. Without KAFKA_BROKERS, this service still
+	// serves reads and computations - what must not happen is accepting a
+	// personalisation request that will never leave the outbox, and that is
+	// refused in RequestPersonalization.
 	stopKafka, err := startEventing(ctx, log, pool, svc, statuses, events)
 	if err != nil {
 		return err
@@ -172,8 +174,8 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	// Setiap RPC berpengguna harus membawa token yang sub-nya sama dengan
-	// user_id permintaan (ADR-026); kunci publiknya dari JWT_VERIFY_KEY.
+	// Every user-scoped RPC has to carry a token whose sub matches the
+	// request's user_id (ADR-026); the public key comes from JWT_VERIFY_KEY.
 	verifier, err := authn.VerifierFromEnv()
 	if err != nil {
 		return err
@@ -244,8 +246,8 @@ func healthEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *ht
 	mux.HandleFunc("GET /healthz", probes.Live)
 	mux.HandleFunc("GET /readyz", probes.Ready)
 
-	// Metrik disajikan di port probe, bukan di port gRPC: keduanya sama-sama
-	// bukan untuk pengguna, dan Prometheus sudah tahu alamat ini.
+	// Metrics are served on the probe port, not the gRPC port: neither is for
+	// users, and Prometheus already knows this address.
 	mux.Handle("GET /metrics", metrics)
 
 	return &http.Server{

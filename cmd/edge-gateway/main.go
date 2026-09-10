@@ -1,5 +1,5 @@
-// Command edge-gateway melayani kontrak REST publik dan meneruskannya ke
-// service di belakangnya lewat gRPC.
+// Command edge-gateway serves the public REST contract and forwards it to
+// the services behind it over gRPC.
 package main
 
 import (
@@ -61,10 +61,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	// Telemetri dinyalakan sebelum dependensi lain dibuka, supaya sambungan
-	// pertama pun sudah tercatat. Kegagalannya menghentikan start: gateway
-	// yang tidak bisa diamati lebih berbahaya daripada gateway yang tidak
-	// menyala, karena yang kedua terlihat.
+	// Telemetry is started before any other dependency is opened, so even the
+	// first connection is recorded. Its failure stops the start: a gateway
+	// that cannot be observed is more dangerous than a gateway that does not
+	// start, because the latter is visible.
 	tel, err := telemetry.Start(ctx, "edge-gateway", log)
 	if err != nil {
 		return err
@@ -106,9 +106,10 @@ func run(log *slog.Logger) error {
 
 	identityClient := identityv1.NewIdentityClient(identityConn)
 
-	// Sumber kebenaran pencabutan adalah identity-svc, dijangkau lewat gRPC.
-	// Ia BUKAN koneksi basis data: isolasi skema-per-service ditegakkan basis
-	// datanya sendiri, dan gateway tidak punya hak di skema identity.
+	// The source of truth for revocation is identity-svc, reached over gRPC.
+	// It is NOT a database connection: schema-per-service isolation is
+	// enforced by the database itself, and the gateway has no rights in the
+	// identity schema.
 	revocations, err := revocation.NewRedisStore(
 		redisClient,
 		generationOverGRPC{identity: identityClient},
@@ -132,9 +133,9 @@ func run(log *slog.Logger) error {
 		regions = assessmentv1.NewAssessmentClient(conn)
 		assessmentHandler = handler.NewAssessment(regions)
 	} else {
-		// Tanpa assessment-svc, rute penilaian tidak dipasang dan risk_region
-		// dikirim null. Keduanya jujur: yang pertama 404, yang kedua nilai
-		// yang memang belum bisa dihitung.
+		// Without assessment-svc, the assessment routes are not mounted and
+		// risk_region is sent as null. Both are honest: the first is a 404, the
+		// second a value that cannot be computed yet.
 		log.Warn("assessment-svc is not configured; its routes are not mounted",
 			"variable", "ASSESSMENT_GRPC_TARGET")
 	}
@@ -149,8 +150,8 @@ func run(log *slog.Logger) error {
 
 		coachingHandler = handler.NewCoaching(coachingv1.NewCoachingClient(conn))
 	} else {
-		// Tanpa coaching-svc, rutenya tidak dipasang. 404 jauh lebih jujur
-		// daripada 500 dari klien yang tidak menyambung ke mana-mana.
+		// Without coaching-svc, its routes are not mounted. 404 is far more
+		// honest than 500 from a client connected to nothing.
 		log.Warn("coaching-svc is not configured; its routes are not mounted",
 			"variable", "COACHING_GRPC_TARGET")
 	}
@@ -205,10 +206,10 @@ func run(log *slog.Logger) error {
 
 	probes := httpx.NewHealth()
 
-	// Pembatasan laju memakai Redis yang sama dengan cache pencabutan.
+	// Rate limiting uses the same Redis as the revocation cache.
 	//
-	// Jalur autentikasi tanpa pembatasan adalah tempat menebak kata sandi tanpa
-	// batas, dan jalur LLM tanpa pembatasan adalah tagihan tanpa batas.
+	// An authentication path without a limit is an unlimited place to guess
+	// passwords, and an LLM path without a limit is an unlimited bill.
 	limiter, err := middleware.NewLimiter(redisClient, log)
 	if err != nil {
 		return err
@@ -234,9 +235,9 @@ func run(log *slog.Logger) error {
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: router,
-		// Batas waktu ditetapkan eksplisit. Server HTTP Go tanpa batas waktu
-		// menahan koneksi yang menggantung selamanya, dan itu cara termurah
-		// menghabiskan sumber daya sebuah gateway.
+		// Timeouts are set explicitly. A Go HTTP server without timeouts holds
+		// hanging connections forever, and that is the cheapest way to exhaust a
+		// gateway's resources.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -268,9 +269,9 @@ func run(log *slog.Logger) error {
 		log.Info("shutting down")
 	}
 
-	// Tidak siap dinyatakan lebih dulu, baru permintaan yang sedang berjalan
-	// diberi waktu selesai. Urutannya penting: load balancer berhenti
-	// mengirim yang baru sebelum yang lama dihentikan.
+	// Not-ready is declared first, then the requests in flight are given time
+	// to finish. The order matters: the load balancer stops sending new ones
+	// before the old ones are cut off.
 	probes.SetReady(false)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
@@ -282,11 +283,11 @@ func run(log *slog.Logger) error {
 	return server.Shutdown(shutdownCtx)
 }
 
-// adminEndpoint melayani metrik dan probe di port yang tidak publik.
+// adminEndpoint serves metrics and probes on a port that is not public.
 //
-// Probe tetap ada di port publik juga - load balancer memeriksanya di sana -
-// dan diulang di sini supaya port admin bisa dipakai sendirian oleh
-// Prometheus dan orkestrator tanpa menyentuh port API.
+// The probes remain on the public port too - the load balancer checks them
+// there - and are repeated here so the admin port can be used on its own by
+// Prometheus and the orchestrator without touching the API port.
 func adminEndpoint(addr string, probes *httpx.Health, metrics http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", probes.Live)
@@ -307,10 +308,10 @@ func dial(target string) (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		telemetry.GRPCDialOption(),
-		// Token pengguna diteruskan ke hilir (ADR-026).
+		// The user's token is passed downstream (ADR-026).
 		grpc.WithChainUnaryInterceptor(authn.UnaryClientInterceptor()),
-		// Batas waktu per panggilan (chaos F9-13): tanpa ini, service yang
-		// baru mati membuat pemanggilnya menggantung, bukan gagal.
+		// A per-call deadline (chaos F9-13): without it, a service that has just
+		// died makes its callers hang instead of fail.
 		rpc.WithUpstreamDeadline(rpc.DefaultUpstreamTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("creating the client for %s: %w", target, err)
@@ -324,18 +325,18 @@ func closeConn(conn *grpc.ClientConn, name string, log *slog.Logger) {
 	}
 }
 
-// generationOverGRPC mengambil generasi token yang berlaku dari identity-svc.
+// generationOverGRPC fetches the current token generation from identity-svc.
 //
-// Dipanggil HANYA saat cache pencabutan tidak tahu, bukan di setiap request -
-// itulah yang membedakan rancangan ini dari token opaque yang ditolak ADR-012.
+// Called ONLY when the revocation cache does not know, not on every request -
+// that is what sets this design apart from the opaque tokens ADR-012 rejected.
 type generationOverGRPC struct {
 	identity identityv1.IdentityClient
 }
 
 func (g generationOverGRPC) CurrentGeneration(ctx context.Context, userID domain.UserID) (int64, error) {
-	// Batas waktu pendek: pemeriksaan ini duduk di jalur setiap permintaan
-	// terautentikasi yang meleset dari cache, dan identity-svc yang lambat
-	// tidak boleh menahan seluruh gateway.
+	// A short deadline: this check sits on the path of every authenticated
+	// request that misses the cache, and a slow identity-svc must not hold the
+	// whole gateway.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
@@ -348,14 +349,14 @@ func (g generationOverGRPC) CurrentGeneration(ctx context.Context, userID domain
 	return resp.GetGeneration(), nil
 }
 
-// buildSocial merakit alur masuk sosial, atau mengembalikan nil bila
-// lingkungan ini tidak dikonfigurasi untuknya.
+// buildSocial assembles the social sign-in flow, or returns nil when this
+// environment is not configured for it.
 //
-// nil berarti rutenya tidak dipasang sama sekali, sehingga jawabannya 404 -
-// bukan endpoint yang ada tetapi selalu gagal. Konfigurasi yang terisi
-// SEBAGIAN adalah kekeliruan, bukan mode penyebaran, dan karena itu
-// menggagalkan start-up: client id tanpa secret akan menyalakan rutenya lalu
-// gagal di pertukaran, jauh setelah orang yang salah mengetiknya pergi.
+// nil means the routes are not mounted at all, so the answer is 404 - not an
+// endpoint that exists but always fails. A PARTIALLY filled configuration is
+// a mistake, not a deployment mode, and therefore fails start-up: a client
+// id without a secret would mount the routes and then fail at the exchange,
+// long after whoever mistyped it has left.
 func buildSocial(
 	cfg edge.Config,
 	identity identityv1.IdentityClient,
@@ -369,7 +370,7 @@ func buildSocial(
 			return nil, fmt.Errorf("social sign-in is partly configured; missing: %v", missing)
 		}
 		log.Warn("social sign-in is not configured; its routes are not mounted")
-		return nil, nil //nolint:nilnil // nil di sini berarti "tidak dipasang", dan itu keadaan yang sah
+		return nil, nil //nolint:nilnil // nil here means "not mounted", and that is a valid state
 	}
 
 	store, err := oauth.NewStore(redisClient, 10*time.Minute, time.Minute)

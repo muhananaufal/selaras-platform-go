@@ -1,27 +1,28 @@
-// Command backfill-nutrition memindahkan preferensi kuliner dari sistem lama.
+// Command backfill-nutrition moves culinary preferences over from the legacy
+// system.
 //
-// Ia BUKAN migrasi skema, dan sengaja tidak diletakkan di migrations/nutrition.
-// golang-migrate menjalankan setiap berkas di sana pada SETIAP lingkungan,
-// termasuk yang basis data lamanya tidak ada - dan pemindahan data yang ikut
-// berjalan di lingkungan kosong hanya bisa gagal atau tidak melakukan apa-apa.
-// Yang kedua lebih buruk: ia mencatat dirinya sebagai sudah dijalankan.
+// It is NOT a schema migration, and is deliberately not placed in
+// migrations/nutrition. golang-migrate runs every file there on EVERY
+// environment, including those where the legacy database does not exist - and a
+// data move that runs along in an empty environment can only fail or do nothing.
+// The latter is worse: it records itself as having run.
 //
-// Bentuk masukannya NDJSON, satu baris satu pengguna, bukan koneksi langsung ke
-// MySQL. Alasannya bukan kenyamanan:
+// Its input shape is NDJSON, one line per user, not a direct connection to
+// MySQL. The reason is not convenience:
 //
-//   - Sistem lama memakai MySQL dan platform ini Postgres. Menyambung ke
-//     keduanya berarti menyeret driver MySQL ke dalam go.mod seluruh proyek
-//     untuk satu perkakas yang dipakai sekali.
-//   - Ekspornya bisa diperiksa manusia sebelum ditulis ke mana pun. Pemindahan
-//     data yang tidak bisa dilihat sebelum dijalankan adalah pemindahan data
-//     yang kesalahannya baru ditemukan sesudahnya.
+//   - The legacy system uses MySQL and this platform Postgres. Connecting to
+//     both means dragging the MySQL driver into the go.mod of the whole project
+//     for one tool used once.
+//   - The export can be inspected by a human before anything is written
+//     anywhere. A data move that cannot be seen before it runs is a data move
+//     whose mistakes are found only afterwards.
 //
-// PRASYARAT YANG BELUM ADA. Berkas masukannya harus sudah memuat user_id
-// PLATFORM - UUID - bukan id bilangan bulat sistem lama. Pemetaan antara
-// keduanya lahir dari pemindahan identitas, dan pemindahan itu BELUM ADA di
-// platform ini: setiap service sejauh ini dimulai dari kosong. Perkakas ini
-// menunggu pemetaan itu, dan menolak baris yang user_id-nya bukan UUID alih-alih
-// menebaknya.
+// A PREREQUISITE THAT DOES NOT EXIST YET. The input file has to already carry
+// the PLATFORM user_id - a UUID - not the integer id of the legacy system. The
+// mapping between the two is born from the identity move, and that move DOES NOT
+// EXIST yet on this platform: every service so far started from empty. This tool
+// waits for that mapping, and refuses rows whose user_id is not a UUID instead
+// of guessing.
 package main
 
 import (
@@ -58,9 +59,9 @@ func main() {
 		"skipped_existing", summary.SkippedExisting, "rejected", summary.Rejected,
 		"dry_run", summary.DryRun)
 
-	// Baris yang ditolak TIDAK menghentikan pemindahan, tetapi ia mengubah kode
-	// keluar. Pemindahan yang separuh berhasil dan keluar dengan 0 akan terlihat
-	// sukses di pipeline mana pun.
+	// A refused row does NOT stop the move, but it changes the exit code. A
+	// half-successful move that exits with 0 would look successful in any
+	// pipeline.
 	if summary.Rejected > 0 {
 		os.Exit(2)
 	}
@@ -74,10 +75,10 @@ type summary struct {
 	DryRun          bool
 }
 
-// legacyRow adalah satu baris ekspor.
+// legacyRow is one export line.
 //
-// Bentuknya sengaja dekat dengan kolom JSON sistem lama, supaya perintah ekspor
-// di runbook tetap sederhana dan tidak perlu mengubah bentuk apa pun.
+// Its shape is deliberately close to the legacy JSON columns, so the export
+// command in the runbook stays simple and need not reshape anything.
 type legacyRow struct {
 	UserID      string `json:"user_id"`
 	Preferences struct {
@@ -97,8 +98,8 @@ func run(log *slog.Logger) (summary, error) {
 	)
 	flag.Parse()
 
-	// Tanpa nilai bawaan (ADR-016). Pemindahan data yang menebak ke mana ia
-	// menulis bisa menulis ke basis data yang keliru.
+	// No default (ADR-016). A data move that guesses where it writes can write
+	// to the wrong database.
 	if *dsn == "" {
 		return summary{}, errors.New("no dsn: pass -dsn or set NUTRITION_DATABASE_DSN")
 	}
@@ -126,14 +127,14 @@ func openInput(path string) (io.Reader, func(), error) {
 		return os.Stdin, func() {}, nil
 	}
 
-	file, err := os.Open(path) //nolint:gosec // Path memang datang dari operator.
+	file, err := os.Open(path) //nolint:gosec // The path does come from the operator.
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening %s: %w", path, err)
 	}
 
-	// Galat saat menutup berkas yang hanya DIBACA tidak mengubah apa pun yang
-	// sudah dibaca, tetapi ia tetap dicatat: berkas yang gagal ditutup biasanya
-	// pertanda sesuatu yang lebih besar di sistem berkasnya.
+	// An error on closing a file that was only READ changes nothing that was
+	// already read, but it is still logged: a file that fails to close is
+	// usually a sign of something bigger in the file system.
 	return file, func() {
 		if err := file.Close(); err != nil {
 			slog.Warn("closing the export file", "path", path, "error", err)
@@ -141,12 +142,12 @@ func openInput(path string) (io.Reader, func(), error) {
 	}, nil
 }
 
-// apply membaca seluruh baris dan menuliskannya.
+// apply reads every line and writes it.
 //
-// Ia IDEMPOTEN: pengguna yang barisnya sudah ada DILEWATI, bukan ditimpa.
-// Pemindahan data yang menimpa akan menghapus preferensi yang sudah diubah
-// pengguna di platform baru - dan pemindahan yang dijalankan dua kali karena
-// ragu adalah hal yang biasa terjadi.
+// It is IDEMPOTENT: a user whose row already exists is SKIPPED, not
+// overwritten. A data move that overwrites would erase preferences the user
+// has already changed on the new platform - and a move run twice out of
+// doubt is a common thing.
 func apply(
 	ctx context.Context, log *slog.Logger, source io.Reader,
 	pool *pgxpool.Pool, dryRun bool,
@@ -156,9 +157,9 @@ func apply(
 	repo := postgres.NewPreferencesRepository(pool)
 	scanner := bufio.NewScanner(source)
 
-	// Baris JSON bisa panjang; bawaan bufio 64 KiB terlalu kecil untuk daftar
-	// peralatan dapur yang panjang, dan galatnya akan terbaca sebagai "baris
-	// rusak" alih-alih "baris kepanjangan".
+	// JSON lines can be long; bufio's default of 64 KiB is too small for a
+	// long list of kitchen equipment, and the error would read as "corrupt
+	// line" instead of "line too long".
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for lineNumber := 1; scanner.Scan(); lineNumber++ {
@@ -213,20 +214,19 @@ func parseRow(line string) (legacyRow, error) {
 		return row, fmt.Errorf("not readable as json: %w", err)
 	}
 	if _, err := uuid.Parse(row.UserID); err != nil {
-		// Id bilangan bulat sistem lama ditolak, tidak diterjemahkan dengan
-		// tebakan. Preferensi yang mendarat pada orang yang salah lebih buruk
-		// daripada preferensi yang tidak pindah - salah satunya memuat catatan
-		// alergi.
+		// The legacy integer id is refused, not translated by guessing.
+		// Preferences landing on the wrong person are worse than preferences that
+		// did not move - one of them holds an allergy note.
 		return row, fmt.Errorf("user_id %q is not a platform uuid; map it first", row.UserID)
 	}
 	return row, nil
 }
 
-// preferencesOf menyusun preferensi domain dari satu baris ekspor.
+// preferencesOf assembles the domain preferences from one export line.
 //
-// Ia melewati Apply yang sama dengan jalur HTTP, bukan menulis langsung ke
-// kolom: validasi yang dilewati saat memindahkan data adalah validasi yang
-// tidak pernah berlaku bagi baris yang sudah terlanjur masuk.
+// It goes through the same Apply as the HTTP path, rather than writing
+// straight into columns: validation bypassed while moving data is
+// validation that never applied to rows already in.
 func preferencesOf(row legacyRow, now time.Time) (*domain.Preferences, error) {
 	userID, err := domain.ParseUserID(row.UserID)
 	if err != nil {
@@ -262,11 +262,11 @@ func preferencesOf(row legacyRow, now time.Time) (*domain.Preferences, error) {
 	return prefs, nil
 }
 
-// budgetOf menerjemahkan label Indonesia sistem lama.
+// budgetOf translates the Indonesian labels of the legacy system.
 //
-// Label itu yang benar-benar tersimpan di kolom JSON lama, dan ia TIDAK
-// disimpan apa adanya: label adalah urusan tampilan, dan menyimpannya membuat
-// pergantian bahasa antarmuka menjadi migrasi basis data.
+// Those labels are what is actually stored in the old JSON column, and they
+// are NOT stored as they are: labels are a display concern, and storing them
+// turns a change of interface language into a database migration.
 func budgetOf(label string) (domain.BudgetLevel, error) {
 	switch strings.TrimSpace(label) {
 	case "":

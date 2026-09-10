@@ -1,12 +1,13 @@
-// Command partitions memelihara seluruh tabel terpartisi platform (F9-29).
+// Command partitions maintains every partitioned table of the platform
+// (F9-29).
 //
-// Dijalankan terjadwal - setiap hari cukup - dengan satu DSN yang boleh
-// mengubah kedelapan skema. Ia idempoten: menjalankannya dua kali berturut-
-// turut tidak mengubah apa pun pada jalankan kedua.
+// Run on a schedule - daily is enough - with one DSN allowed to alter all
+// eight schemas. It is idempotent: running it twice in a row changes
+// nothing on the second run.
 //
-//	partitions -dsn 'postgres://...'          # memelihara sesuai katalog
-//	partitions -dsn ... -dry-run              # hanya melaporkan
-//	partitions -dsn ... -now 2026-10-01       # berpura-pura hari lain
+//	partitions -dsn 'postgres://...'          # maintain according to the catalog
+//	partitions -dsn ... -dry-run              # report only
+//	partitions -dsn ... -now 2026-10-01       # pretend it is another day
 package main
 
 import (
@@ -22,28 +23,28 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Retensi per tabel. Ini KEBIJAKAN, dan alasannya disebut di docs/finops.md:
+// Retention per table. This is POLICY, and the reasons are given in
+// docs/finops.md:
 //
-//   - outbox: baris yang sudah terkirim disimpan tujuh hari untuk penyelidikan
-//     "apakah event X pernah terbit"; yang belum terkirim TIDAK PERNAH dipangkas
-//   - relay masih membutuhkannya.
-//   - llm_jobs: sembilan puluh hari, untuk menjawab keluhan "hasil saya salah"
-//     yang datang berminggu-minggu kemudian; yang masih pending/running tidak
-//     disentuh.
-//   - pesan pengguna: SELAMANYA. Menghapus riwayat percakapan seseorang adalah
-//     keputusan produk, bukan pemeliharaan basis data.
+//   - outbox: rows already sent are kept seven days for "was event X ever
+//     published" investigations; rows not yet sent are NEVER pruned
+//   - the relay still needs them.
+//   - llm_jobs: ninety days, to answer the "my result is wrong" complaints that
+//     arrive weeks later; rows still pending/running are not touched.
+//   - user messages: FOREVER. Deleting someone's conversation history is a
+//     product decision, not database maintenance.
 const (
 	outboxRetention  = 7 * 24 * time.Hour
 	llmJobsRetention = 90 * 24 * time.Hour
 
-	// partitionKey adalah kolom partisi di SELURUH tabel terpartisi proyek
-	// ini; satu nama supaya katalog di bawah tidak bisa salah ketik.
+	// partitionKey is the partition column across ALL partitioned tables of
+	// this project; one name so the catalog below cannot misspell it.
 	partitionKey = "created_at"
 )
 
-// catalog adalah seluruh tabel terpartisi platform. Tabel terpartisi baru
-// WAJIB ditambahkan di sini, kalau tidak partisi bulanannya tidak pernah
-// dibuat dan seluruh barisnya menumpuk di partisi DEFAULT.
+// catalog is every partitioned table of the platform. A new partitioned
+// table MUST be added here, otherwise its monthly partitions are never
+// created and all of its rows pile up in the DEFAULT partition.
 func catalog() []partition.Table {
 	var tables []partition.Table
 	for _, schema := range []string{"identity", "profile", "assessment", "coaching", "chat", "nutrition", "dashboard", "llm"} {
@@ -101,9 +102,9 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	if *dryRun {
-		// Dry-run menjalankan seluruhnya di dalam transaksi yang dibatalkan:
-		// laporan yang dihasilkan adalah laporan sungguhan, bukan simulasi
-		// yang bisa berbeda dari kenyataan.
+		// A dry run executes everything inside a transaction that is rolled back:
+		// the report it produces is the real report, not a simulation that could
+		// differ from reality.
 		tx, err := pool.Begin(ctx)
 		if err != nil {
 			return err
