@@ -21,8 +21,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: page }
             exp_annotations:
-              summary: "5xx di atas 14,4 kali anggaran galat (SLO 99 %)"
-              description: "Rasio 5xx 5m=20%; anggaran sebulan habis dalam dua hari pada laju ini. Lihat docs/runbook/edge-gateway.md."
+              summary: "5xx above 14.4 times the error budget (99 % SLO)"
+              description: "5xx ratio 5m=20%; the month's budget is spent in two days at this rate. See docs/runbook/edge-gateway.md."
 
   - interval: 1m
     input_series:
@@ -53,8 +53,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: ticket }
             exp_annotations:
-              summary: "p95 HTTP di atas SLO 50 ms selama 10 menit"
-              description: "p95=97.5ms. Regresi satu orde biasanya query tanpa indeks atau panggilan gRPC yang menjadi dua; bandingkan dengan docs/performance-report.md."
+              summary: "HTTP p95 above the 50 ms SLO for 10 minutes"
+              description: "p95=97.5ms. A one-order regression is usually a query without an index or a gRPC call that became two; compare with docs/performance-report.md."
 
   - interval: 1m
     input_series:
@@ -88,8 +88,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: ticket }
             exp_annotations:
-              summary: "p95 pendaftaran di atas 1,5 s"
-              description: "Hasher argon2id dibatasi dua derivasi serentak (identity-svc); antrean di belakangnya berarti identity-svc butuh replika, bukan CPU."
+              summary: "Registration p95 above 1.5 s"
+              description: "The argon2id hasher is capped at two concurrent derivations (identity-svc); a queue behind it means identity-svc needs replicas, not CPU."
 
   # --- A unit down for 2 minutes fires the page naming the unit.
   - interval: 1m
@@ -104,8 +104,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: page, job: selaras, unit: coaching-svc }
             exp_annotations:
-              summary: "Unit coaching-svc tidak bisa ditarik metriknya selama 2 menit"
-              description: "Runbook: docs/runbook/coaching-svc.md. Di compose: docker compose ps; di klaster: kubectl -n selaras get pods."
+              summary: "Unit coaching-svc could not be scraped for 2 minutes"
+              description: "Runbook: docs/runbook/coaching-svc.md. On compose: docker compose ps; on the cluster: kubectl -n selaras get pods."
 
   # --- LLM: one dead job fires immediately; 30 minutes parked with nothing
   # finishing fires; parking interleaved with finished jobs does not.
@@ -119,8 +119,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: ticket, job: selaras, unit: llm-worker, outcome: dead }
             exp_annotations:
-              summary: "1 pekerjaan LLM mati dalam 15 menit"
-              description: "SELECT id, kind, last_error FROM llm.llm_jobs WHERE status='dead' ORDER BY updated_at DESC; runbook docs/runbook/llm-worker.md gejala 2."
+              summary: "1 LLM job(s) dead within 15 minutes"
+              description: "SELECT id, kind, last_error FROM llm.llm_jobs WHERE status='dead' ORDER BY updated_at DESC; runbook docs/runbook/llm-worker.md symptom 2."
 
   - interval: 1m
     input_series:
@@ -134,8 +134,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: ticket }
             exp_annotations:
-              summary: "Worker LLM diparkir 30 menit tanpa satu pun pekerjaan selesai"
-              description: "Kuota penyedia habis dan tidak pulih; nama kuotanya ada di log worker (`quota ...`). Pekerjaan menunggu, tidak mati."
+              summary: "LLM worker parked for 30 minutes without a single job finishing"
+              description: "The provider quota is exhausted and not recovering; the quota name is in the worker log (`quota ...`). Jobs are waiting, not dead."
 
   - interval: 1m
     input_series:
@@ -162,8 +162,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: ticket }
             exp_annotations:
-              summary: "5xx di atas 6 kali anggaran galat selama enam jam"
-              description: "Rasio 5xx 30m=8%; anggaran sebulan habis dalam lima hari pada laju ini."
+              summary: "5xx above 6 times the error budget for six hours"
+              description: "5xx ratio 30m=8%; the month's budget is spent in five days at this rate."
       - eval_time: 7h
         alertname: SelarasErrorBudgetBurningFast
         exp_alerts: []
@@ -180,8 +180,8 @@ tests:
         exp_alerts:
           - exp_labels: { severity: ticket }
             exp_annotations:
-              summary: "Backlog llm.jobs 450 dan masih tumbuh"
-              description: "Bandingkan dengan replika worker (maks 12, docs/topics.md) dan llm_job_duration_seconds; runbook docs/runbook/llm-worker.md gejala 3."
+              summary: "Backlog llm.jobs 450 and still growing"
+              description: "Compare with the worker replicas (max 12, docs/topics.md) and llm_job_duration_seconds; runbook docs/runbook/llm-worker.md symptom 3."
   - interval: 1m
     input_series:
       - series: 'kafka_consumer_lag{job="selaras",unit="llm-worker",topic="llm.jobs",partition="0"}'
