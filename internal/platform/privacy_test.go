@@ -1,10 +1,10 @@
-// Package platform_test menegakkan aturan yang berlaku di SELURUH repositori,
-// bukan di satu paket.
+// Package platform_test enforces rules that apply to the WHOLE repository,
+// not to one package.
 //
-// Ia membaca kode sumbernya sebagai teks. Itu kasar, dan sengaja: aturan
-// seperti "data pribadi tidak masuk log" tidak bisa diperiksa tipe, dan yang
-// tidak diperiksa apa pun akan dilanggar oleh perubahan berikutnya tanpa ada
-// yang menyadarinya.
+// It reads the source code as text. That is crude, and deliberately so: rules
+// such as "personal data does not go into logs" cannot be type-checked, and
+// whatever nothing checks will be violated by the next change without anyone
+// noticing.
 package platform_test
 
 import (
@@ -14,11 +14,11 @@ import (
 	"testing"
 )
 
-// personalFields adalah nama bidang yang TIDAK boleh muncul sebagai kunci log.
+// personalFields are the field names that must NOT appear as log keys.
 //
-// Daftarnya bidang, bukan nilai: nilainya tidak diketahui saat test berjalan,
-// tetapi kuncinya ada di kode sebagai literal. `slog.Info("...", "email", x)`
-// menaruh "email" di sana apa adanya.
+// The list holds fields, not values: the values are unknown when the test
+// runs, but the keys sit in the code as literals. `slog.Info("...", "email",
+// x)` puts "email" there as it is.
 var personalFields = []string{
 	`"email"`,
 	`"first_name"`,
@@ -34,7 +34,7 @@ var personalFields = []string{
 	`"total_cholesterol"`,
 }
 
-// logCalls adalah pemanggilan yang menulis ke log.
+// logCalls are the calls that write to the log.
 var logCalls = []string{
 	".Info(", ".InfoContext(",
 	".Warn(", ".WarnContext(",
@@ -42,24 +42,24 @@ var logCalls = []string{
 	".Debug(", ".DebugContext(",
 }
 
-// TestNoPersonalDataInLogCalls menegakkan aturan 1 di docs/data-handling.md.
+// TestNoPersonalDataInLogCalls enforces rule 1 of docs/data-handling.md.
 //
-// Log dibaca banyak orang, dikirim ke tempat lain, dan disimpan lebih lama
-// daripada yang dikira siapa pun. Yang boleh dicatat adalah pengenal - user_id,
-// slug, nama event - karena pengenal cukup untuk menyelidiki: ia menuntun ke
-// barisnya, dan barisnya ada di basis data tempat ia memang seharusnya berada.
+// Logs are read by many people, shipped elsewhere, and kept longer than anyone
+// assumes. What may be logged are identifiers - user_id, slug, event name -
+// because an identifier is enough to investigate: it leads to the row, and the
+// row lives in the database where it belongs.
 //
-// Test ini membaca BARIS pemanggilan log, bukan seluruh berkas: nama bidang
-// yang sama muncul sah di banyak tempat - tag JSON, kolom SQL, komentar - dan
-// yang dipermasalahkan hanya saat ia menjadi kunci log.
+// This test reads the log call LINES, not whole files: the same field name
+// appears legitimately in many places - JSON tags, SQL columns, comments - and
+// the only objection is when it becomes a log key.
 func TestNoPersonalDataInLogCalls(t *testing.T) {
 	root := repoRoot(t)
 
 	for _, dir := range []string{"internal", "cmd"} {
 		walkGoFiles(t, filepath.Join(root, dir), func(path string, lines []string) {
-			// Berkas ini sendiri dilewati: daftar aturannya memuat persis
-			// string yang dicarinya, dan aturan yang menandai dirinya sendiri
-			// tidak akan pernah bisa hijau.
+			// This file itself is skipped: its rule list contains exactly the
+			// strings it searches for, and a rule that flags itself can never be
+			// green.
 			if strings.HasSuffix(path, "privacy_test.go") {
 				return
 			}
@@ -68,13 +68,12 @@ func TestNoPersonalDataInLogCalls(t *testing.T) {
 					continue
 				}
 
-				// SELURUH pemanggilan diperiksa, bukan barisnya saja.
+				// The WHOLE call is checked, not just its first line.
 				//
-				// Versi pertama test ini memeriksa per baris, dan ia melewatkan
-				// setiap pemanggilan yang membentang beberapa baris - yang
-				// berarti hampir semuanya, karena kunci log ditulis di baris
-				// berikutnya. Mutasi yang menyisipkan "email" ke sebuah
-				// pemanggilan log lolos hijau.
+				// The first version of this test checked line by line, and it missed
+				// every call spanning several lines - which is nearly all of them,
+				// because log keys are written on the next line. A mutation inserting
+				// "email" into a log call passed green.
 				call := logCallText(lines, i)
 
 				for _, field := range personalFields {
@@ -89,17 +88,17 @@ func TestNoPersonalDataInLogCalls(t *testing.T) {
 	}
 }
 
-// TestTestDataUsesObviouslyFakeDomains menegakkan aturan 3.
+// TestTestDataUsesObviouslyFakeDomains enforces rule 3.
 //
-// Nama dan alamat surel di berkas test ter-commit SELAMANYA. Aturannya bukan
-// soal privasi orang fiktif - ia soal kebiasaan: berkas test yang berisi data
-// nyata dimulai dari seseorang yang menyalin satu baris dari produksi karena
-// "cuma untuk mereproduksi".
+// Names and email addresses in test files are committed FOREVER. The rule is
+// not about the privacy of fictional people - it is about habit: a test file
+// containing real data starts with someone copying one row from production
+// because it is "just to reproduce".
 func TestTestDataUsesObviouslyFakeDomains(t *testing.T) {
 	root := repoRoot(t)
 
-	// Domain yang jelas milik orang lain. Bukan daftar lengkap - tidak mungkin
-	// lengkap - melainkan yang paling mungkin tertulis tanpa dipikir.
+	// Domains that clearly belong to someone else. Not an exhaustive list - it
+	// cannot be - but the ones most likely to be typed without thinking.
 	realDomains := []string{
 		"@gmail.com", "@yahoo.com", "@outlook.com", "@hotmail.com",
 		"@icloud.com", "@proton.me",
@@ -110,9 +109,9 @@ func TestTestDataUsesObviouslyFakeDomains(t *testing.T) {
 			if !strings.HasSuffix(path, "_test.go") {
 				return
 			}
-			// Berkas ini sendiri dilewati: daftar aturannya memuat persis
-			// string yang dicarinya, dan aturan yang menandai dirinya sendiri
-			// tidak bisa pernah hijau.
+			// This file itself is skipped: its rule list contains exactly the
+			// strings it searches for, and a rule that flags itself can never be
+			// green.
 			if strings.HasSuffix(path, "privacy_test.go") {
 				return
 			}
@@ -129,11 +128,11 @@ func TestTestDataUsesObviouslyFakeDomains(t *testing.T) {
 	}
 }
 
-// TestNoCredentialHasADefault menegakkan aturan 4 (ADR-016).
+// TestNoCredentialHasADefault enforces rule 4 (ADR-016).
 //
-// Nilai bawaan untuk lingkungan lokal adalah nilai bawaan yang suatu saat
-// berjalan di tempat lain. Test ini mencari envOr(...) - pembantu yang MEMANG
-// menyediakan bawaan - dengan nama variabel yang terdengar seperti kredensial.
+// A default for the local environment is a default that one day runs somewhere
+// else. This test looks for envOr(...) - the helper that DOES supply a default
+// - with a variable name that sounds like a credential.
 func TestNoCredentialHasADefault(t *testing.T) {
 	root := repoRoot(t)
 
@@ -161,17 +160,17 @@ func TestNoCredentialHasADefault(t *testing.T) {
 	}
 }
 
-// logCallText mengumpulkan seluruh pemanggilan yang dimulai di baris start.
+// logCallText collects the whole call that starts on line start.
 //
-// Ia menghitung kurung sampai seimbang, bukan mengambil sejumlah baris tetap:
-// jumlah baris sebuah pemanggilan bergantung pada berapa banyak bidang yang
-// dicatat, dan batas tetap akan melewatkan yang paling panjang - yang justru
-// paling mungkin memuat sesuatu yang tidak seharusnya.
+// It counts brackets until they balance, rather than taking a fixed number of
+// lines: how many lines a call spans depends on how many fields are logged,
+// and a fixed limit would miss the longest ones - precisely those most likely
+// to contain something they should not.
 //
-// Kurung di dalam string tidak dibedakan. Itu bisa membuat penghitungannya
-// meleset pada pemanggilan yang mencatat teks berisi kurung, dan akibatnya
-// hanya satu: beberapa baris berikutnya ikut terbaca. Untuk pemeriksaan ini,
-// membaca terlalu banyak jauh lebih aman daripada membaca terlalu sedikit.
+// Brackets inside strings are not distinguished. That can throw the count off
+// for a call that logs text containing brackets, and the only consequence is
+// that a few more lines are read. For this check, reading too much is far
+// safer than reading too little.
 func logCallText(lines []string, start int) string {
 	var (
 		builder strings.Builder
@@ -201,7 +200,7 @@ func isLogCall(line string) bool {
 	return false
 }
 
-// walkGoFiles memanggil fn untuk setiap berkas Go di bawah dir.
+// walkGoFiles calls fn for every Go file under dir.
 func walkGoFiles(t *testing.T, dir string, fn func(path string, lines []string)) {
 	t.Helper()
 
@@ -212,13 +211,13 @@ func walkGoFiles(t *testing.T, dir string, fn func(path string, lines []string))
 		if info.IsDir() || !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		// Kode hasil generate dilewati: bentuknya bukan pilihan siapa pun di
-		// sini, dan mengubahnya berarti mengubah generatornya.
+		// Generated code is skipped: its shape is nobody's choice here, and
+		// changing it means changing the generator.
 		if strings.Contains(path, string(filepath.Separator)+"gen"+string(filepath.Separator)) {
 			return nil
 		}
 
-		raw, err := os.ReadFile(path) //nolint:gosec // Path datang dari Walk di dalam repo.
+		raw, err := os.ReadFile(path) //nolint:gosec // The path comes from Walk inside the repo.
 		if err != nil {
 			return err
 		}
@@ -230,7 +229,7 @@ func walkGoFiles(t *testing.T, dir string, fn func(path string, lines []string))
 	}
 }
 
-// repoRoot naik dari direktori test sampai menemukan go.mod.
+// repoRoot walks up from the test directory until it finds go.mod.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 
