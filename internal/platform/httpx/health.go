@@ -1,4 +1,4 @@
-// Package httpx menyediakan potongan HTTP yang dipakai bersama seluruh unit.
+// Package httpx provides the HTTP pieces shared by every unit.
 package httpx
 
 import (
@@ -10,17 +10,18 @@ import (
 
 const statusKey = "status"
 
-// Health memisahkan dua pertanyaan yang sering dicampur: apakah proses ini
-// hidup, dan apakah ia siap menerima trafik. Kubernetes memakai keduanya
-// untuk hal berbeda - liveness yang gagal memicu restart, readiness yang
-// gagal hanya mengeluarkan pod dari service.
+// Health separates two questions that are often mixed up: is this process
+// alive, and is it ready to take traffic. Kubernetes uses them for
+// different things - a failing liveness triggers a restart, a failing
+// readiness only takes the pod out of the service.
 type Health struct {
 	ready atomic.Bool
 }
 
 func NewHealth() *Health { return &Health{} }
 
-// SetReady dipanggil setelah dependensi siap, bukan saat proses menyala.
+// SetReady is called once the dependencies are ready, not when the process
+// starts.
 func (h *Health) SetReady(ready bool) { h.ready.Store(ready) }
 
 func (h *Health) Live(w http.ResponseWriter, _ *http.Request) {
@@ -35,9 +36,10 @@ func (h *Health) Ready(w http.ResponseWriter, _ *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{statusKey: "ready"})
 }
 
-// WriteJSON menulis body sebagai JSON. Galat encode tidak bisa diperbaiki
-// karena status dan header sudah terkirim, tetapi ia dicatat - menelannya
-// diam-diam adalah cacat yang ditemukan di sistem lama (temuan B8).
+// WriteJSON writes body as JSON. An encode error cannot be recovered from
+// because the status and headers are already sent, but it is logged -
+// swallowing it silently is a defect found in the legacy system (finding
+// B8).
 func WriteJSON(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

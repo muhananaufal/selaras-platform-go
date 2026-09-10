@@ -1,4 +1,4 @@
-// Package rpc menampung opsi klien gRPC yang dipakai lintas unit.
+// Package rpc holds the gRPC client options used across units.
 package rpc
 
 import (
@@ -8,30 +8,29 @@ import (
 	"google.golang.org/grpc"
 )
 
-// DefaultUpstreamTimeout adalah batas waktu satu panggilan ke service lain
-// bila pemanggilnya tidak menetapkan sendiri.
+// DefaultUpstreamTimeout is the deadline for one call to another service
+// when the caller sets none of its own.
 //
-// Lima detik: sepuluh kali RPC terlama yang pernah diukur (Register dengan
-// argon2id, p99 di bawah setengah detik; laporan kinerja F9-10), dan masih
-// di bawah batas yang membuat pengguna menganggap aplikasinya mati. Chaos
-// F9-13 dengan sepuluh detik menunjukkan panggilan PERTAMA ke service yang
-// baru mati menunggu penuh sampai tenggat - klien gRPC masih mencoba
-// menyambung - jadi angka ini adalah berapa lama pengguna pertama menunggu
-// sebelum 504, dan sepuluh terlalu lama untuk itu.
+// Five seconds: ten times the longest RPC ever measured (Register with
+// argon2id, p99 under half a second; F9-10 performance report), and still
+// below the limit at which a user decides the app is dead. Chaos F9-13 with
+// ten seconds showed the FIRST call to a freshly dead service waiting the
+// full deadline - the gRPC client still trying to connect - so this number
+// is how long the first user waits before a 504, and ten is too long for
+// that.
 const DefaultUpstreamTimeout = 5 * time.Second
 
-// WithUpstreamDeadline membatasi setiap panggilan unary yang belum punya
-// batas waktu.
+// WithUpstreamDeadline bounds every unary call that has no deadline yet.
 //
-// Ini lahir dari chaos F9-13: saat profile-svc dimatikan, GET /profile di
-// gateway TIDAK menjawab 503 - ia menggantung sampai klien menyerah. Klien
-// gRPC yang sedang menyambung ulang menahan RPC selama ia mencoba, dan tanpa
-// batas waktu dari pemanggil, "mencoba" itu tidak berujung. Batas di sini
-// membuat kegagalan itu menjadi DeadlineExceeded yang dipetakan gateway ke
-// 504, dalam waktu yang bisa dijelaskan kepada siapa pun.
+// This was born from chaos F9-13: with profile-svc stopped, GET /profile at
+// the gateway did NOT answer 503 - it hung until the client gave up. A gRPC
+// client that is reconnecting holds the RPC while it tries, and without a
+// deadline from the caller that "trying" has no end. The bound here turns
+// that failure into a DeadlineExceeded that the gateway maps to 504, within
+// a time that can be explained to anyone.
 //
-// Batas waktu yang SUDAH ada di ctx dihormati: pemanggil yang tahu lebih
-// baik - pekerjaan latar dengan tenggat sendiri - tidak ditimpa.
+// A deadline ALREADY on the ctx is honoured: a caller that knows better -
+// background work with its own deadline - is not overridden.
 func WithUpstreamDeadline(timeout time.Duration) grpc.DialOption {
 	if timeout <= 0 {
 		timeout = DefaultUpstreamTimeout

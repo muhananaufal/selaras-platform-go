@@ -1,11 +1,11 @@
-// Package authn membuat setiap service memverifikasi sendiri siapa yang
-// meminta (ADR-026), alih-alih mempercayai user_id yang sekadar dikirimkan.
+// Package authn makes every service verify for itself who is asking
+// (ADR-026), instead of trusting a user_id that was merely sent along.
 //
-// Bentuknya: gateway meneruskan token akses pengguna sebagai metadata gRPC,
-// service memverifikasi tanda tangannya dengan kunci publik yang sama yang
-// dipegang gateway, lalu mencocokkan `sub` dengan `user_id` di permintaan.
-// Tidak ada kunci privat di luar identity-svc, tidak ada rahasia bersama,
-// tidak ada panggilan jaringan tambahan.
+// The shape: the gateway forwards the user's access token as gRPC metadata,
+// the service verifies its signature with the same public key the gateway
+// holds, then matches `sub` against the `user_id` in the request. No
+// private key outside identity-svc, no shared secret, no extra network
+// call.
 package authn
 
 import (
@@ -13,15 +13,15 @@ import (
 	"errors"
 )
 
-// Principal adalah yang terbukti dari sebuah token: siapa, dan generasi
-// sesinya. Tidak lebih - peran dan surel tetap urusan identity-svc.
+// Principal is what a token proves: who, and the generation of their
+// session. Nothing more - roles and email remain identity-svc's business.
 type Principal struct {
 	UserID     string
 	Generation int64
 }
 
-// ErrNoPrincipal dikembalikan PrincipalFrom saat permintaan tidak membawa
-// token yang terverifikasi.
+// ErrNoPrincipal is returned by PrincipalFrom when the request carries no
+// verified token.
 var ErrNoPrincipal = errors.New("no verified principal on this request")
 
 type ctxKey int
@@ -31,9 +31,9 @@ const (
 	keyPrincipal
 )
 
-// WithToken menaruh token akses mentah ke ctx supaya klien gRPC di hilir
-// meneruskannya. Gateway memanggilnya setelah token diverifikasi; service
-// tidak perlu, karena metadata masuk diteruskan otomatis oleh
+// WithToken puts the raw access token into ctx so downstream gRPC clients
+// forward it. The gateway calls it after verifying the token; services need
+// not, because incoming metadata is forwarded automatically by
 // UnaryClientInterceptor.
 func WithToken(ctx context.Context, raw string) context.Context {
 	if raw == "" {
@@ -42,7 +42,7 @@ func WithToken(ctx context.Context, raw string) context.Context {
 	return context.WithValue(ctx, keyToken, raw)
 }
 
-// TokenFrom membaca token yang ditaruh WithToken.
+// TokenFrom reads the token placed by WithToken.
 func TokenFrom(ctx context.Context) (string, bool) {
 	raw, ok := ctx.Value(keyToken).(string)
 	return raw, ok && raw != ""
@@ -52,10 +52,10 @@ func withPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, keyPrincipal, p)
 }
 
-// PrincipalFrom membaca identitas yang diverifikasi interceptor server.
+// PrincipalFrom reads the identity verified by the server interceptor.
 //
-// Handler yang ingin lebih dari sekadar "user_id cocok" - misalnya menolak
-// generasi yang sudah dicabut - membacanya dari sini, bukan dari permintaan.
+// A handler that wants more than "user_id matches" - refusing a revoked
+// generation, say - reads it from here, not from the request.
 func PrincipalFrom(ctx context.Context) (Principal, error) {
 	p, ok := ctx.Value(keyPrincipal).(Principal)
 	if !ok {

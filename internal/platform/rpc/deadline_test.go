@@ -15,9 +15,9 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/rpc"
 )
 
-// blackHole adalah dialer yang tidak pernah selesai menyambung - bentuk yang
-// dilihat gateway saat service di belakangnya baru saja mati dan klien gRPC
-// sedang mencoba menyambung ulang.
+// blackHole is a dialer that never finishes connecting - the shape the
+// gateway sees when the service behind it has just died and the gRPC client
+// is trying to reconnect.
 func blackHole(ctx context.Context, _ string) (net.Conn, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -40,10 +40,10 @@ func dial(t *testing.T, opts ...grpc.DialOption) profilev1.ProfileClient {
 	return profilev1.NewProfileClient(conn)
 }
 
-// TestACallToAServiceThatNeverAnswersEndsWithinTheDeadline menutup temuan
-// chaos F9-13: tanpa batas waktu, GET /profile menggantung saat profile-svc
-// mati. Dengan batas 300 ms, panggilannya harus berakhir DeadlineExceeded
-// dalam waktu yang dekat dengan itu - bukan setelah klien HTTP menyerah.
+// TestACallToAServiceThatNeverAnswersEndsWithinTheDeadline closes the chaos
+// F9-13 finding: without a deadline, GET /profile hung while profile-svc
+// was down. With a 300 ms bound, the call must end in DeadlineExceeded
+// close to that time - not after the HTTP client gives up.
 func TestACallToAServiceThatNeverAnswersEndsWithinTheDeadline(t *testing.T) {
 	client := dial(t, rpc.WithUpstreamDeadline(300*time.Millisecond))
 
@@ -59,8 +59,8 @@ func TestACallToAServiceThatNeverAnswersEndsWithinTheDeadline(t *testing.T) {
 	}
 }
 
-// TestACallerWithItsOwnDeadlineIsNotOverridden menjaga pekerjaan latar yang
-// punya tenggat lebih pendek: batasnya tidak boleh diperpanjang diam-diam.
+// TestACallerWithItsOwnDeadlineIsNotOverridden protects background work
+// with a shorter deadline: its bound must not be silently extended.
 func TestACallerWithItsOwnDeadlineIsNotOverridden(t *testing.T) {
 	client := dial(t, rpc.WithUpstreamDeadline(5*time.Second))
 
@@ -79,16 +79,16 @@ func TestACallerWithItsOwnDeadlineIsNotOverridden(t *testing.T) {
 	}
 }
 
-// TestZeroMeansTheDefault: nol bukan "tanpa batas" - itu justru keadaan yang
-// melahirkan temuannya.
+// TestZeroMeansTheDefault: zero is not "unbounded" - that is precisely the
+// state that produced the finding.
 func TestZeroMeansTheDefault(t *testing.T) {
 	if rpc.DefaultUpstreamTimeout <= 0 {
 		t.Fatal("the default upstream timeout must be positive")
 	}
-	// Opsi dengan nol harus tetap membatasi; dibuktikan dengan panggilan yang
-	// TIDAK menggantung lebih lama dari bawaan (10 s) - diuji dengan batas
-	// waktu test yang lebih pendek dari itu tidak praktis, jadi yang dijaga
-	// di sini adalah konstruksinya tidak panic dan menghasilkan opsi.
+	// An option with zero must still bound the call; proving it with a call
+	// that does NOT hang longer than the default (10 s) - tested with a test
+	// timeout shorter than that is impractical, so what is guarded here is
+	// that constructing it does not panic and yields an option.
 	if rpc.WithUpstreamDeadline(0) == nil {
 		t.Fatal("WithUpstreamDeadline(0) returned no option")
 	}

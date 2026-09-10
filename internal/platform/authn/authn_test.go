@@ -38,8 +38,8 @@ func newKeys(t *testing.T) keys {
 	return keys{pub: pub, priv: priv}
 }
 
-// mint menandatangani token dengan bentuk yang sama dengan identity-svc,
-// langsung lewat pustaka JWT supaya test ini tidak bergantung pada identity.
+// mint signs a token with the same shape identity-svc produces, straight
+// through the JWT library so this test does not depend on identity.
 func (k keys) mint(t *testing.T, sub string, gen int64, tune func(*jwt.RegisteredClaims)) string {
 	t.Helper()
 	now := time.Now()
@@ -86,7 +86,7 @@ func call(t *testing.T, v authn.TokenVerifier, ctx context.Context, req any) (co
 }
 
 func TestATokenIssuedByIdentityIsAccepted(t *testing.T) {
-	// Kompatibilitas dengan penerbit sungguhan, bukan hanya dengan mint().
+	// Compatibility with the real issuer, not only with mint().
 	k := newKeys(t)
 	iss, err := token.NewIssuer(k.priv, issuer, time.Hour)
 	if err != nil {
@@ -185,8 +185,9 @@ func TestPlumbingIsNeverChallenged(t *testing.T) {
 	}
 }
 
-// Klien meneruskan token: dari WithToken (gateway) atau dari metadata masuk
-// (service yang memanggil service lain atas nama pengguna yang sama).
+// The client forwards the token: from WithToken (the gateway) or from the
+// incoming metadata (a service calling another service on behalf of the
+// same user).
 func TestTheClientForwardsTheToken(t *testing.T) {
 	capture := func(ctx context.Context) string {
 		md, _ := metadata.FromOutgoingContext(ctx)

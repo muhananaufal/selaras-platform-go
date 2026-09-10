@@ -7,8 +7,8 @@ import (
 	"os"
 )
 
-// Nama variabel yang sama dengan gateway (internal/edge/config.go): satu
-// kunci publik, disebar ke setiap unit yang melayani gRPC.
+// The same variable name as the gateway (internal/edge/config.go): one
+// public key, distributed to every unit that serves gRPC.
 const (
 	EnvVerifyKey = "JWT_VERIFY_KEY"
 	EnvIssuer    = "JWT_ISSUER"
@@ -16,7 +16,7 @@ const (
 	defaultIssuer = "identity-svc"
 )
 
-// ParseVerifyKey membaca kunci publik Ed25519 yang dikodekan base64.
+// ParseVerifyKey reads a base64-encoded Ed25519 public key.
 func ParseVerifyKey(raw string) (ed25519.PublicKey, error) {
 	key, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
@@ -29,11 +29,11 @@ func ParseVerifyKey(raw string) (ed25519.PublicKey, error) {
 	return key, nil
 }
 
-// VerifierFromEnv membangun Verifier dari JWT_VERIFY_KEY dan JWT_ISSUER.
+// VerifierFromEnv builds a Verifier from JWT_VERIFY_KEY and JWT_ISSUER.
 //
-// Tanpa nilai bawaan untuk kuncinya (ADR-016): service yang menyala tanpa
-// kunci akan menolak setiap permintaan berpengguna, dan itu jauh lebih
-// mudah dijelaskan saat start daripada saat permintaan pertama.
+// No default for the key (ADR-016): a service that starts without a key
+// would refuse every user-bound request, and that is far easier to explain
+// at start-up than on the first request.
 func VerifierFromEnv() (*Verifier, error) {
 	raw := os.Getenv(EnvVerifyKey)
 	if raw == "" {

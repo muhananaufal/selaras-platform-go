@@ -59,8 +59,8 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-// Liveness dan readiness harus terpisah: proses yang hidup tetapi belum
-// siap tidak boleh di-restart, ia hanya perlu dikeluarkan dari service.
+// Liveness and readiness must be separate: a process that is alive but not
+// ready must not be restarted, it only needs taking out of the service.
 func TestLivenessIsIndependentOfReadiness(t *testing.T) {
 	t.Parallel()
 

@@ -9,33 +9,33 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrInvalidToken menutupi setiap alasan sebuah token ditolak. Alasannya ada
-// di galat yang dibungkus untuk log; ke pemanggil hanya "unauthenticated" -
-// membedakan tanda tangan salah dari kedaluwarsa memberi tahu penyerang
-// bahwa tanda tangannya benar.
+// ErrInvalidToken covers every reason a token is refused. The reason lives
+// in the wrapped error for the log; the caller only gets "unauthenticated" -
+// distinguishing a bad signature from an expired token tells an attacker the
+// signature was right.
 var ErrInvalidToken = errors.New("invalid access token")
 
-// claims adalah irisan klaim identity-svc yang dibutuhkan di sini. Nama
-// bidangnya HARUS sama dengan yang ditulis internal/identity/adapter/token;
-// test lintas paket menjaga keduanya tetap sejalan.
+// claims is the slice of identity-svc's claims needed here. The field names
+// MUST match what internal/identity/adapter/token writes; a cross-package
+// test keeps the two aligned.
 type claims struct {
 	jwt.RegisteredClaims
 	Generation int64 `json:"gen"`
 }
 
-// Verifier memeriksa token dengan kunci publik identity-svc.
+// Verifier checks tokens with identity-svc's public key.
 //
-// Ia sengaja tidak memakai internal/identity/adapter/token: paket itu
-// mengembalikan domain.Claims milik identity, dan mengimpornya dari setiap
-// service berarti setiap service bergantung pada domain identity. Yang
-// dibutuhkan di sini hanya sub dan gen.
+// It deliberately does not use internal/identity/adapter/token: that
+// package returns identity's domain.Claims, and importing it from every
+// service would make every service depend on the identity domain. All that
+// is needed here is sub and gen.
 type Verifier struct {
 	key    ed25519.PublicKey
 	parser *jwt.Parser
 }
 
-// NewVerifier menerima kunci publik Ed25519 dan nama penerbit yang
-// diharapkan. Keduanya diperiksa saat start, bukan saat permintaan pertama.
+// NewVerifier takes an Ed25519 public key and the expected issuer name.
+// Both are checked at start-up, not on the first request.
 func NewVerifier(key ed25519.PublicKey, issuer string) (*Verifier, error) {
 	if len(key) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("public key is %d bytes; want %d", len(key), ed25519.PublicKeySize)
@@ -54,7 +54,7 @@ func NewVerifier(key ed25519.PublicKey, issuer string) (*Verifier, error) {
 	}, nil
 }
 
-// Verify mengembalikan Principal dari token yang sah.
+// Verify returns the Principal of a valid token.
 func (v *Verifier) Verify(raw string) (Principal, error) {
 	var c claims
 	if _, err := v.parser.ParseWithClaims(raw, &c, func(*jwt.Token) (any, error) {
@@ -65,8 +65,8 @@ func (v *Verifier) Verify(raw string) (Principal, error) {
 	if _, err := uuid.Parse(c.Subject); err != nil {
 		return Principal{}, fmt.Errorf("%w: subject is not a user id", ErrInvalidToken)
 	}
-	// Generasi nol berarti klaimnya hilang; menerimanya membuat token tanpa
-	// generasi selamat dari setiap pencabutan (ADR-020).
+	// A generation of zero means the claim is missing; accepting it would let
+	// a token without a generation survive every revocation (ADR-020).
 	if c.Generation < 1 {
 		return Principal{}, fmt.Errorf("%w: missing token generation", ErrInvalidToken)
 	}

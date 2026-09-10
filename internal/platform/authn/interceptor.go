@@ -12,32 +12,32 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// Nama metadata yang membawa token, sama dengan header HTTP-nya supaya yang
-// membaca trace atau tcpdump tidak perlu belajar nama baru.
+// The metadata name that carries the token, the same as its HTTP header so
+// whoever reads a trace or a tcpdump does not have to learn a new name.
 const metadataKey = "authorization"
 
-// userIDField adalah nama bidang yang menjadi dasar otorisasi di seluruh
-// kontrak api/proto. Permintaan yang memilikinya WAJIB datang dengan token
-// yang `sub`-nya sama; permintaan tanpa bidang ini (Register, Login,
-// ResolveRiskRegion) adalah RPC publik.
+// userIDField is the name of the field that authorisation is based on
+// across the whole api/proto contract. A request that has it MUST arrive
+// with a token whose `sub` matches; a request without this field (Register,
+// Login, ResolveRiskRegion) is a public RPC.
 const userIDField protoreflect.Name = "user_id"
 
-// TokenVerifier adalah yang dibutuhkan interceptor dari sebuah pemeriksa.
+// TokenVerifier is what the interceptor needs from a verifier.
 type TokenVerifier interface {
 	Verify(raw string) (Principal, error)
 }
 
-// UnaryServerInterceptor menegakkan ADR-026 pada setiap RPC unary.
+// UnaryServerInterceptor enforces ADR-026 on every unary RPC.
 //
-// Tiga keadaan, tiga jawaban:
-//   - permintaan punya user_id dan tokennya cocok -> diteruskan, Principal di ctx;
-//   - permintaan punya user_id tetapi token tidak ada atau tidak sah ->
-//     Unauthenticated; ada tetapi milik orang lain -> PermissionDenied;
-//   - permintaan tidak punya user_id -> RPC publik, diteruskan (token yang
-//     ikut terkirim tetap diverifikasi bila ada, supaya token palsu tidak
-//     "lolos" hanya karena RPC-nya publik).
+// Three states, three answers:
+//   - the request has user_id and the token matches -> passed through, Principal in ctx;
+//   - the request has user_id but the token is missing or invalid ->
+//     Unauthenticated; present but someone else's -> PermissionDenied;
+//   - the request has no user_id -> a public RPC, passed through (a token
+//     that came along is still verified when present, so a forged token does
+//     not "get through" just because the RPC is public).
 //
-// Health dan reflection gRPC dilewati: keduanya bukan data pengguna.
+// gRPC health and reflection are skipped: neither is user data.
 func UnaryServerInterceptor(verifier TokenVerifier) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
@@ -64,9 +64,9 @@ func UnaryServerInterceptor(verifier TokenVerifier) grpc.UnaryServerInterceptor 
 				return nil, status.Error(codes.Unauthenticated, "this request needs an access token")
 			}
 			if claimed != principal.UserID {
-				// 403, bukan 404: ini bukan "sumber daya tidak ada" (S9), ini
-				// pemanggil yang mengaku sebagai orang lain. Yang salah adalah
-				// pemanggilnya, dan ia berhak tahu.
+				// 403, not 404: this is not "the resource does not exist" (S9), this is
+				// a caller claiming to be someone else. The caller is the one at fault,
+				// and it is entitled to know.
 				return nil, status.Error(codes.PermissionDenied, "the access token does not belong to this user")
 			}
 		}
@@ -74,10 +74,10 @@ func UnaryServerInterceptor(verifier TokenVerifier) grpc.UnaryServerInterceptor 
 	}
 }
 
-// UnaryClientInterceptor meneruskan token ke hilir: dari WithToken (gateway)
-// atau dari metadata masuk (service yang memanggil service lain atas nama
-// pengguna yang sama). Tanpa token, permintaan dikirim apa adanya - RPC
-// publik dan panggilan internal tanpa pengguna tetap bisa berjalan.
+// UnaryClientInterceptor forwards the token downstream: from WithToken (the
+// gateway) or from the incoming metadata (a service calling another service
+// on behalf of the same user). Without a token the request is sent as it is
+// - public RPCs and internal calls without a user still work.
 func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context, method string, req, reply any,
@@ -111,9 +111,9 @@ func bearerFromIncoming(ctx context.Context) (string, bool) {
 	return "", false
 }
 
-// userIDOf membaca bidang user_id lewat refleksi protobuf, supaya satu
-// interceptor menegakkan aturan yang sama di 60-an RPC tanpa satu pun
-// handler yang harus ingat memanggilnya.
+// userIDOf reads the user_id field through protobuf reflection, so one
+// interceptor enforces the same rule across some 60 RPCs without a single
+// handler having to remember to call it.
 func userIDOf(req any) (string, bool) {
 	msg, ok := req.(proto.Message)
 	if !ok {

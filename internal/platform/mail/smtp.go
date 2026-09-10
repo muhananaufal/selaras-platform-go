@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// Message adalah satu surel teks polos.
+// Message is one plain-text email.
 //
-// Hanya teks polos, dan itu bukan kekurangan yang menunggu diperbaiki: surel
-// yang dikirim sistem ini membawa satu tautan, dan HTML hanya menambah
-// permukaan tanpa menambah yang tersampaikan.
+// Plain text only, and that is not a shortcoming waiting to be fixed: the
+// emails this system sends carry one link, and HTML only adds surface
+// without adding anything that gets across.
 type Message struct {
 	To      string
 	Subject string
@@ -27,34 +27,34 @@ type Sender interface {
 	Send(ctx context.Context, msg Message) error
 }
 
-// Config menampung yang dibutuhkan untuk menghubungi server SMTP.
+// Config holds what is needed to reach the SMTP server.
 type Config struct {
 	Host string
 	Port int
 
-	// Username dan Password boleh kosong. Server pengembangan lokal tidak
-	// menuntut autentikasi, dan menolak konfigurasi tanpa kredensial akan
-	// membuat alur ini tidak bisa dicoba sama sekali di mesin sendiri.
+	// Username and Password may be empty. A local development server demands
+	// no authentication, and refusing a configuration without credentials
+	// would make this flow impossible to try on one's own machine.
 	Username string
 	Password string
 
-	// From adalah alamat pengirim. Ia wajib: server SMTP mana pun menolak
-	// pesan tanpanya, dan gagalnya jauh dari sini.
+	// From is the sender address. It is required: any SMTP server refuses a
+	// message without one, and the failure surfaces far from here.
 	From string
 
 	Timeout time.Duration
 }
 
-// SMTP mengirim lewat server SMTP.
+// SMTP sends through an SMTP server.
 //
-// Memakai net/smtp dari pustaka standar, bukan pustaka pihak ketiga.
-// Alasannya: yang dikirim sistem ini adalah teks polos satu tautan, dan
-// untuk itu stdlib sudah cukup - termasuk STARTTLS, yang dinegosiasikannya
-// sendiri bila server mengumumkannya.
+// It uses net/smtp from the standard library, not a third-party library.
+// The reason: what this system sends is plain text with one link, and for
+// that the stdlib is enough - including STARTTLS, which it negotiates on
+// its own when the server announces it.
 //
-// Pembatalnya jelas: begitu ada lampiran, HTML, atau kebutuhan TLS implisit
-// di port 465, stdlib tidak lagi memadai dan pustaka yang tepat harus
-// dipilih sadar.
+// The trigger for abandoning it is clear: as soon as attachments, HTML, or
+// implicit TLS on port 465 are needed, the stdlib is no longer adequate and
+// the right library has to be chosen consciously.
 type SMTP struct {
 	cfg  Config
 	addr string
@@ -93,10 +93,9 @@ func (s *SMTP) Send(ctx context.Context, msg Message) error {
 
 	payload := s.compose(msg)
 
-	// smtp.SendMail tidak menerima context, jadi batas waktunya dijaga di
-	// sini. Tanpa itu, server surel yang menggantung akan menahan permintaan
-	// selama apa pun - dan permintaan yang memanggilnya adalah permintaan
-	// pengguna.
+	// smtp.SendMail takes no context, so the timeout is enforced here. Without
+	// it, a hanging mail server would hold the request for however long - and
+	// the request calling it is a user's request.
 	done := make(chan error, 1)
 	go func() {
 		done <- smtp.SendMail(s.addr, s.auth, s.cfg.From, []string{msg.To}, payload)
@@ -118,17 +117,17 @@ func (s *SMTP) Send(ctx context.Context, msg Message) error {
 	}
 }
 
-// compose menyusun pesan RFC 5322.
+// compose assembles an RFC 5322 message.
 //
-// Nilai header dibersihkan dari CR dan LF.
+// Header values are stripped of CR and LF.
 //
-// Tanpa itu, sebuah nilai yang mengandung baris baru bisa menyisipkan header
-// tambahan ke dalam pesan yang kita kirim atas nama sendiri - Reply-To yang
-// mengarahkan balasan ke penyerang, misalnya.
+// Without that, a value containing a newline could inject additional headers
+// into a message we send under our own name - a Reply-To that steers replies
+// to an attacker, say.
 //
-// Ia TIDAK bisa menambah penerima lewat transport ini: smtp.SendMail
-// menetapkan penerima dari amplop SMTP, dan header di badan pesan tidak
-// menyentuhnya. Membersihkannya tetap wajib, tetapi alasannya bukan itu.
+// It CANNOT add recipients through this transport: smtp.SendMail sets the
+// recipients from the SMTP envelope, and headers in the message body do not
+// touch them. Stripping is still mandatory, but that is not the reason.
 func (s *SMTP) compose(msg Message) []byte {
 	var b strings.Builder
 
