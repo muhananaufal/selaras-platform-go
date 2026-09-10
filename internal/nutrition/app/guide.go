@@ -22,8 +22,14 @@ import (
 // difference here is that the defaults are ALWAYS used, because nutrition has no
 // way yet to obtain the real facts:
 //
-//   - The health focus lives inside the personalisation report owned by assessment-svc, and the PersonalizationCompleted event carries neither user_id nor the titles of the risk contributors. Adding them is a contract change between units, not part of this phase.
-//   - Today's coaching mission changes every day, so no event can carry it ahead of time. Getting it needs an architectural decision - a synchronous call to coaching-svc, or a daily event from there - and both are outside this phase.
+//   - The health focus lives inside the personalisation report owned by
+//     assessment-svc, and the PersonalizationCompleted event carries neither
+//     user_id nor the titles of the risk contributors. Adding them is a contract
+//     change between units, not part of this phase.
+//   - Today's coaching mission changes every day, so no event can carry it ahead
+//     of time. Getting it needs an architectural decision - a synchronous call
+//     to coaching-svc, or a daily event from there - and both are outside this
+//     phase.
 //
 // Both are recorded as follow-up work, not disguised with a guess. The prompt
 // template reads these values as they are, so the model is never told something

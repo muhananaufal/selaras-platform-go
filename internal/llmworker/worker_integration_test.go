@@ -562,11 +562,11 @@ func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 // The worker is shut down in the middle of a series of attempts. Three things
 // have to happen once it is started again, and all three are easy to get wrong:
 //
-// 1. The message comes back - its offset was indeed not committed. 2. It is NOT
-// skipped as a duplicate - the claim was released on giving up. 3. Its attempt
-// counter ACCUMULATES on the same row, rather than starting from zero on a new
-// row. Otherwise the limit of three is never reached and a job that always
-// fails is tried forever.
+//  1. The message comes back - its offset was indeed not committed.
+//  2. It is NOT skipped as a duplicate - the claim was released on giving up.
+//  3. Its attempt counter ACCUMULATES on the same row, rather than starting
+//     from zero on a new row. Otherwise the limit of three is never reached
+//     and a job that always fails is tried forever.
 func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	h := newHarness(t)
 	h.provider.Err = errProviderDown
