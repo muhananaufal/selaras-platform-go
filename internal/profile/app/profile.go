@@ -10,18 +10,19 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/profile/domain"
 )
 
-// Service melayani seluruh alur profil.
+// Service serves the whole profile flow.
 //
-// Ketiganya cukup kecil dan cukup terkait untuk hidup dalam satu tipe;
-// memecahnya menjadi tiga struct berisi satu metode hanya menambah nama tanpa
-// menambah kejelasan.
+// The three are small enough and related enough to live in one type;
+// splitting them into three one-method structs only adds names without adding
+// clarity.
 type Service struct {
 	profiles domain.ProfileRepository
 	now      func() time.Time
 
-	// Ketiganya dipasang bersama lewat WithEvents, atau tidak sama sekali.
-	// Sebagian yang terpasang berarti perubahan profil tersimpan tanpa
-	// disiarkan - dan tidak ada yang tahu sampai cache di sisi lain basi.
+	// The three are installed together through WithEvents, or not at all.
+	// Partially installed would mean profile changes stored without being
+	// announced - and nobody knows until the cache on the other side goes
+	// stale.
 	uow    UnitOfWork
 	repos  ProfileRepositoryFor
 	events EventWriterFor
@@ -37,20 +38,21 @@ func NewService(profiles domain.ProfileRepository, now func() time.Time) (*Servi
 	return &Service{profiles: profiles, now: now}, nil
 }
 
-// Get mengembalikan profil seorang pengguna.
+// Get returns a user's profile.
 //
-// Profil yang belum ada menghasilkan ErrProfileNotFound, dan pemanggilnya
-// yang memutuskan apa artinya - bagi gateway itu `data: null`, bukan galat,
-// karena "pengguna tanpa profil" memang keadaan yang sah (B7).
+// A profile that does not exist yet yields ErrProfileNotFound, and the
+// caller decides what that means - for the gateway it is `data: null`, not
+// an error, because "a user without a profile" is indeed a valid state
+// (B7).
 func (s *Service) Get(ctx context.Context, userID domain.UserID) (*domain.Profile, error) {
 	return s.profiles.FindByUserID(ctx, userID)
 }
 
-// CreateEmpty membuat profil kosong untuk pengguna baru.
+// CreateEmpty creates an empty profile for a new user.
 //
-// Dipanggil identity-svc setelah pendaftaran, dan bersifat best-effort di
-// sisi pemanggil (ADR-002 aturan 1). Di sisi ini ia tetap harus benar:
-// profil kedua untuk pengguna yang sama ditolak indeks unik.
+// Called by identity-svc after registration, and best-effort on the
+// caller's side (ADR-002 rule 1). On this side it still has to be correct:
+// a second profile for the same user is refused by the unique index.
 func (s *Service) CreateEmpty(ctx context.Context, userID domain.UserID) (*domain.Profile, error) {
 	profile, err := domain.NewEmptyProfile(userID, s.now())
 	if err != nil {
@@ -58,10 +60,9 @@ func (s *Service) CreateEmpty(ctx context.Context, userID domain.UserID) (*domai
 	}
 
 	if err := s.profiles.Create(ctx, profile); err != nil {
-		// Sudah punya profil bukan kegagalan bagi pemanggil: identity-svc
-		// bisa mencoba ulang setelah jawaban yang hilang di jaringan, dan
-		// percobaan kedua harus menghasilkan hal yang sama seperti yang
-		// pertama.
+		// Already having a profile is not a failure for the caller: identity-svc
+		// may retry after an answer lost on the network, and the second attempt
+		// has to produce the same thing as the first.
 		if errors.Is(err, domain.ErrProfileExists) {
 			return s.profiles.FindByUserID(ctx, userID)
 		}
@@ -70,12 +71,13 @@ func (s *Service) CreateEmpty(ctx context.Context, userID domain.UserID) (*domai
 	return profile, nil
 }
 
-// Update menerapkan perubahan, dan membuat profilnya bila belum ada.
+// Update applies changes, and creates the profile if it does not exist yet.
 //
-// Perilaku membuat-bila-belum-ada itu dipertahankan dari `updateOrCreate` di
-// sistem lama, dan ADR-022 menjelaskan mengapa ia wajib: tanpa itu, pengguna
-// yang pembuatan profilnya gagal saat mendaftar tidak akan pernah bisa punya
-// profil - padahal kegagalan itu justru yang diizinkan ADR-002 aturan 1.
+// That create-if-absent behaviour is kept from `updateOrCreate` in the
+// legacy system, and ADR-022 explains why it is mandatory: without it, a
+// user whose profile creation failed at registration could never have a
+// profile - even though that failure is precisely what ADR-002 rule 1
+// permits.
 func (s *Service) Update(
 	ctx context.Context,
 	userID domain.UserID,
@@ -99,17 +101,16 @@ func (s *Service) Update(
 		if err != nil {
 			return nil, err
 		}
-		// Perubahannya diterapkan SEBELUM disimpan, sehingga profil yang
-		// nilainya ditolak tidak pernah sempat ada. Menyimpan dulu lalu
-		// memperbarui akan meninggalkan profil kosong setiap kali
-		// permintaannya cacat.
+		// The changes are applied BEFORE saving, so a profile with refused values
+		// never gets to exist. Saving first and then updating would leave an
+		// empty profile behind every time the request is malformed.
 		if err := created.Apply(changes, now); err != nil {
 			return nil, err
 		}
 		if err := s.profiles.Create(ctx, created); err != nil {
-			// Dua permintaan serempak bisa sama-sama menemukan profilnya
-			// belum ada. Yang kalah membaca ulang dan menerapkan
-			// perubahannya di atas yang menang, alih-alih gagal.
+			// Two concurrent requests can both find the profile absent. The loser
+			// rereads and applies its changes on top of the winner, instead of
+			// failing.
 			if errors.Is(err, domain.ErrProfileExists) {
 				return s.Update(ctx, userID, changes)
 			}

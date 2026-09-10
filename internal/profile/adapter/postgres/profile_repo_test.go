@@ -41,9 +41,9 @@ func newEmpty(t *testing.T, userID domain.UserID) *domain.Profile {
 	return p
 }
 
-// Menutup B6 di lapisan penyimpanan: profil kosong yang disimpan lalu dibaca
-// kembali WAJIB tetap kosong. Sistem lama menyimpannya benar dan merusaknya
-// saat menyajikan; di sini tidak ada satu lapis pun yang boleh mengisinya.
+// Closes B6 at the storage layer: an empty profile stored and read back MUST
+// stay empty. The legacy system stored it correctly and broke it on
+// presentation; here not a single layer may fill it in.
 func TestAnEmptyProfileComesBackEmpty(t *testing.T) {
 	repo, ctx := newRepo(t)
 	userID := mustUserID(t)
@@ -184,8 +184,8 @@ func TestUpdatePersists(t *testing.T) {
 	}
 }
 
-// Bidang yang dikosongkan harus kembali menjadi NULL, bukan string kosong
-// yang menyamar sebagai nilai.
+// A cleared field has to come back as NULL, not as an empty string posing
+// as a value.
 func TestClearingAFieldStoresNullAgain(t *testing.T) {
 	repo, ctx := newRepo(t)
 	pool := pgtest.Open(t, "profile")
@@ -227,9 +227,9 @@ func TestUpdatingAProfileThatIsNotThere(t *testing.T) {
 	}
 }
 
-// Batasan basis data adalah lapis terakhir. Domain sudah menolak nilai-nilai
-// ini, tetapi keduanya harus menolak: jalur mana pun yang kelak melewatkan
-// domain tetap berhenti di sini.
+// The database constraints are the last layer. The domain already refuses
+// these values, but both have to refuse: any path that someday bypasses the
+// domain still stops here.
 func TestTheDatabaseRefusesWhatTheDomainRefuses(t *testing.T) {
 	_, ctx := newRepo(t)
 	pool := pgtest.Open(t, "profile")

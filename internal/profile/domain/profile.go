@@ -1,5 +1,5 @@
-// Package domain memuat agregat profil: siapa orangnya, bukan apakah ia
-// boleh masuk. Yang kedua tinggal di identity (ADR-002).
+// Package domain holds the profile aggregate: who the person is, not
+// whether they may sign in. The latter lives in identity (ADR-002).
 package domain
 
 import (
@@ -22,14 +22,14 @@ var (
 	ErrProfileExists           = errors.New("this user already has a profile")
 )
 
-// dateLayout adalah ISO-8601 tanggal saja, seperti yang dijanjikan kontrak.
-// Bukan waktu penuh: tanggal lahir tidak punya jam dan tidak punya zona.
+// dateLayout is ISO-8601 date only, as the contract promises. Not a full
+// timestamp: a date of birth has no time and no zone.
 const dateLayout = "2006-01-02"
 
-// Sex hanya mengenal dua nilai, dan itu bukan pernyataan tentang manusia -
-// itu batas dari model risikonya. SCORE2 dikalibrasi terpisah untuk keduanya
-// dan tidak punya koefisien untuk yang lain, jadi nilai ketiga tidak akan
-// punya arti numerik yang bisa dipakai.
+// Sex knows only two values, and that is not a statement about people - it
+// is a limit of the risk model. SCORE2 is calibrated separately for the two
+// and has no coefficients for anything else, so a third value would have no
+// usable numeric meaning.
 type Sex string
 
 const (
@@ -38,8 +38,8 @@ const (
 	SexFemale   Sex = "female"
 )
 
-// NewSex menerima kosong sebagai "belum dinyatakan", bukan sebagai kekeliruan.
-// Profil yang belum diisi memang belum punya jenis kelamin (B7).
+// NewSex accepts empty as "not stated yet", not as a mistake. A profile not
+// yet filled in indeed has no sex yet (B7).
 func NewSex(raw string) (Sex, error) {
 	switch s := Sex(strings.ToLower(strings.TrimSpace(raw))); s {
 	case SexUnstated, SexMale, SexFemale:
@@ -52,8 +52,8 @@ func NewSex(raw string) (Sex, error) {
 func (s Sex) String() string { return string(s) }
 func (s Sex) IsStated() bool { return s != SexUnstated }
 
-// Language selalu punya nilai: antarmuka harus memilih satu bahasa untuk
-// setiap pengguna, jadi "belum ditentukan" bukan keadaan yang berguna.
+// Language always has a value: the interface has to pick one language for
+// every user, so "not determined yet" is not a useful state.
 type Language string
 
 const (
@@ -76,19 +76,18 @@ func NewLanguage(raw string) (Language, error) {
 
 func (l Language) String() string { return string(l) }
 
-// DateOfBirth membedakan "belum diisi" dari sebuah tanggal, dan itu inti dari
-// B6. Sistem lama menyimpan NULL lalu memanggil Carbon::parse(null) saat
-// menyajikan, yang mengembalikan waktu sekarang - sehingga setiap pengguna
-// yang belum mengisi profil tampil lahir hari ini dan berumur 0.
+// DateOfBirth tells "not filled in yet" from a date, and that is the heart of
+// B6. The legacy system stored NULL and then called Carbon::parse(null) on
+// presentation, which returns the current time - so every user who had not
+// filled in their profile appeared born today and aged 0.
 type DateOfBirth struct {
 	value *time.Time
 }
 
-// NewDateOfBirth mengurai tanggal dan menolak yang bukan masa lalu.
+// NewDateOfBirth parses a date and refuses one that is not in the past.
 //
-// Hari ini pun ditolak: bayi yang lahir hari ini tidak punya faktor risiko
-// kardiovaskular, dan yang jauh lebih mungkin adalah nilai bawaan yang bocor
-// dari suatu tempat.
+// Today is refused too: a baby born today has no cardiovascular risk
+// factors, and what is far more likely is a default leaking from somewhere.
 func NewDateOfBirth(raw string, today time.Time) (DateOfBirth, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -105,16 +104,16 @@ func NewDateOfBirth(raw string, today time.Time) (DateOfBirth, error) {
 	return DateOfBirth{value: &parsed}, nil
 }
 
-// DateOfBirthFrom membungkus tanggal yang datang dari penyimpanan, yang sudah
-// bertipe tanggal dan tidak perlu diurai lagi.
+// DateOfBirthFrom wraps a date that comes from storage, which is already
+// typed as a date and need not be parsed again.
 func DateOfBirthFrom(t *time.Time) DateOfBirth { return DateOfBirth{value: t} }
 
 func (d DateOfBirth) IsStated() bool { return d.value != nil }
 
 func (d DateOfBirth) Time() *time.Time { return d.value }
 
-// String mengembalikan bentuk ISO-8601, atau string kosong bila belum diisi.
-// Kosong berarti kosong - tidak pernah diganti hari ini.
+// String returns the ISO-8601 form, or an empty string if not filled in.
+// Empty means empty - never replaced with today.
 func (d DateOfBirth) String() string {
 	if d.value == nil {
 		return ""
@@ -122,11 +121,11 @@ func (d DateOfBirth) String() string {
 	return d.value.Format(dateLayout)
 }
 
-// AgeOn menghitung umur pada sebuah tanggal, dan menyatakan lewat nilai balik
-// kedua apakah ia bisa dihitung sama sekali.
+// AgeOn computes the age on a given date, and says through its second return
+// value whether it could be computed at all.
 //
-// Nilai balik kedua itu yang menutup B6: pemanggil tidak bisa mendapat angka
-// tanpa lebih dulu menghadapi kemungkinan bahwa tanggalnya tidak ada.
+// That second return value is what closes B6: a caller cannot get a number
+// without first facing the possibility that the date is absent.
 func (d DateOfBirth) AgeOn(on time.Time) (int, bool) {
 	if d.value == nil {
 		return 0, false
@@ -135,15 +134,14 @@ func (d DateOfBirth) AgeOn(on time.Time) (int, bool) {
 	born := *d.value
 	age := on.Year() - born.Year()
 
-	// Ulang tahun yang belum lewat tahun ini berarti umurnya masih satu
-	// tahun lebih muda. Selisih tahun saja akan melebihkan sampai 364 hari,
-	// dan mesin risiko membaca angka ini.
+	// A birthday not yet passed this year means the age is still one year
+	// younger. A plain difference of years would overstate by up to 364 days,
+	// and the risk engine reads this number.
 	//
-	// Perbandingannya bulan-dan-tanggal, BUKAN YearDay. YearDay salah di tahun
-	// kabisat: 29 Februari menggeser seluruh hari sesudahnya satu angka,
-	// sehingga orang yang lahir 1 Maret terhitung sudah berulang tahun pada 29
-	// Februari - setahun lebih tua, satu hari lebih awal. Ditemukan saat F2-16,
-	// di jalur yang sudah berjalan.
+	// The comparison is month-and-day, NOT YearDay. YearDay is wrong in leap
+	// years: 29 February shifts every following day by one, so someone born on
+	// 1 March counts as having had their birthday on 29 February - a year
+	// older, one day early. Found during F2-16, on a path already running.
 	if on.Month() < born.Month() ||
 		(on.Month() == born.Month() && on.Day() < born.Day()) {
 		age--
@@ -155,9 +153,9 @@ func truncateToDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-// ProfileID dan UserID keduanya UUID, tetapi bertipe berbeda supaya tidak
-// pernah tertukar di tanda tangan fungsi - dan keduanya memang sering muncul
-// bersebelahan.
+// ProfileID and UserID are both UUIDs, but of different types so they can
+// never be swapped in a function signature - and the two do often appear
+// side by side.
 type ProfileID struct{ v uuid.UUID }
 
 func NewProfileID() (ProfileID, error) {
@@ -179,9 +177,9 @@ func ParseProfileID(raw string) (ProfileID, error) {
 func (id ProfileID) String() string { return id.v.String() }
 func (id ProfileID) IsZero() bool   { return id.v == uuid.Nil }
 
-// UserID menunjuk ke identity.users. Ia hanya sebuah nilai di sini: tidak ada
-// kunci asing lintas skema, karena itu akan membatalkan isolasi yang
-// ditegakkan basis datanya sendiri (ADR-006).
+// UserID points at identity.users. It is merely a value here: there is no
+// foreign key across schemas, because that would undo the isolation the
+// database itself enforces (ADR-006).
 type UserID struct{ v uuid.UUID }
 
 func NewUserID() (UserID, error) {
@@ -203,8 +201,8 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// ProfileState adalah bentuk datar sebuah Profile untuk menyeberangi batas
-// penyimpanan.
+// ProfileState is the flat shape of a Profile for crossing the storage
+// boundary.
 type ProfileState struct {
 	ID                 ProfileID
 	UserID             UserID
@@ -218,20 +216,21 @@ type ProfileState struct {
 	UpdatedAt          time.Time
 }
 
-// Profile adalah agregat demografis.
+// Profile is the demographic aggregate.
 //
-// risk_region sengaja BUKAN miliknya. Itu konsep klinis, bukan demografis:
-// profil menyimpan negara, assessment-svc yang memetakannya lewat tabel
-// kalibrasi SCORE2 (ADR-002 aturan 3).
+// risk_region is deliberately NOT its own. That is a clinical concept, not
+// a demographic one: the profile stores the country, and assessment-svc
+// maps it through the SCORE2 calibration table (ADR-002 rule 3).
 type Profile struct {
 	state ProfileState
 }
 
-// NewEmptyProfile membuat profil yang seluruh bidangnya belum diisi.
+// NewEmptyProfile creates a profile with none of its fields filled in.
 //
-// Inilah yang dibuat saat pendaftaran, dan ia sengaja tidak menuntut apa pun:
-// pendaftaran hanya punya alamat surel, dan meminta lebih akan menggagalkan
-// pendaftaran demi data yang bisa diisi kapan saja.
+// This is what is created at registration, and it deliberately demands
+// nothing: registration only has an email address, and asking for more would
+// fail the registration for the sake of data that can be filled in at any
+// time.
 func NewEmptyProfile(userID UserID, now time.Time) (*Profile, error) {
 	if userID.IsZero() {
 		return nil, fmt.Errorf("%w: zero", ErrInvalidUserID)
@@ -272,16 +271,17 @@ func (p *Profile) Language() Language {
 	return Language(p.state.Language)
 }
 
-// AgeOn meneruskan ke tanggal lahirnya, termasuk nilai balik kedua yang
-// memaksa pemanggil menghadapi kemungkinan tanggalnya belum diisi.
+// AgeOn delegates to the date of birth, including the second return value
+// that forces the caller to face the possibility that the date is not
+// filled in.
 func (p *Profile) AgeOn(on time.Time) (int, bool) { return p.DateOfBirth().AgeOn(on) }
 
-// ProfileChanges adalah perubahan parsial.
+// ProfileChanges are partial changes.
 //
-// Setiap bidang berupa pointer supaya "tidak dikirim" bisa dibedakan dari
-// "dikirim kosong". Tanpa pembedaan itu, PATCH tidak punya cara menghapus
-// sebuah nilai - dan setiap permintaan diam-diam menimpa seluruh profil
-// dengan apa pun yang kebetulan ada di badannya.
+// Every field is a pointer so "not sent" can be told from "sent empty".
+// Without that distinction, PATCH has no way to clear a value - and every
+// request silently overwrites the whole profile with whatever happens to be
+// in its body.
 type ProfileChanges struct {
 	FirstName          *string
 	LastName           *string
@@ -291,11 +291,11 @@ type ProfileChanges struct {
 	Language           *string
 }
 
-// Apply memvalidasi seluruh perubahan LEBIH DULU, baru menerapkannya.
+// Apply validates all changes FIRST, and only then applies them.
 //
-// Urutan itu yang penting. Validasi sambil menerapkan akan meninggalkan
-// profil setengah berubah saat satu bidang ditolak, dan keadaan setengah
-// jauh lebih sulit dilacak daripada perubahan yang gagal seluruhnya.
+// That order is what matters. Validating while applying would leave a
+// half-changed profile when one field is refused, and a half state is far
+// harder to trace than a change that failed entirely.
 func (p *Profile) Apply(changes ProfileChanges, now time.Time) error {
 	next := p.state
 

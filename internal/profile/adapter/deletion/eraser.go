@@ -1,4 +1,4 @@
-// Package deletion menghapus data profil saat akun dihapus.
+// Package deletion erases profile data when an account is deleted.
 package deletion
 
 import (
@@ -8,22 +8,21 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Service adalah nama unit ini di dalam saga.
+// Service is the name of this unit inside the saga.
 //
-// Ia HARUS sama persis dengan salah satu nama di
-// identity/domain.DeletionParticipants. Nama yang tidak cocok membuat
-// konfirmasinya ditolak, dan saga menggantung selamanya menunggu unit yang
-// sebenarnya sudah selesai.
+// It MUST match one of the names in identity/domain.DeletionParticipants
+// exactly. A name that does not match gets its confirmation refused, and
+// the saga hangs forever waiting for a unit that has actually finished.
 const Service = "profile"
 
-// Erase menghapus profil seorang pengguna.
+// Erase deletes a user's profile.
 //
-// Berkunci user_id, bukan user_profile_id: id profil boleh kosong saat saga
-// dimulai - profil yang tidak pernah dibuat adalah keadaan yang sah (B7) - dan
-// unit ini justru pemiliknya, jadi ia tidak perlu menerjemahkan apa pun.
+// Keyed by user_id, not user_profile_id: the profile id may be empty when the
+// saga starts - a profile never created is a valid state (B7) - and this unit
+// is the owner, so it need not translate anything.
 //
-// IDEMPOTEN: baris yang tidak ada bukan galat. Relay outbox at-least-once, dan
-// permintaan yang sama bisa tiba dua kali.
+// IDEMPOTENT: a row that does not exist is not an error. The outbox relay is
+// at-least-once, and the same request can arrive twice.
 func Erase(ctx context.Context, q pg.Querier, userID, _ string) error {
 	if _, err := q.Exec(ctx, `DELETE FROM user_profiles WHERE user_id = $1`, userID); err != nil {
 		return fmt.Errorf("deleting the profile: %w", err)

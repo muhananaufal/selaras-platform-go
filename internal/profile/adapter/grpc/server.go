@@ -1,4 +1,4 @@
-// Package grpc melayani kontrak profile.v1 di atas gRPC.
+// Package grpc serves the profile.v1 contract over gRPC.
 package grpc
 
 import (
@@ -57,10 +57,10 @@ func (s *Server) UpdateProfile(
 		return nil, toStatus(ctx, "UpdateProfile", err)
 	}
 
-	// UpdateAndPublish, bukan Update: perubahan profil yang tidak disiarkan
-	// akan membuat cache di assessment-svc basi tanpa ada yang tahu (F2-16).
-	// Tanpa broker terpasang ia jatuh ke Update biasa, dan itu dinyatakan di
-	// log saat start - bukan diam-diam.
+	// UpdateAndPublish, not Update: a profile change that is not announced
+	// leaves the cache in assessment-svc stale without anyone knowing (F2-16).
+	// Without a broker installed it falls back to plain Update, and that is
+	// stated in the log at start - not silently.
 	profile, err := s.svc.UpdateAndPublish(ctx, userID, changesFrom(req))
 	if err != nil {
 		return nil, toStatus(ctx, "UpdateProfile", err)
@@ -84,19 +84,20 @@ func (s *Server) CreateEmptyProfile(
 	return &profilev1.CreateEmptyProfileResponse{Profile: toProto(profile)}, nil
 }
 
-// ResolveProfileId menjawab id profil, atau string kosong bila belum ada.
+// ResolveProfileId answers the profile id, or an empty string if there is
+// none yet.
 //
-// Profil yang belum ada BUKAN galat di sini, dan kontraknya menyatakan itu.
-// Pemanggilnya adalah identity-svc yang sedang menerbitkan token, dan
-// menggagalkan login karena profilnya belum ada akan mengubah keadaan yang
-// sah (B7) menjadi pengguna yang tidak bisa masuk sama sekali.
+// A profile that does not exist yet is NOT an error here, and the contract
+// says so. The caller is identity-svc issuing a token, and failing the login
+// because the profile does not exist would turn a valid state (B7) into a
+// user who cannot sign in at all.
 //
-// Namanya ditentukan antarmuka yang dihasilkan dari kontrak, bukan dipilih di
-// sini. Mengubahnya menjadi ResolveProfileID berarti mengubah nama RPC di
-// protobuf demi aturan gaya Go - dan kontraknya dibaca lebih banyak orang
-// daripada berkas ini.
+// The name is dictated by the interface generated from the contract, not
+// chosen here. Changing it to ResolveProfileID would mean renaming the RPC in
+// the protobuf for the sake of a Go style rule - and the contract is read by
+// more people than this file.
 //
-//nolint:staticcheck // ST1003: nama berasal dari kontrak, bukan dari Go
+//nolint:staticcheck // ST1003: the name comes from the contract, not from Go
 func (s *Server) ResolveProfileId(
 	ctx context.Context,
 	req *profilev1.ResolveProfileIdRequest,
@@ -116,15 +117,15 @@ func (s *Server) ResolveProfileId(
 	return &profilev1.ResolveProfileIdResponse{UserProfileId: profile.ID().String()}, nil
 }
 
-// changesFrom memetakan permintaan menjadi perubahan parsial.
+// changesFrom maps a request to partial changes.
 //
-// Bidang optional protobuf memberi tepat yang dibutuhkan: pointer yang
-// membedakan "tidak dikirim" dari "dikirim kosong". Tanpa pembedaan itu,
-// PATCH tidak punya cara menghapus nilai.
+// Protobuf optional fields give exactly what is needed: pointers that tell
+// "not sent" from "sent empty". Without that distinction, PATCH has no way
+// to clear a value.
 //
-// sex adalah pengecualian dan bukan optional di kontraknya: enum protobuf
-// punya nilai nol yang sudah berarti "tidak dinyatakan", jadi
-// SEX_UNSPECIFIED yang menyampaikan "jangan ubah".
+// sex is the exception and not optional in the contract: a protobuf enum
+// has a zero value that already means "not stated", so SEX_UNSPECIFIED is
+// what conveys "do not change".
 func changesFrom(req *profilev1.UpdateProfileRequest) domain.ProfileChanges {
 	changes := domain.ProfileChanges{
 		FirstName:          req.FirstName,
@@ -146,7 +147,7 @@ func toProto(p *domain.Profile) *profilev1.UserProfile {
 		Id:     p.ID().String(),
 		UserId: p.UserID().String(),
 		Sex:    sexToProto(p.Sex()),
-		// language selalu punya nilai, jadi ia bukan optional di kontrak.
+		// language always has a value, so it is not optional in the contract.
 		Language: p.Language().String(),
 		Timestamps: &commonv1.Timestamps{
 			CreatedAt: timestampOf(p.CreatedAt()),
@@ -154,9 +155,9 @@ func toProto(p *domain.Profile) *profilev1.UserProfile {
 		},
 	}
 
-	// Yang kosong dibiarkan tidak ada, bukan dikirim sebagai string kosong.
-	// Inilah B6 di lapisan kontrak: pembedaan "belum diisi" harus bertahan
-	// sampai ke klien, karena di sanalah sistem lama merusaknya.
+	// Empty ones are left absent, not sent as empty strings. This is B6 at the
+	// contract layer: the "not filled in" distinction has to survive all the
+	// way to the client, because that is where the legacy system broke it.
 	out.FirstName = optional(p.FirstName())
 	out.LastName = optional(p.LastName())
 	out.CountryOfResidence = optional(p.CountryOfResidence())
@@ -194,9 +195,9 @@ func sexFromProto(s profilev1.Sex) domain.Sex {
 	}
 }
 
-// toStatus menerjemahkan galat domain menjadi status gRPC. Seperti di
-// identity, pemetaannya terkumpul di satu tempat dan galat yang tidak
-// dikenali tidak pernah dikirim isinya.
+// toStatus translates a domain error into a gRPC status. As in identity,
+// the mapping is collected in one place and an unrecognised error never has
+// its content sent.
 func toStatus(ctx context.Context, op string, err error) error {
 	switch {
 	case err == nil:

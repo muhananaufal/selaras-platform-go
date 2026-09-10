@@ -1,4 +1,4 @@
-// Package profile membaca konfigurasi profile-svc dari environment.
+// Package profile reads the profile-svc configuration from the environment.
 package profile
 
 import (
@@ -6,18 +6,18 @@ import (
 	"os"
 )
 
-// Config adalah seluruh yang dibutuhkan profile-svc untuk menyala.
+// Config is everything profile-svc needs to start.
 type Config struct {
 	GRPCAddr    string
 	HealthAddr  string
 	DatabaseDSN string
 }
 
-// LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
+// LoadConfig reads the configuration and refuses an incomplete one.
 //
-// Tidak ada nilai bawaan untuk DSN (ADR-016): service yang salah konfigurasi
-// lalu tetap menyala akan menulis ke tempat yang keliru, dan itu jauh lebih
-// sulit disadari daripada gagal menyala.
+// There is no default for the DSN (ADR-016): a misconfigured service that
+// starts anyway writes to the wrong place, and that is far harder to notice
+// than failing to start.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		GRPCAddr:    envOr("PROFILE_GRPC_ADDR", ":9201"),

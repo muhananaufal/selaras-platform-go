@@ -1,4 +1,4 @@
-// Package postgres menyimpan agregat profile di Postgres.
+// Package postgres stores the profile aggregate in Postgres.
 package postgres
 
 import (
@@ -15,13 +15,13 @@ import (
 
 const constraintUserUnique = "user_profiles_user_id_unique"
 
-// Kolom disebutkan satu per satu, tidak pernah SELECT *: urutan kolom pada
-// SELECT * ditentukan basis data, jadi menambah kolom lewat migrasi bisa
-// menggeser hasil Scan tanpa satu pun error saat kompilasi.
+// Columns are named one by one, never SELECT *: the column order of SELECT
+// * is decided by the database, so adding a column through a migration can
+// shift the Scan result without a single compile error.
 const profileColumns = `id, user_id, first_name, last_name, date_of_birth,
 	sex, country_of_residence, language, created_at, updated_at`
 
-// ProfileRepository memenuhi domain.ProfileRepository.
+// ProfileRepository implements domain.ProfileRepository.
 type ProfileRepository struct {
 	db pg.Querier
 }
@@ -71,8 +71,8 @@ func (r *ProfileRepository) Update(ctx context.Context, p *domain.Profile) error
 	if err != nil {
 		return fmt.Errorf("updating profile: %w", err)
 	}
-	// Nol baris berarti barisnya tidak ada. Tanpa pemeriksaan ini, menyimpan
-	// profil yang sudah terhapus akan sukses tanpa mengubah apa pun.
+	// Zero rows means the row does not exist. Without this check, saving an
+	// already deleted profile would succeed without changing anything.
 	if tag.RowsAffected() == 0 {
 		return domain.ErrProfileNotFound
 	}
@@ -122,9 +122,9 @@ func (r *ProfileRepository) one(ctx context.Context, query string, arg any) (*do
 	return domain.Hydrate(domain.ProfileState{
 		ID:     parsedID,
 		UserID: parsedUserID,
-		// Nilai yang tidak ada dibaca kembali sebagai tidak ada. Mengubah
-		// NULL menjadi sesuatu di sini adalah persis cara B6 lahir di sistem
-		// lama, hanya satu lapisan lebih rendah.
+		// An absent value is read back as absent. Turning NULL into something
+		// here is exactly how B6 was born in the legacy system, just one layer
+		// lower.
 		FirstName:          deref(firstName),
 		LastName:           deref(lastName),
 		DateOfBirth:        dateOfBirth,
@@ -136,8 +136,8 @@ func (r *ProfileRepository) one(ctx context.Context, query string, arg any) (*do
 	}), nil
 }
 
-// nullable memetakan string kosong ke NULL, supaya ketiadaan disimpan sebagai
-// ketiadaan dan bukan sebagai string kosong yang menyamar sebagai nilai.
+// nullable maps an empty string to NULL, so absence is stored as absence and
+// not as an empty string posing as a value.
 func nullable(s string) *string {
 	if s == "" {
 		return nil

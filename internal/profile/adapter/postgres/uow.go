@@ -9,7 +9,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/profile/app"
 )
 
-// UnitOfWork memenuhi app.UnitOfWork dengan transaksi Postgres sungguhan.
+// UnitOfWork implements app.UnitOfWork with a real Postgres transaction.
 type UnitOfWork struct {
 	pool *pgxpool.Pool
 }
@@ -18,7 +18,7 @@ func NewUnitOfWork(pool *pgxpool.Pool) *UnitOfWork { return &UnitOfWork{pool: po
 
 var _ app.UnitOfWork = (*UnitOfWork)(nil)
 
-// Do menjalankan fn di dalam satu transaksi.
+// Do runs fn inside one transaction.
 func (u *UnitOfWork) Do(ctx context.Context, fn func(pg.Querier) error) error {
 	return pg.InTx(ctx, u.pool, fn)
 }

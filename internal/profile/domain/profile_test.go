@@ -30,8 +30,8 @@ func TestSexAcceptsOnlyTheTwoValuesTheRiskEngineUnderstands(t *testing.T) {
 	}
 }
 
-// Kosong bukan tidak sah: profil yang belum diisi memang tidak punya jenis
-// kelamin, dan itu keadaan yang sah (B7).
+// Empty is not invalid: a profile not yet filled in indeed has no sex, and
+// that is a valid state (B7).
 func TestAnEmptySexMeansNotStatedRatherThanInvalid(t *testing.T) {
 	sex, err := domain.NewSex("")
 	if err != nil {
@@ -58,8 +58,8 @@ func TestLanguageAcceptsOnlyTheTwoTheProductSupports(t *testing.T) {
 	}
 }
 
-// Bahasa punya nilai bawaan karena antarmuka harus memilih salah satu untuk
-// setiap pengguna; "belum ditentukan" tidak berguna di sini.
+// Language has a default because the interface has to pick one for every
+// user; "not determined yet" is of no use here.
 func TestAnEmptyLanguageFallsBackToTheDefault(t *testing.T) {
 	lang, err := domain.NewLanguage("")
 	if err != nil {
@@ -70,9 +70,9 @@ func TestAnEmptyLanguageFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-// Menutup B6 di sumbernya. Tanggal lahir yang belum diisi WAJIB tetap tidak
-// ada sepanjang perjalanannya; sistem lama mengubahnya menjadi hari ini di
-// lapisan penyajian, sehingga setiap pengguna baru tampak berumur 0.
+// Closes B6 at its source. A date of birth not yet filled in MUST stay
+// absent throughout its journey; the legacy system turned it into today at
+// the presentation layer, so every new user appeared aged 0.
 func TestAnEmptyProfileHasNoDateOfBirthAndNoAge(t *testing.T) {
 	p, err := domain.NewEmptyProfile(mustUserID(t), time.Now())
 	if err != nil {
@@ -126,9 +126,9 @@ func TestDateOfBirthRejectsAnythingThatIsNotADate(t *testing.T) {
 	}
 }
 
-// Umur dihitung dari tanggal, bukan dari selisih tahun. Ulang tahun yang
-// belum lewat tahun ini berarti umurnya masih satu tahun lebih muda, dan
-// mesin risiko membaca angka ini.
+// Age is computed from the date, not from the difference of years. A
+// birthday not yet passed this year means the age is still one year
+// younger, and the risk engine reads this number.
 func TestAgeCountsBirthdaysNotYears(t *testing.T) {
 	born, err := domain.NewDateOfBirth("1990-05-17", time.Now())
 	if err != nil {
@@ -185,9 +185,9 @@ func TestFillingAProfileKeepsWhatWasNotSent(t *testing.T) {
 	}
 }
 
-// Bidang yang dikirim kosong berarti dikosongkan dengan sengaja, dan itu
-// berbeda dari bidang yang tidak dikirim sama sekali. Pointer yang
-// membedakan keduanya adalah satu-satunya cara PATCH bisa menghapus nilai.
+// A field sent empty means deliberately cleared, and that differs from a
+// field not sent at all. The pointer that tells the two apart is the only
+// way PATCH can clear a value.
 func TestAnExplicitEmptyStringClearsAField(t *testing.T) {
 	now := time.Now()
 	p, err := domain.NewEmptyProfile(mustUserID(t), now)
@@ -232,9 +232,8 @@ func TestApplyRejectsValuesTheRiskEngineCannotUse(t *testing.T) {
 	}
 }
 
-// Satu bidang yang ditolak DILARANG meninggalkan bidang lain yang sudah
-// terlanjur berubah. Perubahan separuh jauh lebih sulit dilacak daripada
-// perubahan yang gagal seluruhnya.
+// One refused field MUST NOT leave other fields already changed. A half
+// change is far harder to trace than a change that failed entirely.
 func TestARejectedChangeLeavesNothingBehind(t *testing.T) {
 	now := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
 	p, err := domain.NewEmptyProfile(mustUserID(t), now)
@@ -242,10 +241,10 @@ func TestARejectedChangeLeavesNothingBehind(t *testing.T) {
 		t.Fatalf("NewEmptyProfile: %v", err)
 	}
 
-	// Bidang yang sah sengaja dipilih yang divalidasi LEBIH DULU daripada
-	// bidang yang cacat. Kalau tidak, versi yang menerapkan sambil
-	// memvalidasi akan lolos hanya karena urutannya kebetulan menguntungkan,
-	// dan test-nya tidak membuktikan apa pun tentang rancangannya.
+	// The valid field is deliberately chosen to be validated BEFORE the
+	// malformed one. Otherwise a version that applies while validating would
+	// pass only because the order happened to be favourable, and the test
+	// would prove nothing about the design.
 	goodSex := "female"
 	badLanguage := "fr"
 	if err := p.Apply(domain.ProfileChanges{Sex: &goodSex, Language: &badLanguage}, now); err == nil {
@@ -255,8 +254,8 @@ func TestARejectedChangeLeavesNothingBehind(t *testing.T) {
 		t.Errorf("sex = %q; the rejected change was partly applied", p.Sex())
 	}
 
-	// Dan sekali lagi dengan urutan sebaliknya, supaya test ini tidak
-	// menggantikan satu ketergantungan urutan dengan yang lain.
+	// And once more in the reverse order, so this test does not replace one
+	// order dependency with another.
 	name := "Sri"
 	badSex := "other"
 	if err := p.Apply(domain.ProfileChanges{FirstName: &name, Sex: &badSex}, now); err == nil {
@@ -304,12 +303,12 @@ func TestHydrateRebuildsAProfileExactly(t *testing.T) {
 	}
 }
 
-// TestAgeIsNotSkewedByLeapYears menutup bug yang ditemukan saat F2-16.
+// TestAgeIsNotSkewedByLeapYears closes a bug found during F2-16.
 //
-// Versi sebelumnya membandingkan YearDay. Di tahun kabisat, 29 Februari
-// menggeser seluruh hari sesudahnya satu angka, sehingga orang yang lahir
-// 1 Maret terhitung sudah berulang tahun pada 29 Februari - setahun lebih tua,
-// satu hari lebih awal, dan umur adalah masukan langsung ke model risikonya.
+// The previous version compared YearDay. In a leap year, 29 February shifts
+// every following day by one, so someone born on 1 March counts as having had
+// their birthday on 29 February - a year older, one day early, and age is a
+// direct input to the risk model.
 func TestAgeIsNotSkewedByLeapYears(t *testing.T) {
 	date := func(s string) time.Time {
 		parsed, err := time.Parse("2006-01-02", s)
@@ -328,9 +327,9 @@ func TestAgeIsNotSkewedByLeapYears(t *testing.T) {
 		on   string
 		want int
 	}{
-		{"2028-02-29", 37}, // sehari sebelum ulang tahun, di tahun kabisat
-		{"2028-03-01", 38}, // tepat pada ulang tahun
-		{"2027-02-28", 36}, // sehari sebelum, di tahun biasa
+		{"2028-02-29", 37}, // the day before the birthday, in a leap year
+		{"2028-03-01", 38}, // exactly on the birthday
+		{"2027-02-28", 36}, // the day before, in an ordinary year
 		{"2027-03-01", 37},
 	}
 

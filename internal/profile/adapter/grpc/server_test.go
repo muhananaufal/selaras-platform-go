@@ -70,9 +70,9 @@ func newClient(t *testing.T) (profilev1.ProfileClient, string) {
 
 func ptr(s string) *string { return &s }
 
-// Menutup B6 di lapisan kontrak. Profil kosong yang dikirim lewat kabel WAJIB
-// membawa bidang yang tidak ada sebagai tidak ada - bukan sebagai string
-// kosong, dan sama sekali bukan sebagai tanggal hari ini.
+// Closes B6 at the contract layer. An empty profile sent over the wire MUST
+// carry absent fields as absent - not as empty strings, and certainly not as
+// today's date.
 func TestAnEmptyProfileCrossesTheWireAsAbsent(t *testing.T) {
 	client, userID := newClient(t)
 	ctx := context.Background()
@@ -108,9 +108,9 @@ func TestCreatingAProfileTwiceReturnsTheSameOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first CreateEmptyProfile: %v", err)
 	}
-	// identity-svc memanggil ini secara best-effort dan bisa mencoba ulang
-	// setelah jawaban yang hilang di jaringan; percobaan kedua harus
-	// menghasilkan hal yang sama, bukan galat.
+	// identity-svc calls this best-effort and may retry after an answer lost
+	// on the network; the second attempt has to produce the same thing, not an
+	// error.
 	second, err := client.CreateEmptyProfile(ctx, &profilev1.CreateEmptyProfileRequest{UserId: userID})
 	if err != nil {
 		t.Fatalf("second CreateEmptyProfile: %v", err)
@@ -120,9 +120,9 @@ func TestCreatingAProfileTwiceReturnsTheSameOne(t *testing.T) {
 	}
 }
 
-// ADR-022. Pengguna yang profilnya gagal dibuat saat mendaftar harus bisa
-// membuatnya lewat pembaruan biasa; kalau tidak, ia terkunci di luar
-// selamanya - padahal ADR-002 aturan 1 menyatakan keadaan itu boleh terjadi.
+// ADR-022. A user whose profile failed to be created at registration has to
+// be able to create it through an ordinary update; otherwise they are locked
+// out forever - even though ADR-002 rule 1 says that state may happen.
 func TestUpdatingWithoutAProfileCreatesOne(t *testing.T) {
 	client, userID := newClient(t)
 	ctx := context.Background()
@@ -167,7 +167,7 @@ func TestAPartialUpdateLeavesTheRestAlone(t *testing.T) {
 		t.Fatalf("first UpdateProfile: %v", err)
 	}
 
-	// Hanya negaranya yang dikirim. Yang lain tidak boleh tersentuh.
+	// Only the country is sent. Nothing else may be touched.
 	got, err := client.UpdateProfile(ctx, &profilev1.UpdateProfileRequest{
 		UserId:             userID,
 		CountryOfResidence: ptr("Malaysia"),
@@ -210,15 +210,15 @@ func TestValuesTheRiskEngineCannotUseAreRefused(t *testing.T) {
 		})
 	}
 
-	// Satu pun tidak boleh meninggalkan profil separuh jadi.
+	// Not one of them may leave a half-made profile behind.
 	if _, err := client.GetProfile(ctx, &profilev1.GetProfileRequest{UserId: userID}); status.Code(err) != codes.NotFound {
 		t.Errorf("a rejected update left a profile behind: %v", status.Code(err))
 	}
 }
 
-// ADR-002 aturan 2: profil yang belum ada berarti klaim kosong, bukan galat.
-// identity-svc memanggil ini saat menerbitkan token, dan menggagalkannya akan
-// mengubah keadaan yang sah menjadi pengguna yang tidak bisa masuk.
+// ADR-002 rule 2: a profile that does not exist yet means empty claims, not
+// an error. identity-svc calls this when issuing a token, and failing it
+// would turn a valid state into a user who cannot sign in.
 func TestResolvingAProfileThatDoesNotExistIsNotAnError(t *testing.T) {
 	client, userID := newClient(t)
 	ctx := context.Background()
@@ -256,8 +256,8 @@ func TestAMalformedUserIdIsInvalidArgument(t *testing.T) {
 	}
 }
 
-// Bidang yang dikirim kosong berarti dikosongkan dengan sengaja, dan itu
-// harus sampai ke basis data sebagai NULL - lalu kembali sebagai tidak ada.
+// A field sent empty means deliberately cleared, and that has to reach the
+// database as NULL - and come back as absent.
 func TestAnExplicitEmptyValueClearsAFieldOverTheWire(t *testing.T) {
 	client, userID := newClient(t)
 	ctx := context.Background()
