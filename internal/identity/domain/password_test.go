@@ -38,9 +38,9 @@ func TestNewPassword(t *testing.T) {
 	}
 }
 
-// Kata sandi tidak boleh bocor lewat log atau pesan galat. Satu-satunya
-// pertahanan yang bekerja tanpa disiplin manusia adalah membuat tipenya
-// menolak mencetak dirinya sendiri.
+// Passwords must not leak through logs or error messages. The only defence
+// that works without human discipline is a type that refuses to print
+// itself.
 func TestPasswordNeverPrintsItself(t *testing.T) {
 	t.Parallel()
 
@@ -61,10 +61,10 @@ func TestPasswordNeverPrintsItself(t *testing.T) {
 	}
 }
 
-// Panjang minimum sengaja tidak dinaikkan dari yang lama, tetapi batas
-// atas ditambahkan: argon2 menerima masukan sepanjang apa pun, dan
-// membiarkannya berarti seseorang bisa mengirim megabita untuk membebani
-// CPU pada endpoint yang tidak butuh autentikasi.
+// The minimum length is deliberately not raised from the old one, but an
+// upper bound is added: argon2 accepts input of any length, and leaving
+// that open means someone could send megabytes to load the CPU on an
+// endpoint that needs no authentication.
 func TestPasswordUpperBoundGuardsHashingCost(t *testing.T) {
 	t.Parallel()
 

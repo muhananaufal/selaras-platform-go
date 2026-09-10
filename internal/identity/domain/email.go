@@ -1,7 +1,6 @@
-// Package domain memuat aturan identitas yang tidak bergantung pada
-// penyimpanan, transport, maupun framework apa pun. Ia sengaja tidak
-// mengimpor apa pun dari adapter: itulah yang membuat pilihan library di
-// luar sini tetap murah dibalik.
+// Package domain holds the identity rules that depend on no storage,
+// transport, or framework. It deliberately imports nothing from the
+// adapters: that is what keeps library choices outside it cheap to reverse.
 package domain
 
 import (
@@ -9,27 +8,27 @@ import (
 	"strings"
 )
 
-// ErrInvalidEmail dikembalikan ketika alamat tidak memenuhi bentuk minimum.
+// ErrInvalidEmail is returned when an address does not meet the minimum
+// shape.
 var ErrInvalidEmail = errors.New("invalid email address")
 
-// Email adalah alamat yang sudah dinormalisasi.
+// Email is a normalised address.
 //
-// Tipe ini nilai, bukan string telanjang, supaya alamat yang belum
-// divalidasi tidak bisa menyelinap ke dalam domain hanya karena ia
-// kebetulan berbentuk string.
+// It is a value type, not a bare string, so an unvalidated address cannot
+// slip into the domain just because it happens to be a string.
 type Email struct {
 	value string
 }
 
-// NewEmail menormalisasi dan memvalidasi sebuah alamat.
+// NewEmail normalises and validates an address.
 //
-// Normalisasi memakai huruf kecil karena alamat yang hanya berbeda
-// besar-kecil adalah orang yang sama; tanpa itu dua akun bisa lahir untuk
-// satu alamat, dan keunikan di database tidak akan menangkapnya.
+// Normalisation lowercases because addresses that differ only in case are
+// the same person; without it two accounts could be born for one address,
+// and the database's uniqueness would not catch it.
 //
-// Validasinya sengaja minimum. Satu-satunya cara membuktikan sebuah alamat
-// benar-benar ada adalah mengirim surat ke sana, dan regex yang berusaha
-// menegakkan RFC 5322 justru menolak alamat yang sah.
+// Validation is deliberately minimal. The only way to prove an address
+// really exists is to send mail to it, and a regex that tries to enforce
+// RFC 5322 ends up rejecting valid addresses.
 func NewEmail(raw string) (Email, error) {
 	v := strings.ToLower(strings.TrimSpace(raw))
 
@@ -50,5 +49,5 @@ func NewEmail(raw string) (Email, error) {
 
 func (e Email) String() string { return e.value }
 
-// IsZero menandai Email yang belum pernah dibangun lewat NewEmail.
+// IsZero marks an Email that was never built through NewEmail.
 func (e Email) IsZero() bool { return e.value == "" }

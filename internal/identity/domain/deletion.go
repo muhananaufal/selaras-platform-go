@@ -16,18 +16,18 @@ var (
 	ErrUnknownService    = errors.New("that service is not part of the deletion saga")
 )
 
-// DeletionParticipants adalah unit yang HARUS mengonfirmasi sebelum akun
-// dinyatakan terhapus.
+// DeletionParticipants are the units that MUST confirm before an account is
+// declared deleted.
 //
-// Daftar ini adalah kontrak, bukan catatan. Saga hanya selesai setelah keenam
-// namanya menjawab, jadi menambah unit ketujuh ke platform tanpa menambahnya di
-// sini akan membuat akun dinyatakan terhapus sementara datanya masih utuh di
-// sana - dan tidak ada yang tahu, karena tidak ada yang menunggunya.
+// This list is a contract, not a record. The saga only completes once all six
+// names have answered, so adding a seventh unit to the platform without adding
+// it here would declare the account deleted while its data is still intact
+// there - and nobody would know, because nobody is waiting for it.
 //
-// Sebaliknya, menambahkan nama unit yang tidak mengonsumsi topic penghapusan
-// akan membuat SETIAP saga menggantung selamanya. Itu kegagalan yang jauh lebih
-// terlihat, dan itu pilihan yang disengaja: menggantung bisa diselidiki,
-// sementara data yang tertinggal diam-diam tidak.
+// Conversely, adding the name of a unit that does not consume the deletion
+// topic makes EVERY saga hang forever. That is a far more visible failure, and
+// it is the deliberate choice: a hang can be investigated, data quietly left
+// behind cannot.
 var DeletionParticipants = []string{
 	"profile",
 	"assessment",
@@ -37,7 +37,7 @@ var DeletionParticipants = []string{
 	"dashboard",
 }
 
-// SagaID adalah id satu saga penghapusan.
+// SagaID is the id of one deletion saga.
 type SagaID struct{ v uuid.UUID }
 
 func NewSagaID() (SagaID, error) {
@@ -59,23 +59,23 @@ func ParseSagaID(raw string) (SagaID, error) {
 func (id SagaID) String() string { return id.v.String() }
 func (id SagaID) IsZero() bool   { return id.v == uuid.Nil }
 
-// SagaStatus adalah keadaan saga secara keseluruhan.
+// SagaStatus is the state of the saga as a whole.
 type SagaStatus string
 
 const (
 	SagaRequested SagaStatus = "requested"
 	SagaCompleted SagaStatus = "completed"
 
-	// SagaFailed berarti satu unit atau lebih menyatakan gagal menghapus.
+	// SagaFailed means one or more units reported that they failed to delete.
 	//
-	// TIDAK ada keadaan "compensating". Penghapusan tidak bisa dibatalkan -
-	// data yang sudah hilang di lima unit tidak kembali hanya karena unit
-	// keenam gagal - jadi kompensasinya bukan mengembalikan keadaan, melainkan
-	// membuat kegagalannya terlihat dan bisa diselesaikan manusia.
+	// There is NO "compensating" state. Deletion cannot be undone - data
+	// already gone from five units does not come back just because the sixth
+	// failed - so the compensation is not restoring state but making the
+	// failure visible and resolvable by a person.
 	SagaFailed SagaStatus = "failed"
 )
 
-// Confirmation adalah jawaban satu unit.
+// Confirmation is one unit's answer.
 type Confirmation struct {
 	Service       string
 	Succeeded     bool
@@ -83,7 +83,7 @@ type Confirmation struct {
 	ConfirmedAt   time.Time
 }
 
-// DeletionSaga adalah satu permintaan penghapusan beserta jawabannya.
+// DeletionSaga is one deletion request together with its answers.
 type DeletionSaga struct {
 	ID            SagaID
 	UserID        UserID
@@ -117,11 +117,12 @@ func NewDeletionSaga(userID UserID, userProfileID string, now time.Time) (*Delet
 	}, nil
 }
 
-// IsParticipant menyatakan nama unit itu memang bagian dari saga.
+// IsParticipant reports whether that unit name is actually part of the
+// saga.
 //
-// Konfirmasi dari nama yang tidak dikenal DITOLAK, bukan dicatat diam-diam:
-// nama yang salah ketik akan selamanya terlihat sebagai unit yang belum
-// menjawab, sementara unit yang sebenarnya sudah menghapus datanya.
+// A confirmation from an unknown name is REFUSED, not recorded silently: a
+// misspelled name would forever look like a unit that has not answered,
+// while the real unit has already deleted its data.
 func IsParticipant(service string) bool {
 	for _, name := range DeletionParticipants {
 		if name == service {
@@ -131,11 +132,10 @@ func IsParticipant(service string) bool {
 	return false
 }
 
-// Outstanding menyebutkan unit yang BELUM menjawab, terurut.
+// Outstanding names the units that have NOT answered yet, sorted.
 //
-// Terurut supaya dua pembacaan berturut-turut menghasilkan daftar yang sama -
-// runbook yang urutannya berubah tiap kali dibaca membuat orang mengira ada
-// yang bergerak.
+// Sorted so two consecutive reads produce the same list - a runbook whose
+// order changes every time it is read makes people think something moved.
 func (s *DeletionSaga) Outstanding() []string {
 	answered := make(map[string]struct{}, len(s.Confirmations))
 	for _, c := range s.Confirmations {
@@ -152,7 +152,7 @@ func (s *DeletionSaga) Outstanding() []string {
 	return out
 }
 
-// Failures menyebutkan unit yang menyatakan GAGAL.
+// Failures names the units that reported FAILURE.
 func (s *DeletionSaga) Failures() []Confirmation {
 	out := make([]Confirmation, 0, len(s.Confirmations))
 	for _, c := range s.Confirmations {
@@ -163,16 +163,16 @@ func (s *DeletionSaga) Failures() []Confirmation {
 	return out
 }
 
-// Resolve menentukan keadaan saga dari jawaban yang sudah masuk.
+// Resolve determines the saga's state from the answers received so far.
 //
-// Ia TIDAK mengubah apa pun; ia hanya menyimpulkan. Keputusannya dipisahkan
-// dari penulisannya supaya bisa diuji tanpa basis data, dan supaya aturannya
-// ada di satu tempat alih-alih tersebar di konsumen.
+// It changes NOTHING; it only concludes. The decision is separated from the
+// write so it can be tested without a database, and so the rule lives in one
+// place instead of being spread across consumers.
 //
-// Urutan pemeriksaannya penting: satu kegagalan mengalahkan lima keberhasilan.
-// Saga yang menyatakan diri selesai padahal satu unit gagal adalah kebohongan
-// yang paling merugikan di seluruh alur ini - ia berarti seseorang diberi tahu
-// datanya sudah hilang padahal tidak.
+// The order of the checks matters: one failure outweighs five successes. A
+// saga declaring itself complete while one unit failed is the most damaging
+// lie in this whole flow - it means someone was told their data is gone when
+// it is not.
 func (s *DeletionSaga) Resolve() SagaStatus {
 	if len(s.Failures()) > 0 {
 		return SagaFailed
@@ -183,10 +183,10 @@ func (s *DeletionSaga) Resolve() SagaStatus {
 	return SagaCompleted
 }
 
-// Confirm mencatat jawaban satu unit dan mengembalikan keadaan barunya.
+// Confirm records one unit's answer and returns the new state.
 //
-// Konfirmasi ganda dari unit yang sama diabaikan: relay outbox bersifat
-// at-least-once, dan jawaban yang sama bisa tiba dua kali.
+// A duplicate confirmation from the same unit is ignored: the outbox relay
+// is at-least-once, and the same answer can arrive twice.
 func (s *DeletionSaga) Confirm(c Confirmation) (SagaStatus, error) {
 	if s.Status != SagaRequested {
 		return s.Status, fmt.Errorf("%w: %s", ErrSagaAlreadyClosed, s.Status)

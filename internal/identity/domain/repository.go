@@ -6,51 +6,50 @@ import (
 )
 
 var (
-	// ErrUserNotFound dikembalikan saat pencarian tidak menemukan siapa pun.
-	// Pemanggil DILARANG meneruskannya apa adanya ke jawaban login: apakah
-	// sebuah email terdaftar adalah informasi, dan membocorkannya mengubah
-	// halaman masuk menjadi alat pencacahan akun.
+	// ErrUserNotFound is returned when a lookup finds nobody. Callers MUST NOT
+	// pass it through as-is into the login response: whether an email is
+	// registered is information, and leaking it turns the sign-in page into an
+	// account-enumeration tool.
 	ErrUserNotFound = errors.New("user not found")
 
-	// ErrEmailTaken berasal dari indeks unik, bukan dari pemeriksaan
-	// pendahuluan. Membaca dulu lalu menulis akan lolos di antara dua
-	// permintaan yang mendaftar bersamaan; basis data yang memutuskan.
+	// ErrEmailTaken comes from the unique index, not from a preliminary check.
+	// Reading first and then writing would slip through between two
+	// registrations arriving together; the database decides.
 	ErrEmailTaken = errors.New("email already registered")
 
-	// ErrGoogleIDTaken sama asalnya: satu identitas Google hanya boleh
-	// menunjuk ke satu akun.
+	// ErrGoogleIDTaken has the same origin: one Google identity may point at
+	// only one account.
 	ErrGoogleIDTaken = errors.New("google id already linked to another account")
 )
 
-// UserRepository adalah port penyimpanan agregat User.
+// UserRepository is the storage port for the User aggregate.
 //
-// Ia berbicara dalam tipe domain, bukan baris - domain tidak boleh tahu ada
-// SQL di baliknya, dan mengganti penyimpanan tidak boleh menyentuh berkas
-// mana pun di paket ini.
+// It speaks in domain types, not rows - the domain must not know there is
+// SQL behind it, and swapping the storage must not touch a single file in
+// this package.
 //
-// Setiap metode menerima context supaya pembatalan permintaan benar-benar
-// sampai ke kueri yang sedang berjalan, bukan berhenti di lapisan HTTP
-// sementara basis data terus bekerja untuk jawaban yang tak akan dibaca.
+// Every method takes a context so a cancelled request really reaches the
+// running query, instead of stopping at the HTTP layer while the database
+// keeps working on an answer nobody will read.
 type UserRepository interface {
-	// Create menyimpan user baru. Email atau google id yang bentrok
-	// menghasilkan ErrEmailTaken atau ErrGoogleIDTaken.
+	// Create stores a new user. A clashing email or google id yields
+	// ErrEmailTaken or ErrGoogleIDTaken.
 	Create(ctx context.Context, u *User) error
 
-	// Update menyimpan perubahan pada user yang sudah ada.
+	// Update stores changes to an existing user.
 	Update(ctx context.Context, u *User) error
 
-	// Pencarian hanya mengembalikan akun yang hidup. Akun terhapus lunak
-	// tidak ditemukan, karena satu-satunya alasan menyimpannya adalah audit,
-	// bukan autentikasi.
+	// Lookups return live accounts only. A soft-deleted account is not found,
+	// because the only reason to keep it is audit, not authentication.
 	FindByID(ctx context.Context, id UserID) (*User, error)
 	FindByEmail(ctx context.Context, email Email) (*User, error)
 	FindByGoogleID(ctx context.Context, googleID string) (*User, error)
 
-	// Delete menghapus akun secara PERMANEN.
+	// Delete removes the account PERMANENTLY.
 	//
-	// Dipanggil hanya di akhir saga penghapusan, setelah keenam unit
-	// mengonfirmasi datanya benar-benar hilang. Ia bukan penghapusan lunak:
-	// baris yang tertinggal setelah seseorang meminta akunnya dihapus adalah
-	// data pribadi yang tidak seorang pun tahu masih ada.
+	// Called only at the end of the deletion saga, once all six units have
+	// confirmed their data is really gone. It is not a soft delete: a row left
+	// behind after someone asked for their account to be deleted is personal
+	// data nobody knows still exists.
 	Delete(ctx context.Context, id UserID) error
 }

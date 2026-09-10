@@ -7,37 +7,36 @@ import (
 )
 
 var (
-	// ErrInvalidToken menutupi setiap alasan sebuah token ditolak: tanda
-	// tangan keliru, kedaluwarsa, algoritma tak diizinkan, klaim tidak
-	// lengkap. Pemanggil tidak boleh membedakannya di jawaban ke klien -
-	// memberi tahu penyerang bahwa tanda tangannya benar tetapi sudah
-	// kedaluwarsa adalah memberi tahu bahwa kuncinya bocor.
+	// ErrInvalidToken covers every reason a token is refused: wrong signature,
+	// expired, algorithm not allowed, incomplete claims. Callers must not tell
+	// them apart in the response to the client - telling an attacker the
+	// signature was right but expired is telling them the key has leaked.
 	ErrInvalidToken = errors.New("invalid token")
 
-	// ErrTokenRevoked dipisahkan karena hanya dipakai di dalam sistem, untuk
-	// memutuskan apakah pengguna perlu diminta masuk lagi.
+	// ErrTokenRevoked is separate because it is used only inside the system,
+	// to decide whether the user has to be asked to sign in again.
 	ErrTokenRevoked = errors.New("token revoked")
 )
 
-// Claims adalah isi token akses.
+// Claims are the contents of an access token.
 //
-// UserProfileID ikut dibawa karena ADR-007: tanpanya, setiap unit yang butuh
-// profil harus bertanya lebih dulu ke identity-svc, dan itu satu panggilan
-// jaringan wajib di setiap request terautentikasi.
+// UserProfileID is carried because of ADR-007: without it, every unit that
+// needs the profile would have to ask identity-svc first, and that is one
+// mandatory network call on every authenticated request.
 //
-// Generation membawa generasi token pengguna saat diterbitkan. Ia yang
-// membuat pencabutan mungkin tanpa menyimpan daftar token.
+// Generation carries the user's token generation at issue time. It is what
+// makes revocation possible without keeping a list of tokens.
 type Claims struct {
 	UserID        UserID
 	UserProfileID string
 
-	// Email ikut dibawa karena kontrak REST menjanjikannya di dua tempat,
-	// dan alternatifnya adalah bertanya ke identity-svc di setiap request -
-	// persis yang dihapus ADR-007.
+	// Email is carried because the REST contract promises it in two places,
+	// and the alternative is asking identity-svc on every request - exactly
+	// what ADR-007 removed.
 	//
-	// Ia bukan rahasia bagi pemegang token: itu alamatnya sendiri.
-	// Harganya token yang sedikit lebih besar, dan alamat yang berubah baru
-	// tercermin setelah token diperbarui.
+	// It is no secret to the token's holder: it is their own address. The cost
+	// is a slightly larger token, and an address that changes is only
+	// reflected once the token is renewed.
 	Email      string
 	Role       Role
 	Generation int64
@@ -45,35 +44,35 @@ type Claims struct {
 	ExpiresAt  time.Time
 }
 
-// TokenIssuer menandatangani klaim menjadi token akses. Implementasinya
-// memegang kunci privat, dan hanya identity-svc yang boleh memilikinya.
+// TokenIssuer signs claims into an access token. Its implementation holds
+// the private key, and only identity-svc may have it.
 type TokenIssuer interface {
 	Issue(c Claims) (string, error)
 }
 
-// TokenVerifier memeriksa tanda tangan dan masa berlaku sebuah token.
+// TokenVerifier checks a token's signature and validity period.
 //
-// Ia sengaja TIDAK memeriksa pencabutan. Verifikasi tanda tangan bersifat
-// murni dan bisa dilakukan siapa saja yang punya kunci publik; pemeriksaan
-// pencabutan butuh keadaan bersama dan bisa gagal. Menggabungkan keduanya
-// akan memaksa setiap pemakai membawa koneksi penyimpanan hanya untuk
-// membaca sebuah klaim.
+// It deliberately does NOT check revocation. Signature verification is pure
+// and can be done by anyone holding the public key; a revocation check
+// needs shared state and can fail. Combining the two would force every
+// consumer to carry a storage connection just to read a claim.
 type TokenVerifier interface {
 	Verify(raw string) (Claims, error)
 }
 
-// RevocationChecker menjawab apakah generasi yang dibawa token masih generasi
-// yang berlaku bagi pengguna itu.
+// RevocationChecker answers whether the generation carried by a token is
+// still the current one for that user.
 //
-// Ini port terpisah, dan itu yang membuat ADR-012 tetap bermakna: token
-// pembawa klaim menghapus panggilan ke identity-svc, sementara pemeriksaan
-// pencabutan bisa dilayani penyimpanan bersama yang jauh lebih murah.
+// This is a separate port, and that is what keeps ADR-012 meaningful: a
+// claims-bearing token removes the call to identity-svc, while the revocation
+// check can be served by a far cheaper shared store.
 //
-// Implementasinya WAJIB gagal-tertutup. Penyimpanan yang tidak bisa dihubungi
-// berarti pencabutan tidak bisa dibuktikan, dan menerima token dalam keadaan
-// itu mengubah setiap gangguan menjadi jendela di mana logout tidak berlaku.
+// Implementations MUST fail closed. A store that cannot be reached means
+// revocation cannot be proven, and accepting the token in that state turns
+// every outage into a window in which logout does not apply.
 type RevocationChecker interface {
-	// IsCurrent benar bila generasi masih yang berlaku bagi pengguna itu.
+	// IsCurrent is true when the generation is still the current one for that
+	// user.
 	IsCurrent(ctx context.Context, userID UserID, generation int64) (bool, error)
 }
 

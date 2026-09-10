@@ -1,4 +1,4 @@
-// Package identity membaca konfigurasi identity-svc dari environment.
+// Package identity reads identity-svc's configuration from the environment.
 package identity
 
 import (
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Config adalah seluruh yang dibutuhkan identity-svc untuk menyala.
+// Config is everything identity-svc needs to start.
 type Config struct {
 	GRPCAddr      string
 	HealthAddr    string
@@ -22,27 +22,27 @@ type Config struct {
 	AccessTTL     time.Duration
 	RevocationTTL time.Duration
 
-	// ProfileAddr kosong berarti profile-svc belum dipasang di lingkungan
-	// ini. Pendaftaran dan login tetap berjalan - profil yang gagal dibuat
-	// adalah keadaan yang memang sah (ADR-002 aturan 1) - jadi ini mode
-	// penyebaran, bukan kekeliruan konfigurasi.
+	// An empty ProfileAddr means profile-svc is not deployed in this
+	// environment. Registration and login still work - a profile that fails to
+	// be created is a valid state (ADR-002 rule 1) - so this is a deployment
+	// mode, not a configuration mistake.
 	ProfileAddr string
 
-	// GoogleClientID kosong berarti masuk lewat Google tidak dipasang di
-	// lingkungan ini. Itu mode penyebaran yang sah, bukan kekeliruan
-	// konfigurasi - dan service-nya tetap menyala, hanya RPC-nya yang
-	// menolak dengan alasan yang jelas.
+	// An empty GoogleClientID means Google sign-in is not deployed in this
+	// environment. That is a valid deployment mode, not a configuration
+	// mistake - and the service still starts, only its RPC refuses with a
+	// clear reason.
 	GoogleClientID string
 
 	Mail MailConfig
 }
 
-// LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
+// LoadConfig reads the configuration and refuses an incomplete one.
 //
-// Tidak ada nilai bawaan untuk apa pun yang bersifat rahasia atau menunjuk ke
-// sebuah alamat (ADR-016). Nilai bawaan pada DSN atau kunci penandatanganan
-// berarti service yang salah konfigurasi tetap menyala dan menulis ke tempat
-// yang keliru, dan itu jauh lebih sulit disadari daripada gagal menyala.
+// No defaults for anything secret or anything that points at an address
+// (ADR-016). A default on a DSN or a signing key means a misconfigured
+// service still starts and writes to the wrong place, and that is far harder
+// to notice than failing to start.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		GRPCAddr:       envOr("IDENTITY_GRPC_ADDR", ":9101"),
@@ -88,12 +88,12 @@ func LoadConfig() (Config, error) {
 	return cfg, nil
 }
 
-// parseSigningKey menerima seed Ed25519 32 byte yang dikodekan base64.
+// parseSigningKey accepts a base64-encoded 32-byte Ed25519 seed.
 //
-// Seed, bukan kunci privat 64 byte, karena seed itulah yang benar-benar
-// rahasia: 32 byte sisanya adalah kunci publik yang bisa diturunkan darinya.
-// Menyimpan keduanya berarti menyimpan setengah rahasia dan setengah yang
-// memang boleh disebar, dan campuran itu mengundang salah salin.
+// The seed, not the 64-byte private key, because the seed is the part that
+// is genuinely secret: the remaining 32 bytes are the public key that can be
+// derived from it. Storing both means storing half secret and half
+// publishable, and that mixture invites copy mistakes.
 func parseSigningKey(raw string) (ed25519.PrivateKey, error) {
 	seed, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
@@ -114,10 +114,10 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
-// envDuration menerima detik sebagai bilangan bulat atau durasi bergaya Go.
+// envDuration accepts seconds as an integer or a Go-style duration.
 //
-// Keduanya diterima karena berkas env yang ada sudah memakai detik polos, dan
-// menolaknya hanya akan memindahkan kekeliruan ke tempat lain.
+// Both are accepted because the existing env files already use plain seconds,
+// and refusing them would only move the mistake somewhere else.
 func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 	raw := os.Getenv(name)
 	if raw == "" {
@@ -139,12 +139,12 @@ func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 	return d, nil
 }
 
-// MailConfig menampung yang dibutuhkan untuk mengirim tautan reset.
+// MailConfig holds what is needed to send reset links.
 //
-// Kosong seluruhnya adalah mode penyebaran: pendaftaran dan masuk tetap
-// berjalan, hanya reset kata sandi yang tidak bisa diselesaikan - dan
-// permintaannya menolak dengan menyebut apa yang kurang. Terisi SEBAGIAN
-// adalah kekeliruan, dan menggagalkan start-up.
+// Entirely empty is a deployment mode: registration and sign-in still work,
+// only password reset cannot be completed - and the request refuses by
+// naming what is missing. PARTIALLY filled is a mistake, and fails
+// start-up.
 type MailConfig struct {
 	Host        string
 	Port        int
@@ -158,11 +158,11 @@ func (m MailConfig) Configured() bool {
 	return m.Host != "" && m.Port > 0 && m.From != "" && m.FrontendURL != ""
 }
 
-// Missing menyebut bagian mana yang kurang.
+// Missing names which parts are absent.
 //
-// Username dan Password sengaja TIDAK ikut: server surel pengembangan lokal
-// tidak menuntut autentikasi, dan mewajibkannya akan membuat alur ini tidak
-// bisa dicoba sama sekali di mesin sendiri.
+// Username and Password are deliberately NOT included: a local development
+// mail server demands no authentication, and requiring them would make this
+// flow impossible to try on one's own machine.
 func (m MailConfig) Missing() []string {
 	var missing []string
 	if m.Host == "" {

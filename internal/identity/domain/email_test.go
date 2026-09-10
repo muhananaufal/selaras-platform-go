@@ -46,8 +46,8 @@ func TestNewEmail(t *testing.T) {
 	}
 }
 
-// Alamat yang hanya berbeda huruf besar-kecil adalah orang yang sama.
-// Tanpa ini, dua akun bisa lahir untuk satu alamat.
+// Addresses that differ only in case are the same person. Without this, two
+// accounts could be born for one address.
 func TestEmailEqualityIgnoresCase(t *testing.T) {
 	t.Parallel()
 

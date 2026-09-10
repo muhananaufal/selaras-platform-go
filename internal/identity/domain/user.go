@@ -16,9 +16,9 @@ var (
 	ErrGoogleAlreadyLinked = errors.New("a different google account is already linked")
 )
 
-// Role adalah tipe tersendiri, bukan string, supaya "amdin" gagal saat
-// kompilasi atau di konstruktor - bukan diam-diam menjadi peran yang tidak
-// dikenali di tengah pemeriksaan otorisasi.
+// Role is its own type, not a string, so that "amdin" fails at compile time
+// or in the constructor - rather than silently becoming an unrecognised
+// role in the middle of an authorisation check.
 type Role string
 
 const (
@@ -37,9 +37,9 @@ func NewRole(raw string) (Role, error) {
 
 func (r Role) String() string { return string(r) }
 
-// UserID adalah UUIDv7: terurut menurut waktu, sehingga penyisipan tetap
-// berkumpul di ujung indeks, tetapi tidak bisa ditebak berurutan seperti
-// bigint auto-increment yang dipakai sistem lama.
+// UserID is a UUIDv7: time-ordered, so inserts stay clustered at the end of
+// the index, yet not sequentially guessable like the bigint auto-increment
+// the legacy system used.
 type UserID struct{ v uuid.UUID }
 
 func NewUserID() (UserID, error) {
@@ -61,9 +61,9 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// UserState adalah bentuk datar sebuah User untuk menyeberangi batas
-// penyimpanan. Repository memakainya untuk membaca dan menulis tanpa
-// mengintip ke dalam agregat, dan tanpa User terpaksa membuka bidangnya.
+// UserState is the flat shape of a User for crossing the storage boundary.
+// The repository uses it to read and write without peeking into the
+// aggregate, and without User being forced to expose its fields.
 type UserState struct {
 	ID              UserID
 	Email           Email
@@ -77,17 +77,17 @@ type UserState struct {
 	DeletedAt       *time.Time
 }
 
-// User adalah agregat identitas: siapa yang boleh masuk, dan dengan cara apa.
-// Ia sengaja tidak tahu apa-apa tentang profil - nama, tanggal lahir, dan
-// wilayah ada di unit lain (ADR-002).
+// User is the identity aggregate: who may sign in, and by what means. It
+// deliberately knows nothing about the profile - name, date of birth, and
+// region live in another unit (ADR-002).
 type User struct {
 	state UserState
 }
 
-// Register membuat akun berbasis kata sandi.
+// Register creates a password-based account.
 //
-// Verifikasi email sengaja tidak diberikan: pada titik ini belum ada apa pun
-// yang membuktikan alamat itu milik si pendaftar.
+// Email verification is deliberately not granted: at this point nothing
+// proves the address belongs to the person registering.
 func Register(email Email, hash PasswordHash, now time.Time) (*User, error) {
 	if hash == "" {
 		return nil, ErrEmptyPasswordHash
@@ -107,12 +107,12 @@ func Register(email Email, hash PasswordHash, now time.Time) (*User, error) {
 	}}, nil
 }
 
-// RegisterWithGoogle membuat akun yang memang tidak punya kata sandi.
+// RegisterWithGoogle creates an account that genuinely has no password.
 //
-// Sistem lama menyimpan hash dari 32 karakter acak untuk mengisi kolom yang
-// NOT NULL. Hash itu berbohong: ia menyatakan ada kredensial yang bisa
-// dipakai, padahal tidak ada. Di sini ketiadaan kata sandi dinyatakan apa
-// adanya, dan alur reset kata sandi bisa membedakan keduanya.
+// The legacy system stored the hash of 32 random characters to fill a NOT
+// NULL column. That hash lied: it claimed a usable credential existed when
+// none did. Here the absence of a password is stated as it is, and the
+// password-reset flow can tell the two apart.
 func RegisterWithGoogle(email Email, googleID string, now time.Time) (*User, error) {
 	if strings.TrimSpace(googleID) == "" {
 		return nil, errors.New("empty google id")
@@ -134,12 +134,12 @@ func RegisterWithGoogle(email Email, googleID string, now time.Time) (*User, err
 	}}, nil
 }
 
-// Hydrate menyusun ulang User dari penyimpanan tanpa melewati aturan
-// konstruktor - baris yang sudah tersimpan adalah fakta, bukan permintaan
-// yang perlu divalidasi ulang.
+// Hydrate reassembles a User from storage without going through the
+// constructor's rules - a stored row is a fact, not a request that needs
+// validating again.
 func Hydrate(s UserState) *User { return &User{state: s} }
 
-// State menyalin keadaan keluar untuk penyimpanan.
+// State copies the state out for storage.
 func (u *User) State() UserState { return u.state }
 
 func (u *User) ID() UserID                 { return u.state.ID }
@@ -157,17 +157,17 @@ func (u *User) DeletedAt() time.Time {
 	return *u.state.DeletedAt
 }
 
-// CanAuthenticateWithPassword membedakan "kata sandi salah" dari "akun ini
-// memang tidak punya kata sandi". Keduanya menolak login, tetapi hanya yang
-// kedua boleh menawarkan penetapan kata sandi.
+// CanAuthenticateWithPassword distinguishes "wrong password" from "this
+// account has no password at all". Both refuse login, but only the second
+// may offer to set a password.
 func (u *User) CanAuthenticateWithPassword() bool { return u.state.PasswordHash != "" }
 
-// LinkGoogle menautkan identitas Google ke akun yang sudah ada.
+// LinkGoogle links a Google identity to an existing account.
 //
-// Menutup S5. Metode ini DILARANG menyentuh PasswordHash, dan tidak ada jalan
-// lain untuk menautkan Google - jadi kekeliruan sistem lama, yang menimpa
-// kata sandi akun yang sudah ada dengan string acak setiap kali login sosial,
-// tidak punya tempat untuk terjadi lagi.
+// Closes S5. This method MUST NOT touch PasswordHash, and there is no other
+// way to link Google - so the legacy system's mistake, which overwrote an
+// existing account's password with a random string on every social login, has
+// nowhere left to happen.
 func (u *User) LinkGoogle(googleID string, now time.Time) error {
 	if strings.TrimSpace(googleID) == "" {
 		return errors.New("empty google id")
@@ -177,7 +177,8 @@ func (u *User) LinkGoogle(googleID string, now time.Time) error {
 	}
 
 	u.state.GoogleID = googleID
-	// Google sudah membuktikan alamatnya; verifikasi yang tertunda selesai.
+	// Google has already proven the address; the pending verification is
+	// complete.
 	if u.state.EmailVerifiedAt == nil {
 		verified := now
 		u.state.EmailVerifiedAt = &verified
@@ -186,8 +187,8 @@ func (u *User) LinkGoogle(googleID string, now time.Time) error {
 	return nil
 }
 
-// SetPasswordHash dipakai reset kata sandi dan penetapan kata sandi pertama
-// oleh pengguna yang selama ini hanya memakai Google.
+// SetPasswordHash is used by password reset and by a user who has only ever
+// used Google setting their first password.
 func (u *User) SetPasswordHash(hash PasswordHash, now time.Time) error {
 	if hash == "" {
 		return ErrEmptyPasswordHash
@@ -197,9 +198,8 @@ func (u *User) SetPasswordHash(hash PasswordHash, now time.Time) error {
 	return nil
 }
 
-// Delete menandai penghapusan lunak dan tidak menggeser waktu penghapusan
-// yang sudah tercatat: penghapusan kedua adalah pengulangan permintaan, bukan
-// peristiwa baru.
+// Delete marks a soft deletion and does not move an already recorded deletion
+// time: a second deletion is a repeated request, not a new event.
 func (u *User) Delete(now time.Time) {
 	if u.state.DeletedAt != nil {
 		return
@@ -209,17 +209,17 @@ func (u *User) Delete(now time.Time) {
 	u.state.UpdatedAt = now
 }
 
-// TokenGeneration adalah generasi token yang sedang sah bagi pengguna ini.
-// Token yang membawa generasi lebih lama sudah dicabut.
+// TokenGeneration is the token generation currently valid for this user.
+// Tokens carrying an older generation have been revoked.
 func (u *User) TokenGeneration() int64 { return u.state.TokenGeneration }
 
-// RevokeAllTokens membatalkan setiap token yang pernah diterbitkan untuk
-// pengguna ini dengan menaikkan generasinya.
+// RevokeAllTokens invalidates every token ever issued for this user by
+// bumping the generation.
 //
-// Bentuk inilah yang dituntut ADR-012 lewat D1: login berhasil membatalkan
-// seluruh sesi sebelumnya, dan logout membatalkan yang sedang berjalan.
-// Daftar per-token akan mengubah keduanya menjadi penghapusan sebanyak
-// jumlah token yang beredar; di sini keduanya satu kenaikan.
+// This is the shape ADR-012 demands through D1: a successful login
+// invalidates every previous session, and a logout invalidates the current
+// one. A per-token list would turn both into as many deletions as there are
+// tokens in circulation; here both are one increment.
 func (u *User) RevokeAllTokens(now time.Time) {
 	u.state.TokenGeneration++
 	u.state.UpdatedAt = now

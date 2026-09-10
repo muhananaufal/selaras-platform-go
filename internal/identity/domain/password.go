@@ -9,35 +9,34 @@ var (
 	// ErrPasswordTooShort mempertahankan batas minimum sistem lama.
 	ErrPasswordTooShort = errors.New("password must be at least 8 characters")
 
-	// ErrPasswordTooLong menjaga biaya hashing tetap terbatas.
+	// ErrPasswordTooLong keeps the hashing cost bounded.
 	ErrPasswordTooLong = errors.New("password must not exceed 1024 characters")
 )
 
 const (
 	minPasswordLength = 8
 
-	// argon2 menerima masukan sepanjang apa pun dan biayanya tumbuh
-	// bersamanya. Tanpa batas atas, siapa pun bisa mengirim megabita ke
-	// endpoint login - yang tidak butuh autentikasi untuk dipanggil - dan
-	// membakar CPU seluruh proses.
+	// argon2 accepts input of any length and its cost grows with it. Without
+	// an upper bound, anyone could send megabytes to the login endpoint -
+	// which needs no authentication to be called - and burn the whole
+	// process's CPU.
 	maxPasswordLength = 1024
 )
 
-// Password adalah kata sandi mentah yang sudah lolos aturan panjang.
+// Password is a raw password that has passed the length rules.
 //
-// Ia sengaja TIDAK bisa dicetak. String dan GoString mengembalikan
-// penanda, bukan isinya, sehingga kata sandi tidak bocor lewat log,
-// pesan galat, atau dump struct - tiga jalur kebocoran yang tidak
-// bergantung pada kedisiplinan siapa pun.
+// It deliberately CANNOT be printed. String and GoString return a
+// placeholder, not the contents, so a password does not leak through logs,
+// error messages, or struct dumps - three leak paths that depend on
+// nobody's discipline.
 type Password struct {
 	value string
 }
 
-// NewPassword memvalidasi panjang kata sandi.
+// NewPassword validates the password length.
 //
-// Kompleksitas karakter sengaja tidak dipaksakan. Aturan semacam itu
-// mendorong pola yang mudah ditebak, dan panjanglah yang benar-benar
-// menentukan.
+// Character complexity is deliberately not enforced. Rules like that push
+// people towards predictable patterns, and length is what actually matters.
 func NewPassword(raw string) (Password, error) {
 	if strings.TrimSpace(raw) == "" || len(raw) < minPasswordLength {
 		return Password{}, ErrPasswordTooShort
@@ -51,23 +50,23 @@ func NewPassword(raw string) (Password, error) {
 // String memenuhi fmt.Stringer tanpa membocorkan isinya.
 func (Password) String() string { return "[REDACTED]" }
 
-// GoString memenuhi fmt.GoStringer, yang dipakai verb %#v.
+// GoString satisfies fmt.GoStringer, which the %#v verb uses.
 func (Password) GoString() string { return "domain.Password{[REDACTED]}" }
 
-// Expose mengembalikan nilai sebenarnya. Namanya sengaja canggung: satu-
-// satunya pemanggil yang sah adalah pemasang hash.
+// Expose returns the real value. Its name is deliberately awkward: the only
+// legitimate caller is the hasher.
 func (p Password) Expose() string { return p.value }
 
-// PasswordHash adalah hasil hashing yang sudah dikodekan, termasuk
-// parameter dan salt-nya. Isinya buram bagi domain.
+// PasswordHash is the encoded result of hashing, including its parameters
+// and salt. Its contents are opaque to the domain.
 type PasswordHash string
 
-// PasswordHasher adalah port. Implementasinya hidup di adapter, sehingga
-// domain tidak pernah tahu algoritma mana yang dipakai - dan mengganti
-// algoritma tidak menyentuh satu pun aturan bisnis.
+// PasswordHasher is a port. Its implementation lives in an adapter, so the
+// domain never knows which algorithm is used - and changing the algorithm
+// touches not a single business rule.
 type PasswordHasher interface {
 	Hash(Password) (PasswordHash, error)
-	// Verify mengembalikan needsRehash bila hash lama dibuat dengan
-	// parameter yang kini dianggap terlalu lemah.
+	// Verify returns needsRehash when the stored hash was made with parameters
+	// now considered too weak.
 	Verify(hash PasswordHash, candidate Password) (ok bool, needsRehash bool, err error)
 }

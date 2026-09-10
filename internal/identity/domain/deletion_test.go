@@ -34,12 +34,12 @@ func ok(service string) domain.Confirmation {
 	return domain.Confirmation{Service: service, Succeeded: true, ConfirmedAt: time.Now()}
 }
 
-// TestASagaIsOnlyCompleteWhenEveryUnitHasAnswered adalah aturan yang menjaga
-// janji kepada pengguna.
+// TestASagaIsOnlyCompleteWhenEveryUnitHasAnswered is the rule that keeps the
+// promise to the user.
 //
-// Saga yang menyatakan diri selesai sementara satu unit belum menjawab berarti
-// seseorang diberi tahu datanya sudah hilang padahal masih ada - di unit yang
-// tidak dituju siapa pun lagi.
+// A saga declaring itself complete while one unit has not answered means
+// someone was told their data is gone while it is still there - in a unit
+// nobody addresses any more.
 func TestASagaIsOnlyCompleteWhenEveryUnitHasAnswered(t *testing.T) {
 	s := newSaga(t)
 
@@ -48,7 +48,7 @@ func TestASagaIsOnlyCompleteWhenEveryUnitHasAnswered(t *testing.T) {
 			got, len(domain.DeletionParticipants))
 	}
 
-	// Semua kecuali yang terakhir.
+	// All but the last one.
 	last := domain.DeletionParticipants[len(domain.DeletionParticipants)-1]
 	for _, name := range domain.DeletionParticipants[:len(domain.DeletionParticipants)-1] {
 		status, err := s.Confirm(ok(name))
@@ -104,17 +104,18 @@ func TestOneFailureBeatsFiveSuccesses(t *testing.T) {
 	if got := s.Failures(); len(got) != 1 || got[0].Service != last {
 		t.Errorf("the failures are %v", got)
 	}
-	// Alasannya ikut, karena itu yang dibaca manusia saat menyelesaikannya.
+	// The reason travels along, because that is what a person reads when
+	// resolving it.
 	if s.Failures()[0].FailureReason == "" {
 		t.Error("the failure carries no reason")
 	}
 }
 
-// TestTheSameConfirmationTwiceChangesNothing adalah at-least-once.
+// TestTheSameConfirmationTwiceChangesNothing is at-least-once.
 //
-// Relay outbox bisa mengirim jawaban yang sama dua kali. Tanpa penjagaan ini,
-// enam unit bisa terlihat seperti tujuh jawaban, dan saga akan menyatakan diri
-// selesai sementara satu unit belum tersentuh.
+// The outbox relay can deliver the same answer twice. Without this guard, six
+// units could look like seven answers, and the saga would declare itself
+// complete while one unit was never touched.
 func TestTheSameConfirmationTwiceChangesNothing(t *testing.T) {
 	s := newSaga(t)
 
@@ -133,11 +134,11 @@ func TestTheSameConfirmationTwiceChangesNothing(t *testing.T) {
 	}
 }
 
-// TestAConfirmationFromAStrangerIsRefused menjaga daftar pesertanya.
+// TestAConfirmationFromAStrangerIsRefused guards the participant list.
 //
-// Nama yang salah ketik akan selamanya terlihat sebagai unit yang belum
-// menjawab, sementara unit yang sebenarnya sudah menghapus datanya - saga
-// menggantung, dan sebabnya tidak terlihat di mana pun.
+// A misspelled name would forever look like a unit that has not answered,
+// while the real unit has already deleted its data - the saga hangs, and
+// the cause is visible nowhere.
 func TestAConfirmationFromAStrangerIsRefused(t *testing.T) {
 	s := newSaga(t)
 
@@ -149,7 +150,7 @@ func TestAConfirmationFromAStrangerIsRefused(t *testing.T) {
 	}
 }
 
-// TestAFailureMustSayWhy menjaga runbook tetap bisa dipakai.
+// TestAFailureMustSayWhy keeps the runbook usable.
 func TestAFailureMustSayWhy(t *testing.T) {
 	s := newSaga(t)
 
@@ -170,17 +171,17 @@ func TestAClosedSagaRefusesLateAnswers(t *testing.T) {
 	}
 }
 
-// TestEveryParticipantIsAServiceThatActuallyConsumesTheTopic adalah penjaga
-// terhadap daftar yang menyimpang dari kenyataan.
+// TestEveryParticipantIsAServiceThatActuallyConsumesTheTopic guards against
+// a list drifting from reality.
 //
-// Daftar peserta adalah KONTRAK: saga hanya selesai setelah setiap namanya
-// menjawab. Nama yang tidak pernah menjawab membuat setiap saga menggantung
-// selamanya; nama yang hilang membuat akun dinyatakan terhapus sementara
-// datanya masih utuh.
+// The participant list is a CONTRACT: the saga only completes once every
+// name has answered. A name that never answers makes every saga hang
+// forever; a missing name declares the account deleted while its data is
+// still intact.
 //
-// Test ini tidak bisa memeriksa konsumennya sungguhan dari sini - itu tugas
-// test e2e - tetapi ia menangkap kesalahan yang paling mungkin: nama ganda,
-// nama kosong, dan daftar yang tanpa sengaja menyusut.
+// This test cannot check the real consumers from here - that is the e2e
+// test's job - but it catches the most likely mistakes: a duplicate name,
+// an empty name, and a list that shrank by accident.
 func TestEveryParticipantIsAServiceThatActuallyConsumesTheTopic(t *testing.T) {
 	seen := make(map[string]struct{}, len(domain.DeletionParticipants))
 
@@ -194,9 +195,9 @@ func TestEveryParticipantIsAServiceThatActuallyConsumesTheTopic(t *testing.T) {
 		seen[name] = struct{}{}
 	}
 
-	// Enam unit menyimpan data pengguna: profil, penilaian, coaching, chat,
-	// nutrisi, dan dasbor. Angkanya ditulis di sini supaya penyusutan yang
-	// tidak disengaja terlihat.
+	// Six units hold user data: profile, assessment, coaching, chat,
+	// nutrition, and dashboard. The number is written here so an accidental
+	// shrink shows up.
 	if len(domain.DeletionParticipants) != 6 {
 		t.Errorf("the saga has %d participants, want 6: %v",
 			len(domain.DeletionParticipants), domain.DeletionParticipants)

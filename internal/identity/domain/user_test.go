@@ -69,9 +69,9 @@ func TestRegisterWithGoogleHasNoPassword(t *testing.T) {
 	}
 }
 
-// Menutup S5: di sistem lama, login Google memakai updateOrCreate dan menimpa
-// kata sandi akun yang sudah ada dengan string acak. Menautkan identitas
-// Google DILARANG menyentuh kredensial.
+// Closes S5: in the legacy system, Google login used updateOrCreate and
+// overwrote an existing account's password with a random string. Linking a
+// Google identity MUST NOT touch credentials.
 func TestLinkingGoogleNeverTouchesThePassword(t *testing.T) {
 	u, err := domain.Register(mustEmail(t, "a@b.co"), "the-original-hash", time.Now())
 	if err != nil {
@@ -148,9 +148,9 @@ func TestDeleteIsSoftAndRepeatable(t *testing.T) {
 	}
 }
 
-// Sebuah user yang dibaca ulang dari basis data WAJIB bisa dibentuk utuh
-// tanpa melewati konstruktor, kalau tidak repository terpaksa memakai
-// refleksi atau domain terpaksa mengekspos bidangnya.
+// A user read back from the database MUST be reconstructable whole without
+// going through the constructor, otherwise the repository is forced into
+// reflection or the domain into exposing its fields.
 func TestHydrateRebuildsAUserExactly(t *testing.T) {
 	id, err := domain.ParseUserID("018f4c1e-0000-7000-8000-000000000000")
 	if err != nil {
@@ -185,10 +185,10 @@ func TestParseUserIDRejectsNonsense(t *testing.T) {
 	}
 }
 
-// ADR-012 lewat D1: satu login berhasil membatalkan seluruh token
-// sebelumnya. Itu berarti pencabutan harus mengenai semua token seorang
-// pengguna sekaligus, dan penghitung generasi melakukannya dengan satu
-// tulisan alih-alih menghapus sebanyak jumlah token yang beredar.
+// ADR-012 through D1: one successful login invalidates every previous
+// token. That means revocation has to hit all of a user's tokens at once,
+// and the generation counter does it with one write instead of as many
+// deletions as there are tokens in circulation.
 func TestRevokingAllTokensAdvancesTheGeneration(t *testing.T) {
 	u, err := domain.Register(mustEmail(t, "a@b.co"), "hash", time.Now())
 	if err != nil {
