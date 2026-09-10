@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rencana Tiga Lapisan Selaras</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #f3f1ec; --panel: #ffffff; --panel-2: #f7f5f0; --ink: #1b2230; --ink-2: #4d5566; --ink-3: #7c8494;
+    --line: #dcd7cc; --line-2: #e9e5dc; --accent: #b45309; --accent-soft: #fbe9d2; --accent-ink: #ffffff;
+    --l1: #0f766e; --l1-soft: #d9efeb; --l2: #b45309; --l2-soft: #fbe9d2; --l3: #6d28d9; --l3-soft: #ece4fb;
+    --ok: #15803d; --warn: #b45309; --fail: #b91c1c;
+    --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0e1319; --panel: #151c24; --panel-2: #1b232d; --ink: #e7e3d8; --ink-2: #aab0bb; --ink-3: #7b8391;
+    --line: #2a3340; --line-2: #222b36; --accent: #f5b64c; --accent-soft: #3a2c14; --accent-ink: #0e1319;
+    --l1: #4fd1c5; --l1-soft: #123a38; --l2: #f5b64c; --l2-soft: #3a2c14; --l3: #b794f6; --l3-soft: #2b2140;
+    --ok: #7bd88f; --warn: #f5b64c; --fail: #f07178; } }
+  :root[data-theme="dark"] {
+    --bg: #0e1319; --panel: #151c24; --panel-2: #1b232d; --ink: #e7e3d8; --ink-2: #aab0bb; --ink-3: #7b8391;
+    --line: #2a3340; --line-2: #222b36; --accent: #f5b64c; --accent-soft: #3a2c14; --accent-ink: #0e1319;
+    --l1: #4fd1c5; --l1-soft: #123a38; --l2: #f5b64c; --l2-soft: #3a2c14; --l3: #b794f6; --l3-soft: #2b2140;
+    --ok: #7bd88f; --warn: #f5b64c; --fail: #f07178; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+  a { color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.84em; background: var(--panel-2); padding: 0.05em 0.35em; border-radius: 4px; }
+  h1, h2, h3, h4 { font-family: var(--display); letter-spacing: -0.01em; text-wrap: balance; margin: 0; }
+  p { margin: 0; max-width: 72ch; }
+  ul, ol { margin: 0; padding-left: 1.2rem; } li { max-width: 70ch; }
+  .wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 2.5rem; max-width: 1240px; margin: 0 auto; padding: 2rem 1.5rem 6rem; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } nav.side { position: static; } }
+  nav.side { position: sticky; top: 1.5rem; align-self: start; font-size: 0.82rem; display: grid; gap: 0.2rem; }
+  nav.side a { color: var(--ink-2); text-decoration: none; padding: 0.25rem 0.5rem; border-left: 2px solid var(--line-2); }
+  nav.side a:hover { color: var(--ink); border-left-color: var(--accent); }
+  nav.side .g { font-family: var(--display); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0.8rem 0 0.2rem 0.5rem; }
+  main { display: grid; gap: 3.2rem; min-width: 0; }
+  header.hero { display: grid; gap: 0.9rem; }
+  .eyebrow { font-family: var(--display); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-size: 2.5rem; font-weight: 800; line-height: 1.08; }
+  .lede { font-size: 1.1rem; color: var(--ink-2); }
+  .meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; font-family: var(--mono); font-size: 0.78rem; color: var(--ink-3); }
+  section { display: grid; gap: 1.2rem; scroll-margin-top: 1.5rem; }
+  section > h2 { font-size: 1.5rem; font-weight: 800; }
+  section > h2 small { display: block; font-family: var(--body); font-weight: 400; font-size: 0.95rem; color: var(--ink-2); margin-top: 0.2rem; }
+  .tier { border-left: 4px solid var(--c); padding-left: 1.1rem; }
+  .tier[data-l="1"] { --c: var(--l1); --cs: var(--l1-soft); } .tier[data-l="2"] { --c: var(--l2); --cs: var(--l2-soft); } .tier[data-l="3"] { --c: var(--l3); --cs: var(--l3-soft); }
+  .tier .chip { display: inline-block; font-family: var(--display); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c); background: var(--cs); padding: 0.15rem 0.55rem; border-radius: 999px; }
+  .ladder { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  @media (max-width: 760px) { .ladder { grid-template-columns: 1fr; } }
+  .ladder div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; border-top: 4px solid var(--c); display: grid; gap: 0.4rem; align-content: start; }
+  .ladder div:nth-child(1) { --c: var(--l1); } .ladder div:nth-child(2) { --c: var(--l2); } .ladder div:nth-child(3) { --c: var(--l3); }
+  .ladder h3 { font-size: 1.05rem; font-weight: 800; }
+  .ladder .q { font-style: italic; color: var(--ink-2); font-size: 0.92rem; }
+  .ladder .n { font-family: var(--mono); font-size: 0.76rem; color: var(--ink-3); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; font-size: 0.9rem; }
+  .kv b { color: var(--ink-3); font-weight: 500; font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; padding-top: 0.2rem; }
+  .cards { display: grid; gap: 1rem; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.25rem 1.2rem; display: grid; gap: 0.8rem; }
+  .card header { display: grid; grid-template-columns: 2.6rem 1fr auto; gap: 0.8rem; align-items: start; }
+  .card header .num { font-family: var(--display); font-size: 1.5rem; font-weight: 800; color: var(--c); line-height: 1; }
+  .card header h3 { font-size: 1.15rem; font-weight: 800; }
+  .card header .sub { color: var(--ink-2); font-size: 0.9rem; margin-top: 0.15rem; }
+  .card header .st { font-family: var(--mono); font-size: 0.68rem; padding: 0.15rem 0.5rem; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap; }
+  .card header .st.done { color: var(--ok); border-color: var(--ok); } .card header .st.next { color: var(--accent); border-color: var(--accent); }
+  .card .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem 1.2rem; }
+  .card h4 { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.25rem; }
+  .card ul, .card ol { font-size: 0.9rem; display: grid; gap: 0.15rem; }
+  .card .bab { display: grid; gap: 0.3rem; }
+  .card .bab li { list-style: none; padding-left: 0; }
+  .card .bab li::before { content: attr(data-b); font-family: var(--display); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c); margin-right: 0.5rem; }
+  .card .files { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .card .files span { font-family: var(--mono); font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink-2); }
+  .card .files span.adr { border-color: var(--accent); color: var(--accent); }
+  .card .files span.mek { border-color: var(--l3); color: var(--l3); }
+  .card .need { font-size: 0.86rem; color: var(--ink-2); }
+  .card .need b { color: var(--ink); font-weight: 600; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--line-2); }
+  th { font-family: var(--display); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); background: var(--panel-2); }
+  tr:last-child td { border-bottom: 0; }
+  td.c { text-align: center; }
+  td .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--l3); }
+  td .dot.w { background: var(--line); }
+  .order { list-style: none; padding: 0; display: grid; gap: 0; counter-reset: o; }
+  .order li { display: grid; grid-template-columns: 2.4rem 1fr auto; gap: 0.8rem; padding: 0.8rem 0; border-top: 1px solid var(--line); align-items: start; }
+  .order li:last-child { border-bottom: 1px solid var(--line); }
+  .order li::before { counter-increment: o; content: counter(o); font-family: var(--display); font-size: 1.1rem; font-weight: 800; color: var(--accent); }
+  .order .t { font-weight: 600; } .order .d { color: var(--ink-2); font-size: 0.9rem; }
+  .order .size { font-family: var(--mono); font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap; }
+  .risk { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.9rem; }
+  .risk div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem 1rem; display: grid; gap: 0.3rem; }
+  .risk h4 { font-size: 0.95rem; font-weight: 700; } .risk p { font-size: 0.88rem; color: var(--ink-2); }
+  .gate { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.2rem; display: grid; gap: 0.5rem; }
+  .gate ol li { margin-bottom: 0.25rem; }
+  .hub { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.25rem; display: grid; gap: 0.7rem; }
+  pre { margin: 0; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 0.8rem 1rem; font-family: var(--mono); font-size: 0.78rem; line-height: 1.5; overflow-x: auto; color: var(--ink-2); }
+  .decide { border: 2px solid var(--accent); border-radius: 12px; padding: 1.1rem 1.3rem; background: var(--accent-soft); display: grid; gap: 0.5rem; }
+  .decide h2 { color: var(--accent); font-size: 1.2rem; }
+  footer { color: var(--ink-3); font-size: 0.82rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="side" aria-label="daftar isi">
+    <div class="g">Rencana</div>
+    <a href="#ringkas">Ringkasan</a><a href="#prinsip">Prinsip lintas lapisan</a><a href="#hub">Hub</a>
+    <div class="g">Lapisan 1</div><a href="#l1">Cerita</a>
+    <div class="g">Lapisan 2</div><a href="#l2">Alur per fitur (11)</a>
+    <div class="g">Lapisan 3</div><a href="#l3">Mekanisme (11)</a><a href="#cakupan">Peta cakupan</a>
+    <div class="g">Eksekusi</div><a href="#matriks">Matriks alur × mekanisme</a><a href="#mesin">Kebutuhan mesin</a><a href="#urutan">Urutan kerja</a><a href="#gerbang">Gerbang verifikasi</a><a href="#risiko">Risiko</a><a href="#putusan">Yang perlu diputuskan</a>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="eyebrow">selaras-platform-go · showcase · rencana</div>
+      <h1>Rencana Tiga Lapisan Selaras</h1>
+      <p class="lede">Dari yang paling umum ke paling rinci: satu cerita untuk orang awam, sebelas alur per fitur untuk pembaca teknis, sebelas mekanisme lintas fitur untuk engineer. Semua memakai satu mesin Flow Reel yang sudah jadi; yang berbeda per reel hanya datanya.</p>
+      <div class="meta"><span>acuan: reel-alur-04-personalisasi.html (alur 04)</span><span>blueprint: blueprint.md</span><span>peta: runtime.html</span><span>disusun 2026-09-09</span></div>
+    </header>
+
+    <section id="ringkas">
+      <h2>Ringkasan <small>Tiga pertanyaan, tiga penonton, tiga ketinggian kamera.</small></h2>
+      <div class="ladder">
+        <div><span class="n">Lapisan 1 · 1 reel</span><h3>Cerita</h3><p class="q">"Apa yang dialami orang saat memakai Selaras?"</p><p>Penonton: siapa saja. Kamera di layar ponsel; infrastruktur hanya bisikan.</p></div>
+        <div><span class="n">Lapisan 2 · 11 reel</span><h3>Alur per fitur</h3><p class="q">"Komponen mana yang bekerja, berurutan bagaimana, dari ujung ke ujung?"</p><p>Penonton: rekruter teknis, rekan engineer. Format alur 04.</p></div>
+        <div><span class="n">Lapisan 3 · 11 reel</span><h3>Mekanisme</h3><p class="q">"Pernyataan mana yang dijalankan, mengapa urutannya begitu, apa yang terjadi bila putus di tengah?"</p><p>Penonton: engineer senior. Kamera sedekat baris kode.</p></div>
+      </div>
+      <div class="kv">
+        <b>total</b><span>23 reel + 1 hub. Satu sudah jadi (alur 04). Cakupan terhadap repo diaudit otomatis di <a href="#cakupan">Peta cakupan</a>.</span>
+        <b>mesin</b><span>Satu berkas mesin yang sama; tambahan mesin dirangkum di <a href="#mesin">Kebutuhan mesin</a> dan otomatis berlaku untuk semua reel.</span>
+        <b>sumber</b><span>Rute REST, kontrak proto, use case, konsumen, ADR, runbook, dan laporan kinerja yang sudah dibaca dari repo. Tidak ada langkah yang dikarang dari ingatan.</span>
+      </div>
+    </section>
+
+    <section id="prinsip">
+      <h2>Prinsip lintas lapisan <small>Supaya dua puluh reel terasa satu karya, bukan dua puluh eksperimen.</small></h2>
+      <div class="kv">
+        <b>satu bahasa visual</b><span>Ikon, warna jenis jalur (HTTP, gRPC, DB, event, penyedia), bentuk muatan titik, dan pola bab sama di semua reel. Lapisan dibedakan oleh warna aksen bab: hijau-laut untuk cerita, amber untuk alur, ungu untuk mekanisme.</span>
+        <b>turun, bukan melebar</b><span>Setiap langkah punya tautan turun satu tingkat: adegan cerita → alur fiturnya; langkah alur → mekanisme yang dipakainya (<code>#id/langkah</code> sudah didukung). Tidak ada tautan menyamping yang memutus cerita.</span>
+        <b>satu ide per keterangan</b><span>Keterangan kuning ≤ 45 karakter, 2–4 per langkah; penjelasan panjang hidup di caption dan kartu Rincian, bukan di kanvas.</span>
+        <b>cabang, bukan reel gagal</b><span>Kegagalan dipelajari sebagai cabang "bagaimana kalau" di dalam alur normalnya, di titik yang benar-benar rawan menurut kode. Reel terpisah hanya untuk mekanisme.</span>
+        <b>angka bersumber</b><span>Latensi dan hitungan dari <code>docs/performance-report.md</code> dan konstanta di kode; dinyatakan "ilustratif berskala" bila diskalakan.</span>
+        <b>bukti sebelum klaim</b><span>Tiap reel lolos validator (sintaks, rujukan, kontinuitas titik, simulasi tiap urutan) dan render statis sebelum diserahkan; ritme dilihat di browser sungguhan.</span>
+      </div>
+    </section>
+
+    <section id="hub" class="tier" data-l="2">
+      <h2>Hub <small>Halaman indeks yang mengikat tiga lapisan; dibangun pertama karena memberi kerangka.</small></h2>
+      <div class="hub">
+        <div class="kv">
+          <b>bentuk</b><span>Satu halaman: tiga tingkat sebagai tiga baris kartu; tiap kartu memuat judul, durasi, komponen, status (belum, draf, jadi), dan tombol putar. Kartu alur 04 sudah bisa hidup hari ini.</span>
+          <b>navigasi turun</b><span>Kartu cerita menampilkan adegan-adegannya; tiap adegan menaut ke alur. Kartu alur menampilkan mekanisme yang dipakainya; tiap mekanisme menaut ke reel lapisan 3.</span>
+          <b>jejak tontonan</b><span>Reel yang sudah ditonton ditandai (localStorage); hub menyarankan reel berikutnya.</span>
+          <b>pencarian</b><span>Kotak cari berdasarkan ADR, nama berkas, atau istilah (outbox, idempotensi, KEDA) → daftar langkah di reel mana pun yang menyebutnya. Datanya dibaca dari <code>refs</code> tiap langkah.</span>
+          <b>bahasa</b><span>Indonesia dulu; sakelar Inggris disiapkan sebagai kolom kedua di data, diisi belakangan.</span>
+          <b>indeks ADR &amp; dokumen</b><span>Halaman hub memuat daftar 26 ADR, dua RFC (RFC-000 dekomposisi, RFC-999 retrospektif), gerbang fondasi, laporan paritas/konsistensi/kinerja/kapasitas, dan 15 runbook; tiap butir menaut ke reel yang memakainya. Tujuh ADR keputusan meta (001 bahasa Go, 002 topologi 9 unit, 005 transport gRPC/REST, 015 pemilihan library, 017 tiga opsi terukur, 018 lingkungan Windows/WSL, 019 temuan diperbaiki di tempat) hanya hidup di indeks ini dan di reel M11, bukan di alur.</span>
+        </div>
+        <pre>docs/reel/
+  index.html                         ← hub
+  reel-cerita.html                   ← lapisan 1
+  reel-alur-01-daftar-masuk.html … reel-alur-11-beban-llm.html   ← lapisan 2
+  reel-mekanisme-01-outbox.html … reel-mekanisme-11-bukti.html   ← lapisan 3
+  runtime.html                       ← peta sistem (pendamping, bukan lapisan)
+  blueprint.md · plan.html · tools/  ← konvensi, rencana, gerbang mutu</pre>
+      </div>
+    </section>
+
+    <!-- ================= LAPISAN 1 ================= -->
+    <section id="l1" class="tier" data-l="1">
+      <h2><span class="chip">Lapisan 1</span><br>Cerita: sehari bersama Selaras <small>Satu reel, sembilan adegan, tanpa satu pun kotak infrastruktur di layar.</small></h2>
+      <div class="cards">
+        <article class="card" style="--c: var(--l1)">
+          <header><div class="num">C</div><div><h3>Sehari bersama Selaras</h3><div class="sub">Satu pengguna, satu hari, dari mendaftar sampai (pilihan) menghapus akun. Tiap adegan memperlihatkan layar yang ia lihat, apa yang ia tunggu, dan berapa lama.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen di kanvas</h4><ul><li>Satu ponsel besar di tengah dengan layar yang berganti (mockup: formulir, kartu risiko, daftar tugas, chat, menu, dasbor)</li><li>Satu sosok "sistem" di kanan yang hanya berdenyut saat bekerja, tanpa nama komponen</li><li>Garis waktu pengguna di bawah: "menunggu X ms" vs "datang belakangan"</li></ul></div>
+            <div><h4>Adegan (bab)</h4><ol class="bab">
+              <li data-b="pagi">Mendaftar, atau masuk lewat Google; profil kesehatan diisi</li>
+              <li data-b="pagi">Kuesioner risiko: angka dan kategori muncul seketika</li>
+              <li data-b="pagi">Minta laporan personal: tiket dulu, laporan menyusul (notifikasi)</li>
+              <li data-b="siang">Mulai program coaching; kurikulum datang belakangan; tugas hari ini</li>
+              <li data-b="siang">Bertanya ke pelatih di dalam program</li>
+              <li data-b="siang">Bertanya bebas ke asisten</li>
+              <li data-b="sore">Panduan menu hari ini sesuai preferensi dan bahasa</li>
+              <li data-b="malam">Dasbor: semua kemajuan hari ini di satu layar</li>
+              <li data-b="epilog">Menghapus akun: konfirmasi kata sandi, "sedang diproses", lalu semuanya hilang</li>
+            </ol></div>
+            <div><h4>Bisikan "di balik layar"</h4><ul><li>Satu kalimat per adegan, muncul kecil di bawah ponsel: "laporan dibuat pekerja di belakang, bukan saat kamu menunggu"</li><li>Setiap bisikan menaut ke alur lapisan 2 yang relevan</li></ul></div>
+            <div><h4>Cabang</h4><ul><li>Laporan gagal dibuat: pengguna melihat "gagal, coba lagi", bukan menunggu selamanya</li><li>Tiket kedaluwarsa saat pindah perangkat: diminta masuk lagi (satu sesi aktif)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/edge/router.go</span><span>internal/edge/handler/*</span><span>test/postman/selaras.postman_collection.json</span><span>docs/performance-report.md</span></div></div>
+            <div><h4>Kebutuhan mesin baru</h4><p class="need"><b>Besar.</b> Ikon ponsel dengan bingkai layar dan mockup berganti (SVG), muatan jenis "layar", sosok sistem yang berdenyut, garis waktu pengguna. Karena itu dikerjakan setelah lapisan 2 dan 3 mapan.</p></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================= LAPISAN 2 ================= -->
+    <section id="l2" class="tier" data-l="2">
+      <h2><span class="chip">Lapisan 2</span><br>Alur per fitur <small>Sembilan alur normal dengan cabang di dalamnya, plus dua alur beban. Format persis alur 04.</small></h2>
+      <div class="cards">
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">01</div><div><h3>Daftar, masuk, dan sesi</h3><div class="sub">Akun lahir, profil kosong dibuat dengan token bootstrap, token diverifikasi gateway sendiri, sesi lama mati saat masuk lagi.</div></div><span class="st next">berikutnya</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, edge-gateway, Redis, identity-svc, profile-svc, Postgres (svc_identity, svc_profile), Mailpit, Google</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="daftar">POST /register → rate limit IP → argon2id → INSERT users → CreateEmptyProfile dengan token bootstrap 30 s → token EdDSA (gen 1)</li>
+              <li data-b="sesi">GET /me → tanda tangan lokal → generasi di Redis (cache kosong → identity) → 200</li>
+              <li data-b="masuk lagi">POST /login dari perangkat lain → hash umpan untuk alamat tak ada → generation++ → publish ke Redis → token lama mati</li>
+              <li data-b="keluar">POST /logout → generation++ → 401 untuk token lama</li>
+              <li data-b="opsional">Reset kata sandi lewat Mailpit (jawaban seragam anti-enumerasi); masuk lewat Google dengan state wajib</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Redis mati saat memeriksa generasi → tanya identity; identity ikut mati → 503 gagal-tertutup, bukan 401</li><li>gRPC langsung ke profile-svc tanpa token → Unauthenticated; token orang lain → PermissionDenied</li><li>Profil kosong gagal dibuat → pendaftaran tetap sukses, dicatat sebagai peringatan</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/identity/app/register.go</span><span>login.go</span><span>logout.go</span><span>reset_password.go</span><span>exchange_social_token.go</span><span>internal/edge/middleware/auth.go</span><span>ratelimit.go</span><span>internal/identity/adapter/revocation/redis.go</span><span>profileclient/client.go</span><span>internal/platform/authn/interceptor.go</span><span>test/e2e/security_test.go</span><span>docs/runbook/rate-limits.md</span><span class="adr">ADR-012</span><span class="adr">ADR-020</span><span class="adr">ADR-026</span><span class="mek">M3 token</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Kecil.</b> Ikon surel (Mailpit) dan Google, muatan "tautan reset" dan "kode OAuth". Panel dalam identity memakai templat service.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">02</div><div><h3>Ubah profil → cache di unit lain</h3><div class="sub">Satu transaksi menulis profil dan event; relay mengangkut at-least-once; dua unit menyimpan salinan yang boleh basi.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, gateway, profile-svc, Postgres svc_profile, Kafka profile.updated (3 partisi), assessment-svc, nutrition-svc</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="tulis">PATCH /profile → UpdateProfile berkunci user_id → UpdateAndPublish: UPDATE + INSERT outbox satu transaksi</li>
+              <li data-b="angkut">Relay: SKIP LOCKED → publish acks=all → MarkPublished; pesan ke partisi hash(p_4e17)</li>
+              <li data-b="salin">assessment UPSERT profile_snapshots hanya bila event lebih baru; nutrition UPSERT user_languages lewat header aggregate_type</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Broker Kafka mati → transaksi tetap commit, outbox menahan pending, relay mengulang tiap putaran; broker kembali → mengalir</li><li>Event tiba tidak urut (partisi berpindah) → observed_at menahan yang lama menimpa yang baru</li><li>Header aggregate_type ditebak salah → cache tidak pernah terisi tanpa galat (kejadian nyata, dicatat di kode)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/profile/app/publish.go</span><span>internal/platform/outbox/relay.go</span><span>routing.go</span><span>internal/assessment/adapter/cache/profile.go</span><span>internal/nutrition/adapter/cache/language.go</span><span>internal/nutrition/adapter/consumer/results.go</span><span class="adr">ADR-004</span><span class="adr">ADR-007</span><span class="adr">ADR-022</span><span class="mek">M1 outbox</span><span class="mek">M4 Kafka</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Kecil.</b> Rel profile.updated dengan 3 partisi (sudah didukung lewat RAILS).</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">03</div><div><h3>Penilaian risiko SCORE2</h3><div class="sub">Risiko dihitung di dalam service dengan paritas golden vector; hasilnya disiarkan ke coaching dan dasbor.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, gateway, assessment-svc, profile-svc (jaring), Postgres svc_assessment, Kafka assessment.completed, coaching-svc, dashboard-svc (+ replika baca)</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="hitung">POST /risk-assessments → cuplikan profil dari cache (gRPC hanya bila kosong) → mesin memilih model: diabetes menang atas usia → wilayah dari negara → nilai klinis kosong ditebak dari proksi dan ikut dikembalikan</li>
+              <li data-b="simpan">INSERT risk_assessments + outbox satu transaksi; slug 80 bit dicoba ulang bila bentrok; kategori dihitung di sini (B19)</li>
+              <li data-b="siar">coaching mencatat rujukan lunak (coaching_assessments); dasbor memproyeksikan dengan posisi di transaksi yang sama</li>
+              <li data-b="baca">GET /dashboard: dua query, replika baca</li>
+              <li data-b="tambahan">ResolveRiskRegion: negara → wilayah risiko, dipakai klien sebelum kuesioner; GET /risk-assessments berhalaman</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Profil belum lengkap → ErrProfileIncomplete, pengguna diberi tahu bidang mana</li><li>Slug bentrok → satu percobaan ulang tanpa terlihat pengguna</li><li>Event datang dua kali di coaching → dicatat sekali (idempotensi berskop)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/assessment/app/assessment.go</span><span>internal/assessment/domain/score/engine.go</span><span>internal/assessment/adapter/cache/source.go</span><span>internal/coaching/app/assessment.go</span><span>internal/dashboard/adapter/consumer/projector.go</span><span>docs/parity-report.md</span><span class="adr">ADR-008</span><span class="adr">ADR-009</span><span class="adr">ADR-023</span><span class="mek">M2 idempotensi</span><span class="mek">M7 read-model</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Sedang.</b> Panel dalam khusus assessment untuk mesin risiko (pilih model → wilayah → proksi → hitung) sebagai blok bersarang; ikon replika Postgres.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">04</div><div><h3>Personalisasi laporan lewat LLM</h3><div class="sub">Jalur permintaan tidak memanggil LLM; worker mengerjakannya, hasil pulang lewat topic bersama.</div></div><span class="st done">jadi</span></header>
+          <div class="grid">
+            <div><h4>Yang sudah ada</h4><ul><li>17 langkah, 4 bab, cabang kuota habis (3 langkah) dan jawaban rusak (4 langkah), panel dalam gateway/assessment/worker, 10 cuplikan kode asli, suara, narasi, kredit</li></ul></div>
+            <div><h4>Yang disesuaikan saat hub jadi</h4><ul><li>Ganti nama berkas mengikuti pola, tambah tautan turun ke M1, M2, M4, M5 di langkah terkait, warna bab lapisan 2</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>reel-alur-04-personalisasi.html</span><span>blueprint.md</span><span class="mek">M1 M2 M4 M5</span></div></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">05</div><div><h3>Program coaching sampai kelulusan</h3><div class="sub">Program dimulai tanpa menunggu LLM; kurikulum, tugas, utas pelatih, dan laporan kelulusan memakai jalur worker yang sama.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, gateway, coaching-svc, Postgres svc_coaching, Kafka llm.jobs/llm.results/coaching.program.updated, llm-worker, Gemini, dashboard-svc</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="mulai">POST /coaching/programs dengan slug penilaian → resolusi dari coaching_assessments (milik orang lain = tidak ada) → INSERT program (4 pekan sementara) + curriculum.requested satu transaksi</li>
+              <li data-b="kurikulum">worker → Gemini → curriculum.completed → StoreCurriculum idempoten → coaching_weeks/tasks → tanggal akhir dihitung ulang → program.updated → dasbor</li>
+              <li data-b="harian">PATCH tugas → kepemilikan lewat program → program.updated; POST utas → chat.reply.requested dengan jendela 20 pesan → balasan model masuk utas</li>
+              <li data-b="lulus">GET graduation-report → CurriculumRequested berpenanda → laporan → program terkunci</li>
+              <li data-b="tambahan">ToggleProgramStatus (active ↔ paused, D4) dan DeleteProgram beserta seluruh isinya; UpdateThreadTitle, DeleteThread</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Menghapus utas setelah lulus → 409 (program terkunci)</li><li>Kurikulum gagal dibuat → FailCurriculum, status tidak pending selamanya</li><li>Kurikulum datang dua kali → ditolak tanpa galat</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/coaching/app/program.go</span><span>task.go</span><span>thread.go</span><span>internal/coaching/adapter/consumer/results.go</span><span>internal/coaching/adapter/consumer/loop.go</span><span class="mek">M2 M4 M5 M7</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Kecil.</b> Rel coaching.program.updated; fx "kalender tugas" (28 kotak, satu dicentang) sebagai blok panel.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">06</div><div><h3>Percakapan dengan asisten</h3><div class="sub">Pesan disimpan dan HTTP menjawab segera; balasan tiba lewat llm.results, disaring header aggregate_type.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, gateway, chat-svc, Postgres svc_chat (chat_messages berpartisi bulanan), Kafka, llm-worker, Gemini</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="kirim">POST /chat/conversations → owned() → INSERT chat_messages ≤ 16 KiB + chat.reply.requested satu transaksi → jawab segera</li>
+              <li data-b="jawab">worker → Gemini dengan jendela 20 pesan → chat.reply.completed → StoreReply idempoten lewat kunci → role=model</li>
+              <li data-b="baca">GET percakapan: seluruh riwayat, bukan hanya jendela</li>
+              <li data-b="tambahan">ListConversations berhalaman, UpdateConversationTitle, DeleteConversation beserta pesannya</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Pesan melebihi 16 KiB → ditolak di domain</li><li>Percakapan milik orang lain → "tidak ada", bukan "bukan milikmu" (S9)</li><li>Balasan tiba dua kali → satu baris, bukan dua gelembung</li><li>Percakapan dihapus sebelum balasan tiba → balasan dibuang dengan peringatan</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/chat/app/chat.go</span><span>internal/chat/adapter/consumer/results.go</span><span>cmd/partitions</span><span class="mek">M2 M4 M5</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Kecil.</b> Ikon partisi bulanan di silinder (chip "2026_09").</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">07</div><div><h3>Panduan menu harian</h3><div class="sub">Konteks disimpan apa adanya di samping hasilnya, supaya panduan bisa dijelaskan kemudian.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, gateway, nutrition-svc, Postgres svc_nutrition, Kafka, llm-worker, Gemini; cache user_languages dari profile.updated</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="preferensi">PATCH /culinary/preferences</li>
+              <li data-b="minta">POST /culinary/daily-guides → buildContext: bahasa dari cache atau bawaan, preferensi, nama hidangan yang pernah dipilih; bawaan yang dinyatakan terbuka → INSERT pending + generation_context + meal.guide.requested</li>
+              <li data-b="jawab">worker → Gemini → meal.guide.completed → StoreGuide hanya untuk pending</li>
+              <li data-b="hub">GET /culinary/hub-data: preferensi + riwayat berhalaman</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Bahasa belum di-cache → bawaan, bukan galat</li><li>Pengiriman ulang ke panduan yang sudah terisi → bukan kegagalan</li><li>Panduan dihapus sebelum hasil tiba → dibuang dengan peringatan</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/nutrition/app/guide.go</span><span>preferences.go</span><span>internal/nutrition/adapter/consumer/results.go</span><span>docs/runbook/backfill-nutrition.md</span><span class="mek">M2 M5</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Kecil.</b> Muatan "konteks" (kartu JSON) untuk memperlihatkan generation_context ikut disimpan.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">08</div><div><h3>Dasbor sebagai read-model dan pembangunan ulang</h3><div class="sub">Proyektor menulis bentuk yang akan dibaca dari tiga topic; seluruh proyeksi bisa dibangun ulang dari awal topic.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>Kafka assessment.completed, coaching.program.updated, user.deletion; dashboard-svc; Postgres + replika baca; cmd/dashboard-rebuild; klien</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="proyeksi">Tiga sumber → UPSERT + projection_state satu transaksi; user.deletion → Forget</li>
+              <li data-b="baca">GetDashboard: dua query, dasbor kosong untuk pengguna baru, replika bila READ_DSN</li>
+              <li data-b="rebuild">Drain dari awal topic sampai tidak ada event; lag diukur</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Event tanpa user_id/slug → dilewati dengan galat tercatat, bukan menahan antrean</li><li>Rebuild saat trafik: posisi dan data tetap konsisten</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/dashboard/app/dashboard.go</span><span>internal/dashboard/adapter/consumer/projector.go</span><span>cmd/dashboard-rebuild/main.go</span><span>docs/runbook/dashboard-svc.md</span><span class="adr">ADR-009</span><span class="mek">M4 M7</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Sedang.</b> Tiga rel sekaligus dengan konsumen yang sama; ikon "posisi proyeksi" (penunjuk offset) di silinder.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">09</div><div><h3>Hapus akun: saga enam unit</h3><div class="sub">Akun benar-benar dihapus hanya setelah keenam unit mengonfirmasi; daftar peserta adalah kontrak.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>klien, gateway, identity-svc, Postgres svc_identity, Redis, Kafka user.deletion (1 partisi), enam peserta: profile, assessment, coaching, chat, nutrition, dashboard</li></ul></div>
+            <div><h4>Bab dan langkah</h4><ol class="bab">
+              <li data-b="buka">DELETE /delete-account → argon2id → saga berjalan? ditolak → id profil best-effort → INSERT deletion_sagas + user.deletion.requested satu transaksi → jawab segera</li>
+              <li data-b="hapus">Tiap peserta: hapus baris + user.deletion.confirmed satu transaksi (konsumen bersama platform/deletion)</li>
+              <li data-b="hitung">identity menghitung 1/6 … 6/6 → RevokeAllTokens → DELETE users → publish generasi ke Redis</li>
+            </ol></div>
+            <div><h4>Cabang</h4><ul><li>Satu peserta gagal → saga ditutup gagal, akun dipertahankan, log runbook, Rewinder mengirim ulang; saga menggantung diumumkan saat start</li><li>Akun sosial tanpa kata sandi → ditolak dengan jelas</li><li>Konfirmasi terlambat untuk saga yang sudah tutup → diabaikan tanpa galat</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/identity/app/delete_account.go</span><span>internal/identity/domain/deletion.go</span><span>internal/platform/deletion/consumer.go</span><span>internal/identity/adapter/consumer/confirmations.go</span><span>cmd/*-svc/deletion.go</span><span>docs/runbook/account-deletion.md</span><span class="adr">ADR-011</span><span class="mek">M4 M6</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Sedang.</b> Tata letak sembilan komponen (enam peserta dalam dua baris), fx penghitung "n/6", perjalanan titik "kipas" ke enam tujuan sekaligus (mode burst dari explorer).</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">10</div><div><h3>Trafik tinggi HTTP: HPA naik lalu turun</h3><div class="sub">Rekaman uji k6 60 VU di k3d; replika naik 1 → 4/3 lalu turun satu per menit; angka jujur p95 dan gagal ikut ditampilkan.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>k6 (klien jamak), gateway, empat service, PgBouncer + Postgres, metrics-server/HPA, Prometheus/Alertmanager → Mailpit</li></ul></div>
+            <div><h4>Bab</h4><ol class="bab"><li data-b="banjir">60 VU, 121 req/s, lima GET per iterasi</li><li data-b="naik">CPU &gt; 60 % request → 2 pod / 30 s tanpa stabilisasi</li><li data-b="jenuh">edge 4, service 3; p95 5 s, gagal 5,24 %; alert menyala; batas jujur satu node</li><li data-b="turun">stabilisasi 60 s, 1 pod / menit, kembali ke 1</li></ol></div>
+            <div><h4>Sumber</h4><div class="files"><span>docs/performance-report.md (F9-24, F9-25)</span><span>deploy/helm/selaras/templates/hpa.yaml</span><span>values.yaml</span><span>docs/db-connections.md</span><span>deploy/compose/observability/alerts.yml</span><span class="adr">ADR-014</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Sedang.</b> Mode banyak titik serentak (sudah ada di explorer, dipindah ke mesin reel), lencana replika, grafik replika berskala waktu (sudah ada, dibawa masuk).</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l2)">
+          <header><div class="num">11</div><div><h3>Burst LLM: KEDA dari nol ke tiga lalu kembali nol</h3><div class="sub">Dua belas permintaan dari empat unit saat worker tidur; KEDA membaca lag dari broker, cold-start 8,3 s terukur.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Komponen</h4><ul><li>chat, coaching, nutrition, assessment → Kafka llm.jobs (12 partisi) → KEDA → llm-worker ×0…3 → Gemini → llm.results</li></ul></div>
+            <div><h4>Bab</h4><ol class="bab"><li data-b="tidur">0 replika, cooldown 60 s</li><li data-b="burst">lag 12; KEDA bertanya ke broker, bukan Prometheus (B24)</li><li data-b="bangun">ceil(12/5) = 3; maks 12 = partisi; cold-start 8,3 s</li><li data-b="kerja">tiga worker paralel, hasil ke empat unit</li><li data-b="tidur lagi">lag 0 → 60 s → 0 replika; cloud memakai min 1</li></ol></div>
+            <div><h4>Sumber</h4><div class="files"><span>docs/performance-report.md (F9-23)</span><span>deploy/helm/selaras/templates/scaledobject.yaml</span><span>docs/finops.md</span><span class="adr">ADR-014</span><span class="adr">ADR-025</span></div></div>
+            <div><h4>Kebutuhan mesin</h4><p class="need"><b>Kecil</b> setelah alur 10: lencana replika dan lag pada rel.</p></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================= LAPISAN 3 ================= -->
+    <section id="l3" class="tier" data-l="3">
+      <h2><span class="chip">Lapisan 3</span><br>Mekanisme lintas fitur <small>Sebelas reel: delapan mekanisme runtime, dua mekanisme operasi, satu reel bukti dan pengujian. Satu mekanisme satu reel, paling lama tiga menit.</small></h2>
+      <div class="kv">
+        <b>kanvas</b><span>Bukan peta sistem: hanya bagian yang terlibat, diperbesar. Tabel dengan barisnya, satu partisi, satu proses.</span>
+        <b>kode</b><span>Kartu kode selalu terbuka; baris yang sedang dijalankan disorot mengikuti langkah (bidang baru <code>line</code> per langkah).</span>
+        <b>cabang</b><span>"Proses mati tepat di sini" di antara pernyataan; state tabel memperlihatkan kenapa hasilnya tetap benar.</span>
+        <b>tautan naik</b><span>Tiap reel menyebut alur lapisan 2 yang memakainya.</span>
+      </div>
+      <div class="cards">
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M1</div><div><h3>Transactional outbox dan relay</h3><div class="sub">Kenapa event ditulis di tabel yang sama dengan datanya, dan kenapa relay memilih duplikat daripada kehilangan.</div></div><span class="st next">berikutnya</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Satu transaksi bisnis, tabel data, tabel outbox (id, event_type, aggregate_id, status), proses relay, satu partisi Kafka</li></ul></div>
+            <div><h4>Langkah (per pernyataan)</h4><ol><li>BEGIN; UPDATE data; INSERT outbox; COMMIT (penulis event dibangun DARI transaksi, bukan dari kolam)</li><li>Relay: BEGIN; SELECT … WHERE published_at IS NULL FOR UPDATE SKIP LOCKED</li><li>TopicFor(event_type); yang tidak bisa dirutekan ditandai gagal supaya tidak dibaca selamanya</li><li>Publish dengan acks=all + idempoten, dibatasi PublishTimeout, di luar transaksi</li><li>MarkPublished untuk yang terkirim; galat publish ditelan dengan sengaja supaya tanda terkirim tidak batal</li><li>COMMIT relay</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Mati sebelum COMMIT bisnis → tidak ada data, tidak ada event</li><li>Mati setelah publish, sebelum mark → dikirim ulang → duplikat (ditangani M2), bukan hilang</li><li>Dua relay bersamaan → SKIP LOCKED memisahkan barisnya</li><li>Broker mati → baris pending menumpuk lalu mengalir</li><li>Tanda terkirim ditulis dulu (alternatif yang ditolak) → event hilang selamanya</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/platform/outbox/relay.go</span><span>outbox.go</span><span>routing.go</span><span>schema.sql</span><span>internal/profile/app/publish.go</span><span class="adr">ADR-004</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Alur 02, 03, 04, 05, 06, 07, 09 (semua yang menulis event).</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M2</div><div><h3>Idempotensi penerima</h3><div class="sub">Pasangan wajib relay at-least-once: satu INSERT yang memutuskan, scope per konsumen, kunci klien yang diikat ke pengguna.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Satu pesan yang datang dua kali, dua konsumen berbeda (worker dan assessment), tabel processed_messages (key, scope)</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Kunci: dari klien (diikat user id dengan U+001F) atau event_id</li><li>INSERT processed_messages ON CONFLICT DO NOTHING → RowsAffected 1 atau 0</li><li>Klaim dan pekerjaan commit bersama; klaim yang commit sendiri lalu gagal = kunci selesai untuk pekerjaan yang tidak terjadi</li><li>Scope berbeda per konsumen: worker vs assessment.results tidak saling meniadakan</li><li>Pesan datang lagi → "a job arrived again and was skipped"</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>SELECT lalu INSERT (alternatif ditolak) → dua proses sama-sama membaca "belum"</li><li>Tanpa scope → penulis cache menahan pengirim notifikasi</li><li>Kunci klien tanpa pengikatan → dua pengguna saling meniadakan</li><li>Klaim harus dilepas (parkir) dengan context terpisah saat shutdown</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/platform/idempotency/guard.go</span><span>internal/edge/handler/idempotency.go</span><span>internal/llmworker/worker.go (claim, release)</span><span>internal/assessment/adapter/consumer/results.go</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Alur 03, 04, 05, 06, 07, 08, 09.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M3</div><div><h3>Token: EdDSA, generasi, dan kepercayaan antar-service</h3><div class="sub">Gateway memverifikasi sendiri, pencabutan lewat penghitung, dan setiap service memeriksa lagi.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Kunci privat di identity, kunci publik di gateway dan semua service; kartu JWT tiga ruas; tabel users.token_generation; kunci Redis</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Issue: klaim sub, upid, role, generation, exp; tanda tangan Ed25519</li><li>Verify di gateway tanpa jaringan; alasan penolakan tidak dibedakan</li><li>IsCurrent: Redis → identity (gRPC) → 503 gagal-tertutup</li><li>Interceptor server: bearer dari metadata, sub = user_id, plumbing dilewati; klien meneruskan token; identity mencetak token bootstrap 30 s</li><li>Logout/login/hapus akun: generation++ = seluruh token mati</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Verifikasi di identity (alternatif ditolak) → satu panggilan jaringan wajib per request</li><li>Daftar hitam per token (alternatif) → sebanyak token yang beredar</li><li>Menerima saat cache gagal → jendela logout tidak berlaku</li><li>Sebelum ADR-026: user_id yang dikirimkan dipercaya (ditolak di test e2e)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/edge/middleware/auth.go</span><span>internal/identity/adapter/token/</span><span>internal/identity/adapter/revocation/redis.go</span><span>internal/platform/authn/*</span><span>test/e2e/security_test.go</span><span class="adr">ADR-012</span><span class="adr">ADR-020</span><span class="adr">ADR-021</span><span class="adr">ADR-024</span><span class="adr">ADR-026</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Alur 01 dan semua rute terlindungi.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M4</div><div><h3>Kafka: kunci, urutan, komit, dan topic yang dibuat ulang</h3><div class="sub">Urutan hanya per partisi, jadi kuncinya yang menjamin urutan per agregat; offset dikomit oleh hasil, bukan oleh waktu.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Tujuh topic dengan jumlah partisinya, satu group konsumen, offset, Rewinder</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Producer: acks=all, idempoten, linger; kunci = aggregate_id → partisi</li><li>Consumer: auto-commit dimatikan; PollFetches; commit setelah handle selesai</li><li>Handle gagal → Rewinder menahan offset → dikirim ulang; pesan yang tidak bisa dibaca dilewati, bukan ditahan</li><li>Jumlah partisi = batas paralelisme; EnsureTopics tidak pernah mengubahnya</li><li>Broker dibuat ulang: UnknownTopicID → RecoverRecreatedTopics; service topics tiap up + WaitForTopics</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Auto-commit → pekerjaan gagal tercatat selesai</li><li>Menambah partisi kemudian → urutan per kunci patah tanpa galat</li><li>Satu listener saja → klien host gagal setelah terlihat berhasil</li><li>Metadata belum menyusul setelah CreateTopic → "tidak ada" pada pembacaan pertama (kejadian nyata)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/platform/kafka/kafka.go</span><span>topics.go</span><span>rewind.go</span><span>recover.go</span><span>docs/topics.md</span><span class="adr">ADR-003</span><span class="adr">ADR-014</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Semua alur berevent; cabang "broker dibuat ulang" dari explorer masuk ke sini.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M5</div><div><h3>Siklus hidup llm-worker</h3><div class="sub">Klaim → kerjakan di luar transaksi → simpan; percobaan, parkir kuota, surat mati, dan pesan yang tidak bisa dikerjakan.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Satu worker, tabel llm_jobs (status pending/completed/failed/dead, attempts), penyedia, dua topic hasil</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Decode, kunci idempotensi, requestOf; jenis tak dikenal → announceUnusable</li><li>claim: guard + llm_jobs (pakai baris lama bila percobaan sebelumnya terhenti)</li><li>work: sampai MaxAttempts 3, jeda 500 ms × percobaan; klien Gemini menghormati retryDelay</li><li>ErrRateLimited → release + Rewinder + cooldown 1 → 15 menit (ADR-025)</li><li>recordSuccess / recordFailure(dead) + outbox → TopicFor memisahkan llm.results dan llm.dlq (surat mati, satu partisi, dibaca manusia)</li><li>Shutdown rapi: selesaikan, komit, baru berhenti; abandon dengan context terpisah</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Offset tidak dikomit sebagai cara mengulang (alternatif ditolak) → tidak pernah dikirim ulang di sesi yang sama</li><li>Kuota diperlakukan seperti galat pekerjaan (sebelum ADR-025) → sepuluh pekerjaan mati dalam dua menit (B30)</li><li>Trigger KEDA dari metrik worker → tidak ada yang membangunkan worker yang tidur (B24)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/llmworker/worker.go</span><span>job.go</span><span>metrics.go</span><span>internal/llm/gemini/gemini.go</span><span>docs/runbook/llm-worker.md</span><span class="adr">ADR-025</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Alur 04, 05, 06, 07, 11.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M6</div><div><h3>Saga penghapusan dan kompensasinya</h3><div class="sub">Daftar peserta sebagai kontrak, konfirmasi yang dihitung, dan kegagalan yang memilih menggantung daripada diam-diam.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>deletion_sagas, deletion_confirmations, DeletionParticipants (6 nama), satu topic satu partisi, satu peserta yang gagal</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>NewDeletionSaga: Outstanding = enam nama</li><li>Peserta: erase + confirmed dalam satu transaksi; gagal → confirmed dengan galat</li><li>ConfirmDeletion: SagaRequested → tetap terbuka; lengkap → Close(completed|failed)</li><li>completed → revoke + DELETE users; failed → akun dipertahankan, log runbook</li><li>LogOutstandingSagas saat start</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Unit ketujuh tidak didaftarkan → akun dinyatakan terhapus, data tertinggal diam-diam</li><li>Nama yang tidak mengonsumsi topic → setiap saga menggantung (terlihat, bisa diselidiki)</li><li>Konfirmasi ganda/terlambat → diabaikan tanpa galat</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/identity/domain/deletion.go</span><span>internal/identity/app/delete_account.go</span><span>internal/platform/deletion/consumer.go</span><span>internal/identity/adapter/consumer/confirmations.go</span><span>docs/runbook/account-deletion.md</span><span class="adr">ADR-011</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Alur 09.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M7</div><div><h3>Read-model dasbor</h3><div class="sub">Proyektor menulis bentuk yang akan dibaca; posisi proyeksi bergerak bersama datanya; bisa dibangun ulang kapan saja.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Tiga topic, satu proyektor, tabel dashboards/dashboard_assessments/projection_state, replika baca</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Event → ProjectAssessment / ProjectProgram / Forget</li><li>UPSERT + projection_state satu transaksi</li><li>Get: dua query; kosong = sambutan, bukan galat</li><li>Rebuild: hapus read-model (tidak ada yang hanya hidup di sini), Drain dari awal, lag terukur</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Empat listener invalidasi cache (sistem lama) → listener kelima terlupa, gagal diam-diam</li><li>Posisi dan data terpisah → rebuild mengira event sudah masuk</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/dashboard/app/dashboard.go</span><span>internal/dashboard/adapter/consumer/projector.go</span><span>cmd/dashboard-rebuild/main.go</span><span class="adr">ADR-009</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Alur 03, 05, 08, 09.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M8</div><div><h3>Observabilitas: trace yang mengalir lewat event</h3><div class="sub">Span konsumen menjadi anak permintaan yang menulis event; log membawa trace_id; alert diturunkan dari SLO yang sama dengan k6.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Satu permintaan HTTP, span otelgin → otelgrpc → InjectEnvelope → StartConsumerSpan; log JSON dengan trace_id; Prometheus rule → Alertmanager → Mailpit</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>otelgin membuka span rute; otelgrpc melanjutkan ke service</li><li>InjectEnvelope menaruh konteks trace ke envelope Kafka; StartConsumerSpan membacanya</li><li>WithTraceContext menambah trace_id/span_id ke setiap catatan slog dari handler akar</li><li>Metrik: llm_jobs_total, llm_job_duration_seconds, kafka_consumer_lag</li><li>Aturan alert dari slo.js: burn-rate cepat/lambat, latensi, unit mati, pekerjaan mati, antrean diparkir, backlog tumbuh; diuji promtool di CI</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Konsumen tanpa konteks envelope → trace putus di broker</li><li>trace_id di bawah grup (saga.trace_id) → Loki tidak menemukannya</li><li>Alert dengan ambang bulat (alternatif ditolak) → tidak bisa dijawab "kenapa angka ini"</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>internal/platform/telemetry/*</span><span>internal/edge/middleware/tracing.go</span><span>deploy/compose/observability/alerts.yml</span><span>alerts_test.yml</span><span>alertmanager.yml</span><span>otel-collector.yaml</span><span>tempo.yaml</span><span>alloy.alloy</span><span>grafana-dashboards.yaml</span><span>grafana-datasources.yaml</span><span>deploy/k8s/observability/stack.yaml</span><span>test/k6/lib/slo.js</span><span>docs/observability.md</span></div></div>
+            <div><h4>Stack yang digambar</h4><ul><li>OTel Collector → Tempo (trace), Prometheus (metrik), Alloy → Loki (log) → Grafana dengan dashboard yang di-provision dari berkas; Alertmanager → Mailpit. Di k3d seluruhnya dari <code>stack.yaml</code> dengan aturan alert dari ConfigMap yang dibuat <code>infra.sh</code> dari berkas yang sama dengan compose.</li></ul></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Semua alur; jejak konsol di explorer menjadi sumber datanya.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M9</div><div><h3>Siklus hidup data</h3><div class="sub">Dari migrasi sampai pemulihan: skema per service, partisi bulanan, backup dan drill restore, verifikasi penghapusan, dan apa yang tidak boleh masuk log.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Satu instans Postgres dengan delapan schema, satu tabel berpartisi (chat_messages), berkas backup, satu proses restore, satu baris log</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>cmd/migrate per schema: migrasi diterapkan berurutan, dicatat, dan tidak ikut rollback deploy (runbook deploy)</li><li>cmd/partitions: partisi bulan depan dibuat lebih dulu; bila bulan sudah punya baris di partisi default, dicatat sebagai peringatan bukan kegagalan</li><li>Backup terjadwal → restore drill ke instans terpisah → dibandingkan dengan sumber</li><li>cmd/deletion-verify: setelah saga selesai, memastikan tidak ada baris milik pengguna tertinggal di schema mana pun</li><li>Aturan data pribadi: pengenal boleh dicatat, isi tidak; ditegakkan test privacy_test.go</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Migrasi gagal di tengah → service tidak naik; rollback aplikasi tanpa rollback migrasi</li><li>Partisi bulan depan lupa dibuat → baris jatuh ke partisi default (tidak hilang), pemeliharaan menyusul</li><li>Restore drill tidak pernah dijalankan → backup yang tidak terbukti bisa dipulihkan</li><li>Nama/surel masuk log → test privacy merah</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>cmd/migrate</span><span>cmd/partitions</span><span>cmd/deletion-verify</span><span>internal/platform/partition/</span><span>internal/platform/privacy_test.go</span><span>docs/runbook/backup.md</span><span>docs/runbook/restore-drill.md</span><span>docs/data-handling.md</span><span>docs/db-connections.md</span><span class="adr">ADR-006</span><span class="adr">ADR-013</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Semua alur yang menulis data; secara khusus 06 dan 05 (partisi), 09 (verifikasi penghapusan).</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M10</div><div><h3>Deploy, jaringan, dan CI/CD</h3><div class="sub">Bagaimana sembilan unit sampai ke klaster dan tetap hidup: image distroless, Helm, k3d, NetworkPolicy default-deny, PDB, HPA/KEDA, sembilan job CI, dan uji chaos.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Pipeline CI sebagai rel (build-test, lint, vuln, alerts, chart, contract, rest contract, secret scan, e2e), klaster k3d dengan namespace, pod dengan probe, NetworkPolicy sebagai pagar antar-unit</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Commit → sembilan job CI; kontrak proto dan REST diperiksa terhadap versi sebelumnya; rahasia dipindai</li><li>Image distroless dengan probe /healthz dan /readyz; kredensial tanpa bawaan (ADR-016)</li><li>Helm: values per lingkungan; NetworkPolicy ingress ditolak lalu dibuka mengikuti grafik *_GRPC_TARGET; PDB maxUnavailable 1; topologySpread</li><li>k3d: infra.sh membuat topic sebagai Job, ConfigMap aturan alert dari berkas yang sama dengan compose</li><li>Uji chaos F9-13: unit dimatikan saat beban → 504 tenggat 5 s, bukan menggantung</li><li>Rotasi kunci: cmd/keygen menghasilkan pasangan EdDSA; kunci publik didistribusikan ke semua unit lewat secretEnv</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Dependabot menaikkan Go ke versi dengan stdlib rentan → job vuln merah, tidak ter-merge (kejadian nyata)</li><li>Egress terbuka tetapi ingress ditutup: unit baru tanpa entri di values tidak bisa dihubungi siapa pun</li><li>Readyz jatuh saat Postgres tidak terjangkau → trafik berhenti diarahkan, pod tidak dibunuh</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>.github/workflows/ci.yml</span><span>cd.yml</span><span>commitlint.yml</span><span>.commitlintrc.json</span><span>Taskfile.yml</span><span>deploy/compose/core.yml</span><span>apps.yml</span><span>full.yml</span><span>up.sh · down.sh · import.sh · secrets.sh · deploy.sh</span><span>deploy/helm/selaras/values.yaml</span><span>_helpers.tpl</span><span>templates/deployment.yaml</span><span>service.yaml</span><span>networkpolicy.yaml</span><span>pdb.yaml</span><span>hpa.yaml</span><span>scaledobject.yaml</span><span>deploy/helm/lint.sh</span><span>deploy/k3d/cluster.yaml</span><span>infra.sh</span><span>deploy/k8s/infra/*.yaml</span><span>deploy/k8s/jobs/migrate.yaml</span><span>internal/platform/httpx</span><span>docs/runbook/deploy.md</span><span>cmd/keygen</span><span class="adr">ADR-010</span><span class="adr">ADR-014</span><span class="adr">ADR-016</span><span class="adr">ADR-018</span></div></div>
+            <div><h4>Alur kerja developer yang ikut digambar</h4><ul><li>Compose tiga lapis (core → apps → full) dengan skrip up/down/import/secrets; Taskfile sebagai pintu masuk perintah; commitlint dan Conventional Commits; CD (<code>cd.yml</code>) sebagai pipeline yang siap untuk klaster cloud tetapi hari ini berhenti di k3d (dinyatakan terbuka).</li></ul></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Semua alur; alur 10 dan 11 menautkannya untuk HPA/KEDA/PDB.</p></div>
+          </div>
+        </article>
+
+        <article class="card" style="--c: var(--l3)">
+          <header><div class="num">M11</div><div><h3>Bukti dan pengujian</h3><div class="sub">Bagaimana klaim di semua reel lain dibuktikan: dari golden vector oracle sampai drill restore. Reel ini yang membuat "sudah diuji" bisa diperiksa, bukan dipercaya.</div></div><span class="st">belum</span></header>
+          <div class="grid">
+            <div><h4>Kanvas</h4><ul><li>Piramida bukti: unit dan golden di dasar, integrasi (Postgres, Kafka, penyedia palsu), e2e melawan stack hidup, acceptance D1–D12/S1–S11, k6 terhadap SLO, chaos, drill; sembilan job CI sebagai gerbang di puncak</li></ul></div>
+            <div><h4>Langkah</h4><ol><li>Golden vector SCORE2 dari oracle yang dikoreksi (ADR-008): paritas angka, termasuk nilai antara eGFR</li><li>Penyedia LLM palsu tanpa dependensi jaringan (boundary_test) dan mode "dengan cacat" untuk jalur gagal</li><li>Suite e2e: jalur normal tiap fitur, keamanan gRPC langsung (ADR-026), idempotensi, deletion-verify</li><li>Acceptance: kriteria D (desain) dan S (keamanan) dari backlog, satu test per kriteria</li><li>k6 baca/tulis/campuran dengan ambang dari <code>slo.js</code>; chaos broker/LLM/service; drill restore</li><li>Kontrak: buf breaking untuk proto, vacuum untuk OpenAPI; promtool untuk aturan alert; secret scan; govulncheck</li></ol></div>
+            <div><h4>Cabang kegagalan</h4><ul><li>Test yang tidak pernah disaksikan gagal (Revert-to-Fail) tidak membuktikan apa pun</li><li>Suite hijau tetapi unit hidup gagal (B29): suite integrasi vs unit yang benar-benar menyala</li><li>Dependabot menaikkan Go ke stdlib rentan → job vuln merah (kejadian nyata)</li></ul></div>
+            <div><h4>Sumber</h4><div class="files"><span>test/golden</span><span>test/e2e</span><span>test/acceptance</span><span>test/fixtures</span><span>test/k6</span><span>test/chaos/*.sh · *.md</span><span>test/drill</span><span>test/postman</span><span>internal/llm/fake.go</span><span>internal/llm/boundary_test.go</span><span>internal/platform/privacy_test.go</span><span>.github/workflows/ci.yml</span><span>docs/parity-report.md</span><span>docs/consistency-report.md</span><span>docs/local-capacity.md</span><span>docs/FOUNDATION-GATE.md</span><span>docs/rfc/RFC-999-retrospective.md</span><span class="adr">ADR-008</span><span class="adr">ADR-017</span><span class="adr">ADR-019</span></div></div>
+            <div><h4>Dipakai oleh</h4><p class="need">Semua reel; tombol "bukti" di caption menaut ke test yang membuktikan langkah itu.</p></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="matriks">
+      <h2>Matriks alur × mekanisme <small>Menentukan tautan turun dari lapisan 2 ke 3, dan mekanisme mana yang paling dulu dibutuhkan.</small></h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Alur</th><th class="c">M1 outbox</th><th class="c">M2 idempotensi</th><th class="c">M3 token</th><th class="c">M4 Kafka</th><th class="c">M5 worker</th><th class="c">M6 saga</th><th class="c">M7 read-model</th><th class="c">M8 observabilitas</th><th class="c">M9 data</th><th class="c">M10 deploy</th></tr></thead>
+        <tbody>
+          <tr><td>01 Daftar, masuk</td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>02 Profil → cache</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>03 Penilaian</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>04 Personalisasi (jadi)</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>05 Coaching</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>06 Chat</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>07 Nutrisi</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>08 Dasbor</td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>09 Hapus akun</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>10 Beban HTTP</td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+          <tr><td>11 Beban LLM</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot w"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+        </tbody>
+      </table></div>
+      <p>Bacaan: M1, M2, M4, M8 dipakai hampir semua alur, jadi keempatnya dibuat pertama di lapisan 3; M6 hanya untuk alur 09 dan dibuat bersamaan dengannya. M9 dan M10 melandasi semua alur tetapi tidak menghalangi alur mana pun, jadi dibuat setelah alur 10–11.</p>
+    </section>
+
+    <section id="mesin">
+      <h2>Kebutuhan mesin <small>Tambahan pada satu mesin bersama; sekali dibuat, berlaku untuk semua reel.</small></h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Kebutuhan</th><th>Untuk</th><th>Ukuran</th><th>Catatan</th></tr></thead>
+        <tbody>
+          <tr><td>Hub, jejak tontonan, pencarian dari <code>refs</code></td><td>semua</td><td>S</td><td>Halaman terpisah; membaca daftar reel dari satu manifes JSON di dalam berkas hub.</td></tr>
+          <tr><td>Warna bab per lapisan, tautan turun (<code>down: 'M1/3'</code>) di langkah</td><td>semua</td><td>S</td><td>Tombol "Lihat mekanismenya" di caption; kembali membawa ke langkah asal.</td></tr>
+          <tr><td>Mode debugger: kartu kode selalu terbuka, sorot baris per langkah (<code>line</code>)</td><td>lapisan 3</td><td>S</td><td>Cuplikan kode sudah mendukung <code>&lt;b&gt;</code>; ditambah penanda baris aktif yang berpindah.</td></tr>
+          <tr><td>Perjalanan titik "kipas" (satu sumber, banyak tujuan serentak) dan mode banyak titik</td><td>09, 10, 11</td><td>M</td><td>Mekanisme burst dari explorer dipindah ke mesin reel; muatan tetap.</td></tr>
+          <tr><td>Lencana replika, lag di rel, grafik replika berskala waktu</td><td>10, 11</td><td>M</td><td>Sudah ada di explorer; dibawa masuk dengan gaya reel.</td></tr>
+          <tr><td>fx baru: penghitung "n/6", chip partisi bulanan, penunjuk offset, kalender tugas</td><td>09, 06, 08, 05</td><td>S</td><td>Perluasan fungsi <code>fx</code> yang sudah ada.</td></tr>
+          <tr><td>Ikon baru: surel, Google, replika, PgBouncer, k6, KEDA/HPA, pelatih</td><td>01, 03, 10, 11</td><td>S</td><td>Gaya garis yang sama; digambar sekali di <code>ICON</code>.</td></tr>
+          <tr><td>Templat panel dalam untuk semua unit gRPC + panel khusus mesin risiko</td><td>01–09</td><td>S</td><td>Lima blok standar; assessment menambah blok bersarang.</td></tr>
+          <tr><td>Ikon ponsel dengan mockup layar berganti, muatan "layar", sosok sistem, garis waktu pengguna</td><td>lapisan 1</td><td>L</td><td>Satu-satunya kebutuhan besar; dikerjakan terakhir.</td></tr>
+          <tr><td>Kolom bahasa kedua di data (id/en)</td><td>semua</td><td>S–M</td><td>Struktur dulu, isi belakangan.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="urutan">
+      <h2>Urutan kerja <small>Tiap butir berakhir pada berkas yang bisa diputar, divalidasi, dan dilihat Anda sebelum butir berikutnya.</small></h2>
+      <ol class="order">
+        <li><div><div class="t">Hub + penyesuaian alur 04 <em style="color:var(--ok,#15803d);font-style:normal;font-weight:500">· selesai 2026-09-09</em></div><div class="d">Indeks tiga tingkat, manifes reel, jejak tontonan, tautan turun; alur 04 diganti nama dan diberi warna bab lapisan 2.</div></div><span class="size">S</span></li>
+        <li><div><div class="t">M1 outbox + M2 idempotensi <em style="color:var(--ok,#15803d);font-style:normal;font-weight:500">· selesai 2026-09-09</em></div><div class="d">Dua mekanisme yang dipakai hampir semua alur; sekaligus membangun mode debugger.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">Alur 01 daftar, masuk, sesi</div><div class="d">Alur paling mudah dipahami awam; menguji ikon baru dan cabang Redis/identity; menaut ke M3.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">M3 token + M4 Kafka</div><div class="d">Melengkapi fondasi lapisan 3 yang dirujuk alur 01–03.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">Alur 09 hapus akun + M6 saga</div><div class="d">Menguji tata letak sembilan komponen, kipas titik, penghitung n/6. Dibuat berpasangan karena M6 hanya dipakai di sini.</div></div><span class="size">L</span></li>
+        <li><div><div class="t">Alur 02, 03, 08 + M7 read-model</div><div class="d">Kelompok "data mengalir ke pembaca"; M7 dibuat bersama alur 08.</div></div><span class="size">L</span></li>
+        <li><div><div class="t">Alur 05, 06, 07 + M5 worker</div><div class="d">Kelompok LLM; mesin sudah matang dari alur 04, kerja terbesar di teks keterangan.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">Alur 10, 11 + M8 observabilitas</div><div class="d">Mode banyak titik, lencana replika, grafik; M8 memakai jejak konsol dari explorer.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">M11 bukti dan pengujian</div><div class="d">Setelah reel lain ada, tiap klaimnya ditautkan ke test yang membuktikannya; kanvas piramida bukti.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">M9 siklus hidup data + M10 deploy, jaringan, CI/CD</div><div class="d">Dua mekanisme operasi; kanvasnya berbeda (pipeline dan klaster), jadi dikerjakan setelah pola runtime mapan.</div></div><span class="size">M</span></li>
+        <li><div><div class="t">Lapisan 1 cerita</div><div class="d">Dibuat terakhir: kebutuhan mesin terbesar, dan tautannya butuh semua alur sudah ada.</div></div><span class="size">L</span></li>
+        <li><div><div class="t">Penyisiran akhir</div><div class="d">Tonton semua berurutan di browser; samakan nada, panjang, dan ritme; isi kolom bahasa Inggris bila diputuskan.</div></div><span class="size">M</span></li>
+      </ol>
+      <p>Ukuran S/M/L adalah perkiraan relatif saya terhadap alur 04, bukan jam; alur 04 memakan satu sesi penuh termasuk iterasi desain yang kini tidak perlu diulang.</p>
+    </section>
+
+    <section id="gerbang">
+      <h2>Gerbang verifikasi per reel <small>Reel dinyatakan selesai hanya bila semua lolos dan buktinya disebut.</small></h2>
+      <div class="gate"><ol>
+        <li><b>Sumber.</b> Setiap langkah punya <code>refs</code> ke berkas yang dibuka saat menulisnya; pesan log dan nama span disalin dari kode.</li>
+        <li><b>Validator.</b> Sintaks; setiap tepi, muatan, blok, dan efek ada; titik selalu berangkat dari posisi terakhirnya; <code>mut</code> dan renderer rincian berjalan tanpa galat untuk urutan utama dan tiap cabang.</li>
+        <li><b>Render statis.</b> Tiga posisi deep-link di Chrome headless tanpa galat konsol: awal, tengah, penutup (termasuk tiap cabang).</li>
+        <li><b>Tonton.</b> Diputar utuh sekali di browser sungguhan dengan suara; ritme, sinkronisasi titik–keterangan–kanvas, dan bingkai kamera dicek.</li>
+        <li><b>Tautan.</b> Semua tautan turun/naik dan deep-link <code>#id/langkah</code> membuka posisi yang benar dari hub.</li>
+        <li><b>Aksesibilitas.</b> Mode kurangi gerakan tetap bisa dibaca; narasi dan bunyi bisa dimatikan; kontras kedua tema.</li>
+      </ol></div>
+    </section>
+
+    <section id="risiko">
+      <h2>Risiko dan penangkalnya</h2>
+      <div class="risk">
+        <div><h4>Monoton setelah tiga reel</h4><p>Mesin sama, ritme sama. Penangkal: judul bab dan kalimat pembuka khas per alur, titik cabang di tempat yang berbeda, panjang berbeda (alur pendek boleh 8 langkah).</p></div>
+        <div><h4>Penyimpangan dari kode</h4><p>Repo berubah, reel tidak. Penangkal: <code>refs</code> dengan path dan nomor baris awal, kredit menyebut sumber; saat repo berubah besar, validator menandai berkas yang hilang.</p></div>
+        <div><h4>Lapisan 3 jadi bacaan kode</h4><p>Penangkal: keterangan awam wajib di atas kode, tiga menit maksimum, dan cabang yang memperlihatkan state, bukan hanya teks.</p></div>
+        <div><h4>Harness verifikasi terbatas</h4><p>Headless tidak bisa menilai ritme. Penangkal: tontonan Anda adalah bagian gerbang, bukan opsional; deep-link statis untuk sisanya.</p></div>
+        <div><h4>Suara bergantung Chrome online</h4><p>Narasi id-ID hanya dari Google voice. Penangkal: narasi selalu opsional, teks lengkap tetap ada; suara offline bisa dipasang di Windows bila perlu.</p></div>
+        <div><h4>Ukuran berkas</h4><p>Alur 04 sudah 123 KB. Penangkal: mesin dipisah ke <code>reel.js</code> bersama saat reel ketiga jadi, tiap reel hanya berisi data.</p></div>
+      </div>
+    </section>
+
+    <section id="cakupan">
+      <h2>Peta cakupan <small>Dibuat otomatis dari inventaris repo: setiap RPC, rute, topic, perintah, ADR, runbook, dan job CI dipetakan ke reel yang memuatnya. Baris bertanda "?" berarti belum tercakup.</small></h2>
+      <div class="kv">
+        <b>inventaris</b><span>38 RPC · 37 rute REST · 7 topic · 16 perintah · 26 ADR · 15 runbook · 8 job CI · belum terpetakan: <b>0</b></span>
+      </div>
+      <details open><summary>RPC (38)</summary><div class="tablewrap"><table><thead><tr><th>Paket</th><th>RPC</th><th>Reel</th></tr></thead><tbody><tr><td>assessment.v1</td><td><code>StartAssessment</code></td><td>03</td></tr><tr><td>assessment.v1</td><td><code>RequestPersonalization</code></td><td>04</td></tr><tr><td>assessment.v1</td><td><code>GetAssessment</code></td><td>03</td></tr><tr><td>assessment.v1</td><td><code>ListAssessments</code></td><td>03</td></tr><tr><td>assessment.v1</td><td><code>ResolveRiskRegion</code></td><td>03</td></tr><tr><td>chat.v1</td><td><code>ListConversations</code></td><td>06</td></tr><tr><td>chat.v1</td><td><code>CreateConversation</code></td><td>06</td></tr><tr><td>chat.v1</td><td><code>GetConversation</code></td><td>06</td></tr><tr><td>chat.v1</td><td><code>UpdateConversationTitle</code></td><td>06</td></tr><tr><td>chat.v1</td><td><code>DeleteConversation</code></td><td>06</td></tr><tr><td>chat.v1</td><td><code>SendMessage</code></td><td>06</td></tr><tr><td>coaching.v1</td><td><code>StartProgram</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>GetProgram</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>ToggleProgramStatus</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>DeleteProgram</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>ToggleTaskStatus</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>GetGraduationReport</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>StartThread</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>GetThread</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>UpdateThreadTitle</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>DeleteThread</code></td><td>05</td></tr><tr><td>coaching.v1</td><td><code>SendThreadMessage</code></td><td>05</td></tr><tr><td>dashboard.v1</td><td><code>GetDashboard</code></td><td>08</td></tr><tr><td>identity.v1</td><td><code>Register</code></td><td>01 (DeleteAccount → 09; GetTokenGeneration → 01, M3)</td></tr><tr><td>identity.v1</td><td><code>Login</code></td><td>01 (DeleteAccount → 09; GetTokenGeneration → 01, M3)</td></tr><tr><td>identity.v1</td><td><code>Logout</code></td><td>01 (DeleteAccount → 09; GetTokenGeneration → 01, M3)</td></tr><tr><td>identity.v1</td><td><code>RequestPasswordReset</code></td><td>01 (bab opsional)</td></tr><tr><td>identity.v1</td><td><code>ConfirmPasswordReset</code></td><td>01 (bab opsional)</td></tr><tr><td>identity.v1</td><td><code>DeleteAccount</code></td><td>09 (dan M6)</td></tr><tr><td>identity.v1</td><td><code>ExchangeSocialToken</code></td><td>01 (bab opsional)</td></tr><tr><td>identity.v1</td><td><code>GetTokenGeneration</code></td><td>01 (dan M3)</td></tr><tr><td>nutrition.v1</td><td><code>GetHubData</code></td><td>07</td></tr><tr><td>nutrition.v1</td><td><code>UpdatePreferences</code></td><td>07</td></tr><tr><td>nutrition.v1</td><td><code>GenerateDailyGuide</code></td><td>07</td></tr><tr><td>profile.v1</td><td><code>GetProfile</code></td><td>01, 02 (GetProfile juga 03; ResolveProfileId → 01 bootstrap)</td></tr><tr><td>profile.v1</td><td><code>UpdateProfile</code></td><td>01, 02 (GetProfile juga 03; ResolveProfileId → 01 bootstrap)</td></tr><tr><td>profile.v1</td><td><code>CreateEmptyProfile</code></td><td>01, 02 (GetProfile juga 03; ResolveProfileId → 01 bootstrap)</td></tr><tr><td>profile.v1</td><td><code>ResolveProfileId</code></td><td>01 (token bootstrap)</td></tr></tbody></table></div></details>
+      <details><summary>Rute REST (37)</summary><div class="tablewrap"><table><thead><tr><th>Metode</th><th>Rute</th><th>Reel</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/register</code></td><td>01</td></tr><tr><td><code>POST</code></td><td><code>/login</code></td><td>01</td></tr><tr><td><code>POST</code></td><td><code>/password-reset/request</code></td><td>01</td></tr><tr><td><code>POST</code></td><td><code>/password-reset/confirm</code></td><td>01</td></tr><tr><td><code>GET</code></td><td><code>/auth/:provider/redirect</code></td><td>01</td></tr><tr><td><code>GET</code></td><td><code>/auth/:provider/callback</code></td><td>01</td></tr><tr><td><code>POST</code></td><td><code>/auth/session</code></td><td>01</td></tr><tr><td><code>POST</code></td><td><code>/logout</code></td><td>01</td></tr><tr><td><code>DELETE</code></td><td><code>/delete-account</code></td><td>09</td></tr><tr><td><code>GET</code></td><td><code>/me</code></td><td>01</td></tr><tr><td><code>GET</code></td><td><code>/profile</code></td><td>02</td></tr><tr><td><code>PATCH</code></td><td><code>/profile</code></td><td>02</td></tr><tr><td><code>POST</code></td><td><code>/risk-assessments</code></td><td>03</td></tr><tr><td><code>GET</code></td><td><code>/risk-assessments</code></td><td>03</td></tr><tr><td><code>GET</code></td><td><code>/risk-assessments/:slug</code></td><td>03</td></tr><tr><td><code>PATCH</code></td><td><code>/risk-assessments/:slug/personalize</code></td><td>04</td></tr><tr><td><code>GET</code></td><td><code>/dashboard</code></td><td>08</td></tr><tr><td><code>POST</code></td><td><code>/programs</code></td><td>05</td></tr><tr><td><code>GET</code></td><td><code>/programs/:slug</code></td><td>05</td></tr><tr><td><code>PATCH</code></td><td><code>/programs/:slug/toggle-program-status</code></td><td>05</td></tr><tr><td><code>DELETE</code></td><td><code>/programs/:slug</code></td><td>05</td></tr><tr><td><code>GET</code></td><td><code>/programs/:slug/graduation-report</code></td><td>05</td></tr><tr><td><code>POST</code></td><td><code>/programs/:slug/threads</code></td><td>05</td></tr><tr><td><code>POST</code></td><td><code>/threads/:slug/messages</code></td><td>05</td></tr><tr><td><code>GET</code></td><td><code>/threads/:slug</code></td><td>05</td></tr><tr><td><code>PATCH</code></td><td><code>/threads/:slug</code></td><td>05</td></tr><tr><td><code>DELETE</code></td><td><code>/threads/:slug</code></td><td>05</td></tr><tr><td><code>PATCH</code></td><td><code>/tasks/:id/toggle-task-status</code></td><td>05</td></tr><tr><td><code>GET</code></td><td><code>/conversations</code></td><td>06</td></tr><tr><td><code>POST</code></td><td><code>/conversations</code></td><td>06</td></tr><tr><td><code>GET</code></td><td><code>/conversations/:slug</code></td><td>06</td></tr><tr><td><code>PATCH</code></td><td><code>/conversations/:slug</code></td><td>06</td></tr><tr><td><code>POST</code></td><td><code>/conversations/:slug/messages</code></td><td>06</td></tr><tr><td><code>DELETE</code></td><td><code>/conversations/:slug</code></td><td>06</td></tr><tr><td><code>GET</code></td><td><code>/hub-data</code></td><td>07</td></tr><tr><td><code>PATCH</code></td><td><code>/preferences</code></td><td>07</td></tr><tr><td><code>POST</code></td><td><code>/daily-guides</code></td><td>07</td></tr></tbody></table></div></details>
+      <details><summary>Topic Kafka, perintah, job CI</summary><div class="tablewrap"><table><thead><tr><th>Topic</th><th>Reel</th></tr></thead><tbody><tr><td><code>profile.updated</code></td><td>02</td></tr><tr><td><code>assessment.completed</code></td><td>03, 08</td></tr><tr><td><code>coaching.program.updated</code></td><td>05, 08</td></tr><tr><td><code>llm.jobs</code></td><td>04–07, 11, M5</td></tr><tr><td><code>llm.results</code></td><td>04–07, M5</td></tr><tr><td><code>llm.dlq</code></td><td>04 (cabang), M5</td></tr><tr><td><code>user.deletion</code></td><td>09, M6</td></tr></tbody></table></div><div class="tablewrap" style="margin-top:0.8rem"><table><thead><tr><th>Perintah</th><th>Reel</th></tr></thead><tbody><tr><td><code>cmd/assessment-svc</code></td><td>03, 04</td></tr><tr><td><code>cmd/backfill-nutrition</code></td><td>07, M9</td></tr><tr><td><code>cmd/chat-svc</code></td><td>06</td></tr><tr><td><code>cmd/coaching-svc</code></td><td>05</td></tr><tr><td><code>cmd/dashboard-rebuild</code></td><td>08, M7</td></tr><tr><td><code>cmd/dashboard-svc</code></td><td>08</td></tr><tr><td><code>cmd/deletion-verify</code></td><td>09, M9, M11</td></tr><tr><td><code>cmd/edge-gateway</code></td><td>semua alur</td></tr><tr><td><code>cmd/identity-svc</code></td><td>01, 09</td></tr><tr><td><code>cmd/keygen</code></td><td>M3, M10</td></tr><tr><td><code>cmd/llm-worker</code></td><td>04–07, 11, M5</td></tr><tr><td><code>cmd/migrate</code></td><td>M9, M10</td></tr><tr><td><code>cmd/nutrition-svc</code></td><td>07</td></tr><tr><td><code>cmd/partitions</code></td><td>05, 06, M9</td></tr><tr><td><code>cmd/profile-svc</code></td><td>01, 02</td></tr><tr><td><code>cmd/topics</code></td><td>M4, M10</td></tr></tbody></table></div><div class="tablewrap" style="margin-top:0.8rem"><table><thead><tr><th>Job CI</th><th>Reel</th></tr></thead><tbody><tr><td><code>build</code></td><td>M10, M11</td></tr><tr><td><code>lint</code></td><td>M10, M11</td></tr><tr><td><code>vuln</code></td><td>M10, M11</td></tr><tr><td><code>alerts</code></td><td>M10, M11</td></tr><tr><td><code>chart</code></td><td>M10, M11</td></tr><tr><td><code>contract</code></td><td>M10, M11</td></tr><tr><td><code>openapi</code></td><td>M10, M11</td></tr><tr><td><code>security</code></td><td>M10, M11</td></tr></tbody></table></div></details>
+      <details><summary>ADR (26) dan runbook (15)</summary><div class="tablewrap"><table><thead><tr><th>ADR</th><th>Judul</th><th>Reel</th></tr></thead><tbody><tr><td><code>ADR-001</code></td><td>bahasa dan runtime go</td><td>indeks hub, M11</td></tr><tr><td><code>ADR-002</code></td><td>topologi 9 unit profile svc berdiri sendiri</td><td>indeks hub, hub</td></tr><tr><td><code>ADR-003</code></td><td>message broker apache kafka mode kraft</td><td>M4</td></tr><tr><td><code>ADR-004</code></td><td>konsistensi transactional outbox referensi lunak</td><td>M1, 02</td></tr><tr><td><code>ADR-005</code></td><td>transport grpc internal rest di edge id publik b</td><td>indeks hub, 01</td></tr><tr><td><code>ADR-006</code></td><td>database postgresql schema per service satu inst</td><td>M9</td></tr><tr><td><code>ADR-007</code></td><td>user profile id diangkat jadi identitas global</td><td>01, 02</td></tr><tr><td><code>ADR-008</code></td><td>bukti paritas golden vector oracle</td><td>03, M11</td></tr><tr><td><code>ADR-009</code></td><td>dashboard sebagai read model bukan agregator</td><td>08, M7</td></tr><tr><td><code>ADR-010</code></td><td>deployment k3d lokal dulu cloud kemudian</td><td>M10</td></tr><tr><td><code>ADR-011</code></td><td>penghapusan akun sebagai saga dengan kompensasi</td><td>09, M6</td></tr><tr><td><code>ADR-012</code></td><td>bentuk token jwt berumur pendek daftar cabut</td><td>01, M3</td></tr><tr><td><code>ADR-013</code></td><td>kebijakan port apa yang direplikasi diperbaiki d</td><td>M9</td></tr><tr><td><code>ADR-014</code></td><td>autoscaling hpa untuk http keda lag based untuk </td><td>10, 11, M10</td></tr><tr><td><code>ADR-015</code></td><td>pemilihan library kriteria bukan popularitas</td><td>indeks hub</td></tr><tr><td><code>ADR-016</code></td><td>bangun seolah produksi bukan seolah latihan</td><td>M10</td></tr><tr><td><code>ADR-017</code></td><td>meninjau tiga pilihan dengan data terukur</td><td>indeks hub, M11</td></tr><tr><td><code>ADR-018</code></td><td>lingkungan kerja windows untuk kode wsl untuk do</td><td>indeks hub, M10</td></tr><tr><td><code>ADR-019</code></td><td>temuan baru saat porting diperbaiki di tempat de</td><td>indeks hub, M11</td></tr><tr><td><code>ADR-020</code></td><td>token eddsa pencabutan lewat penghitung generasi</td><td>01, M3</td></tr><tr><td><code>ADR-021</code></td><td>kontrak identity dikoreksi agar tidak melawan adr 007</td><td>M3</td></tr><tr><td><code>ADR-022</code></td><td>rpc profil berkunci user id</td><td>02</td></tr><tr><td><code>ADR-023</code></td><td>service tidak mempercayai identitas yang dikirimkan</td><td>03</td></tr><tr><td><code>ADR-024</code></td><td>pemilik adalah pengguna bukan profilnya</td><td>M3</td></tr><tr><td><code>ADR-025</code></td><td>kuota penyedia llm memarkir pekerjaan bukan mematikannya</td><td>04, 11, M5</td></tr><tr><td><code>ADR-026</code></td><td>setiap service memverifikasi token pengguna sendiri</td><td>01, M3</td></tr></tbody></table></div><div class="tablewrap" style="margin-top:0.8rem"><table><thead><tr><th>Runbook</th><th>Reel</th></tr></thead><tbody><tr><td><code>docs/runbook/account-deletion.md</code></td><td>09, M6</td></tr><tr><td><code>docs/runbook/assessment-svc.md</code></td><td>03, 04</td></tr><tr><td><code>docs/runbook/backfill-nutrition.md</code></td><td>07, M9</td></tr><tr><td><code>docs/runbook/backup.md</code></td><td>M9</td></tr><tr><td><code>docs/runbook/chat-svc.md</code></td><td>06</td></tr><tr><td><code>docs/runbook/coaching-svc.md</code></td><td>05</td></tr><tr><td><code>docs/runbook/dashboard-svc.md</code></td><td>08, M7</td></tr><tr><td><code>docs/runbook/deploy.md</code></td><td>M10</td></tr><tr><td><code>docs/runbook/edge-gateway.md</code></td><td>01, M3</td></tr><tr><td><code>docs/runbook/identity-svc.md</code></td><td>01</td></tr><tr><td><code>docs/runbook/llm-worker.md</code></td><td>M5</td></tr><tr><td><code>docs/runbook/nutrition-svc.md</code></td><td>07</td></tr><tr><td><code>docs/runbook/profile-svc.md</code></td><td>02</td></tr><tr><td><code>docs/runbook/rate-limits.md</code></td><td>01, 04</td></tr><tr><td><code>docs/runbook/restore-drill.md</code></td><td>M9, M11</td></tr></tbody></table></div></details>
+      <p>Yang sengaja tidak masuk reel mana pun karena bukan bagian sistem yang berjalan: <code>docs/migration-plan</code> (perencanaan dan backlog; dipakai reel "bagaimana sistem terbentuk" bila nanti dibuat), <code>test/fixtures</code> dan <code>test/postman</code> sebagai alat, bukan cerita.</p>
+    </section>
+
+    <section id="putusan" class="decide">
+      <h2>Yang perlu Anda putuskan sebelum eksekusi</h2>
+      <ol>
+        <li>Definisi tiga lapisan dan jumlahnya: 1 cerita, 11 alur, 11 mekanisme (8 runtime + 2 operasi + 1 bukti), 1 hub. Ada yang digabung atau dibuang?</li>
+        <li>Urutan kerja di atas, khususnya hub lebih dulu dan lapisan 1 terakhir.</li>
+        <li>Pemisahan mesin ke <code>reel.js</code> bersama (berkas tidak lagi tunggal, tetapi tetap offline) atau tetap satu berkas per reel.</li>
+        <li>Bahasa: Indonesia saja dulu, atau struktur dua bahasa disiapkan sejak hub.</li>
+      </ol>
+      <p>Setelah keempatnya diputuskan, butir 1 urutan kerja langsung saya mulai.</p>
+    </section>
+
+    <footer>Isi rencana dari berkas yang dibaca sesi ini di <code>selaras-platform-go</code>: <code>internal/edge/router.go</code>, <code>api/proto/*/v1/*.proto</code>, use case dan konsumen tiap unit, <code>internal/platform/*</code>, <code>docs/adr</code>, <code>docs/runbook</code>, <code>docs/topics.md</code>, <code>docs/performance-report.md</code>, <code>deploy/helm/selaras</code>. Ukuran S/M/L adalah perkiraan relatif, bukan jam.</footer>
+  </main>
+</div>
+</body>
+</html>

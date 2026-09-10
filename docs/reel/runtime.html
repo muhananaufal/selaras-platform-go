@@ -1,0 +1,1668 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selaras Runtime Explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f1efe9;
+    --panel: #ffffff;
+    --panel-2: #f7f5f0;
+    --ink: #1b2230;
+    --ink-2: #4d5566;
+    --ink-3: #7c8494;
+    --line: #d9d4c9;
+    --line-2: #e8e4db;
+    --accent: #b45309;
+    --accent-soft: #fbe9d2;
+    --http: #b45309;
+    --grpc: #1d4ed8;
+    --event: #0f766e;
+    --db: #6b7280;
+    --ext: #6d28d9;
+    --fail: #b91c1c;
+    --ok: #15803d;
+    --node: #ffffff;
+    --node-line: #c9c4b8;
+    --node-active: #fff4e3;
+    --bus: #e6f3f1;
+    --bus-line: #9ccdc6;
+    --pg: #ecedf0;
+    --fail-soft: #f9e2df;
+    --s1: #b45309; --s2: #2563eb; --s3: #0d9488; --s4: #7c3aed; --s5: #db2777; --s6: #4d7c0f;
+    --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10151c; --panel: #171e27; --panel-2: #1d2530; --ink: #e7e3d8; --ink-2: #aab0bb; --ink-3: #7b8391;
+      --line: #2a3340; --line-2: #222b36; --accent: #f5b64c; --accent-soft: #3a2c14;
+      --http: #f5b64c; --grpc: #7aa2f7; --event: #4fd1c5; --db: #9aa3b2; --ext: #b794f6; --fail: #f07178; --ok: #7bd88f;
+      --node: #1c242e; --node-line: #364152; --node-active: #2b2a1f; --bus: #142a2c; --bus-line: #2d6b66; --pg: #1f2631; --fail-soft: #3d1f1c;
+      --s1: #c47c22; --s2: #5f89ea; --s3: #1fa396; --s4: #8c6ade; --s5: #d55c63; --s6: #72a626;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10151c; --panel: #171e27; --panel-2: #1d2530; --ink: #e7e3d8; --ink-2: #aab0bb; --ink-3: #7b8391;
+    --line: #2a3340; --line-2: #222b36; --accent: #f5b64c; --accent-soft: #3a2c14;
+    --http: #f5b64c; --grpc: #7aa2f7; --event: #4fd1c5; --db: #9aa3b2; --ext: #b794f6; --fail: #f07178; --ok: #7bd88f;
+    --node: #1c242e; --node-line: #364152; --node-active: #2b2a1f; --bus: #142a2c; --bus-line: #2d6b66; --pg: #1f2631; --fail-soft: #3d1f1c;
+      --s1: #c47c22; --s2: #5f89ea; --s3: #1fa396; --s4: #8c6ade; --s5: #d55c63; --s6: #72a626;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14.5px; line-height: 1.5; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2); padding: 0.05em 0.35em; border-radius: 4px; }
+
+  .app { display: grid; grid-template-rows: auto 1fr; height: 100vh; min-height: 640px; }
+  .top { display: flex; align-items: center; gap: 1.2rem; padding: 0.7rem 1.2rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { display: flex; align-items: baseline; gap: 0.7rem; }
+  .brand h1 { font-family: var(--display); font-size: 1.25rem; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
+  .brand span { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); }
+  .top .spacer { flex: 1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; font-size: 0.74rem; color: var(--ink-2); }
+  .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 0.35rem; }
+  .legend .http i { background: var(--http); } .legend .grpc i { background: var(--grpc); } .legend .event i { background: var(--event); }
+  .legend .db i { background: var(--db); } .legend .ext i { background: var(--ext); } .legend .fail i { background: var(--fail); }
+
+  .body { display: grid; grid-template-columns: 250px 1fr 360px; min-height: 0; }
+  @media (max-width: 1100px) { .body { grid-template-columns: 220px 1fr; } .narr { grid-column: 1 / -1; border-top: 1px solid var(--line); max-height: 40vh; } }
+
+  .side { border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 0.8rem 0.6rem; display: grid; gap: 0.9rem; align-content: start; }
+  .side h2 { font-family: var(--display); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0.5rem 0.35rem; }
+  .side .list { display: grid; gap: 2px; }
+  .scn { display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.5rem; align-items: start; text-align: left; padding: 0.45rem 0.55rem; border-radius: 6px; line-height: 1.3; }
+  .scn:hover { background: var(--panel-2); }
+  .scn[aria-current="true"] { background: var(--accent-soft); }
+  .scn .k { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); padding-top: 0.15rem; }
+  .scn[aria-current="true"] .k { color: var(--accent); }
+  .scn .t { font-weight: 500; font-size: 0.86rem; }
+  .scn .s { display: block; font-size: 0.74rem; color: var(--ink-3); }
+  .scn.fail .k { color: var(--fail); }
+
+  .stage { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(150px, 1fr) auto; background: var(--bg); }
+  .map { min-height: 0; padding: 0.6rem 0.6rem 0; overflow: auto; }
+  .map svg { width: 100%; height: auto; max-height: calc(100vh - 400px); display: block; }
+  .caption { font-size: 0.74rem; color: var(--ink-3); padding: 0.35rem 1rem 0.5rem; display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; }
+  .caption b { color: var(--ink-2); font-weight: 500; }
+
+  /* SVG */
+  .node rect { fill: var(--node); stroke: var(--node-line); stroke-width: 1.2; rx: 8; transition: fill 0.25s, stroke 0.25s; }
+  .node text { font-family: var(--display); font-weight: 700; font-size: 14px; fill: var(--ink); pointer-events: none; }
+  .node .sub { font-family: var(--mono); font-weight: 400; font-size: 9.2px; fill: var(--ink-3); }
+  .node { cursor: pointer; }
+  .node:hover rect { stroke: var(--accent); }
+  .node.active rect { fill: var(--node-active); stroke: var(--accent); stroke-width: 2; }
+  .node.hit rect { stroke: var(--fail); stroke-width: 2; }
+  .node.selected rect { stroke: var(--accent); stroke-dasharray: 4 3; }
+  .chip rect { fill: var(--pg); stroke: var(--node-line); stroke-width: 1; rx: 4; transition: fill 0.25s, stroke 0.25s; }
+  .chip text { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-2); pointer-events: none; }
+  .chip.active rect { fill: var(--accent-soft); stroke: var(--accent); }
+  .bus > rect { fill: var(--bus); stroke: var(--bus-line); stroke-width: 1.2; rx: 10; }
+  .bus > text { font-family: var(--display); font-weight: 700; font-size: 14px; fill: var(--ink); }
+  .bus .why { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-3); }
+  .topic rect { fill: var(--panel); stroke: var(--bus-line); stroke-width: 1; rx: 4; transition: fill 0.25s, stroke 0.25s; }
+  .topic text { font-family: var(--mono); font-size: 10px; fill: var(--ink-2); pointer-events: none; }
+  .topic .n { fill: var(--ink-3); font-size: 9px; }
+  .topic.active rect { fill: var(--event); stroke: var(--event); }
+  .topic.active text { fill: #fff; }
+  .topic.hit rect { fill: var(--fail); stroke: var(--fail); }
+  .topic.hit text { fill: #fff; }
+  .pg rect { fill: var(--pg); stroke: var(--node-line); stroke-width: 1; rx: 8; }
+  .pg text { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-2); }
+  .pg .h { font-family: var(--display); font-weight: 700; font-size: 13px; fill: var(--ink); }
+  .skel { stroke: var(--line); stroke-width: 1; fill: none; }
+  .flow { fill: none; stroke-width: 2.2; stroke-linecap: round; opacity: 0; transition: opacity 0.2s; }
+  .flow.on { opacity: 0.9; }
+  .flow.http { stroke: var(--http); } .flow.grpc { stroke: var(--grpc); } .flow.event { stroke: var(--event); }
+  .flow.db { stroke: var(--db); } .flow.ext { stroke: var(--ext); } .flow.fail { stroke: var(--fail); stroke-dasharray: 6 4; }
+  .pkt { r: 6; stroke: var(--bg); stroke-width: 1.5; opacity: 0; }
+  .pkt.http { fill: var(--http); } .pkt.grpc { fill: var(--grpc); } .pkt.event { fill: var(--event); }
+  .pkt.db { fill: var(--db); } .pkt.ext { fill: var(--ext); } .pkt.fail { fill: var(--fail); }
+  .pktlabel { font-family: var(--mono); font-size: 10.5px; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; opacity: 0; }
+  .pktlabel.on { opacity: 1; }
+  .pulse { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; }
+  @keyframes ring { from { opacity: 0.9; r: 8; } to { opacity: 0; r: 30; } }
+  .pulse.go { animation: ring 0.7s ease-out 1; }
+
+  .controls { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.9rem; border-top: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  .controls .btn { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); font-size: 0.82rem; font-weight: 500; }
+  .controls .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  :root[data-theme="dark"] .controls .btn.primary, .dark-primary-fix { color: var(--bg); }
+  .controls .btn:disabled { opacity: 0.45; cursor: default; }
+  .controls .prog { flex: 1; min-width: 160px; display: flex; gap: 3px; align-items: center; }
+  .controls .prog i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); cursor: pointer; transition: background 0.2s; }
+  .controls .prog i.done { background: var(--ink-3); }
+  .controls .prog i.cur { background: var(--accent); }
+  .controls .prog i.fail { background: var(--fail); }
+  .controls label { font-size: 0.78rem; color: var(--ink-2); display: inline-flex; align-items: center; gap: 0.35rem; }
+  .controls select { font: inherit; font-size: 0.8rem; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.4rem; }
+  .controls .kbd { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-3); }
+
+  .narr { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .narr .head { padding: 0.9rem 1rem 0.6rem; border-bottom: 1px solid var(--line-2); }
+  .narr .head .eyebrow { font-family: var(--display); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+  .narr .head h2 { font-family: var(--display); font-size: 1.15rem; font-weight: 800; margin: 0.15rem 0 0.3rem; line-height: 1.2; text-wrap: balance; }
+  .narr .head p { margin: 0; color: var(--ink-2); font-size: 0.85rem; }
+  .steps { list-style: none; margin: 0; padding: 0.4rem 0; overflow-y: auto; }
+  .step { display: grid; grid-template-columns: 1.7rem 1fr; gap: 0.5rem; padding: 0.5rem 1rem; border-left: 3px solid transparent; cursor: pointer; }
+  .step:hover { background: var(--panel-2); }
+  .step .n { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); padding-top: 0.2rem; }
+  .step .t { font-weight: 600; font-size: 0.86rem; }
+  .step .d { display: none; margin-top: 0.3rem; font-size: 0.84rem; color: var(--ink-2); }
+  .step .d p { margin: 0 0 0.4rem; }
+  .step .refs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+  .step .refs span { font-family: var(--mono); font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink-2); }
+  .step .refs span.adr { border-color: var(--accent); color: var(--accent); }
+  .step.past { opacity: 0.55; }
+  .step.cur { border-left-color: var(--accent); background: var(--accent-soft); }
+  .step.cur .d { display: block; }
+  .step.cur .n { color: var(--accent); }
+  .step.fail.cur { border-left-color: var(--fail); }
+  .step .kind { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.35rem; vertical-align: middle; }
+  .kind.http { background: var(--http); } .kind.grpc { background: var(--grpc); } .kind.event { background: var(--event); }
+  .kind.db { background: var(--db); } .kind.ext { background: var(--ext); } .kind.fail { background: var(--fail); } .kind.note { background: var(--ink-3); }
+
+  /* Node detail drawer */
+  .drawer { position: absolute; left: 0.6rem; bottom: 3.4rem; width: min(560px, calc(100% - 1.2rem)); max-height: 60%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.18); padding: 0.9rem 1.1rem 1rem; display: none; z-index: 5; }
+  .drawer.open { display: block; }
+  .drawer .eyebrow { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-3); }
+  .drawer h3 { font-family: var(--display); font-size: 1.1rem; font-weight: 800; margin: 0.1rem 0 0.3rem; }
+  .drawer .role { color: var(--ink-2); font-size: 0.86rem; margin: 0 0 0.6rem; }
+  .drawer .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem 1rem; }
+  .drawer h4 { font-family: var(--display); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 0.25rem; }
+  .drawer ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.12rem; }
+  .drawer li { font-family: var(--mono); font-size: 0.74rem; color: var(--ink-2); }
+  .drawer li.p { font-family: var(--body); font-size: 0.82rem; }
+  .drawer .close { position: absolute; top: 0.5rem; right: 0.6rem; font-size: 1.1rem; color: var(--ink-3); padding: 0.2rem 0.4rem; }
+  .drawer .notes { margin-top: 0.6rem; font-size: 0.82rem; color: var(--ink-2); }
+  .drawer .notes p { margin: 0 0 0.3rem; }
+  .drawer .refs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
+  .drawer .refs span { font-family: var(--mono); font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink-2); }
+  .drawer .refs span.adr { border-color: var(--accent); color: var(--accent); }
+
+  .hint { position: absolute; top: 0.9rem; right: 0.9rem; font-size: 0.74rem; color: var(--ink-3); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.55rem; pointer-events: none; }
+
+  /* Lencana replika (skenario beban) */
+  .badge { pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+  .badge.on { opacity: 1; }
+  .badge rect { fill: var(--accent); stroke: var(--bg); stroke-width: 1.5; rx: 9; }
+  .badge text { font-family: var(--mono); font-size: 10.5px; font-weight: 600; fill: var(--accent-ink, #fff); text-anchor: middle; }
+  .badge.zero rect { fill: var(--ink-3); }
+  .badge.max rect { fill: var(--fail); }
+  @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  .badge.bump { animation: bump 0.45s ease-out 1; transform-box: fill-box; transform-origin: center; }
+  .topic .n.lag { fill: var(--accent); font-weight: 600; }
+  .topic.active .n.lag { fill: #fff; }
+
+  /* Panel metrik (skenario beban) */
+  .gauges { display: none; flex-wrap: wrap; gap: 0.4rem 0.5rem; margin-top: 0.7rem; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 0.5rem 0.7rem; }
+  .gauges.on { display: flex; }
+  .gauges div { display: grid; gap: 0; min-width: 4.2rem; padding-right: 0.7rem; border-right: 1px solid var(--line-2); }
+  .gauges div:last-child { border-right: 0; padding-right: 0; }
+  .gauges b { font-family: var(--display); font-size: 1.05rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .gauges b.bad { color: var(--fail); }
+  .gauges b.ok { color: var(--ok); }
+  .gauges span { font-family: var(--mono); font-size: 0.66rem; color: var(--ink-3); }
+
+  /* Tombol bilah atas */
+  .topbtns { display: flex; gap: 0.35rem; }
+  .top .btn { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.28rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); font-size: 0.78rem; font-weight: 500; }
+  .top .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+  /* Panel observabilitas di bawah peta */
+  .obs { border-top: 1px solid var(--line); background: var(--panel); display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .obs.collapsed .obs-body { display: none; }
+  .obs-tabs { display: flex; align-items: center; gap: 0.2rem; padding: 0.25rem 0.6rem 0; border-bottom: 1px solid var(--line-2); }
+  .obs-tabs [role="tab"] { font-family: var(--display); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); padding: 0.35rem 0.6rem; border-bottom: 2px solid transparent; }
+  .obs-tabs [role="tab"][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .obs-tabs .sp { flex: 1; }
+  .obs-tabs .cnt { font-family: var(--mono); font-size: 0.66rem; color: var(--ink-3); margin-right: 0.5rem; }
+  .obs-tabs .tog { font-size: 0.95rem; color: var(--ink-3); padding: 0.1rem 0.4rem; }
+  .obs-body { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+  .obs-pane { display: none; min-height: 0; max-height: 100%; overflow: auto; padding: 0.5rem 0.8rem 0.6rem; }
+  .obs-pane.on { display: block; }
+  .obs-pane.two.on { display: grid; grid-template-columns: 1.35fr 1fr; gap: 1rem; }
+  .obs-pane.two > div { min-width: 0; }
+  .obs h5 { font-family: var(--display); font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin: 0.1rem 0 0.35rem; }
+  .obs .empty { color: var(--ink-3); font-size: 0.78rem; padding: 0.3rem 0; }
+  .log { font-family: var(--mono); font-size: 0.7rem; line-height: 1.45; display: grid; gap: 1px; }
+  .log > div { display: grid; grid-template-columns: 4.6rem 3.1rem 7.6rem minmax(0, 1fr); gap: 0.55rem; padding: 0.1rem 0.3rem; border-radius: 3px; white-space: nowrap; overflow: hidden; }
+  .log > div.new { background: var(--accent-soft); animation: fadein 0.5s ease-out; }
+  .log > div.empty, .spans > div.empty { display: block; white-space: normal; }
+  .log > div > span:last-child { white-space: normal; overflow: visible; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  .log .ts { color: var(--ink-3); } .log .lvl { font-weight: 600; } .log .INFO { color: var(--grpc); } .log .WARN { color: var(--http); } .log .ERROR { color: var(--fail); }
+  .log .svc { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; } .log .msg { color: var(--ink); overflow: hidden; text-overflow: ellipsis; } .log .kv { color: var(--ink-3); }
+  .spans { font-family: var(--mono); font-size: 0.7rem; display: grid; gap: 3px; }
+  .spans > div { display: grid; grid-template-columns: minmax(0, 1fr) 4rem; align-items: center; gap: 0.5rem; }
+  .spans .bar { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+  .spans i { display: inline-block; height: 9px; border-radius: 2px; flex: 0 0 auto; }
+  .spans i.http { background: var(--http); } .spans i.grpc { background: var(--grpc); } .spans i.event { background: var(--event); } .spans i.ext { background: var(--ext); } .spans i.fail { background: var(--fail); }
+  .spans .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+  .spans .d { color: var(--ink-3); font-size: 0.64rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .spans .st { color: var(--fail); }
+  .state { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0.7rem 1rem; align-items: start; }
+  .state table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 0.66rem; }
+  .state caption { text-align: left; font-family: var(--display); font-size: 0.66rem; font-weight: 700; color: var(--ink-2); padding: 0 0 0.2rem; white-space: nowrap; }
+  .state th { text-align: left; color: var(--ink-3); font-weight: 500; border-bottom: 1px solid var(--line-2); padding: 0.1rem 0.3rem; }
+  .state td { padding: 0.12rem 0.3rem; border-bottom: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+  .state tr.new td { background: var(--accent-soft); color: var(--ink); }
+  .state tr.gone td { text-decoration: line-through; color: var(--ink-3); }
+  .state .v-pending, .state .v-requested, .state .v-active { color: var(--http); }
+  .state .v-sent, .state .v-completed, .state .v-done, .state .v-firing { color: var(--ok); }
+  .state .v-dead, .state .v-failed { color: var(--fail); }
+  .state .v-parked { color: var(--ext); }
+
+  /* Mode chaos */
+  .node.down rect { stroke: var(--fail); stroke-dasharray: 5 3; fill: var(--fail-soft); }
+  .node.down text { text-decoration: line-through; }
+  .chaosbar { position: absolute; left: 0.9rem; top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.35rem; z-index: 4; max-width: 60%; }
+  .chaosbar span { display: inline-flex; align-items: center; gap: 0.35rem; font-family: var(--mono); font-size: 0.68rem; background: var(--panel); border: 1px solid var(--fail); color: var(--fail); border-radius: 999px; padding: 0.15rem 0.55rem; }
+  .chaosbar span.how { border-color: var(--line); color: var(--ink-3); }
+  .chaosbar button { color: inherit; font-size: 0.9rem; line-height: 1; padding: 0 0.1rem; }
+
+  /* Overlay bantuan */
+  .help { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .help.open { display: flex; }
+  .help > div { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 1.2rem 1.4rem 1rem; max-width: 36rem; width: calc(100% - 2rem); max-height: 90vh; overflow: auto; }
+  .help h2 { font-family: var(--display); margin: 0 0 0.6rem; font-size: 1.1rem; }
+  .help table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+  .help td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  .help td:first-child { white-space: nowrap; width: 9rem; }
+  .help kbd { font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.35rem; font-size: 0.78rem; }
+  .help p { color: var(--ink-2); font-size: 0.86rem; margin: 0.6rem 0 0; }
+
+  /* Grafik replika */
+  .chart { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem 1rem; align-items: start; }
+  .chart svg { width: 100%; height: auto; display: block; }
+  .chart .axis text { font-family: var(--mono); font-size: 10px; fill: var(--ink-3); }
+  .chart .grid line { stroke: var(--line-2); stroke-width: 1; }
+  .chart .ser path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .ser circle { stroke: var(--panel); stroke-width: 2; }
+  .chart .lbl { font-family: var(--mono); font-size: 10px; fill: var(--ink-2); }
+  .chart .load rect { fill: var(--accent); opacity: 0.08; }
+  .chart .cursor line { stroke: var(--accent); stroke-width: 1.5; }
+  .chart .cursor text { font-family: var(--mono); font-size: 10px; fill: var(--accent); }
+  .chart .hover line { stroke: var(--ink-3); stroke-width: 1; }
+  .chart .tipbg { fill: var(--panel); stroke: var(--line); }
+  .chart .tip { font-family: var(--mono); font-size: 10px; fill: var(--ink); }
+  .legend2 { display: grid; gap: 0.3rem; font-size: 0.74rem; color: var(--ink-2); min-width: 9.5rem; padding-top: 0.2rem; }
+  .legend2 > div { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 0.45rem; }
+  .legend2 i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .legend2 b { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chart-note { grid-column: 1 / -1; font-size: 0.72rem; color: var(--ink-3); }
+  .chart details { grid-column: 1 / -1; font-size: 0.72rem; color: var(--ink-2); }
+  .chart details table { border-collapse: collapse; font-family: var(--mono); font-size: 0.66rem; margin-top: 0.3rem; }
+  .chart details th, .chart details td { padding: 0.1rem 0.5rem; border-bottom: 1px solid var(--line-2); text-align: right; }
+  .chart details th:first-child, .chart details td:first-child { text-align: left; }
+
+  /* Scrollbar: tipis, warna ikut tema, tanpa tombol panah, berlaku di semua area gulir */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+  *::-webkit-scrollbar-thumb:hover { background: var(--ink-3); background-clip: padding-box; }
+  *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .flow, .node rect, .chip rect, .topic rect { transition: none; }
+    .pulse.go { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand"><h1>Selaras Runtime Explorer</h1><span>selaras-platform-go · 9 unit · 7 topic · 37 RPC</span></div>
+    <div class="spacer"></div>
+    <div class="legend" aria-label="legenda jenis panah">
+      <span class="http"><i></i>REST/HTTP</span>
+      <span class="grpc"><i></i>gRPC</span>
+      <span class="event"><i></i>Event Kafka</span>
+      <span class="db"><i></i>Transaksi DB</span>
+      <span class="ext"><i></i>Layanan luar</span>
+      <span class="fail"><i></i>Jalur gagal</span>
+    </div>
+    <div class="topbtns">
+      <button class="btn" id="btn-tour" aria-pressed="false" title="putar semua skenario berurutan (T)">▶▶ Tur</button>
+      <button class="btn" id="btn-theme" title="tema: ikut sistem / gelap / terang (D)">◐ Tema</button>
+      <button class="btn" id="btn-help" title="bantuan (?)">?</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="side" aria-label="daftar skenario">
+      <div>
+        <h2>Jalur normal</h2>
+        <div class="list" id="list-ok"></div>
+      </div>
+      <div>
+        <h2>Jalur gagal &amp; pertahanan</h2>
+        <div class="list" id="list-fail"></div>
+      </div>
+      <div>
+        <h2>Beban &amp; skala</h2>
+        <div class="list" id="list-scale"></div>
+      </div>
+    </nav>
+
+    <section class="stage" aria-label="peta sistem">
+      <div class="map"><svg id="map" viewBox="0 0 1240 700" role="img" aria-label="peta 9 unit Selaras, Kafka, Postgres, dan layanan luar"></svg></div>
+      <div class="hint">Klik unit = rincian · klik kanan unit = matikan (chaos) · spasi = putar/jeda · ← → = langkah · ? = bantuan</div>
+      <div class="chaosbar" id="chaosbar"></div>
+      <div class="caption">
+        <span><b>Postgres</b> satu instans, satu schema per service, koneksi lewat PgBouncer, replika baca untuk dashboard</span>
+        <span><b>Telemetri</b> OTel Collector → Tempo (trace) · Prometheus (metrik) · Loki (log) → Grafana · Alertmanager → Mailpit</span>
+        <span><b>Deploy</b> Compose untuk dev, Helm + k3d dengan HPA (HTTP) dan KEDA (lag llm.jobs, maks 12)</span>
+      </div>
+      <div class="obs" id="obs">
+        <div class="obs-tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-pane="pane-log">Log &amp; trace</button>
+          <button role="tab" aria-selected="false" data-pane="pane-state">State</button>
+          <button role="tab" aria-selected="false" data-pane="pane-chart" id="tab-chart" hidden>Grafik replika</button>
+          <span class="sp"></span>
+          <span class="cnt" id="obs-cnt"></span>
+          <button class="tog" id="obs-toggle" title="lipat / buka panel" aria-label="lipat atau buka panel">▾</button>
+        </div>
+        <div class="obs-body">
+          <div class="obs-pane two on" id="pane-log">
+            <div><h5>Log (slog JSON · trace_id disisipkan handler telemetri)</h5><div class="log" id="log"></div></div>
+            <div><h5>Trace (span OTel · otelgin, otelgrpc, konsumen Kafka)</h5><div class="spans" id="spans"></div></div>
+          </div>
+          <div class="obs-pane" id="pane-state"><div class="state" id="state"></div></div>
+          <div class="obs-pane" id="pane-chart"><div class="chart" id="chart"></div></div>
+        </div>
+      </div>
+      <div class="drawer" id="drawer" role="dialog" aria-label="rincian unit"></div>
+      <div class="controls">
+        <button class="btn" id="btn-prev" title="langkah sebelumnya (←)">◀</button>
+        <button class="btn primary dark-primary-fix" id="btn-play" title="putar / jeda (spasi)">▶ Putar</button>
+        <button class="btn" id="btn-next" title="langkah berikutnya (→)">▶</button>
+        <button class="btn" id="btn-restart" title="ulang dari awal">↺</button>
+        <div class="prog" id="prog"></div>
+        <label>Kecepatan
+          <select id="speed"><option value="0.6">lambat</option><option value="1" selected>normal</option><option value="1.8">cepat</option><option value="3">kilat</option></select>
+        </label>
+        <span class="kbd" id="counter">0 / 0</span>
+      </div>
+    </section>
+
+    <aside class="narr" aria-label="narasi langkah">
+      <div class="head">
+        <div class="eyebrow" id="n-eyebrow">Skenario</div>
+        <h2 id="n-title">Pilih skenario</h2>
+        <p id="n-intro"></p>
+        <div class="gauges" id="gauges" aria-live="polite"></div>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </aside>
+  </div>
+</div>
+<div class="help" id="help" role="dialog" aria-label="bantuan">
+  <div>
+    <h2>Cara memakai Selaras Runtime Explorer</h2>
+    <table>
+      <tr><td><kbd>Spasi</kbd></td><td>putar / jeda skenario</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>langkah mundur / maju</td></tr>
+      <tr><td><kbd>T</kbd></td><td>mode tur: seluruh skenario diputar berurutan</td></tr>
+      <tr><td><kbd>D</kbd></td><td>tema: ikut sistem → gelap → terang</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>3</kbd></td><td>tab panel bawah: log &amp; trace, state, grafik replika</td></tr>
+      <tr><td><kbd>?</kbd></td><td>buka / tutup bantuan ini</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>tutup laci rincian atau bantuan</td></tr>
+      <tr><td>Klik unit</td><td>rincian: RPC, tabel, event, ADR, runbook</td></tr>
+      <tr><td>Klik kanan unit</td><td>mode chaos: matikan unit itu, skenario diputar ulang dengan kegagalannya. Klik kanan lagi atau tekan × di bilah chaos untuk memulihkan.</td></tr>
+      <tr><td>Tautan</td><td><code>#id</code> membuka skenario, <code>#id/7</code> membuka langkah ke-7; alamat di bilah peramban ikut berubah saat Anda melangkah.</td></tr>
+    </table>
+    <p>Setiap pesan log adalah string yang benar-benar ada di kode Go; nama span mengikuti otelgin (rute), otelgrpc (paket.Service/Method), dan konsumen Kafka (<code>&lt;topic&gt; process</code>). Kolom durasi adalah ilustrasi berskala dari laporan kinerja, bukan rekaman per permintaan.</p>
+  </div>
+</div>
+<!-- DATA -->
+<script>
+// ---------- PETA ----------
+// Posisi dalam viewBox 1240x700. Setiap service punya chip schema Postgres di bawahnya.
+const NODES = [
+  { id: 'klien',      label: 'Klien',          sub: 'aplikasi · Bearer JWT',           x: 40,   y: 40,  w: 180, h: 56 },
+  { id: 'gateway',    label: 'edge-gateway',   sub: 'REST /api/v1 → gRPC',             x: 40,   y: 250, w: 180, h: 56 },
+  { id: 'redis',      label: 'Redis',          sub: 'rate limit · generasi token',     x: 40,   y: 390, w: 180, h: 56 },
+  { id: 'google',     label: 'Google OAuth',   sub: 'redirect · callback · state',     x: 40,   y: 520, w: 180, h: 56 },
+  { id: 'identity',   label: 'identity-svc',   sub: 'akun · JWT EdDSA · saga hapus',   x: 300,  y: 60,  w: 176, h: 58, db: 'svc_identity' },
+  { id: 'profile',    label: 'profile-svc',    sub: 'user_profiles · pemilik id',      x: 490,  y: 60,  w: 176, h: 58, db: 'svc_profile' },
+  { id: 'assessment', label: 'assessment-svc', sub: 'SCORE2 · personalisasi',          x: 680,  y: 60,  w: 176, h: 58, db: 'svc_assessment' },
+  { id: 'coaching',   label: 'coaching-svc',   sub: 'program · tugas · utas',          x: 870,  y: 60,  w: 176, h: 58, db: 'svc_coaching' },
+  { id: 'chat',       label: 'chat-svc',       sub: 'percakapan asisten',              x: 300,  y: 230, w: 176, h: 58, db: 'svc_chat' },
+  { id: 'nutrition',  label: 'nutrition-svc',  sub: 'preferensi · panduan menu',       x: 490,  y: 230, w: 176, h: 58, db: 'svc_nutrition' },
+  { id: 'dashboard',  label: 'dashboard-svc',  sub: 'read-model · proyeksi',           x: 680,  y: 230, w: 176, h: 58, db: 'svc_dashboard' },
+  { id: 'worker',     label: 'llm-worker',     sub: 'llm.jobs → penyedia → hasil',     x: 870,  y: 230, w: 176, h: 58, db: 'svc_llm' },
+  { id: 'mailpit',    label: 'Mailpit',        sub: 'SMTP · tautan reset · alert',     x: 1060, y: 60,  w: 160, h: 58 },
+  { id: 'gemini',     label: 'Gemini API',     sub: 'generateContent · kuota',         x: 1060, y: 230, w: 160, h: 58 },
+];
+const KAFKA = { id: 'kafka', x: 300, y: 430, w: 910, h: 112 };
+const TOPICS = [
+  { id: 'profile.updated', n: 3 }, { id: 'assessment.completed', n: 3 }, { id: 'coaching.program.updated', n: 3 },
+  { id: 'llm.jobs', n: 12 }, { id: 'llm.results', n: 12 }, { id: 'llm.dlq', n: 1 }, { id: 'user.deletion', n: 1 },
+];
+const PG = { x: 300, y: 590, w: 910, h: 62 };
+// Sambungan tetap yang digambar samar sebagai kerangka.
+const SKELETON = [
+  ['klien','gateway'], ['gateway','redis'], ['klien','google'], ['gateway','google'],
+  ['gateway','identity'], ['gateway','profile'], ['gateway','assessment'], ['gateway','coaching'],
+  ['gateway','chat'], ['gateway','nutrition'], ['gateway','dashboard'],
+  ['identity','profile'], ['assessment','profile'], ['identity','mailpit'], ['identity','redis'],
+  ['worker','gemini'],
+  ['identity','kafka'], ['profile','kafka'], ['assessment','kafka'], ['coaching','kafka'],
+  ['chat','kafka'], ['nutrition','kafka'], ['dashboard','kafka'], ['worker','kafka'],
+];
+
+// ---------- RINCIAN UNIT ----------
+const DETAILS = {
+  klien: { role: 'Aplikasi pengguna. Semua akses lewat REST di edge-gateway dengan header Authorization: Bearer. Header Idempotency-Key opsional untuk permintaan yang membelanjakan LLM.',
+    notes: ['Tidak ada klien yang berbicara gRPC langsung; jalur itu justru yang diuji ditolak di skenario "gRPC tanpa token".'],
+    refs: ['test/postman/selaras.postman_collection.json', 'test/e2e/'] },
+  gateway: { role: 'Satu-satunya pintu publik. Menerjemahkan REST ke gRPC, memverifikasi JWT sendiri dengan kunci publik, dan meneruskan token ke hilir lewat metadata.',
+    lists: { 'Rute publik': ['POST /register', 'POST /login', 'POST /password-reset/request', 'POST /password-reset/confirm', 'GET /auth/:provider/redirect', 'GET /auth/:provider/callback', 'POST /auth/session'],
+      'Rute terlindungi': ['POST /logout', 'DELETE /delete-account', 'GET /me', 'GET|PATCH /profile', 'POST|GET /risk-assessments', 'PATCH /risk-assessments/:slug/personalize', 'GET /dashboard', '/coaching/* (11 rute)', '/chat/* (6 rute)', '/culinary/* (3 rute)'],
+      'Middleware': ['Authenticate: tanda tangan EdDSA + generasi token', 'LimitBody 1 MB', 'rate limit auth 5/menit per IP', 'rate limit llm 10/menit per pengguna', 'Idempotency-Key diikat ke user id', 'tracing OTel'] },
+    notes: ['Tidak menyentuh Postgres sama sekali.', 'Alasan penolakan token tidak dibedakan (kedaluwarsa vs tanda tangan salah) supaya tidak membocorkan bahwa kuncinya benar.'],
+    refs: ['internal/edge/router.go', 'internal/edge/middleware/auth.go', 'internal/edge/middleware/ratelimit.go', 'ADR-005', 'ADR-007', 'ADR-020'] },
+  redis: { role: 'Dua kunci saja: penghitung rate limit (jendela tetap, satu INCR) dan cache generasi token per pengguna dengan TTL.',
+    lists: { 'Kunci': ['ratelimit:<nama>:<ip|user>:<jendela>', 'identity:token-generation:<user_id>'] },
+    notes: ['Cache kosong → gateway bertanya ke identity-svc lewat gRPC lalu menyimpan jawabannya.', 'Rate limiter yang tidak bisa dihubungi meloloskan permintaan dan mencatat peringatan; pemeriksa generasi yang gagal justru menolak (503, gagal-tertutup).'],
+    refs: ['internal/identity/adapter/revocation/redis.go', 'docs/runbook/rate-limits.md', 'ADR-020'] },
+  google: { role: 'Penyedia sosial satu-satunya hari ini. Edge menerbitkan parameter state, menerima callback, lalu menukar kode sekali pakai dengan token akses lewat identity-svc.',
+    notes: ['Sistem lama mematikan verifikasi state (temuan S11); di sini state wajib.', 'Callback selalu berakhir dengan pengalihan ke frontend, termasuk saat gagal, dengan kode galat yang stabil.'],
+    refs: ['internal/edge/handler/social.go', 'internal/identity/app/exchange_social_token.go'] },
+  identity: { role: 'Pemilik akun, kata sandi (argon2id), token (EdDSA, berumur pendek, dicabut lewat penghitung generasi), reset kata sandi, dan saga penghapusan akun.',
+    lists: { 'RPC': ['Register', 'Login', 'Logout', 'RequestPasswordReset', 'ConfirmPasswordReset', 'DeleteAccount', 'ExchangeSocialToken', 'GetTokenGeneration'],
+      'Tabel': ['users', 'password_reset_tokens', 'deletion_sagas', 'deletion_confirmations', 'outbox', 'processed_messages'],
+      'Menerbitkan': ['user.deletion.requested → user.deletion'], 'Mengonsumsi': ['user.deletion (konfirmasi 6 unit)'],
+      'Memanggil': ['profile-svc: CreateEmptyProfile, ResolveProfileId (token bootstrap 30 detik)', 'Redis: publish generasi', 'Mailpit: tautan reset'] },
+    notes: ['Login menaikkan generasi: satu sesi aktif per pengguna (D1).', 'Reset kata sandi menjawab sama untuk alamat terdaftar maupun tidak (anti-enumerasi).'],
+    refs: ['internal/identity/app/', 'docs/runbook/identity-svc.md', 'docs/runbook/account-deletion.md', 'ADR-011', 'ADR-012', 'ADR-020', 'ADR-021', 'ADR-024', 'ADR-026'] },
+  profile: { role: 'Pemilik data profil. user_profile_id diangkat jadi identitas global (ADR-007) tetapi RPC-nya berkunci user_id (ADR-022) supaya id profil orang lain tidak bisa dikirimkan.',
+    lists: { 'RPC': ['GetProfile', 'UpdateProfile', 'CreateEmptyProfile', 'ResolveProfileId'], 'Tabel': ['user_profiles', 'outbox', 'processed_messages'],
+      'Menerbitkan': ['profile.updated (aggregate_type user_profile)'], 'Mengonsumsi': ['user.deletion'] },
+    notes: ['UpdateAndPublish: perubahan dan eventnya satu transaksi. Tanpa broker, service tetap jalan dan menyatakannya di log saat start.'],
+    refs: ['internal/profile/app/publish.go', 'docs/runbook/profile-svc.md', 'ADR-002', 'ADR-007', 'ADR-022'] },
+  assessment: { role: 'Mesin risiko SCORE2 (paritas dibuktikan golden vector dari oracle, ADR-008) dan personalisasi laporan lewat llm-worker.',
+    lists: { 'RPC': ['StartAssessment', 'RequestPersonalization', 'GetAssessment', 'ListAssessments', 'ResolveRiskRegion'],
+      'Tabel': ['risk_assessments', 'profile_snapshots (cache)', 'outbox', 'processed_messages'],
+      'Menerbitkan': ['assessment.completed', 'personalization.requested → llm.jobs'], 'Mengonsumsi': ['llm.results', 'llm.dlq', 'profile.updated', 'user.deletion'] },
+    notes: ['Kategori risiko dihitung di sini, bukan diminta dari model bahasa (temuan B19).', 'Cuplikan profil dibaca dari cache dulu; gRPC ke profile-svc hanya jaring pengaman.'],
+    refs: ['internal/assessment/domain/score/', 'internal/assessment/app/', 'docs/parity-report.md', 'docs/runbook/assessment-svc.md', 'ADR-008', 'ADR-023'] },
+  coaching: { role: 'Program 4 pekan dengan kurikulum dari LLM, tugas harian, laporan kelulusan, dan utas percakapan dengan pelatih.',
+    lists: { 'RPC': ['StartProgram', 'GetProgram', 'ToggleProgramStatus', 'DeleteProgram', 'ToggleTaskStatus', 'GetGraduationReport', 'StartThread', 'GetThread', 'UpdateThreadTitle', 'DeleteThread', 'SendThreadMessage'],
+      'Tabel': ['coaching_programs', 'coaching_weeks', 'coaching_tasks', 'coaching_threads', 'coaching_messages (partisi bulanan)', 'coaching_assessments (rujukan lunak)', 'outbox', 'processed_messages'],
+      'Menerbitkan': ['curriculum.requested → llm.jobs', 'chat.reply.requested → llm.jobs', 'coaching.program.updated'], 'Mengonsumsi': ['assessment.completed', 'llm.results', 'llm.dlq', 'user.deletion'] },
+    notes: ['Laporan kelulusan memakai CurriculumRequested dengan penanda, bukan jenis event baru.', 'Jendela konteks utas 20 pesan (D8).'],
+    refs: ['internal/coaching/app/', 'docs/runbook/coaching-svc.md'] },
+  chat: { role: 'Percakapan bebas dengan asisten. Pesan pengguna disimpan dan balasannya diminta lewat outbox; HTTP menjawab segera.',
+    lists: { 'RPC': ['ListConversations', 'CreateConversation', 'GetConversation', 'UpdateConversationTitle', 'DeleteConversation', 'SendMessage'],
+      'Tabel': ['conversations', 'chat_messages (partisi bulanan)', 'outbox', 'processed_messages'],
+      'Menerbitkan': ['chat.reply.requested → llm.jobs'], 'Mengonsumsi': ['llm.results', 'llm.dlq', 'user.deletion'] },
+    notes: ['Percakapan milik orang lain dijawab "tidak ada", bukan "bukan milikmu" (S9).', 'Pesan dibatasi 16 KiB di domain.'],
+    refs: ['internal/chat/app/chat.go', 'docs/runbook/chat-svc.md'] },
+  nutrition: { role: 'Preferensi kuliner dan panduan menu harian dari LLM. Bahasa pengguna di-cache dari profile.updated; riwayat berhalaman.',
+    lists: { 'RPC': ['GetHubData', 'UpdatePreferences', 'GenerateDailyGuide'],
+      'Tabel': ['culinary_preferences', 'daily_meal_guides (+ generation_context)', 'user_languages (cache)', 'outbox', 'processed_messages'],
+      'Menerbitkan': ['meal.guide.requested → llm.jobs'], 'Mengonsumsi': ['llm.results', 'llm.dlq', 'profile.updated', 'user.deletion'] },
+    notes: ['Fokus kesehatan dan misi coaching belum bisa diambil nutrition-svc; bawaan dipakai terbuka, bukan ditebak.', 'cmd/backfill-nutrition memindahkan data lama.'],
+    refs: ['internal/nutrition/app/guide.go', 'docs/runbook/nutrition-svc.md', 'docs/runbook/backfill-nutrition.md'] },
+  dashboard: { role: 'Read-model, bukan agregator (ADR-009). Proyektor menulis bentuk yang akan dibaca; membaca dasbor = dua query, tanpa cache yang harus diingat untuk dihapus.',
+    lists: { 'RPC': ['GetDashboard'], 'Tabel': ['dashboards', 'dashboard_assessments', 'projection_state', 'outbox', 'processed_messages'],
+      'Mengonsumsi': ['assessment.completed', 'coaching.program.updated', 'user.deletion'] },
+    notes: ['Pembacaan dilayani replika Postgres bila READ_DSN diberikan.', 'cmd/dashboard-rebuild membangun ulang proyeksi dari awal topic; lag-nya diukur.'],
+    refs: ['internal/dashboard/app/dashboard.go', 'internal/dashboard/adapter/consumer/projector.go', 'docs/runbook/dashboard-svc.md', 'ADR-009'] },
+  worker: { role: 'Satu-satunya yang bicara ke penyedia LLM. Klaim idempoten di sisi masuk, outbox di sisi keluar, panggilan penyedia di luar transaksi.',
+    lists: { 'Mengonsumsi': ['llm.jobs (12 partisi; KEDA lag-based, maks 12 replika)'], 'Tabel': ['llm_jobs (partisi)', 'processed_messages', 'outbox'],
+      'Menerbitkan': ['personalization.completed, curriculum.completed, chat.reply.completed, meal.guide.completed → llm.results', 'llm.job.failed → llm.dlq'],
+      'Kebijakan': ['MaxAttempts 3, jeda 500 ms × percobaan', 'kuota habis → parkir, bukan mati (ADR-025)', 'jenis tak dikenal → announceUnusable'] },
+    notes: ['Templat prompt di internal/llm/prompt/templates; paket llm induk dijaga tanpa dependensi jaringan supaya penyedia palsu di test tidak bisa menyentuh jaringan.'],
+    refs: ['internal/llmworker/worker.go', 'internal/llm/gemini/gemini.go', 'docs/runbook/llm-worker.md', 'docs/finops.md', 'ADR-014', 'ADR-025'] },
+  mailpit: { role: 'Sink SMTP untuk pengembangan: tautan reset kata sandi dari identity-svc dan surel alert dari Alertmanager.',
+    refs: ['deploy/compose/full.yml', 'deploy/compose/observability/alertmanager.yml'] },
+  gemini: { role: 'Generative Language API. Nama model wajib dari konfigurasi (tidak ada bawaan), kunci API tidak punya bawaan (ADR-016).',
+    notes: ['Klien menghormati retryDelay dari jawaban 429 dan membatasi total tunggu.', 'Larian nyata pertama (2026-09-07, B30): kuota tingkat gratis habis dalam satu suite e2e; lahirlah ADR-025.'],
+    refs: ['internal/llm/gemini/gemini.go', 'docs/finops.md', 'ADR-016', 'ADR-025'] },
+  kafka: { role: 'Broker mode KRaft. Producer acks=all + idempoten; consumer tanpa auto-commit, offset dikomit setelah pekerjaan selesai, record gagal ditahan Rewinder supaya datang lagi.',
+    lists: { 'Topic (partisi)': TOPICS.map(t => `${t.id} (${t.n})`), 'Kunci partisi': ['aggregate_id baris outbox → urutan per agregat'],
+      'Pemulihan': ['UnknownTopicID → RecoverRecreatedTopics melanggani ulang (B26)', 'service topics menjalankan EnsureTopics + WaitForTopics tiap up (B28)'] },
+    refs: ['internal/platform/kafka/', 'docs/topics.md', 'ADR-003', 'ADR-004', 'ADR-014'] },
+  postgres: { role: 'Satu instans PostgreSQL, satu schema dan satu peran per service, koneksi lewat PgBouncer, replika streaming untuk pembacaan dashboard.',
+    lists: { 'Skema per service': ['svc_identity', 'svc_profile', 'svc_assessment', 'svc_coaching', 'svc_chat', 'svc_nutrition', 'svc_dashboard', 'svc_llm'],
+      'Bersama di tiap schema': ['outbox (partisi)', 'processed_messages (idempotensi)'], 'Partisi bulanan': ['chat_messages', 'coaching_messages', 'llm_jobs', 'outbox'] },
+    notes: ['Diukur dulu, baru PgBouncer: kolam 3–5 dari 10 saat sibuk; masalahnya perkalian replika, bukan beban satu replika.', 'Backup terjadwal dan drill restore terdokumentasi.'],
+    refs: ['docs/db-connections.md', 'docs/runbook/backup.md', 'docs/runbook/restore-drill.md', 'cmd/partitions', 'ADR-006', 'ADR-013'] },
+};
+
+// ---------- SKENARIO ----------
+// kind: http | grpc | event | db | ext | fail | note. topic menyalakan chip di bus.
+const S = (from, to, kind, label, title, text, refs = [], extra = {}) => ({ from, to, kind, label, title, text, refs, ...extra });
+const F = (from, to, kind, label, count = 1, topic) => ({ from, to, kind, label, count, topic });
+
+const SCENARIOS = [
+  { id: 'daftar', group: 'ok', title: 'Daftar, masuk, dan sesi', sub: 'JWT EdDSA · generasi token · profil kosong',
+    intro: 'Akun lahir di identity-svc, profil kosong dibuat di profile-svc dengan token bootstrap, dan setiap permintaan berikutnya diverifikasi gateway sendiri tanpa memanggil identity.',
+    steps: [
+      S('klien','gateway','http','POST /register','Klien mendaftar', 'Badan dibatasi 1 MB. Jalur ini dilindungi rate limit 5 permintaan per menit per alamat IP; penghitungnya satu INCR di Redis dengan jendela tetap.', ['internal/edge/middleware/ratelimit.go','internal/edge/middleware/bodylimit.go']),
+      S('gateway','redis','db','INCR ratelimit:auth','Penghitung laju', 'Kunci ratelimit:auth:<ip>:<jendela>. Kalau Redis tidak terjangkau, permintaan diloloskan dengan peringatan di log; rate limit bukan pemeriksaan keamanan yang boleh mematikan layanan.', ['docs/runbook/rate-limits.md']),
+      S('gateway','identity','grpc','Register','Gateway meneruskan ke identity-svc', 'Konfirmasi kata sandi dibandingkan waktu-tetap, surel dan kata sandi divalidasi jadi tipe domain, lalu di-hash argon2id.', ['internal/identity/app/register.go']),
+      S('identity','db-identity','db','INSERT users','Satu satuan kerja', 'Pengguna disimpan dalam UnitOfWork. Surel yang sudah dipakai mengembalikan ErrEmailTaken apa adanya, karena pendaftar memang berhak tahu.', ['internal/identity/app/register.go']),
+      S('identity','profile','grpc','CreateEmptyProfile','Profil kosong dibuat, best-effort', 'identity-svc mencetak token bootstrap berumur 30 detik atas nama pengguna baru, karena profile-svc kini menuntut token yang sub-nya cocok (ADR-026). Gagal di sini tidak membatalkan pendaftaran.', ['internal/identity/adapter/profileclient/client.go','ADR-026']),
+      S('profile','db-profile','db','INSERT user_profiles','user_profile_id lahir', 'Id inilah yang diangkat jadi identitas global lintas unit (ADR-007), dan ia ikut masuk ke dalam klaim token.', ['ADR-007']),
+      S('identity','gateway','grpc','token EdDSA','Token diterbitkan', 'Klaim: sub (user_id), user_profile_id, email, role, generation=1. Ditandatangani kunci privat yang hanya dipegang identity-svc (ADR-020).', ['internal/identity/adapter/token/','ADR-020']),
+      S('gateway','klien','http','access_token','Klien menerima token', 'Sejak sini klien memakai Authorization: Bearer di setiap permintaan.'),
+      S('klien','gateway','http','GET /me','Permintaan terautentikasi pertama', 'Gateway memverifikasi tanda tangan SENDIRI dengan kunci publik. Tidak ada panggilan jaringan ke identity-svc untuk ini; itulah inti ADR-007 dan alasan memilih EdDSA.', ['internal/edge/middleware/auth.go']),
+      S('gateway','redis','db','GET token-generation','Pemeriksaan pencabutan', 'Tanda tangan membuktikan token kami yang menerbitkan; generasi membuktikan ia belum dicabut. Cache kosong → bertanya ke identity-svc lewat gRPC GetTokenGeneration lalu menyimpan jawabannya dengan TTL.', ['internal/identity/adapter/revocation/redis.go']),
+      S('gateway','klien','http','200 klaim','Jawaban', 'Klaim yang sudah diverifikasi disimpan di konteks permintaan; handler membacanya lewat ClaimsFrom, bukan dari header lagi.'),
+      S('klien','gateway','http','POST /login','Masuk dari perangkat lain', 'Login membandingkan hash; alamat yang tidak ada tetap membakar waktu dengan hash umpan supaya durasinya tidak membocorkan keberadaan akun.', ['internal/identity/app/login.go']),
+      S('identity','db-identity','db','generation++','Sesi lama diakhiri', 'RevokeAllTokens menaikkan generasi dan menyimpannya. Sistem ini hanya mengenal satu sesi aktif per pengguna (D1), jadi token dari perangkat pertama berhenti berlaku.', ['ADR-012']),
+      S('identity','redis','db','SET token-generation','Generasi disiarkan', 'PublishGeneration menulis nilai baru ke Redis, best-effort. Kalaupun gagal, cache akan kedaluwarsa dan gateway bertanya ulang ke sumbernya.'),
+    ] },
+
+  { id: 'profil', group: 'ok', title: 'Ubah profil → cache di unit lain', sub: 'outbox · relay · profile.updated',
+    intro: 'Perubahan profil dan eventnya ditulis dalam satu transaksi. Relay memindahkannya ke Kafka at-least-once; dua unit menyimpan salinannya sebagai cache yang boleh basi.',
+    steps: [
+      S('klien','gateway','http','PATCH /profile','Klien mengubah profil', 'Tanggal lahir, jenis kelamin, negara, dan nilai klinis: masukan mesin risiko.'),
+      S('gateway','profile','grpc','UpdateProfile(user_id)','RPC berkunci user_id', 'Interceptor di profile-svc mencocokkan user_id di permintaan dengan sub di token yang diteruskan gateway; tidak cocok → PermissionDenied (ADR-022, ADR-026).', ['internal/platform/authn/interceptor.go','ADR-022']),
+      S('profile','db-profile','db','UPDATE + INSERT outbox','Satu transaksi, dua tulisan', 'UpdateAndPublish: baris user_profiles diubah dan baris outbox profile.updated ditulis bersama. Penulis event dibangun DI ATAS transaksi bisnis supaya event tidak bisa bertahan saat perubahannya batal.', ['internal/profile/app/publish.go','ADR-004']),
+      S('profile','kafka','event','profile.updated','Relay menerbitkan', 'Relay membaca outbox dengan FOR UPDATE SKIP LOCKED dalam satu transaksi, menerbitkan (acks=all, idempoten), lalu menandai terkirim. Urutannya sengaja: mati di antara keduanya menghasilkan duplikat, bukan kehilangan.', ['internal/platform/outbox/relay.go'], { topic: 'profile.updated' }),
+      S('kafka','assessment','event','profile.updated','assessment-svc menyimpan cuplikan', 'UPSERT ke profile_snapshots yang hanya menang bila event lebih baru (observed_at dari waktu event). Tanpa penjaga idempotensi, karena bentuknya sudah idempoten.', ['internal/assessment/adapter/cache/profile.go'], { topic: 'profile.updated' }),
+      S('assessment','db-assessment','db','UPSERT profile_snapshots','Cache, bukan sumber kebenaran', 'Boleh basi, boleh hilang, boleh dibangun ulang dari awal topic. Yang tidak boleh: menjadi satu-satunya tempat sebuah fakta ada.'),
+      S('kafka','nutrition','event','profile.updated','nutrition-svc menyimpan bahasa', 'Dikenali lewat header aggregate_type = user_profile yang diisi relay, bukan ditebak dari nama topic. Menebak "profile" pernah membuat setiap pembaruan bahasa dilewati diam-diam.', ['internal/nutrition/adapter/consumer/results.go'], { topic: 'profile.updated' }),
+      S('nutrition','db-nutrition','db','UPSERT user_languages','Bahasa panduan menu', 'Cache kosong bukan galat: pengguna yang belum menyentuh profilnya tetap berhak mendapat panduan dalam bahasa bawaan.', ['internal/nutrition/adapter/cache/language.go']),
+    ] },
+
+  { id: 'penilaian', group: 'ok', title: 'Penilaian risiko SCORE2', sub: 'mesin risiko · assessment.completed · dasbor',
+    intro: 'Risiko kardiovaskular dihitung di dalam service dengan paritas yang dibuktikan golden vector. Hasilnya disiarkan; coaching mencatat rujukannya dan dasbor memproyeksikannya.',
+    steps: [
+      S('klien','gateway','http','POST /risk-assessments','Kuesioner dikirim', 'Beberapa puluh bidang jawaban. Badan terbesar yang sah di API ini, jauh di bawah batas 1 MB.'),
+      S('gateway','assessment','grpc','StartAssessment(user_id)','Id profil tidak diterima dari pemanggil', 'Perintah membawa user_id dari token; id profil diturunkan dari profil yang dibaca, bukan dari klien (ADR-023).', ['internal/assessment/app/assessment.go','ADR-023']),
+      S('assessment','db-assessment','db','SELECT profile_snapshots','Cuplikan profil dari cache dulu', 'Cache lebih dulu, gRPC hanya jaring pengaman. Membaliknya berarti setiap kalkulasi tetap memanggil profile-svc dan cache hanya menambah tempat data basi.', ['internal/assessment/adapter/cache/source.go']),
+      S('assessment','profile','grpc','GetProfile (jaring)','Hanya bila cache kosong', 'Panggilan ini terjadi sekali per PENILAIAN, tindakan yang jarang, jadi ADR-007 tidak terlanggar.'),
+      S('assessment','assessment','note','SCORE2','Mesin risiko memilih model', 'Diabetes menang atas usia: pengguna 75 tahun dengan diabetes memakai SCORE2-Diabetes, bukan SCORE2-OP. Wilayah risiko dari negara; nilai klinis yang kosong ditebak dari proksi dan ikut dikembalikan supaya angkanya bisa dibantah.', ['internal/assessment/domain/score/engine.go','docs/parity-report.md','ADR-008']),
+      S('assessment','db-assessment','db','INSERT risk_assessments + outbox','Penilaian dan eventnya bersama', 'Kategori risiko dihitung di sini (B19), slug 80 bit dicoba ulang sekali bila bentrok. Event assessment.completed membawa user_id, slug, persentase, kategori.'),
+      S('assessment','gateway','grpc','hasil','Jawaban segera', 'Risiko, kategori, masukan klinis yang dipakai. Tidak ada LLM di jalur ini.'),
+      S('gateway','klien','http','hasil penilaian','Klien melihat hasil', ''),
+      S('assessment','kafka','event','assessment.completed','Relay menerbitkan', 'Kunci partisi = id penilaian.', [], { topic: 'assessment.completed' }),
+      S('kafka','coaching','event','assessment.completed','coaching-svc mencatat rujukan lunak', 'RecordAssessment menulis coaching_assessments supaya StartProgram nanti bisa meresolusi slug tanpa panggilan sinkron. Event yang datang dua kali adalah keadaan normal.', ['internal/coaching/app/assessment.go'], { topic: 'assessment.completed' }),
+      S('coaching','db-coaching','db','INSERT coaching_assessments','Penjaga idempotensi berskop', 'processed_messages dengan scope milik konsumen ini; klaim dan pekerjaannya commit bersama.', ['internal/platform/idempotency/guard.go']),
+      S('kafka','dashboard','event','assessment.completed','Proyektor dasbor', 'Menggantikan empat listener invalidasi cache di sistem lama. Ia MENULIS bentuk yang akan dibaca, bukan menghapus cache dan berharap.', ['internal/dashboard/adapter/consumer/projector.go','ADR-009'], { topic: 'assessment.completed' }),
+      S('dashboard','db-dashboard','db','UPSERT dashboards + projection_state','Proyeksi dan posisinya satu transaksi', 'Kalau keduanya bisa terpisah, posisi bisa maju melewati event yang belum diterapkan dan rebuild akan mengira event itu sudah masuk.'),
+      S('klien','gateway','http','GET /dashboard','Klien membuka dasbor', ''),
+      S('gateway','dashboard','grpc','GetDashboard','Dua query, tanpa cache', 'Ringkasan dan riwayat. Pengguna baru mendapat dasbor kosong, bukan galat; bila READ_DSN ada, dibaca dari replika.', ['internal/dashboard/app/dashboard.go']),
+    ] },
+
+  { id: 'personalisasi', group: 'ok', title: 'Personalisasi laporan lewat LLM', sub: 'llm.jobs · llm-worker · Gemini · llm.results',
+    intro: 'Jalur permintaan tidak pernah memanggil penyedia LLM. Ia menulis event dan kembali; worker mengerjakannya, hasilnya pulang lewat topic yang dipakai bersama.',
+    steps: [
+      S('klien','gateway','http','PATCH …/personalize','Klien meminta laporan', 'Header Idempotency-Key opsional. Rate limit llm: 10 per menit per pengguna, karena jalur ini membelanjakan uang.', ['internal/edge/router.go']),
+      S('gateway','redis','db','INCR ratelimit:llm','Batas per pengguna', 'ByUser dipasang setelah Authenticate; permintaan tanpa klaim jatuh ke IP, bukan lolos tanpa batas.'),
+      S('gateway','assessment','grpc','RequestPersonalization','Kunci idempotensi diikat ke pengguna', 'Kunci klien digabung dengan user id memakai karakter kontrol, supaya dua pengguna dengan kunci sama tidak saling meniadakan pekerjaan.', ['internal/edge/handler/idempotency.go']),
+      S('assessment','db-assessment','db','status=pending + outbox','Dua tulisan yang harus bersama', 'Status pindah ke pending hanya dari not_requested atau failed; event personalization.requested ditulis di transaksi yang sama. Tanpa ini: penilaian yang menunggu selamanya, atau pekerjaan yang tidak ada yang menunggu.', ['internal/assessment/app/request_personalization.go']),
+      S('gateway','klien','http','tiket','Jawaban segera', 'Klien mendapat tiket, bukan laporan. Memanggil penyedia dari jalur permintaan berarti pengguna menunggu puluhan detik dan satu kegagalan penyedia jadi kegagalan HTTP.'),
+      S('assessment','kafka','event','personalization.requested','Relay → llm.jobs', '12 partisi: satu-satunya topic yang butuh paralelisme sungguhan karena pekerjaannya menunggu jaringan puluhan detik. Plafon KEDA maxReplicaCount ikut angka ini.', ['docs/topics.md','ADR-014'], { topic: 'llm.jobs' }),
+      S('kafka','worker','event','llm.jobs','llm-worker mengklaim', 'Klaim idempotensi (kunci klien menang, event_id bila tidak ada) dan INSERT llm_jobs pending dalam satu transaksi. Duplikat dari relay maupun dari pengguna berhenti di sini.', ['internal/llmworker/worker.go'], { topic: 'llm.jobs' }),
+      S('worker','db-worker','db','INSERT llm_jobs','Pekerjaan tercatat', 'Status pending; percobaan dihitung per pekerjaan, bukan per pesan.'),
+      S('worker','gemini','ext','generateContent','Panggilan penyedia, DI LUAR transaksi', 'Transaksi yang menganga puluhan detik menahan koneksi dan kunci tanpa alasan. Prompt dari templat; bidang yang belum dibawa event dinyatakan "belum ada", bukan ditebak.', ['internal/llm/gemini/gemini.go','internal/llm/prompt/']),
+      S('gemini','worker','ext','jawaban','Jawaban tiba', 'Klien Gemini sudah mencoba ulang di dalam dengan backoff dan menghormati retryDelay dari penyedia.'),
+      S('worker','db-worker','db','completed + outbox','Hasil dan event keluarnya bersama', 'recordSuccess: llm_jobs completed dan personalization.completed di satu transaksi.'),
+      S('worker','kafka','event','personalization.completed','Relay → llm.results', 'Partisi 12, dipasangkan dengan llm.jobs supaya satu worker memegang partisi yang bersesuaian di keduanya.', [], { topic: 'llm.results' }),
+      S('kafka','assessment','event','llm.results','Konsumen hasil assessment', 'Topic ini dipakai bersama empat service. isMine membaca header aggregate_type; tanpa itu konsumen assessment pernah mencoba memperlakukan program coaching sebagai penilaian dan menyumbat antrean semua orang.', ['internal/assessment/adapter/consumer/results.go'], { topic: 'llm.results' }),
+      S('assessment','db-assessment','db','UPDATE laporan, status=completed','Laporan tersimpan', 'Scope idempotensi konsumen ini berbeda dari milik worker: dua konsumen yang memproses event yang sama tidak boleh saling meniadakan.'),
+      S('klien','gateway','http','GET /risk-assessments/:slug','Klien memuat laporan', 'Status completed beserta teks personalisasinya.'),
+    ] },
+
+  { id: 'coaching', group: 'ok', title: 'Program coaching sampai kelulusan', sub: 'kurikulum LLM · tugas · laporan · utas pelatih',
+    intro: 'Program dimulai tanpa menunggu LLM: kurikulum diminta lewat outbox. Setiap perubahan program disiarkan ke dasbor, dan laporan kelulusan memakai jalur yang sama.',
+    steps: [
+      S('klien','gateway','http','POST /coaching/programs','Mulai program dari slug penilaian', 'Rate limit llm 10/menit per pengguna.'),
+      S('gateway','coaching','grpc','StartProgram','Slug diresolusi dari rujukan lunak', 'assessmentFor membaca coaching_assessments. Penilaian milik pengguna lain diperlakukan seperti tidak ada (S9). Sistem lama memanggil Gemini dulu baru membuka transaksi (T7): kuota terpakai walau penulisan gagal.', ['internal/coaching/app/program.go']),
+      S('coaching','db-coaching','db','INSERT coaching_programs + outbox','Program punya tanggal akhir sejak detik pertama', 'Empat pekan sementara; dihitung ulang saat kurikulum tiba. curriculum.requested ditulis di transaksi yang sama.'),
+      S('gateway','klien','http','program pending','Jawaban segera', ''),
+      S('coaching','kafka','event','curriculum.requested','Relay → llm.jobs', '', [], { topic: 'llm.jobs' }),
+      S('kafka','worker','event','llm.jobs','Worker mengklaim', '', [], { topic: 'llm.jobs' }),
+      S('worker','gemini','ext','generateContent','Kurikulum diminta', 'Templat kurikulum: pekan, tugas harian, tingkat kesulitan.'),
+      S('worker','kafka','event','curriculum.completed','Relay → llm.results', '', [], { topic: 'llm.results' }),
+      S('kafka','coaching','event','llm.results','StoreCurriculum, idempoten', 'Kurikulum kedua untuk program yang sama ditolak tanpa galat; relay at-least-once membuat itu normal.', ['internal/coaching/adapter/consumer/results.go'], { topic: 'llm.results' }),
+      S('coaching','db-coaching','db','INSERT coaching_weeks, coaching_tasks','Tanggal akhir dihitung ulang', 'Dari jumlah pekan yang benar-benar datang. Event coaching.program.updated ikut ditulis.'),
+      S('coaching','kafka','event','coaching.program.updated','Ke dasbor', '', [], { topic: 'coaching.program.updated' }),
+      S('kafka','dashboard','event','coaching.program.updated','Dasbor memproyeksikan program', 'Judul, hari berjalan, total hari, persentase penyelesaian.', [], { topic: 'coaching.program.updated' }),
+      S('klien','gateway','http','PATCH /coaching/tasks/:id/toggle-task-status','Tugas dicentang', 'Kepemilikan dan keaktifan diperiksa lewat PROGRAM-nya; tugas tidak punya pemilik sendiri.', ['internal/coaching/app/task.go']),
+      S('coaching','kafka','event','coaching.program.updated','Kemajuan disiarkan', 'Yang diterbitkan tetap CoachingProgramUpdated, bukan event khusus tugas: yang dipedulikan dasbor adalah kemajuan programnya.', [], { topic: 'coaching.program.updated' }),
+      S('klien','gateway','http','POST …/threads','Utas dengan pelatih', 'StartNewThread menyimpan pesan pertama dan meminta balasan; jendela konteks 20 pesan (D8) supaya biaya per token tidak tumbuh tanpa batas.', ['internal/coaching/app/thread.go']),
+      S('coaching','kafka','event','chat.reply.requested','Balasan pelatih lewat jalur LLM yang sama', 'Hasilnya kembali sebagai chat.reply.completed dan masuk ke utas sebagai pesan berperan model.', [], { topic: 'llm.jobs' }),
+      S('klien','gateway','http','GET …/graduation-report','Laporan kelulusan diminta', 'Padanan CompleteCoachingProgram yang di sistem lama justru dikomentari mati. Di sini benar-benar asinkron.'),
+      S('coaching','kafka','event','curriculum.requested (penanda kelulusan)','Bukan jenis event baru', 'Menambah jenis event berarti menambah topic, konsumen, dan rutenya; keputusan itu layak diambil saat ada pembaca kedua. Setelah laporan ada, program terkunci: menghapus utasnya dijawab 409.', ['internal/coaching/app/task.go'], { topic: 'llm.jobs' }),
+    ] },
+
+  { id: 'chat', group: 'ok', title: 'Percakapan dengan asisten', sub: 'chat.reply.requested · partisi bulanan',
+    intro: 'Pesan pengguna disimpan dan HTTP menjawab segera. Balasan model tiba belakangan lewat llm.results dan disaring dengan header aggregate_type.',
+    steps: [
+      S('klien','gateway','http','POST /chat/conversations','Percakapan baru', 'Rate limit llm karena pesan pertama sudah meminta balasan.'),
+      S('gateway','chat','grpc','CreateConversation / SendMessage','Kepemilikan diperiksa di satu tempat', 'owned() menjawab ErrConversationNotFound untuk milik orang lain, bukan "bukan milikmu" (S9). Pesan dibatasi 16 KiB di domain.', ['internal/chat/app/chat.go']),
+      S('chat','db-chat','db','INSERT chat_messages + outbox','Pesan dan permintaannya satu transaksi', 'chat_messages berpartisi bulanan; cmd/partitions memelihara partisi ke depan. Prompt membawa jendela konteks 20 pesan.'),
+      S('gateway','klien','http','pesan tersimpan','Jawaban segera', 'Sistem lama menunggu Gemini di dalam permintaan HTTP; satu penyedia lambat menahan permintaannya selama itu.'),
+      S('chat','kafka','event','chat.reply.requested','Relay → llm.jobs', '', [], { topic: 'llm.jobs' }),
+      S('kafka','worker','event','llm.jobs','Worker mengklaim', '', [], { topic: 'llm.jobs' }),
+      S('worker','gemini','ext','generateContent','Balasan diminta', ''),
+      S('worker','kafka','event','chat.reply.completed','Relay → llm.results', '', [], { topic: 'llm.results' }),
+      S('kafka','chat','event','llm.results','StoreReply idempoten lewat kunci', 'Balasan yang tersimpan dua kali akan muncul dua kali di layar; kunci pemanggil menahannya.', ['internal/chat/adapter/consumer/results.go'], { topic: 'llm.results' }),
+      S('chat','db-chat','db','INSERT chat_messages (role=model)','Balasan masuk', ''),
+      S('klien','gateway','http','GET /chat/conversations/:slug','Klien memuat riwayat', 'Seluruh riwayat, bukan hanya jendela konteks: yang dibatasi adalah jalur yang menyusun prompt.'),
+    ] },
+
+  { id: 'nutrisi', group: 'ok', title: 'Panduan menu harian', sub: 'preferensi · generation_context · hub berhalaman',
+    intro: 'Panduan dibuat dengan konteks yang disimpan apa adanya di samping hasilnya, supaya panduan bisa dijelaskan kemudian dari permintaan yang benar-benar dikirim.',
+    steps: [
+      S('klien','gateway','http','PATCH /culinary/preferences','Preferensi kuliner', 'Alergi, pantangan, selera.'),
+      S('gateway','nutrition','grpc','UpdatePreferences','Disimpan', ''),
+      S('nutrition','db-nutrition','db','UPSERT culinary_preferences','Preferensi tersimpan', ''),
+      S('klien','gateway','http','POST /culinary/daily-guides','Minta panduan hari ini', 'Rate limit llm. Sistem lama menunggu Gemini dengan timeout 180 detik (B14): satu permintaan menahan satu worker PHP selama itu.'),
+      S('gateway','nutrition','grpc','GenerateDailyGuide','Konteks dirakit', 'Bahasa dari cache user_languages atau bawaan; preferensi; nama hidangan yang pernah dipilih (hanya namanya, bukan seluruh panduan). Fokus kesehatan dan misi coaching memakai bawaan yang dinyatakan terbuka.', ['internal/nutrition/app/guide.go']),
+      S('nutrition','db-nutrition','db','INSERT daily_meal_guides pending + outbox','Konteks disimpan bersama panduan', 'Kolom generation_context memakai bentuk yang sama persis dengan yang dibaca llm-worker; dua bentuk yang menyimpang berarti penjelasannya menggambarkan permintaan yang berbeda.'),
+      S('gateway','klien','http','panduan pending','Jawaban segera', ''),
+      S('nutrition','kafka','event','meal.guide.requested','Relay → llm.jobs', '', [], { topic: 'llm.jobs' }),
+      S('kafka','worker','event','llm.jobs','Worker mengklaim', '', [], { topic: 'llm.jobs' }),
+      S('worker','gemini','ext','generateContent','Menu diminta dalam bahasa pengguna', ''),
+      S('worker','kafka','event','meal.guide.completed','Relay → llm.results', '', [], { topic: 'llm.results' }),
+      S('kafka','nutrition','event','llm.results','StoreGuide', 'Hanya panduan pending yang menerima isi; pengiriman ulang ke panduan yang sudah terisi bukan kegagalan.', ['internal/nutrition/adapter/consumer/results.go'], { topic: 'llm.results' }),
+      S('nutrition','db-nutrition','db','UPDATE daily_meal_guides','Panduan terisi', ''),
+      S('klien','gateway','http','GET /culinary/hub-data','Hub dalam satu panggilan', 'Preferensi dan riwayat BERHALAMAN. Sistem lama mengembalikan seluruh riwayat dan meng-cache-nya selamanya; yang membayar adalah pengguna paling setia.'),
+    ] },
+
+  { id: 'dasbor', group: 'ok', title: 'Dasbor sebagai read-model dan pembangunan ulang', sub: 'proyeksi · projection_state · replika baca',
+    intro: 'Dasbor tidak mengagregasi apa pun saat dibaca. Proyektor menulis bentuk akhirnya dari tiga topic, dan seluruh proyeksi bisa dibangun ulang dari awal topic.',
+    steps: [
+      S('kafka','dashboard','event','assessment.completed','Sumber 1', 'Slug, persentase, kategori, model yang dipakai → dashboard_assessments.', ['internal/dashboard/adapter/consumer/projector.go'], { topic: 'assessment.completed' }),
+      S('kafka','dashboard','event','coaching.program.updated','Sumber 2', 'Keadaan program disalin: judul, status, hari, persentase.', [], { topic: 'coaching.program.updated' }),
+      S('kafka','dashboard','event','user.deletion.requested','Sumber 3: lupakan', 'Read-model memuat salinan data pribadi; salinan yang tertinggal setelah akun dihapus adalah data pribadi yang tidak seorang pun tahu masih ada.', [], { topic: 'user.deletion' }),
+      S('dashboard','db-dashboard','db','UPSERT + projection_state','Satu transaksi per event', 'Posisi proyeksi (nama tetap, ProjectionName) bergerak bersama datanya.', ['internal/dashboard/app/dashboard.go']),
+      S('klien','gateway','http','GET /dashboard','Baca', ''),
+      S('gateway','dashboard','grpc','GetDashboard','Dua query', 'Ringkasan + riwayat, dibaca dari replika Postgres bila dikonfigurasi. Pengguna tanpa proyeksi mendapat dasbor kosong yang diterjemahkan gateway jadi sambutan.'),
+      S('dashboard','dashboard','note','cmd/dashboard-rebuild','Bangun ulang dari awal topic', 'Drain memproyeksikan seluruh yang tersedia lalu berhenti. Lag proyeksi diukur dan dilaporkan; ini yang menggantikan "hapus cache lalu berharap".', ['cmd/dashboard-rebuild/main.go','docs/runbook/dashboard-svc.md','ADR-009']),
+    ] },
+
+  { id: 'hapus', group: 'ok', title: 'Hapus akun: saga enam unit', sub: 'user.deletion · konfirmasi · kompensasi',
+    intro: 'Akun baru benar-benar dihapus setelah keenam unit mengonfirmasi datanya terhapus. Daftar peserta adalah kontrak: unit ketujuh yang lupa didaftarkan berarti data tertinggal diam-diam.',
+    steps: [
+      S('klien','gateway','http','DELETE /delete-account','Konfirmasi dengan kata sandi', 'Rate limit auth. Akun yang masuk lewat penyedia sosial tidak punya kata sandi untuk dikonfirmasi dan ditolak dengan jelas.', ['internal/identity/app/delete_account.go']),
+      S('gateway','identity','grpc','DeleteAccount','Saga dibuka', 'Kata sandi diverifikasi argon2id; saga yang masih berjalan untuk pengguna yang sama ditolak; id profil diresolusi best-effort.'),
+      S('identity','db-identity','db','INSERT deletion_sagas + outbox','Permintaan dan sagunya satu transaksi', 'Event user.deletion.requested berkunci idempotensi user-deletion:<saga_id>.'),
+      S('gateway','klien','http','saga diterima','Jawaban segera', 'Penghapusan berjalan di belakang; klien bisa memantau.'),
+      S('identity','kafka','event','user.deletion.requested','Topic satu partisi', 'Penghapusan harus berurutan terhadap dirinya sendiri dan jarang terjadi; paralelisme hanya menambah cara untuk salah.', ['docs/topics.md'], { topic: 'user.deletion' }),
+      S('kafka','profile','event','user.deletion','Peserta 1: profile', 'Konsumen bersama (platform/deletion): hapus baris milik pengguna dan tulis user.deletion.confirmed dalam SATU transaksi.', ['internal/platform/deletion/consumer.go','cmd/profile-svc/deletion.go'], { topic: 'user.deletion' }),
+      S('kafka','assessment','event','user.deletion','Peserta 2: assessment', 'Penilaian, cuplikan profil.', ['cmd/assessment-svc/deletion.go'], { topic: 'user.deletion' }),
+      S('kafka','coaching','event','user.deletion','Peserta 3: coaching', 'Program, pekan, tugas, utas, pesan.', ['cmd/coaching-svc/deletion.go'], { topic: 'user.deletion' }),
+      S('kafka','chat','event','user.deletion','Peserta 4: chat', 'Percakapan dan pesan.', ['cmd/chat-svc/deletion.go'], { topic: 'user.deletion' }),
+      S('kafka','nutrition','event','user.deletion','Peserta 5: nutrition', 'Preferensi, panduan, bahasa.', ['cmd/nutrition-svc/deletion.go'], { topic: 'user.deletion' }),
+      S('kafka','dashboard','event','user.deletion','Peserta 6: dashboard', 'Proyeksi dilupakan (Forget).', ['cmd/dashboard-svc/deletion.go'], { topic: 'user.deletion' }),
+      S('profile','kafka','event','user.deletion.confirmed ×6','Konfirmasi pulang lewat topic yang sama', 'Setiap unit menulis konfirmasinya ke outbox miliknya; relay masing-masing menerbitkannya.', [], { topic: 'user.deletion' }),
+      S('kafka','identity','event','user.deletion','identity menghitung konfirmasi', 'ConfirmDeletion per unit. Saga yang sudah ditutup mengabaikan konfirmasi terlambat tanpa galat.', ['internal/identity/adapter/consumer/confirmations.go'], { topic: 'user.deletion' }),
+      S('identity','db-identity','db','DELETE users','Keenam unit mengonfirmasi', 'Token dicabut lebih dulu (generation++), lalu baris pengguna dihapus, semuanya satu transaksi.'),
+      S('identity','redis','db','SET token-generation','Sesi mati seketika', 'Gateway menolak token lama pada permintaan berikutnya.'),
+      S('identity','identity','fail','saga gagal','Bila ada unit yang gagal', 'Saga ditutup berstatus gagal, akun DIPERTAHANKAN, dan dicatat di log. Saat start, LogOutstandingSagas mengumumkan saga yang menggantung; runbook account-deletion.md menuntun penyelesaiannya. Record yang gagal di konsumen ditahan Rewinder supaya dikirim ulang.', ['docs/runbook/account-deletion.md','ADR-011']),
+    ] },
+
+  // ---- Jalur gagal ----
+  { id: 'kuota', group: 'fail', title: 'Kuota Gemini habis: parkir, bukan mati', sub: 'ADR-025 · 429 · Rewinder · cooldown',
+    intro: 'Kuota bukan galat milik pekerjaan. Worker melepas klaim, menahan offset, diam sebentar dengan jeda berlipat, lalu mencoba lagi. Tidak ada kurikulum pengguna yang hilang karena pengguna lain lebih dulu menghabiskan jatah.',
+    steps: [
+      S('kafka','worker','event','llm.jobs','Worker mengklaim pekerjaan', '', [], { topic: 'llm.jobs' }),
+      S('worker','gemini','ext','generateContent','Panggilan ke penyedia', 'Klien Gemini menunggu retryDelay yang diminta penyedia; mengulang lebih cepat hanya membakar percobaan pada 429 yang sama (temuan B30).', ['internal/llm/gemini/gemini.go']),
+      S('gemini','worker','fail','429 RESOURCE_EXHAUSTED','Penyedia menolak siapa pun', 'Ini bukan kegagalan pekerjaan ini. Sebelum ADR-025, sepuluh pekerjaan mati dalam dua menit pada larian nyata pertama.', ['ADR-025']),
+      S('worker','db-worker','db','release klaim','Klaim dilepas, percobaan tidak dihitung', 'Kunci idempotensi dilepas dengan context terpisah supaya pelepasannya sendiri tidak ikut gagal saat shutdown.', ['internal/llmworker/worker.go']),
+      S('worker','kafka','fail','tahan offset (Rewinder)','Pesan akan datang lagi', 'Offset dimundurkan, tidak dikomit. Efek samping yang menguntungkan: menutup cacat lama di mana worker mengomit offset walau handle gagal.', [], { topic: 'llm.jobs' }),
+      S('worker','worker','note','cooldown 1 → 2 → 4 … 15 menit','Antrean diparkir', 'Satu menit untuk penolakan pertama, berlipat dua per penolakan beruntun, maksimum lima belas menit. Metrik llm_jobs_total{outcome="parked"} dan log "parking the queue" menyebut durasinya.', ['internal/llmworker/metrics.go','docs/observability.md']),
+      S('kafka','worker','event','llm.jobs (ulang)','Poll berikutnya membawanya lagi', 'Pesan yang sama, klaim baru.', [], { topic: 'llm.jobs' }),
+      S('worker','gemini','ext','generateContent','Dicoba lagi setelah jeda', ''),
+      S('gemini','worker','ext','200','Satu jawaban berhasil', 'Penghitung penolakan beruntun kembali nol; jeda berikutnya mulai dari satu menit lagi.'),
+      S('worker','kafka','event','*.completed','Hasil pulang seperti biasa', 'Harga yang dibayar: seluruh worker diam selama jeda, termasuk pekerjaan yang mungkin diterima. Untuk kuota harian, maksimum 96 percobaan sia-sia sehari; lebih murah dari satu pekerjaan yang mati.', [], { topic: 'llm.results' }),
+    ] },
+
+  { id: 'dlq', group: 'fail', title: 'Pekerjaan LLM mati dan antrean surat mati', sub: 'MaxAttempts 3 · llm.job.failed · status failed',
+    intro: 'Galat yang memang milik pekerjaan (prompt ditolak, jawaban rusak) dicoba tiga kali lalu dinyatakan mati. Yang menunggu diberi tahu, bukan dibiarkan menunggu selamanya.',
+    steps: [
+      S('kafka','worker','event','llm.jobs','Worker mengklaim', '', [], { topic: 'llm.jobs' }),
+      S('worker','gemini','ext','generateContent (1/3)','Percobaan pertama', ''),
+      S('gemini','worker','fail','galat milik pekerjaan','Bukan kuota', 'Jawaban terpotong, JSON rusak, atau prompt ditolak filter. Mengulanginya jarang mengubah apa pun, tetapi tiga percobaan murah.'),
+      S('worker','worker','note','jeda 500 ms × percobaan','Percobaan 2 dan 3', 'Pendek, karena penyedia sudah mencoba ulang dengan backoff lebih panjang di dalam; menunggu lama hanya menahan partisi.', ['internal/llmworker/worker.go']),
+      S('worker','db-worker','db','Fail(dead=true) + outbox','Dinyatakan mati', 'dead berbeda dari failed: yang pertama menunggu manusia, yang kedua menunggu percobaan berikutnya. Event llm.job.failed ditulis ke outbox.'),
+      S('worker','kafka','fail','llm.job.failed','→ llm.dlq, satu partisi', 'Dibaca manusia saat menyelidiki, bukan armada konsumen. Empat service pemakai LLM juga melanggani topic ini.', ['docs/topics.md'], { topic: 'llm.dlq' }),
+      S('kafka','assessment','fail','llm.dlq','Pemilik pekerjaan diberi tahu', 'isMine lewat header aggregate_type, lalu markFailed: perpindahan hanya dari pending, supaya pekerjaan yang sudah selesai tidak berubah jadi gagal karena event lama yang tiba terlambat.', ['internal/assessment/adapter/consumer/results.go'], { topic: 'llm.dlq' }),
+      S('assessment','db-assessment','db','status=failed + alasan','Pengguna melihat "gagal", bisa minta lagi', 'RequestPersonalization menerima status failed sebagai titik awal yang sah.'),
+      S('worker','worker','note','announceUnusable','Jenis pekerjaan yang tidak dikenal', 'Pesan yang tidak akan pernah bisa dikerjakan tetap diumumkan gagal. Melewatinya saja membuat agregat yang menunggunya menunggu selamanya tanpa satu pun galat.'),
+    ] },
+
+  { id: 'cabut', group: 'fail', title: 'Token dicabut, dan saat Redis atau identity tumbang', sub: 'generasi · gagal-tertutup · 401 vs 503',
+    intro: 'Logout tidak mencatat token ke daftar hitam; ia menaikkan generasi. Gateway tidak bisa memastikan pencabutan berarti menolak, bukan menerima.',
+    steps: [
+      S('klien','gateway','http','POST /logout','Pengguna keluar', ''),
+      S('gateway','identity','grpc','Logout','Generasi dinaikkan', 'Satu kenaikan, bukan penghapusan sebanyak token yang beredar.', ['internal/identity/app/logout.go','ADR-012']),
+      S('identity','db-identity','db','generation++','Tersimpan', ''),
+      S('identity','redis','db','SET token-generation','Cache diperbarui', ''),
+      S('klien','gateway','http','GET /me (token lama)','Token lama masih bertanda tangan sah', 'Tanda tangan lolos; kedaluwarsanya masih jauh.'),
+      S('gateway','redis','db','GET token-generation','Generasi tidak cocok', ''),
+      S('gateway','klien','fail','401 Unauthenticated','Ditolak', 'Alasan tidak dibedakan dari token cacat.', ['internal/edge/middleware/auth.go']),
+      S('klien','gateway','http','GET /me','Kasus 2: Redis tidak terjangkau', ''),
+      S('gateway','redis','fail','galat koneksi','Cache tidak bisa dibaca', 'IsCurrent jatuh ke sumbernya, bukan menyerah.', ['internal/identity/adapter/revocation/redis.go']),
+      S('gateway','identity','grpc','GetTokenGeneration','Bertanya ke sumber kebenaran', 'Permintaan ini membawa token pengguna di metadata, ditaruh SEBELUM pemeriksaan pencabutan, karena identity-svc menuntut sub yang cocok (ADR-026). Ini bug nyata yang pernah membuat gateway menjawab 503 "Cannot verify the session".', ['ADR-026']),
+      S('identity','gateway','grpc','generasi','Jawaban tiba, lanjut normal', ''),
+      S('klien','gateway','http','GET /me','Kasus 3: Redis dan identity sama-sama tumbang', ''),
+      S('gateway','klien','fail','503 Cannot verify the session','Gagal-tertutup, bukan 401', 'Menerima akan mengubah setiap gangguan menjadi jendela di mana logout tidak berlaku. Tapi 401 akan membuat aplikasi mengeluarkan penggunanya karena gangguan sesaat di sisi kami; 503 memberi tahu klien untuk mencoba lagi.', ['ADR-020']),
+    ] },
+
+  { id: 'grpc', group: 'fail', title: 'gRPC langsung tanpa lewat gateway', sub: 'ADR-026 · Unauthenticated · PermissionDenied',
+    intro: 'Pod yang bocor atau proses di jaringan internal mencoba membaca profil siapa pun hanya dengan menebak user_id. Sebelum ADR-026 jalur ini terbuka; kini setiap service memverifikasi token sendiri.',
+    steps: [
+      S('klien','profile','fail','GetProfile(user_id) tanpa token','Percobaan 1: tanpa token', 'Interceptor server menemukan user_id di permintaan (lewat refleksi proto) tanpa metadata authorization → codes.Unauthenticated.', ['internal/platform/authn/interceptor.go','test/e2e/security_test.go']),
+      S('profile','klien','fail','Unauthenticated','Ditolak sebelum handler', ''),
+      S('klien','profile','fail','GetProfile(user_id orang lain) + token sah','Percobaan 2: token milik sendiri, id orang lain', 'Tanda tangan diverifikasi dengan kunci publik yang sama yang dipegang gateway; sub ≠ user_id → codes.PermissionDenied. Tidak ada kunci privat di luar identity-svc, tidak ada rahasia bersama, tidak ada panggilan jaringan tambahan.', ['ADR-026','ADR-023']),
+      S('profile','klien','fail','PermissionDenied','Ditolak', ''),
+      S('klien','profile','grpc','GetProfile(user_id sendiri) + token','Jalur sah tetap bekerja', 'Interceptor menaruh Principal (user id, generasi) di context; handler yang butuh lebih dari "user_id cocok" membacanya dari sana, bukan dari permintaan.', ['internal/platform/authn/principal.go']),
+      S('profile','klien','grpc','profil','OK', 'Kesehatan (grpc.health) dan refleksi dilewatkan; keduanya plumbing, bukan data pengguna.'),
+      S('gateway','profile','grpc','metadata: bearer diteruskan','Jalur normal tidak berubah', 'UnaryClientInterceptor di gateway (dan di identity, assessment) meneruskan token dari context ke metadata gRPC; NetworkPolicy Helm default-deny membatasi siapa yang boleh menyambung.', ['deploy/helm/selaras/templates/networkpolicy.yaml']),
+    ] },
+
+  { id: 'topik', group: 'fail', title: 'Broker Kafka dibuat ulang tanpa topic', sub: 'B26 · B28 · UnknownTopicID · EnsureTopics',
+    intro: 'Container Kafka yang dibuat ulang menyala tanpa satu topic pun. Dulu seluruh relay outbox gagal sampai seseorang ingat perintahnya; kini pembuatan topic adalah bagian dari setiap up, dan konsumen melanggani ulang sendiri.',
+    steps: [
+      S('kafka','kafka','fail','broker baru, 0 topic','Keadaan awal', 'Metadata broker juga tidak langsung menyusul: topic yang baru dibuat bisa dilaporkan "tidak ada" pada pembacaan pertama; empat dari enam pernah "hilang".', ['docs/topics.md']),
+      S('worker','kafka','fail','UNKNOWN_TOPIC_OR_PARTITION','Relay dan konsumen gagal', 'Sebelum B28 ini berlangsung diam-diam sampai seseorang menjalankan cmd/topics dengan tangan.'),
+      S('gateway','kafka','event','service topics: EnsureTopics','Job pembuat topic pada setiap up', 'Idempoten: topic yang sudah ada dibiarkan, jumlah partisinya TIDAK pernah diubah karena mengubahnya mematahkan urutan per kunci. Di compose sebagai service "topics", di k3d sebagai Job.', ['cmd/topics/main.go','internal/platform/kafka/topics.go','deploy/compose/apps.yml']),
+      S('kafka','kafka','event','WaitForTopics','Menunggu broker mengumumkannya', 'Yang dibuktikan: topic ada dengan jumlah partisi yang diminta. Setiap unit yang menyentuh Kafka menunggu job ini selesai (service_completed_successfully).'),
+      S('kafka','assessment','fail','UnknownTopicID','Konsumen yang sudah hidup melihat id topic berubah', 'Topic yang dibuat ulang punya id baru; langganan lama menunjuk id yang mati (B26).'),
+      S('assessment','kafka','event','RecoverRecreatedTopics','Langganan diperbarui sendiri', 'Nama topic dari galat fetch dikumpulkan dan dilanggani ulang; dicatat sebagai peringatan. Semua konsumen memakai putaran yang sama.', ['internal/platform/kafka/recover.go']),
+      S('assessment','kafka','event','relay lanjut','Outbox mengalir lagi', 'Baris outbox yang tertahan tidak hilang: ia menunggu di Postgres sampai relay berhasil menerbitkan dan menandainya terkirim.', ['internal/platform/outbox/relay.go'], { topic: 'assessment.completed' }),
+    ] },
+
+  // ---- Beban & skala ----
+  // F = satu jalur dengan `count` paket serentak. Angka dari docs/performance-report.md (F9-23/24/25) dan deploy/helm/selaras/values.yaml.
+  { id: 'beban-http', group: 'scale', title: 'Trafik tinggi HTTP: HPA naik lalu turun', sub: '60 VU · 121 req/s · CPU 60 % · maks 4/3 replika',
+    intro: 'Rekaman uji k6 skenario baca dengan 60 pengguna virtual selama 4 menit di k3d. Replika disampel tiap 10 detik; angka p95 dan kegagalannya dilaporkan apa adanya, termasuk batas jujur satu node.',
+    steps: [
+      { kind: 'http', title: 'Enam puluh pengguna virtual menekan gateway sekaligus', text: 'Lima GET per iterasi: /me, /profile, /risk-assessments, /dashboard, /culinary/hub-data. Total 29.290 permintaan dalam 4 menit (121/detik). Semua dari satu alamat IP, jadi lingkungan uji menaikkan batas laju lewat RATE_LIMIT_* supaya mekanisme yang dirancang untuk manusia tidak menolak k6.', refs: ['docs/performance-report.md', 'test/k6/', 'docs/runbook/rate-limits.md'],
+        flows: [F('klien','gateway','http','60 VU · 5 GET per iterasi', 10)],
+        replicas: { gateway: 1, identity: 1, profile: 1, assessment: 1, coaching: 1, chat: 1, nutrition: 1, dashboard: 1 },
+        gauge: [{ k: 'VU', v: '60' }, { k: 'req/s', v: '121' }, { k: 'replika edge', v: '1' }] },
+      { kind: 'grpc', title: 'Gateway menyebar ke Redis dan empat service serentak', text: 'Setiap permintaan: tanda tangan diverifikasi lokal, satu GET generasi token ke Redis, satu gRPC ke pemilik datanya. GET /me tidak menyentuh service mana pun; ia menjawab dari klaim token. Token diteruskan sebagai metadata ke tiap service (ADR-026).', refs: ['internal/edge/middleware/auth.go'],
+        flows: [F('gateway','redis','db','GET token-generation', 6), F('gateway','profile','grpc','GetProfile', 3), F('gateway','assessment','grpc','ListAssessments', 3), F('gateway','dashboard','grpc','GetDashboard', 3), F('gateway','nutrition','grpc','GetHubData', 3)] },
+      { kind: 'db', title: 'Empat kolam koneksi menekan Postgres lewat PgBouncer', text: 'Tiap replika membawa kolam 10 koneksi; delapan unit × 10 × empat replika = 320, jauh di atas max_connections 100. PgBouncer mode transaction (DEFAULT_POOL_SIZE 8, MAX_CLIENT_CONN 1000) yang menahan perkaliannya. Diukur sebelum PgBouncer: kolam terisi 3–5 dari 10 saat sibuk; masalahnya perkalian replika, bukan beban satu replika.', refs: ['docs/db-connections.md', 'deploy/compose/core.yml'],
+        flows: [F('profile','db-profile','db','SELECT', 3), F('assessment','db-assessment','db','SELECT', 3), F('dashboard','db-dashboard','db','SELECT (replika baca)', 3), F('nutrition','db-nutrition','db','SELECT', 3)] },
+      S('gateway','gateway','note','CPU > 60 % dari request','HPA membaca CPU dari metrics-server dan menambah replika', 'Target 60 % dari request (edge 50m, service 25m). Dalam 45 detik edge dan profile jadi dua. Jujur: 60 % adalah angka awal, bukan turunan SLO; ADR-014 aturan 2 belum terpenuhi karena kurva utilisasi vs p95 hanya bermakna di klaster multi-node.', ['deploy/helm/selaras/templates/hpa.yaml', 'ADR-014'],
+        { replicas: { gateway: 2, profile: 2 }, gauge: [{ k: 'sejak beban', v: '+45 s' }, { k: 'edge', v: '2' }, { k: 'profile', v: '2' }] }),
+      S('gateway','gateway','note','scaleUp: 2 pod / 30 s, stabilisasi 0','Naik cepat: burst adalah bentuk beban yang nyata', 'Sepuluh detik kemudian edge, identity, dashboard, nutrition di tiga; assessment di dua. Kebijakan scaleUp tanpa jendela stabilisasi, dua pod per 30 detik, karena replika yang terlambat datang tidak berguna untuk gelombang yang sudah lewat (E4).', ['deploy/helm/selaras/templates/hpa.yaml'],
+        { replicas: { gateway: 3, identity: 3, profile: 2, assessment: 2, dashboard: 3, nutrition: 3 }, gauge: [{ k: 'sejak beban', v: '+55 s' }, { k: 'edge', v: '3' }, { k: 'service', v: '2–3' }] }),
+      { kind: 'http', title: 'Dataran: edge di maksimum 4, service di 3', text: 'PDB maxUnavailable 1: pada tiga replika, dua tetap melayani saat satu pod dicabut node drain. topologySpreadConstraints maxSkew 1 per hostname dengan ScheduleAnyway, karena k3d hanya punya satu node. Beban terus 121/detik.', refs: ['deploy/helm/selaras/values.yaml', 'deploy/helm/selaras/templates/pdb.yaml', 'deploy/helm/selaras/templates/deployment.yaml'],
+        flows: [F('klien','gateway','http','121 req/s', 10), F('gateway','profile','grpc','', 3), F('gateway','assessment','grpc','', 3), F('gateway','dashboard','grpc','', 3), F('gateway','nutrition','grpc','', 3)],
+        replicas: { gateway: 4, identity: 3, profile: 3, assessment: 3, dashboard: 3, nutrition: 3 }, gauge: [{ k: 'sejak beban', v: '+96 s' }, { k: 'edge', v: '4 maks', bad: true }, { k: 'service', v: '3 maks', bad: true }] },
+      { kind: 'fail', title: 'Angka jujurnya: node empat core jenuh', text: 'p95 5 detik adalah tenggat upstream gateway (rpc.DefaultUpstreamTimeout): permintaan yang tidak sempat dilayani berakhir 504, bukan menggantung; itu perilaku yang dirancang (chaos F9-13). Tetapi SLO baca p95 < 25 ms dilanggar jauh sebelum HPA mencapai maksimum. Gagal 5,24 % (1.536 dari 29.290).', refs: ['docs/performance-report.md', 'internal/platform/rpc/', 'test/k6/lib/slo.js'],
+        flows: [F('gateway','klien','fail','504 upstream timeout 5 s', 4)],
+        gauge: [{ k: 'p95', v: '5 s', bad: true }, { k: 'gagal', v: '5,24 %', bad: true }, { k: 'SLO p95 baca', v: '< 25 ms' }, { k: 'p50', v: '17 ms', ok: true }] },
+      S('mailpit','mailpit','note','SelarasLatencyAboveSLO · SelarasErrorBudgetBurningFast','Alert menyala dan sampai ke kotak masuk', 'Aturan Prometheus diturunkan dari ambang k6 yang sama: burn-rate cepat (14,4× selama 2 menit) dan latensi di atas SLO selama 10 menit. Alertmanager mengirim ke Mailpit; aturannya diuji dengan promtool di CI.', ['deploy/compose/observability/alerts.yml', 'deploy/compose/observability/alerts_test.yml', 'docs/observability.md']),
+      S('gateway','gateway','note','F9-25: replika ≠ kapasitas di satu node','Batas jujur k3d', 'Replika kedua sampai keempat berbagi CPU host yang sama dengan k6, Postgres, Kafka, dan k3s. Yang terbukti: metrik dibaca, ambang dilewati, replika ditambah lalu dikurangi sesuai kebijakan. Yang TIDAK terbukti: kapasitas bertambah, dan p95 5 detik adalah buktinya. Cluster autoscaler (opsi d ADR-014) ditunda sampai klaster cloud.', ['docs/performance-report.md', 'ADR-014']),
+      S('gateway','gateway','note','scaleDown: stabilisasi 60 s, 1 pod / menit','Beban berakhir; turun pelan', 'Event HPA: "All metrics below target". Turun dibatasi satu pod per menit supaya replika tidak dibuang tepat sebelum gelombang berikutnya, dan supaya grafiknya memperlihatkan keputusan, bukan getaran.', ['deploy/helm/selaras/templates/hpa.yaml'],
+        { replicas: { gateway: 4, identity: 3, profile: 3, assessment: 2, dashboard: 3, nutrition: 3 }, gauge: [{ k: 'beban', v: 'berakhir' }, { k: 'edge', v: '4' }] }),
+      S('gateway','gateway','note','+2 menit setelah beban','Satu per satu, per unit', 'edge 3, profile 1, assessment 1, dashboard 1, nutrition 2. Setiap HPA berdiri sendiri; unit yang lebih ringan kembali lebih dulu.', [],
+        { replicas: { gateway: 3, identity: 3, profile: 1, assessment: 1, dashboard: 1, nutrition: 2 }, gauge: [{ k: 'sejak beban usai', v: '+2 m' }, { k: 'edge', v: '3' }] }),
+      S('gateway','gateway','note','+4 menit: kembali ke minReplicas 1','Selesai: naik lalu turun kembali, terekam', 'Bukti autoscaling menurut ADR-014 aturan 3 bukan kubectl get hpa sesaat, melainkan rekaman replika naik saat ambang terlewati dan turun kembali setelah beban usai.', ['docs/performance-report.md'],
+        { replicas: { gateway: 2, identity: 2, profile: 1, assessment: 1, dashboard: 1, nutrition: 1 }, gauge: [{ k: 'sejak beban usai', v: '+4 m' }, { k: 'edge', v: '2 → 1' }, { k: 'service', v: '1', ok: true }] }),
+    ] },
+
+  { id: 'beban-llm', group: 'scale', title: 'Burst LLM: KEDA dari nol ke tiga lalu kembali nol', sub: 'lag broker · lagThreshold 5 · maks 12 = partisi · cold-start 8,3 s',
+    intro: 'Empat unit meminta pekerjaan LLM dalam waktu bersamaan sementara llm-worker sedang tidur di nol replika. KEDA membaca lag langsung dari broker, membangunkan worker sesuai lag, lalu menidurkannya lagi. Cold-start dan harganya diukur, bukan diabaikan.',
+    steps: [
+      S('worker','worker','note','0 replika · lag 0','Idle: worker tidur', 'cooldownPeriod 60 detik setelah antrean kosong menurunkan llm-worker ke nol. Hemat 18 MiB dan satu koneksi Kafka saat tidak ada pekerjaan (FinOps). Di cloud, values-cloud.yaml memakai minReplicaCount 1.', ['deploy/helm/selaras/templates/scaledobject.yaml', 'docs/finops.md'],
+        { replicas: { worker: 0 }, lag: { 'llm.jobs': 0 }, gauge: [{ k: 'replika worker', v: '0' }, { k: 'lag llm.jobs', v: '0' }] }),
+      { kind: 'event', title: 'Burst: dua belas permintaan LLM dari empat unit dalam satu menit', text: 'Setiap HTTP sudah menjawab segera; yang menumpuk adalah baris outbox lalu pesan di 12 partisi llm.jobs, disebar kunci aggregate_id. Tidak ada satu pun pengguna yang menunggu di dalam permintaan HTTP.', refs: ['internal/platform/outbox/relay.go', 'docs/topics.md'],
+        flows: [F('chat','kafka','event','chat.reply.requested ×4', 4, 'llm.jobs'), F('coaching','kafka','event','curriculum.requested ×3', 3, 'llm.jobs'), F('nutrition','kafka','event','meal.guide.requested ×3', 3, 'llm.jobs'), F('assessment','kafka','event','personalization.requested ×2', 2, 'llm.jobs')],
+        lag: { 'llm.jobs': 12 }, gauge: [{ k: 'lag llm.jobs', v: '12', bad: true }, { k: 'replika worker', v: '0', bad: true }] },
+      S('kafka','kafka','note','KEDA scaler kafka: lag dibaca dari broker','KEDA bertanya ke broker, bukan ke Prometheus', 'Metrik kafka_consumer_lag diterbitkan worker; worker yang tidak ada tidak menerbitkan apa pun, jadi trigger berbasis Prometheus tidak pernah membangunkannya (B24, benar terjadi: "triggers are not active" selamanya, balasan chat tidak pernah datang). Broker tahu lag-nya sekalipun tidak ada satu pun konsumen hidup. pollingInterval 10 detik, activationLagThreshold 0: satu pesan cukup.', ['deploy/helm/selaras/templates/scaledobject.yaml', 'docs/performance-report.md'], { topic: 'llm.jobs' }),
+      S('worker','worker','note','ceil(12 / lagThreshold 5) = 3 replika','Tiga worker dibangunkan', 'Satu replika per lima pekerjaan yang menunggu. maxReplicaCount 12 sama dengan jumlah partisi (ADR-014 aturan 1): konsumen ke-13 hanya menganggur, dan allowIdleConsumers=false membuat KEDA menegakkannya. offsetResetPolicy latest: group baru dihitung dari akhir topic, lag lama bukan pekerjaan baru.', ['ADR-014', 'deploy/helm/selaras/values.yaml'],
+        { replicas: { worker: 3 }, gauge: [{ k: 'lag', v: '12' }, { k: 'replika worker', v: '3' }, { k: 'maks', v: '12' }] }),
+      S('worker','worker','note','cold-start job pertama: 8,3 s','Harga scale-to-zero, diukur', 'Terurai kira-kira: polling KEDA ≤ 10 s (rata-rata 5 s), pod dijadwalkan dan menyala 1–2 s, relay outbox ≤ 1 s, pekerjaannya sendiri milidetik dengan penyedia palsu. Dengan worker yang sudah hangat, balasan tiba sekitar 1 detik. Karena itulah cloud memakai minReplicaCount 1 (ADR-014 aturan 5).', ['docs/performance-report.md'],
+        { gauge: [{ k: 'cold-start', v: '8,3 s', bad: true }, { k: 'hangat', v: '~1 s', ok: true }] }),
+      { kind: 'event', title: 'Tiga worker, empat partisi masing-masing, panggilan penyedia paralel', text: 'Dua belas partisi dibagi tiga konsumen dalam satu group. Urutan per agregat tetap terjaga di dalam partisinya; yang paralel adalah antar-partisi. Setiap worker: klaim idempoten + INSERT llm_jobs dalam satu transaksi, lalu panggilan penyedia di luar transaksi.', refs: ['internal/llmworker/worker.go'],
+        flows: [F('kafka','worker','event','llm.jobs → 3 konsumen', 6, 'llm.jobs'), F('worker','gemini','ext','generateContent ×3', 3)],
+        lag: { 'llm.jobs': 6 }, gauge: [{ k: 'lag', v: '12 → 6' }, { k: 'replika worker', v: '3' }, { k: 'panggilan paralel', v: '3' }] },
+      { kind: 'event', title: 'Hasil pulang ke empat unit lewat satu topic bersama', text: 'llm.results juga 12 partisi, dipasangkan dengan llm.jobs. Empat konsumen menyaring miliknya lewat header aggregate_type dan masing-masing punya scope idempotensi sendiri. Lag llm.jobs turun ke nol.', refs: ['internal/assessment/adapter/consumer/results.go', 'internal/coaching/adapter/consumer/results.go'],
+        flows: [F('gemini','worker','ext','jawaban ×3', 3), F('worker','kafka','event','*.completed', 6, 'llm.results'), F('kafka','chat','event','', 2, 'llm.results'), F('kafka','coaching','event','', 2, 'llm.results'), F('kafka','nutrition','event','', 1, 'llm.results'), F('kafka','assessment','event','', 1, 'llm.results')],
+        lag: { 'llm.jobs': 0, 'llm.results': 0 }, gauge: [{ k: 'lag llm.jobs', v: '0', ok: true }, { k: 'selesai', v: '12', ok: true }] },
+      S('worker','worker','fail','bila kuota habis saat burst','Yang terjadi kalau Gemini menolak di tengah burst', 'Semua worker diparkir (ADR-025), lag tetap tinggi, KEDA menaikkan replika sampai 12 dan semuanya diam menunggu jeda yang sama. Itu harga yang dinyatakan di ADR-025. Jaring pengamannya alert: SelarasLLMQueueParked setelah 30 menit terparkir, SelarasLLMBacklogGrowing bila lag > 100 dan terus tumbuh 15 menit, SelarasLLMJobsDying begitu ada pekerjaan mati.', ['ADR-025', 'deploy/compose/observability/alerts.yml']),
+      S('worker','worker','note','lag 0 → cooldownPeriod 60 s → 0 replika','Kembali tidur', 'Enam puluh detik setelah antrean kosong, ScaledObject menurunkan worker ke nol lagi; terekam di uji F9-23. Pada trafik nyata HPA dan KEDA bekerja bersamaan: HTTP memicu HPA per unit, antrean memicu KEDA, dan keduanya dibatasi PDB serta kolam Postgres yang sama.', ['docs/performance-report.md', 'ADR-014'],
+        { replicas: { worker: 0 }, gauge: [{ k: 'lag', v: '0' }, { k: 'replika worker', v: '0' }, { k: 'sejak kosong', v: '+60 s' }] }),
+    ] },
+];
+</script>
+<script>
+// ---------- LOG, TRACE, STATE PER LANGKAH ----------
+// Pesan log = string literal di kode Go (grep slog.*Context di internal/ dan cmd/).
+// Span: otelgin memakai rute, otelgrpc memakai paket.Service/Method, konsumen Kafka "<topic> process",
+// worker "llm.generate". Durasi ilustratif berskala dari docs/performance-report.md.
+const L = (svc, lvl, msg, kv) => ({ svc, lvl, msg, kv: kv || {} });
+const T = (d, svc, name, ms, kind, st) => ({ d, svc, name, ms, kind: kind || (name.startsWith('/') ? 'http' : name.includes(' process') ? 'event' : name === 'llm.generate' ? 'ext' : 'grpc'), st });
+const U = 'u_91c2', P = 'p_4e17', A = 'as_3b9d', SG = 'sg_7f3a', JB = 'jb_c210';
+
+const EXTRAS = {
+  daftar: {
+    2: { spans: [T(0, 'edge-gateway', '/api/v1/register', 178), T(1, 'identity-svc', 'identity.v1.Identity/Register', 171)] },
+    3: { state: { 'svc_identity · users': [{ id: U, email: 'a…@example.test', password_hash: 'argon2id$…', token_generation: 1 }] } },
+    4: { spans: [T(2, 'profile-svc', 'profile.v1.Profile/CreateEmptyProfile', 4)] },
+    5: { state: { 'svc_profile · user_profiles': [{ id: P, user_id: U, language: 'id', date_of_birth: '∅' }] } },
+    8: { spans: [T(0, 'edge-gateway', '/api/v1/me', 2.5)] },
+    11: { spans: [T(0, 'edge-gateway', '/api/v1/login', 160), T(1, 'identity-svc', 'identity.v1.Identity/Login', 155)] },
+    12: { state: { 'svc_identity · users': [{ id: U, email: 'a…@example.test', password_hash: 'argon2id$…', token_generation: 2 }] } },
+    13: { state: { 'redis · keys': [{ key: 'identity:token-generation:' + U, value: 2, ttl: '1h' }] } },
+  },
+  profil: {
+    1: { spans: [T(0, 'edge-gateway', '/api/v1/profile', 8.1), T(1, 'profile-svc', 'profile.v1.Profile/UpdateProfile', 7.2)] },
+    2: { state: { 'svc_profile · user_profiles': [{ id: P, user_id: U, language: 'id', date_of_birth: '1979-03-14' }], 'svc_profile · outbox': [{ id: 'ev_a1', event_type: 'profile.updated', aggregate_id: P, status: 'pending' }] } },
+    3: { state: { 'svc_profile · outbox': [{ id: 'ev_a1', event_type: 'profile.updated', aggregate_id: P, status: 'sent' }] } },
+    4: { spans: [T(0, 'assessment-svc', 'profile.updated process', 3)] },
+    5: { state: { 'svc_assessment · profile_snapshots': [{ user_id: U, user_profile_id: P, sex: 'male', age: 47, observed_at: '12:03:11' }] } },
+    6: { spans: [T(0, 'nutrition-svc', 'profile.updated process', 2)] },
+    7: { state: { 'svc_nutrition · user_languages': [{ user_id: U, language: 'id', observed_at: '12:03:11' }] } },
+  },
+  penilaian: {
+    1: { spans: [T(0, 'edge-gateway', '/api/v1/risk-assessments', 7.9), T(1, 'assessment-svc', 'assessment.v1.Assessment/StartAssessment', 7.0)] },
+    5: { state: { 'svc_assessment · risk_assessments': [{ id: A, slug: 'k7m2q9x4c1', model: 'SCORE2', risk_pct: 6.8, category: 'moderate', personalization: 'not_requested' }], 'svc_assessment · outbox': [{ id: 'ev_b2', event_type: 'assessment.completed', aggregate_id: A, status: 'pending' }] } },
+    8: { state: { 'svc_assessment · outbox': [{ id: 'ev_b2', event_type: 'assessment.completed', aggregate_id: A, status: 'sent' }] } },
+    9: { spans: [T(0, 'coaching-svc', 'assessment.completed process', 3)] },
+    10: { state: { 'svc_coaching · coaching_assessments': [{ assessment_id: A, user_id: U, slug: 'k7m2q9x4c1', category: 'moderate' }], 'svc_coaching · processed_messages': [{ scope: 'coaching.assessments', key: 'ev_b2' }] } },
+    11: { spans: [T(0, 'dashboard-svc', 'assessment.completed process', 4)] },
+    12: { state: { 'svc_dashboard · dashboards': [{ user_id: U, latest_risk_pct: 6.8, latest_category: 'moderate', program: '∅' }], 'svc_dashboard · projection_state': [{ name: 'dashboard', topic: 'assessment.completed', offset: 1041 }] } },
+    14: { spans: [T(0, 'edge-gateway', '/api/v1/dashboard', 2.6), T(1, 'dashboard-svc', 'dashboard.v1.Dashboard/GetDashboard', 1.9)] },
+  },
+  personalisasi: {
+    2: { spans: [T(0, 'edge-gateway', '/api/v1/risk-assessments/:slug/personalize', 6), T(1, 'assessment-svc', 'assessment.v1.Assessment/RequestPersonalization', 5)] },
+    3: { state: { 'svc_assessment · risk_assessments': [{ id: A, slug: 'k7m2q9x4c1', model: 'SCORE2', risk_pct: 6.8, category: 'moderate', personalization: 'pending' }], 'svc_assessment · outbox': [{ id: 'ev_c3', event_type: 'personalization.requested', aggregate_id: A, status: 'pending' }] } },
+    5: { state: { 'svc_assessment · outbox': [{ id: 'ev_c3', event_type: 'personalization.requested', aggregate_id: A, status: 'sent' }] } },
+    6: { spans: [T(0, 'llm-worker', 'llm.jobs process', 4230)], state: { 'svc_llm · processed_messages': [{ scope: 'llm-worker', key: U + '␟k-3f1', result: '∅' }], 'svc_llm · llm_jobs': [{ id: JB, kind: 'personalization', aggregate_id: A, status: 'pending', attempts: 0 }] } },
+    8: { spans: [T(1, 'llm-worker', 'llm.generate', 4180)] },
+    9: { logs: [L('llm-worker', 'INFO', 'llm answer received', { job_id: JB, provider: 'gemini', model: 'gemini-…-flash', duration_ms: 4180 })] },
+    10: { state: { 'svc_llm · llm_jobs': [{ id: JB, kind: 'personalization', aggregate_id: A, status: 'completed', attempts: 1 }], 'svc_llm · outbox': [{ id: 'ev_d4', event_type: 'personalization.completed', aggregate_id: A, status: 'pending' }] } },
+    11: { state: { 'svc_llm · outbox': [{ id: 'ev_d4', event_type: 'personalization.completed', aggregate_id: A, status: 'sent' }] } },
+    12: { spans: [T(0, 'assessment-svc', 'llm.results process', 5)], state: { 'svc_assessment · processed_messages': [{ scope: 'assessment.results', key: 'ev_d4' }] } },
+    13: { state: { 'svc_assessment · risk_assessments': [{ id: A, slug: 'k7m2q9x4c1', model: 'SCORE2', risk_pct: 6.8, category: 'moderate', personalization: 'completed' }] } },
+    14: { spans: [T(0, 'edge-gateway', '/api/v1/risk-assessments/:slug', 2.6), T(1, 'assessment-svc', 'assessment.v1.Assessment/GetAssessment', 1.8)] },
+  },
+  coaching: {
+    1: { spans: [T(0, 'edge-gateway', '/coaching/programs', 9), T(1, 'coaching-svc', 'coaching.v1.Coaching/StartProgram', 8)] },
+    2: { state: { 'svc_coaching · coaching_programs': [{ id: 'cp_88', slug: 'w3n8…', status: 'pending', ends_at: '+4 pekan (sementara)' }], 'svc_coaching · outbox': [{ id: 'ev_e5', event_type: 'curriculum.requested', aggregate_id: 'cp_88', status: 'pending' }] } },
+    4: { state: { 'svc_coaching · outbox': [{ id: 'ev_e5', event_type: 'curriculum.requested', aggregate_id: 'cp_88', status: 'sent' }] } },
+    5: { spans: [T(0, 'llm-worker', 'llm.jobs process', 6100)], state: { 'svc_llm · llm_jobs': [{ id: 'jb_d3', kind: 'curriculum', aggregate_id: 'cp_88', status: 'pending', attempts: 0 }] } },
+    6: { spans: [T(1, 'llm-worker', 'llm.generate', 6050)], logs: [L('llm-worker', 'INFO', 'llm answer received', { job_id: 'jb_d3', provider: 'gemini', duration_ms: 6050 })] },
+    7: { state: { 'svc_llm · llm_jobs': [{ id: 'jb_d3', kind: 'curriculum', aggregate_id: 'cp_88', status: 'completed', attempts: 1 }] } },
+    8: { spans: [T(0, 'coaching-svc', 'llm.results process', 12)] },
+    9: { state: { 'svc_coaching · coaching_programs': [{ id: 'cp_88', slug: 'w3n8…', status: 'active', ends_at: '+4 pekan (dari kurikulum)' }], 'svc_coaching · coaching_weeks': [{ program_id: 'cp_88', weeks: 4, tasks: 28 }], 'svc_coaching · outbox': [{ id: 'ev_f6', event_type: 'coaching.program.updated', aggregate_id: 'cp_88', status: 'pending' }] } },
+    10: { state: { 'svc_coaching · outbox': [{ id: 'ev_f6', event_type: 'coaching.program.updated', aggregate_id: 'cp_88', status: 'sent' }] } },
+    11: { spans: [T(0, 'dashboard-svc', 'coaching.program.updated process', 3)], state: { 'svc_dashboard · dashboards': [{ user_id: U, latest_risk_pct: 6.8, latest_category: 'moderate', program: 'cp_88 · hari 1/28 · 0 %' }] } },
+    12: { spans: [T(0, 'edge-gateway', '/coaching/tasks/:id/toggle-task-status', 7), T(1, 'coaching-svc', 'coaching.v1.Coaching/ToggleTaskStatus', 6)], state: { 'svc_coaching · coaching_tasks': [{ id: 'tk_01', program_id: 'cp_88', day: 1, status: 'done' }] } },
+    13: { state: { 'svc_dashboard · dashboards': [{ user_id: U, latest_risk_pct: 6.8, latest_category: 'moderate', program: 'cp_88 · hari 1/28 · 4 %' }] } },
+    14: { spans: [T(0, 'edge-gateway', '/coaching/programs/:slug/threads', 8), T(1, 'coaching-svc', 'coaching.v1.Coaching/StartThread', 7)], state: { 'svc_coaching · coaching_threads': [{ id: 'th_5', program_id: 'cp_88', messages: 1 }] } },
+    16: { spans: [T(0, 'edge-gateway', '/coaching/programs/:slug/graduation-report', 6), T(1, 'coaching-svc', 'coaching.v1.Coaching/GetGraduationReport', 5)] },
+  },
+  chat: {
+    1: { spans: [T(0, 'edge-gateway', '/chat/conversations', 8), T(1, 'chat-svc', 'chat.v1.Chat/CreateConversation', 7)] },
+    2: { state: { 'svc_chat · conversations': [{ id: 'cv_12', slug: '7deeqcwtw7pjmp2u', user_id: U, title: '∅' }], 'svc_chat · chat_messages (2026_09)': [{ id: 'm_1', conversation_id: 'cv_12', role: 'user', bytes: 212 }], 'svc_chat · outbox': [{ id: 'ev_g7', event_type: 'chat.reply.requested', aggregate_id: 'cv_12', status: 'pending' }] } },
+    4: { state: { 'svc_chat · outbox': [{ id: 'ev_g7', event_type: 'chat.reply.requested', aggregate_id: 'cv_12', status: 'sent' }] } },
+    5: { spans: [T(0, 'llm-worker', 'llm.jobs process', 1900)], state: { 'svc_llm · llm_jobs': [{ id: 'jb_e4', kind: 'chat_reply', aggregate_id: 'cv_12', status: 'pending', attempts: 0 }] } },
+    6: { spans: [T(1, 'llm-worker', 'llm.generate', 1850)], logs: [L('llm-worker', 'INFO', 'llm answer received', { job_id: 'jb_e4', provider: 'gemini', duration_ms: 1850 })] },
+    7: { state: { 'svc_llm · llm_jobs': [{ id: 'jb_e4', kind: 'chat_reply', aggregate_id: 'cv_12', status: 'completed', attempts: 1 }] } },
+    8: { spans: [T(0, 'chat-svc', 'llm.results process', 4)] },
+    9: { state: { 'svc_chat · chat_messages (2026_09)': [{ id: 'm_2', conversation_id: 'cv_12', role: 'model', bytes: 1480 }] } },
+    10: { spans: [T(0, 'edge-gateway', '/chat/conversations/:slug', 2.7), T(1, 'chat-svc', 'chat.v1.Chat/GetConversation', 2.0)] },
+  },
+  nutrisi: {
+    1: { spans: [T(0, 'edge-gateway', '/culinary/preferences', 7.8), T(1, 'nutrition-svc', 'nutrition.v1.Nutrition/UpdatePreferences', 7.0)] },
+    2: { state: { 'svc_nutrition · culinary_preferences': [{ user_id: U, allergies: '[udang]', dislikes: '[pare]' }] } },
+    4: { spans: [T(0, 'edge-gateway', '/culinary/daily-guides', 8), T(1, 'nutrition-svc', 'nutrition.v1.Nutrition/GenerateDailyGuide', 7)] },
+    5: { state: { 'svc_nutrition · daily_meal_guides': [{ id: 'g_31', user_id: U, date: '2026-09-08', status: 'pending', generation_context: '{language:id, allergies:[udang], …}' }], 'svc_nutrition · outbox': [{ id: 'ev_h8', event_type: 'meal.guide.requested', aggregate_id: 'g_31', status: 'pending' }] } },
+    7: { state: { 'svc_nutrition · outbox': [{ id: 'ev_h8', event_type: 'meal.guide.requested', aggregate_id: 'g_31', status: 'sent' }] } },
+    8: { spans: [T(0, 'llm-worker', 'llm.jobs process', 5200)] },
+    9: { spans: [T(1, 'llm-worker', 'llm.generate', 5150)], logs: [L('llm-worker', 'INFO', 'llm answer received', { job_id: 'jb_f5', provider: 'gemini', duration_ms: 5150 })] },
+    11: { spans: [T(0, 'nutrition-svc', 'llm.results process', 4)] },
+    12: { state: { 'svc_nutrition · daily_meal_guides': [{ id: 'g_31', user_id: U, date: '2026-09-08', status: 'completed', generation_context: '{language:id, allergies:[udang], …}' }] } },
+    13: { spans: [T(0, 'edge-gateway', '/culinary/hub-data', 2.6), T(1, 'nutrition-svc', 'nutrition.v1.Nutrition/GetHubData', 1.9)] },
+  },
+  dasbor: {
+    0: { spans: [T(0, 'dashboard-svc', 'assessment.completed process', 4)] },
+    1: { spans: [T(0, 'dashboard-svc', 'coaching.program.updated process', 3)] },
+    2: { spans: [T(0, 'dashboard-svc', 'user.deletion process', 3)] },
+    3: { state: { 'svc_dashboard · dashboards': [{ user_id: U, latest_risk_pct: 6.8, latest_category: 'moderate', program: 'cp_88 · hari 3/28 · 11 %' }], 'svc_dashboard · dashboard_assessments': [{ user_id: U, slug: 'k7m2q9x4c1', risk_pct: 6.8, at: '2026-09-08' }], 'svc_dashboard · projection_state': [{ name: 'dashboard', topic: 'coaching.program.updated', offset: 377 }] } },
+    5: { spans: [T(0, 'edge-gateway', '/api/v1/dashboard', 2.6), T(1, 'dashboard-svc', 'dashboard.v1.Dashboard/GetDashboard', 1.9)] },
+    6: { logs: [L('dashboard-rebuild', 'INFO', 'state before the rebuild', { projection: 'dashboard', rows: 1 }), L('dashboard-rebuild', 'INFO', 'the read-model was cleared; nothing that lives only here was lost', {}), L('dashboard-rebuild', 'INFO', 'no more events arrived; the rebuild is complete', { events: 1418 }), L('dashboard-rebuild', 'INFO', 'rebuild finished', { lag_ms: 2140 })] },
+  },
+  hapus: {
+    1: { spans: [T(0, 'edge-gateway', '/api/v1/delete-account', 180), T(1, 'identity-svc', 'identity.v1.Identity/DeleteAccount', 174)] },
+    2: { logs: [L('identity-svc', 'INFO', 'an account deletion saga started', { saga_id: SG, awaiting: '[profile assessment coaching chat nutrition dashboard]' })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '0/6' }], 'svc_identity · outbox': [{ id: 'ev_i9', event_type: 'user.deletion.requested', aggregate_id: U, status: 'pending' }] } },
+    4: { state: { 'svc_identity · outbox': [{ id: 'ev_i9', event_type: 'user.deletion.requested', aggregate_id: U, status: 'sent' }] } },
+    5: { spans: [T(0, 'profile-svc', 'user.deletion process', 5)], logs: [L('profile-svc', 'INFO', "deleted this unit's data for a user", { service: 'profile', saga_id: SG })], state: { 'svc_profile · user_profiles': [{ id: P, user_id: U, language: 'id', date_of_birth: '1979-03-14', _gone: true }], 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '1/6' }] } },
+    6: { spans: [T(0, 'assessment-svc', 'user.deletion process', 6)], logs: [L('assessment-svc', 'INFO', "deleted this unit's data for a user", { service: 'assessment', saga_id: SG })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '2/6' }] } },
+    7: { spans: [T(0, 'coaching-svc', 'user.deletion process', 9)], logs: [L('coaching-svc', 'INFO', "deleted this unit's data for a user", { service: 'coaching', saga_id: SG })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '3/6' }] } },
+    8: { spans: [T(0, 'chat-svc', 'user.deletion process', 5)], logs: [L('chat-svc', 'INFO', "deleted this unit's data for a user", { service: 'chat', saga_id: SG })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '4/6' }] } },
+    9: { spans: [T(0, 'nutrition-svc', 'user.deletion process', 5)], logs: [L('nutrition-svc', 'INFO', "deleted this unit's data for a user", { service: 'nutrition', saga_id: SG })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '5/6' }] } },
+    10: { spans: [T(0, 'dashboard-svc', 'user.deletion process', 3)], logs: [L('dashboard-svc', 'INFO', "deleted this unit's data for a user", { service: 'dashboard', saga_id: SG })], state: { 'svc_dashboard · dashboards': [{ user_id: U, latest_risk_pct: 6.8, latest_category: 'moderate', program: 'cp_88', _gone: true }] } },
+    12: { spans: [T(0, 'identity-svc', 'user.deletion process', 4)], logs: [L('identity-svc', 'INFO', 'confirmed', { saga_id: SG, service: 'dashboard', outcome: 'ok' })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'requested', confirmed: '6/6' }] } },
+    13: { logs: [L('identity-svc', 'INFO', 'an account was deleted after every unit confirmed', { saga_id: SG })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'completed', confirmed: '6/6' }], 'svc_identity · users': [{ id: U, email: 'a…@example.test', token_generation: 3, _gone: true }] } },
+    15: { logs: [L('coaching-svc', 'ERROR', "could not delete this unit's data; reporting the failure", { service: 'coaching', saga_id: SG, error: 'pgx: deadlock detected' }), L('coaching-svc', 'WARN', 'rewinding so failed deletions are redelivered', { service: 'coaching', handled: 1 }), L('identity-svc', 'ERROR', 'a deletion saga finished with failures; the account is kept', { saga_id: SG, failures: '[coaching]' }), L('identity-svc', 'WARN', 'there are unfinished account deletions; see docs/runbook/account-deletion.md', { count: 1 })], state: { 'svc_identity · deletion_sagas': [{ id: SG, user_id: U, status: 'failed', confirmed: '5/6 + 1 gagal' }] } },
+  },
+  kuota: {
+    0: { spans: [T(0, 'llm-worker', 'llm.jobs process', 0)], state: { 'svc_llm · llm_jobs': [{ id: JB, kind: 'curriculum', status: 'pending', attempts: 0 }], 'svc_llm · processed_messages': [{ scope: 'llm-worker', key: 'ev_k1', result: '∅' }] } },
+    1: { spans: [T(1, 'llm-worker', 'llm.generate', 2100, 'ext')] },
+    2: { spans: [T(1, 'llm-worker', 'llm.generate', 2100, 'fail', 'ErrRateLimited')] },
+    3: { state: { 'svc_llm · processed_messages': [{ scope: 'llm-worker', key: 'ev_k1', result: '∅', _gone: true }], 'svc_llm · llm_jobs': [{ id: JB, kind: 'curriculum', status: 'parked', attempts: 0 }] } },
+    5: { logs: [L('llm-worker', 'WARN', 'the provider is out of quota; parking the queue', { consecutive: 1, cooldown: '1m0s', error: '429 RESOURCE_EXHAUSTED: quota exceeded' })], state: { 'prometheus · llm_jobs_total': [{ outcome: 'parked', value: 1 }, { outcome: 'success', value: 41 }, { outcome: 'dead', value: 0 }] } },
+    6: { spans: [T(0, 'llm-worker', 'llm.jobs process', 0)], state: { 'svc_llm · processed_messages': [{ scope: 'llm-worker', key: 'ev_k1', result: '∅' }] } },
+    8: { logs: [L('llm-worker', 'INFO', 'llm answer received', { job_id: JB, provider: 'gemini', duration_ms: 5900 })], state: { 'svc_llm · llm_jobs': [{ id: JB, kind: 'curriculum', status: 'completed', attempts: 1 }], 'prometheus · llm_jobs_total': [{ outcome: 'parked', value: 1 }, { outcome: 'success', value: 42 }, { outcome: 'dead', value: 0 }] } },
+  },
+  dlq: {
+    0: { spans: [T(0, 'llm-worker', 'llm.jobs process', 0)], state: { 'svc_llm · llm_jobs': [{ id: JB, kind: 'personalization', aggregate_id: A, status: 'pending', attempts: 0 }] } },
+    2: { spans: [T(1, 'llm-worker', 'llm.generate', 900, 'fail', 'malformed JSON')], logs: [L('llm-worker', 'ERROR', 'handling a job failed', { job_id: JB, attempts: 1, dead: false, error: 'gemini: response is not the JSON the template asked for' })] },
+    3: { state: { 'svc_llm · llm_jobs': [{ id: JB, kind: 'personalization', aggregate_id: A, status: 'failed', attempts: 2 }] } },
+    4: { logs: [L('llm-worker', 'ERROR', 'a job failed', { job_id: JB, attempts: 3, dead: true, error: 'gemini: response is not the JSON the template asked for' })], state: { 'svc_llm · llm_jobs': [{ id: JB, kind: 'personalization', aggregate_id: A, status: 'dead', attempts: 3 }], 'svc_llm · outbox': [{ id: 'ev_l2', event_type: 'llm.job.failed', aggregate_id: A, status: 'pending' }], 'prometheus · llm_jobs_total': [{ outcome: 'dead', value: 1 }] } },
+    5: { state: { 'svc_llm · outbox': [{ id: 'ev_l2', event_type: 'llm.job.failed', aggregate_id: A, status: 'sent' }], 'prometheus · alerts': [{ alert: 'SelarasLLMJobsDying', state: 'firing', for: '0m' }] } },
+    6: { spans: [T(0, 'assessment-svc', 'llm.dlq process', 3)], logs: [L('assessment-svc', 'WARN', 'a personalisation job gave up', { assessment_id: A, reason: 'response is not the JSON the template asked for' })] },
+    7: { state: { 'svc_assessment · risk_assessments': [{ id: A, slug: 'k7m2q9x4c1', risk_pct: 6.8, category: 'moderate', personalization: 'failed' }] } },
+    8: { logs: [L('llm-worker', 'ERROR', 'a message carried no usable LLM request', { event_id: 'ev_z9', kind: '∅' })] },
+  },
+  cabut: {
+    1: { spans: [T(0, 'edge-gateway', '/api/v1/logout', 5), T(1, 'identity-svc', 'identity.v1.Identity/Logout', 4)] },
+    2: { state: { 'svc_identity · users': [{ id: U, email: 'a…@example.test', token_generation: 3 }] } },
+    3: { state: { 'redis · keys': [{ key: 'identity:token-generation:' + U, value: 3, ttl: '1h' }] } },
+    4: { spans: [T(0, 'edge-gateway', '/api/v1/me', 1.2, 'http', '401')] },
+    7: { spans: [T(0, 'edge-gateway', '/api/v1/me', 6)] },
+    8: { logs: [L('edge-gateway', 'WARN', 'could not cache the token generation', { user_id: U, error: 'dial tcp 10.43.0.7:6379: connect: connection refused' })] },
+    9: { spans: [T(1, 'identity-svc', 'identity.v1.Identity/GetTokenGeneration', 3)] },
+    11: { spans: [T(0, 'edge-gateway', '/api/v1/me', 5008, 'http', '503')] },
+    12: { spans: [T(1, 'identity-svc', 'identity.v1.Identity/GetTokenGeneration', 5000, 'fail', 'Unavailable')] },
+  },
+  grpc: {
+    0: { spans: [T(0, 'profile-svc', 'profile.v1.Profile/GetProfile', 0.3, 'fail', 'Unauthenticated')] },
+    2: { spans: [T(0, 'profile-svc', 'profile.v1.Profile/GetProfile', 0.4, 'fail', 'PermissionDenied')] },
+    4: { spans: [T(0, 'profile-svc', 'profile.v1.Profile/GetProfile', 1.8)] },
+  },
+  topik: {
+    0: { state: { 'kafka · topics': [{ topic: '(kosong)', partitions: '–', id: '–' }] } },
+    1: { logs: [L('llm-worker', 'ERROR', 'fetching from kafka failed', { topic: 'llm.jobs', error: 'UNKNOWN_TOPIC_OR_PARTITION' }), L('assessment-svc', 'ERROR', 'outbox relay round failed', { error: 'UNKNOWN_TOPIC_OR_PARTITION: assessment.completed' }), L('assessment-svc', 'WARN', 'some outbox events could not be published', { failed: 3, unroutable: 0 })], state: { 'svc_assessment · outbox': [{ id: 'ev_b2', event_type: 'assessment.completed', aggregate_id: A, status: 'pending' }] } },
+    3: { state: { 'kafka · topics': [{ topic: 'profile.updated', partitions: 3, id: 'k3b…' }, { topic: 'assessment.completed', partitions: 3, id: 'p9x…' }, { topic: 'coaching.program.updated', partitions: 3, id: 'c1d…' }, { topic: 'llm.jobs', partitions: 12, id: 'j7q…' }, { topic: 'llm.results', partitions: 12, id: 'r2m…' }, { topic: 'llm.dlq', partitions: 1, id: 'd4e…' }, { topic: 'user.deletion', partitions: 1, id: 'u8n…' }] } },
+    5: { logs: [L('assessment-svc', 'WARN', 'topics were recreated on the broker; subscribed again', { topics: '[llm.results llm.dlq profile.updated]' }), L('llm-worker', 'WARN', 'topics were recreated on the broker; subscribed again', { topics: '[llm.jobs]' })] },
+    6: { state: { 'svc_assessment · outbox': [{ id: 'ev_b2', event_type: 'assessment.completed', aggregate_id: A, status: 'sent' }] } },
+  },
+  'beban-http': {
+    chart: {
+      times: ['05:58:20', '05:59:22', '05:59:32', '05:59:56', '06:00:18', '06:01:23', '06:02:43', '06:03:17', '06:04:19', '06:06:40'],
+      load: ['05:58:37', '06:02:43'],
+      series: [
+        { id: 'edge', label: 'edge-gateway', max: 4, v: [1, 2, 3, 4, 4, 4, 4, 4, 3, 2] },
+        { id: 'identity', label: 'identity-svc', max: 3, v: [2, 1, 3, 3, 3, 3, 3, 3, 3, 2] },
+        { id: 'profile', label: 'profile-svc', max: 3, v: [1, 2, 2, 2, 3, 3, 3, 2, 1, 1] },
+        { id: 'assessment', label: 'assessment-svc', max: 3, v: [1, 1, 2, 2, 3, 3, 2, 2, 1, 1] },
+        { id: 'dashboard', label: 'dashboard-svc', max: 3, v: [1, 1, 3, 3, 3, 3, 3, 2, 1, 1] },
+        { id: 'nutrition', label: 'nutrition-svc', max: 3, v: [1, 1, 3, 3, 3, 3, 3, 3, 2, 1] },
+      ],
+      note: 'k6 baca 60 VU, 4 menit, k3d satu node; sampel tiap 10 s (docs/performance-report.md, F9-24). identity mulai di 2 karena masih turun dari pendaftaran suite e2e sebelumnya. p95 5 s dan gagal 5,24 % pada dataran: replika naik, kapasitas tidak (F9-25).',
+      stepAt: [0, 0, 0, 1, 2, 3, 5, 5, 5, 6, 8, 9],
+    },
+    0: { spans: [T(0, 'edge-gateway', '/api/v1/me', 2.5), T(0, 'edge-gateway', '/api/v1/profile', 2.6), T(0, 'edge-gateway', '/api/v1/dashboard', 2.6)] },
+    1: { spans: [T(1, 'profile-svc', 'profile.v1.Profile/GetProfile', 1.7), T(1, 'assessment-svc', 'assessment.v1.Assessment/ListAssessments', 1.9), T(1, 'dashboard-svc', 'dashboard.v1.Dashboard/GetDashboard', 1.9), T(1, 'nutrition-svc', 'nutrition.v1.Nutrition/GetHubData', 2.0)] },
+    2: { state: { 'pgbouncer · pools': [{ database: 'svc_profile', cl_active: 27, sv_active: 8, pool_mode: 'transaction' }, { database: 'svc_dashboard', cl_active: 31, sv_active: 8, pool_mode: 'transaction' }, { database: 'svc_assessment', cl_active: 24, sv_active: 8, pool_mode: 'transaction' }] } },
+    3: { state: { 'k8s · hpa': [{ name: 'edge-gateway', cpu: '112 % / 60 %', replicas: '1 → 2' }, { name: 'profile-svc', cpu: '87 % / 60 %', replicas: '1 → 2' }] } },
+    4: { state: { 'k8s · hpa': [{ name: 'edge-gateway', cpu: '131 % / 60 %', replicas: '2 → 3' }, { name: 'identity-svc', cpu: '96 % / 60 %', replicas: '1 → 3' }, { name: 'dashboard-svc', cpu: '104 % / 60 %', replicas: '1 → 3' }, { name: 'nutrition-svc', cpu: '98 % / 60 %', replicas: '1 → 3' }, { name: 'assessment-svc', cpu: '77 % / 60 %', replicas: '1 → 2' }] } },
+    5: { state: { 'k8s · hpa': [{ name: 'edge-gateway', cpu: '> 60 %', replicas: '4 (maks)' }, { name: 'identity-svc', cpu: '> 60 %', replicas: '3 (maks)' }, { name: 'profile-svc', cpu: '> 60 %', replicas: '3 (maks)' }, { name: 'dashboard-svc', cpu: '> 60 %', replicas: '3 (maks)' }], 'k8s · pdb': [{ name: 'edge-gateway', maxUnavailable: 1, allowed_disruptions: 1 }, { name: 'profile-svc', maxUnavailable: 1, allowed_disruptions: 1 }] } },
+    6: { spans: [T(0, 'edge-gateway', '/api/v1/dashboard', 5001, 'http', '504'), T(1, 'dashboard-svc', 'dashboard.v1.Dashboard/GetDashboard', 5000, 'fail', 'DeadlineExceeded')] },
+    7: { state: { 'prometheus · alerts': [{ alert: 'SelarasLatencyAboveSLO', state: 'firing', for: '10m' }, { alert: 'SelarasErrorBudgetBurningFast', state: 'firing', for: '2m' }] }, logs: [L('alertmanager', 'INFO', 'notify: email sent', { receiver: 'mailpit', alerts: 2 })] },
+    9: { state: { 'k8s · hpa': [{ name: 'edge-gateway', cpu: '< 60 %', replicas: '4 (stabilisasi 60 s)' }, { name: 'assessment-svc', cpu: '< 60 %', replicas: '3 → 2' }] } },
+    10: { state: { 'k8s · hpa': [{ name: 'edge-gateway', cpu: '< 60 %', replicas: '4 → 3' }, { name: 'profile-svc', cpu: '< 60 %', replicas: '2 → 1' }, { name: 'assessment-svc', cpu: '< 60 %', replicas: '2 → 1' }, { name: 'dashboard-svc', cpu: '< 60 %', replicas: '2 → 1' }] } },
+    11: { state: { 'k8s · hpa': [{ name: 'edge-gateway', cpu: '< 60 %', replicas: '3 → 2 → 1' }, { name: 'identity-svc', cpu: '< 60 %', replicas: '3 → 2 → 1' }, { name: 'nutrition-svc', cpu: '< 60 %', replicas: '2 → 1' }] } },
+  },
+  'beban-llm': {
+    0: { state: { 'keda · scaledobject/llm-worker': [{ ready: 'True', active: 'False', lag: 0, replicas: 0, min: 0, max: 12 }] } },
+    1: { state: { 'svc_chat · outbox': [{ id: 'ev_×4', event_type: 'chat.reply.requested', status: 'sent' }], 'svc_coaching · outbox': [{ id: 'ev_×3', event_type: 'curriculum.requested', status: 'sent' }], 'svc_nutrition · outbox': [{ id: 'ev_×3', event_type: 'meal.guide.requested', status: 'sent' }], 'svc_assessment · outbox': [{ id: 'ev_×2', event_type: 'personalization.requested', status: 'sent' }], 'keda · scaledobject/llm-worker': [{ ready: 'True', active: 'True', lag: 12, replicas: 0, min: 0, max: 12 }] } },
+    3: { logs: [L('llm-worker', 'INFO', 'llm worker started', { scope: 'llm-worker', pod: 'llm-worker-7c9d-a' }), L('llm-worker', 'INFO', 'llm worker started', { scope: 'llm-worker', pod: 'llm-worker-7c9d-b' }), L('llm-worker', 'INFO', 'llm worker started', { scope: 'llm-worker', pod: 'llm-worker-7c9d-c' })], state: { 'keda · scaledobject/llm-worker': [{ ready: 'True', active: 'True', lag: 12, replicas: 3, min: 0, max: 12 }], 'svc_llm · llm_jobs (ringkasan)': [{ status: 'pending', count: 12 }] } },
+    5: { spans: [T(0, 'llm-worker', 'llm.jobs process', 4300), T(1, 'llm-worker', 'llm.generate', 4200), T(0, 'llm-worker', 'llm.jobs process', 3900), T(1, 'llm-worker', 'llm.generate', 3800), T(0, 'llm-worker', 'llm.jobs process', 5100), T(1, 'llm-worker', 'llm.generate', 5000)], logs: [L('llm-worker', 'INFO', 'llm answer received', { job_id: 'jb_a', provider: 'gemini', duration_ms: 4200 }), L('llm-worker', 'INFO', 'llm answer received', { job_id: 'jb_b', provider: 'gemini', duration_ms: 3800 }), L('llm-worker', 'INFO', 'llm answer received', { job_id: 'jb_c', provider: 'gemini', duration_ms: 5000 })], state: { 'svc_llm · llm_jobs (ringkasan)': [{ status: 'pending', count: 6 }, { status: 'completed', count: 6 }], 'prometheus · kafka_consumer_lag': [{ topic: 'llm.jobs', group: 'llm-worker', value: 6 }] } },
+    6: { spans: [T(0, 'chat-svc', 'llm.results process', 4), T(0, 'coaching-svc', 'llm.results process', 12), T(0, 'nutrition-svc', 'llm.results process', 4), T(0, 'assessment-svc', 'llm.results process', 5)], state: { 'svc_llm · llm_jobs (ringkasan)': [{ status: 'completed', count: 12 }], 'prometheus · kafka_consumer_lag': [{ topic: 'llm.jobs', group: 'llm-worker', value: 0 }] } },
+    7: { logs: [L('llm-worker', 'WARN', 'the provider is out of quota; parking the queue', { consecutive: 1, cooldown: '1m0s', error: '429 RESOURCE_EXHAUSTED' })], state: { 'prometheus · alerts': [{ alert: 'SelarasLLMQueueParked', state: 'pending', for: '30m' }, { alert: 'SelarasLLMBacklogGrowing', state: 'inactive', for: '15m' }] } },
+    8: { logs: [L('llm-worker', 'INFO', 'llm worker stopped', { pod: 'llm-worker-7c9d-a' }), L('llm-worker', 'INFO', 'llm worker stopped', { pod: 'llm-worker-7c9d-b' }), L('llm-worker', 'INFO', 'llm worker stopped', { pod: 'llm-worker-7c9d-c' })], state: { 'keda · scaledobject/llm-worker': [{ ready: 'True', active: 'False', lag: 0, replicas: 0, min: 0, max: 12 }] } },
+  },
+};
+
+// ---------- MODE CHAOS ----------
+// Klik kanan unit = unit itu mati. Langkah pertama yang menyentuhnya berubah jadi kegagalan
+// sesuai perilaku nyata; `after` menentukan apakah skenario lanjut atau berhenti.
+const CHAOS = {
+  redis: { name: 'Redis mati', after: 'continue',
+    fail: { label: 'connection refused', title: 'Redis tidak terjangkau', text: 'Dua akibat yang berbeda dengan sengaja. Rate limit: permintaan diloloskan dan dicatat sebagai peringatan; membatasi laju bukan pemeriksaan keamanan yang boleh mematikan layanan. Pemeriksa generasi token: jatuh ke identity-svc lewat gRPC GetTokenGeneration; bila itu pun gagal, 503 gagal-tertutup, bukan 401.', refs: ['internal/edge/middleware/ratelimit.go', 'internal/identity/adapter/revocation/redis.go', 'ADR-020'],
+      logs: [L('edge-gateway', 'WARN', 'rate limiting is unavailable; requests are passing unchecked', { error: 'dial tcp 10.43.0.7:6379: connect: connection refused' }), L('edge-gateway', 'WARN', 'could not cache the token generation', { user_id: U, error: 'dial tcp 10.43.0.7:6379: connect: connection refused' })] } },
+  gemini: { name: 'Gemini mati', after: 'stop',
+    fail: { label: '503 / timeout', title: 'Penyedia tidak menjawab', text: 'Bukan 429, jadi bukan parkir: klien mencoba ulang dengan backoff, worker mencoba tiga kali dengan jeda 500 ms × percobaan, lalu pekerjaan dinyatakan dead dan llm.job.failed masuk llm.dlq. Pemilik pekerjaan menandai failed dan pengguna boleh meminta lagi. Alert SelarasLLMJobsDying menyala seketika.', refs: ['internal/llmworker/worker.go', 'internal/llm/gemini/gemini.go', 'deploy/compose/observability/alerts.yml'],
+      logs: [L('llm-worker', 'ERROR', 'handling a job failed', { job_id: JB, attempts: 1, dead: false, error: 'gemini: Post generateContent: 503 Service Unavailable' }), L('llm-worker', 'ERROR', 'a job failed', { job_id: JB, attempts: 3, dead: true, error: 'gemini: Post generateContent: 503 Service Unavailable' })],
+      state: { 'svc_llm · llm_jobs': [{ id: JB, status: 'dead', attempts: 3 }], 'prometheus · alerts': [{ alert: 'SelarasLLMJobsDying', state: 'firing', for: '0m' }] } },
+    aftermath: 'Pekerjaan yang menunggu berhenti di sini sampai penyedia pulih; pekerjaan baru tetap diterima dan menumpuk di llm.jobs. Pulihkan Gemini (klik kanan lagi) untuk memutar alur normalnya.' },
+  kafka: { name: 'Broker Kafka mati', after: 'stop',
+    fail: { label: 'broker unreachable', title: 'Broker tidak terjangkau', text: 'Transaksi bisnis tetap commit: datanya tersimpan dan baris outbox-nya tersimpan berstatus pending. Relay mencatat kegagalan dan mengulang tiap putaran; konsumen menahan offset. Tidak ada yang hilang, semuanya tertunda. Inilah alasan outbox ada (ADR-004): tanpanya, pilihannya menolak permintaan pengguna atau kehilangan event.', refs: ['internal/platform/outbox/relay.go', 'ADR-004'],
+      logs: [L('profile-svc', 'ERROR', 'outbox relay round failed', { error: 'kgo: unable to dial: dial tcp: connect: connection refused' }), L('assessment-svc', 'ERROR', 'fetching from kafka failed', { error: 'kgo: unable to dial: connection refused' })],
+      state: { 'svc_* · outbox': [{ id: 'ev_…', status: 'pending', note: 'menunggu broker' }] } },
+    aftermath: 'Begitu broker kembali, relay menerbitkan baris pending pada putaran berikutnya dan konsumen melanjutkan dari offset yang ditahan. Skenario "Broker Kafka dibuat ulang tanpa topic" memperlihatkan kasus yang lebih buruk: broker kembali tanpa topic.' },
+  postgres: { name: 'Postgres mati', after: 'stop',
+    fail: { label: 'connection refused', title: 'Basis data tidak terjangkau', text: 'Transaksi gagal sebelum apa pun ditulis: tidak ada event tanpa datanya, tidak ada data tanpa eventnya. Gateway menerima galat gRPC dan menjawab 503; readyz unit itu jatuh sehingga Kubernetes berhenti mengarahkan trafik ke sana. Konsumen yang handle-nya gagal menahan offset lewat Rewinder dan menerima ulang pesannya nanti.', refs: ['internal/platform/postgres/', 'internal/platform/kafka/rewind.go'],
+      logs: [L('profile-svc', 'ERROR', 'unhandled error', { rpc: 'profile.v1.Profile/UpdateProfile', error: 'failed to connect to `host=pgbouncer`: dial error' }), L('dashboard-svc', 'WARN', 'holding offsets so failed events are redelivered', { handled: 3 })] },
+    aftermath: 'PgBouncer di depan Postgres menahan badai koneksi ulang saat basis data kembali; kolam tiap unit menyambung lagi sendiri. Runbook backup dan restore drill menjelaskan pemulihan yang lebih buruk dari sekadar mati sesaat.' },
+  gateway: { name: 'edge-gateway mati', after: 'stop',
+    fail: { label: 'connection refused', title: 'Pintu publik tertutup', text: 'Tidak ada permintaan yang masuk ke sistem. Di k8s: liveness mengganti pod, PDB menjaga sisa replika, HPA tidak bisa membantu proses yang tidak hidup. Alert SelarasUnitDown menyala setelah 2 menit up == 0.', refs: ['deploy/compose/observability/alerts.yml', 'docs/runbook/edge-gateway.md'],
+      logs: [L('prometheus', 'WARN', 'ALERTS{alertname="SelarasUnitDown", job="edge-gateway"}', { state: 'firing' })] },
+    aftermath: 'Pekerjaan asinkron yang sudah masuk (llm.jobs, user.deletion) tetap berjalan tanpa gateway; yang berhenti hanya pintu masuknya.' },
+};
+// Unit gRPC apa pun yang dimatikan memakai aturan umum ini.
+const CHAOS_SERVICE = id => {
+  const n = NODES.find(x => x.id === id);
+  return { name: n.label + ' mati', after: 'stop',
+    fail: { label: '504 upstream timeout 5 s', title: n.label + ' tidak menjawab', text: 'Gateway menunggu paling lama 5 detik (rpc.DefaultUpstreamTimeout) lalu menjawab 504, bukan menggantung; itu perilaku yang diuji chaos F9-13. Di k8s: liveness mengganti pod, PDB menjaga dua dari tiga replika tetap melayani, NetworkPolicy tidak berubah. Konsumen milik unit ini berhenti membaca, lag topic-nya tumbuh, dan alert SelarasUnitDown menyala setelah 2 menit.', refs: ['internal/platform/rpc/', 'deploy/helm/selaras/templates/pdb.yaml', 'deploy/compose/observability/alerts.yml'],
+      logs: [L('edge-gateway', 'ERROR', 'unhandled error', { upstream: id + '-svc', error: 'rpc error: code = DeadlineExceeded desc = context deadline exceeded' }), L('prometheus', 'WARN', 'ALERTS{alertname="SelarasUnitDown", job="' + id + '-svc"}', { state: 'firing' })] },
+    aftermath: 'Baris outbox unit lain yang ditujukan ke unit ini menunggu di topic-nya; begitu pod kembali, konsumennya melanjutkan dari offset terakhir yang dikomit.' };
+};
+</script>
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('map');
+  // Log, span, dan state per langkah digabungkan ke skenarionya.
+  SCENARIOS.forEach(sc => {
+    const ex = EXTRAS[sc.id] || {};
+    sc.steps = sc.steps.map((st, i) => ex[i] ? { ...st, ...ex[i] } : st);
+    if (ex.chart) sc.chart = ex.chart;
+  });
+  const el = (tag, attrs = {}, parent = svg) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    parent.appendChild(n);
+    return n;
+  };
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- geometri ----------
+  const RECT = {};            // id -> {x,y,w,h}
+  const SVG_NODE = {};        // id -> <g>
+  NODES.forEach(n => { RECT[n.id] = { x: n.x, y: n.y, w: n.w, h: n.h }; });
+  RECT.kafka = { ...KAFKA };
+  RECT.postgres = { ...PG };
+  NODES.filter(n => n.db).forEach(n => {
+    RECT['db-' + n.id] = { x: n.x + (n.w - 118) / 2, y: n.y + n.h + 8, w: 118, h: 20 };
+  });
+  // chip topic: 4 di baris pertama, 3 di baris kedua
+  const topicRect = {};
+  TOPICS.forEach((t, i) => {
+    const row = i < 4 ? 0 : 1, col = i < 4 ? i : i - 4;
+    const perRow = row === 0 ? 4 : 3, cw = 206, gap = 14;
+    const rowW = perRow * cw + (perRow - 1) * gap;
+    const x0 = KAFKA.x + (KAFKA.w - rowW) / 2;
+    topicRect[t.id] = { x: x0 + col * (cw + gap), y: KAFKA.y + 34 + row * 36, w: cw, h: 26 };
+  });
+  const center = r => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  // titik di tepi rect ke arah target
+  const anchor = (r, target) => {
+    const c = center(r), dx = target.x - c.x, dy = target.y - c.y;
+    if (dx === 0 && dy === 0) return c;
+    const sx = r.w / 2 / Math.abs(dx || 1e-9), sy = r.h / 2 / Math.abs(dy || 1e-9);
+    const s = Math.min(sx, sy);
+    return { x: c.x + dx * s, y: c.y + dy * s };
+  };
+
+  // ---------- gambar peta ----------
+  const gSkel = el('g', { class: 'skeleton' });
+  const gNodes = el('g');
+  const gFlow = el('g');
+  SKELETON.forEach(([a, b]) => {
+    const ra = RECT[a], rb = RECT[b];
+    const pa = anchor(ra, center(rb)), pb = anchor(rb, center(ra));
+    el('line', { class: 'skel', x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y }, gSkel);
+  });
+
+  const drawNode = n => {
+    const g = el('g', { class: 'node', 'data-id': n.id, tabindex: 0, role: 'button', 'aria-label': n.label }, gNodes);
+    el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: 8 }, g);
+    const t = el('text', { x: n.x + 12, y: n.y + 24 }, g); t.textContent = n.label;
+    const s = el('text', { class: 'sub', x: n.x + 12, y: n.y + 42 }, g); s.textContent = n.sub;
+    SVG_NODE[n.id] = g;
+    if (n.db) {
+      const r = RECT['db-' + n.id];
+      const c = el('g', { class: 'chip', 'data-id': 'db-' + n.id }, gNodes);
+      el('rect', { x: r.x, y: r.y, width: r.w, height: r.h, rx: 4 }, c);
+      const ct = el('text', { x: r.x + r.w / 2, y: r.y + 14, 'text-anchor': 'middle' }, c); ct.textContent = '⛁ ' + n.db;
+      SVG_NODE['db-' + n.id] = c;
+    }
+  };
+  NODES.forEach(drawNode);
+
+  // Kafka
+  const gK = el('g', { class: 'bus node', 'data-id': 'kafka', tabindex: 0, role: 'button', 'aria-label': 'Kafka' }, gNodes);
+  el('rect', { x: KAFKA.x, y: KAFKA.y, width: KAFKA.w, height: KAFKA.h, rx: 10 }, gK);
+  const kt = el('text', { x: KAFKA.x + 14, y: KAFKA.y + 22 }, gK); kt.textContent = 'Kafka (KRaft)';
+  const kw = el('text', { class: 'why', x: KAFKA.x + 150, y: KAFKA.y + 22 }, gK); kw.textContent = 'relay outbox → topic · kunci = aggregate_id · consumer commit manual + Rewinder';
+  SVG_NODE.kafka = gK;
+  const TOPIC_EL = {};
+  TOPICS.forEach(t => {
+    const r = topicRect[t.id];
+    const g = el('g', { class: 'topic', 'data-topic': t.id }, gNodes);
+    el('rect', { x: r.x, y: r.y, width: r.w, height: r.h, rx: 4 }, g);
+    const tx = el('text', { x: r.x + 10, y: r.y + 17 }, g); tx.textContent = t.id;
+    const tn = el('text', { class: 'n', x: r.x + r.w - 10, y: r.y + 17, 'text-anchor': 'end' }, g); tn.textContent = t.n + ' partisi';
+    TOPIC_EL[t.id] = g;
+  });
+
+  // Postgres
+  const gP = el('g', { class: 'pg node', 'data-id': 'postgres', tabindex: 0, role: 'button', 'aria-label': 'PostgreSQL' }, gNodes);
+  el('rect', { x: PG.x, y: PG.y, width: PG.w, height: PG.h, rx: 8 }, gP);
+  const pt = el('text', { class: 'h', x: PG.x + 14, y: PG.y + 22 }, gP); pt.textContent = 'PostgreSQL 18';
+  const pd = el('text', { x: PG.x + 14, y: PG.y + 42 }, gP);
+  pd.textContent = 'satu instans · satu schema per service (chip ⛁ di atas) · PgBouncer di depan · replika streaming untuk pembacaan dashboard';
+  const pd2 = el('text', { x: PG.x + 14, y: PG.y + 55 }, gP);
+  pd2.textContent = 'outbox + processed_messages di tiap schema · partisi bulanan untuk chat_messages, coaching_messages, llm_jobs, outbox';
+  SVG_NODE.postgres = gP;
+
+  // lapisan animasi: banyak paket per langkah, dibuat dan dibuang per langkah
+  const pulse = el('circle', { class: 'pulse', r: 8 }, gFlow);
+
+  // lencana replika (skenario beban); maksimum dari deploy/helm/selaras/values.yaml
+  const MAX_REPLICAS = { gateway: 4, identity: 3, profile: 3, assessment: 3, coaching: 3, chat: 3, nutrition: 3, dashboard: 3, worker: 12 };
+  const BADGE = {};
+  Object.keys(MAX_REPLICAS).forEach(id => {
+    const r = RECT[id];
+    const g = el('g', { class: 'badge' }, gFlow);
+    el('rect', { x: r.x + r.w - 26, y: r.y - 9, width: 40, height: 18, rx: 9 }, g);
+    const t = el('text', { x: r.x + r.w - 6, y: r.y + 4 }, g);
+    BADGE[id] = { g, t };
+  });
+  const replicaState = {};
+  const setReplicas = map => {
+    Object.entries(map).forEach(([id, n]) => {
+      const b = BADGE[id]; if (!b) return;
+      const changed = replicaState[id] !== n;
+      replicaState[id] = n;
+      b.t.textContent = '×' + n;
+      b.g.classList.add('on');
+      b.g.classList.toggle('zero', n === 0);
+      b.g.classList.toggle('max', n >= MAX_REPLICAS[id]);
+      if (changed && !reduced) { b.g.classList.remove('bump'); void b.g.getBoundingClientRect(); b.g.classList.add('bump'); }
+    });
+  };
+  const clearReplicas = () => { Object.values(BADGE).forEach(b => b.g.classList.remove('on', 'zero', 'max', 'bump')); Object.keys(replicaState).forEach(k => delete replicaState[k]); };
+  const setLag = map => {
+    TOPICS.forEach(t => {
+      const n = TOPIC_EL[t.id].querySelector('.n');
+      if (map[t.id] == null) { n.textContent = t.n + ' partisi'; n.classList.remove('lag'); }
+      else { n.textContent = 'lag ' + map[t.id] + ' · ' + t.n + ' partisi'; n.classList.add('lag'); }
+    });
+  };
+  const lagState = {};
+  const gaugesEl = document.getElementById('gauges');
+  const setGauges = arr => {
+    if (!arr || !arr.length) { gaugesEl.classList.remove('on'); gaugesEl.innerHTML = ''; return; }
+    gaugesEl.innerHTML = arr.map(g => `<div><b class="${g.bad ? 'bad' : g.ok ? 'ok' : ''}">${g.v == null ? '' : g.v}</b><span>${g.k}</span></div>`).join('');
+    gaugesEl.classList.add('on');
+  };
+
+  // ---------- panel observabilitas ----------
+  const logEl = document.getElementById('log'), spansEl = document.getElementById('spans'), stateEl = document.getElementById('state');
+  const cntEl = document.getElementById('obs-cnt'), obsEl = document.getElementById('obs'), chartEl = document.getElementById('chart');
+  const tabChart = document.getElementById('tab-chart');
+  const stateStore = {};
+  let logCount = 0, spanCount = 0, clockMs = 0;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const clock = () => { const s = Math.floor(clockMs / 1000), ms = String(Math.floor(clockMs % 1000)).padStart(3, '0'); return `12:03:${String(s % 60).padStart(2, '0')}.${ms}`; };
+  const resetObs = () => {
+    Object.keys(stateStore).forEach(k => delete stateStore[k]);
+    logCount = 0; spanCount = 0; clockMs = 0; cntEl.textContent = '';
+    logEl.innerHTML = '<div class="empty">Belum ada catatan. Log muncul saat langkah yang benar-benar mencatat sesuatu berjalan.</div>';
+    spansEl.innerHTML = '<div class="empty">Belum ada span.</div>';
+    stateEl.innerHTML = '<div class="empty">Belum ada baris yang berubah.</div>';
+    chartEl.innerHTML = ''; chartEl._cursor = null;
+  };
+  const rowKey = r => { const ks = Object.keys(r).filter(k => k !== '_gone'); return ks[0] === 'id' ? String(r.id) : ks.slice(0, 2).map(k => r[k]).join('|'); };
+  const renderObs = (st, i) => {
+    clockMs += 180 + (i * 37) % 260;
+    logEl.querySelectorAll('.new').forEach(n => n.classList.remove('new'));
+    spansEl.querySelectorAll('.new').forEach(n => n.classList.remove('new'));
+    if (st.logs && st.logs.length) {
+      const e0 = logEl.querySelector('.empty'); if (e0) e0.remove();
+      st.logs.forEach((l, k) => {
+        clockMs += 12 + k * 9;
+        const kv = Object.entries(l.kv).map(([a, b]) => `${esc(a)}=${esc(b)}`).join(' ');
+        const d = document.createElement('div'); d.className = 'new';
+        d.innerHTML = `<span class="ts">${clock()}</span><span class="lvl ${l.lvl}">${l.lvl}</span><span class="svc" title="${esc(l.svc)}">${esc(l.svc)}</span><span><span class="msg">${esc(l.msg)}</span> <span class="kv">${kv}</span></span>`;
+        logEl.appendChild(d); logCount++;
+      });
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    if (st.spans && st.spans.length) {
+      const e0 = spansEl.querySelector('.empty'); if (e0) e0.remove();
+      st.spans.forEach(sp => {
+        const w = 18 + Math.min(150, Math.log10(sp.ms + 1) * 42);
+        const d = document.createElement('div'); d.className = 'new';
+        d.innerHTML = `<div class="bar" style="padding-left:${sp.d * 16}px"><i class="${sp.kind}" style="width:${w}px"></i><span class="n" title="${esc(sp.svc)} ${esc(sp.name)}"><span style="color:var(--ink-3)">${esc(sp.svc)}</span> ${esc(sp.name)}${sp.st ? ` <span class="st">${esc(sp.st)}</span>` : ''}</span></div><span class="d">${sp.ms >= 1000 ? (sp.ms / 1000).toFixed(1) + ' s' : sp.ms + ' ms'}</span>`;
+        spansEl.appendChild(d); spanCount++;
+      });
+      spansEl.scrollTop = spansEl.scrollHeight;
+    }
+    if (st.state) {
+      Object.values(stateStore).forEach(t => { t.fresh = new Set(); });
+      Object.entries(st.state).forEach(([table, rows]) => {
+        const replace = !table.startsWith('svc_') || table.includes('ringkasan');
+        if (replace || !stateStore[table]) stateStore[table] = { cols: [], rows: new Map(), fresh: new Set() };
+        const t = stateStore[table];
+        rows.forEach(r => { const k = rowKey(r); t.rows.set(k, r); t.fresh.add(k); Object.keys(r).forEach(c => { if (c !== '_gone' && !t.cols.includes(c)) t.cols.push(c); }); });
+      });
+      stateEl.innerHTML = '';
+      Object.entries(stateStore).forEach(([table, t]) => {
+        const tb = document.createElement('table');
+        const head = `<caption>${esc(table)}</caption><tr>${t.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>`;
+        const body = [...t.rows.entries()].map(([k, r]) => `<tr class="${t.fresh.has(k) ? 'new' : ''}${r._gone ? ' gone' : ''}">${t.cols.map(c => { const v = r[c]; const cls = typeof v === 'string' ? ' class="v-' + esc(v.split(' ')[0]) + '"' : ''; return `<td${cls}>${v == null ? '' : esc(v)}</td>`; }).join('')}</tr>`).join('');
+        tb.innerHTML = head + body; stateEl.appendChild(tb);
+      });
+    }
+    cntEl.textContent = `${logCount} log · ${spanCount} span · ${Object.keys(stateStore).length} tabel`;
+    if (scenario && scenario.chart) drawChartCursor(i);
+  };
+
+  // ---------- grafik replika (skenario beban) ----------
+  const SERIES_COLOR = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)'];
+  const secOf = t => { const [h, m, s] = t.split(':').map(Number); return h * 3600 + m * 60 + s; };
+  let chartGeom = null;
+  const sv = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); parent.appendChild(n); return n; };
+  const drawChart = ch => {
+    chartEl.innerHTML = '';
+    const W = 640, H = 210, ml = 34, mr = 16, mt = 16, mb = 26;
+    const t0 = secOf(ch.times[0]), t1 = secOf(ch.times[ch.times.length - 1]);
+    const x = t => ml + (secOf(t) - t0) / (t1 - t0) * (W - ml - mr);
+    const ymax = Math.max(...ch.series.map(s => s.max));
+    const y = v => mt + (1 - v / ymax) * (H - mt - mb);
+    chartGeom = { x, y };
+    const s = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'jumlah replika per unit selama uji beban' }, chartEl);
+    const load = sv('g', { class: 'load' }, s);
+    sv('rect', { x: x(ch.load[0]), y: mt, width: x(ch.load[1]) - x(ch.load[0]), height: H - mt - mb }, load);
+    const grid = sv('g', { class: 'grid' }, s), axis = sv('g', { class: 'axis' }, s);
+    for (let v = 0; v <= ymax; v++) { sv('line', { x1: ml, x2: W - mr, y1: y(v), y2: y(v) }, grid); sv('text', { x: ml - 6, y: y(v) + 3.5, 'text-anchor': 'end' }, axis).textContent = v; }
+    ch.times.forEach((tm, k) => { if (k % 2 && k !== ch.times.length - 1) return; sv('text', { x: x(tm), y: H - 8, 'text-anchor': k === 0 ? 'start' : k === ch.times.length - 1 ? 'end' : 'middle' }, axis).textContent = tm.slice(0, 5); });
+    sv('text', { class: 'lbl', x: x(ch.load[0]) + 4, y: mt + 10 }, axis).textContent = 'beban k6 60 VU';
+    ch.series.forEach((se, k) => {
+      const gs = sv('g', { class: 'ser' }, s);
+      // Offset vertikal kecil per seri supaya garis bernilai sama tidak saling menutup.
+      const off = (k - (ch.series.length - 1) / 2) * 1.6;
+      sv('path', { d: ch.times.map((tm, i) => `${i ? 'L' : 'M'}${x(tm)},${y(se.v[i]) + off}`).join(' '), stroke: SERIES_COLOR[k] }, gs);
+      ch.times.forEach((tm, i) => sv('circle', { cx: x(tm), cy: y(se.v[i]) + off, r: 4, fill: SERIES_COLOR[k] }, gs));
+      if (k === 0) sv('text', { class: 'lbl', x: x(ch.times[5]) + 8, y: y(se.v[5]) + 16 }, gs).textContent = `${se.label} ${se.v[5]} (maks)`;
+    });
+    const cur = sv('g', { class: 'cursor' }, s);
+    const cl = sv('line', { y1: mt, y2: H - mb, x1: ml, x2: ml }, cur), ct = sv('text', { y: mt - 4, x: ml, 'text-anchor': 'middle' }, cur);
+    const hov = sv('g', { class: 'hover' }, s); hov.style.display = 'none';
+    const hl = sv('line', { y1: mt, y2: H - mb }, hov), tipbg = sv('rect', { class: 'tipbg', rx: 4 }, hov), tip = sv('text', { class: 'tip' }, hov);
+    s.addEventListener('mousemove', ev => {
+      const r = s.getBoundingClientRect(); const px = (ev.clientX - r.left) / r.width * W;
+      let best = 0, bd = Infinity; ch.times.forEach((tm, i) => { const d = Math.abs(x(tm) - px); if (d < bd) { bd = d; best = i; } });
+      const tm = ch.times[best]; hl.setAttribute('x1', x(tm)); hl.setAttribute('x2', x(tm));
+      tip.innerHTML = ''; const lines = [tm, ...ch.series.map(se => `${se.label} ${se.v[best]}`)];
+      lines.forEach((ln, i) => { const ts = sv('tspan', { x: 0, dy: i ? 12 : 0 }, tip); ts.textContent = ln; });
+      const tw = 122, th = 12 * lines.length + 8; const tx = x(tm) + 10 + tw > W - mr ? x(tm) - tw - 10 : x(tm) + 10;
+      tipbg.setAttribute('x', tx - 5); tipbg.setAttribute('y', mt + 2); tipbg.setAttribute('width', tw); tipbg.setAttribute('height', th);
+      tip.setAttribute('transform', `translate(${tx},${mt + 14})`); hov.style.display = '';
+    });
+    s.addEventListener('mouseleave', () => { hov.style.display = 'none'; });
+    const lg = document.createElement('div'); lg.className = 'legend2'; lg.id = 'chart-legend'; chartEl.appendChild(lg);
+    const note = document.createElement('div'); note.className = 'chart-note'; note.textContent = ch.note; chartEl.appendChild(note);
+    const det = document.createElement('details');
+    det.innerHTML = `<summary>Tabel sumber (replika per unit)</summary><table><tr><th>Waktu</th>${ch.series.map(se => `<th>${esc(se.label)}</th>`).join('')}</tr>${ch.times.map((tm, i) => `<tr><td>${tm}</td>${ch.series.map(se => `<td>${se.v[i]}</td>`).join('')}</tr>`).join('')}</table>`;
+    chartEl.appendChild(det);
+    chartEl._cursor = { cl, ct };
+  };
+  const drawChartCursor = i => {
+    const ch = scenario.chart; if (!ch || !chartEl._cursor) return;
+    const k = ch.stepAt[Math.min(i, ch.stepAt.length - 1)]; const tm = ch.times[k]; const px = chartGeom.x(tm);
+    const { cl, ct } = chartEl._cursor; cl.setAttribute('x1', px); cl.setAttribute('x2', px); ct.setAttribute('x', px); ct.textContent = tm;
+    const lg = document.getElementById('chart-legend');
+    if (lg) lg.innerHTML = ch.series.map((se, n) => `<div><i style="background:${SERIES_COLOR[n]}"></i><span>${esc(se.label)}</span><b>${se.v[k]}</b></div>`).join('');
+  };
+
+  // ---------- tab panel bawah ----------
+  const panes = [...document.querySelectorAll('.obs-tabs [role="tab"]')];
+  const showPane = id => { panes.forEach(b => { const on = b.dataset.pane === id; b.setAttribute('aria-selected', on); document.getElementById(b.dataset.pane).classList.toggle('on', on); }); };
+  panes.forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
+  document.getElementById('obs-toggle').addEventListener('click', e => { obsEl.classList.toggle('collapsed'); e.currentTarget.textContent = obsEl.classList.contains('collapsed') ? '▴' : '▾'; });
+
+  // ---------- mode chaos ----------
+  const chaos = new Set();
+  const chaosbar = document.getElementById('chaosbar');
+  const ruleFor = id => CHAOS[id] || (MAX_REPLICAS[id] ? CHAOS_SERVICE(id) : null);
+  const hitsChaos = f => [f.from, f.to].some(n => chaos.has(n) || (n.startsWith('db-') && chaos.has('postgres')));
+  const applyChaos = base => {
+    if (!chaos.size) return base.steps;
+    const out = [];
+    for (const st of base.steps) {
+      const flows = st.flows || [{ from: st.from, to: st.to, kind: st.kind, label: st.label, topic: st.topic, count: st.count }];
+      const hit = flows.find(hitsChaos);
+      if (!hit) { out.push(st); continue; }
+      const node = [hit.to, hit.from].find(n => chaos.has(n)) || 'postgres';
+      const rule = ruleFor(node);
+      out.push({ kind: 'fail', chaos: true, title: rule.fail.title, text: rule.fail.text + ' Langkah yang terganggu: ' + (st.title || st.label) + '.', refs: rule.fail.refs || [],
+        flows: flows.map(f => hitsChaos(f) ? { ...f, kind: 'fail', label: rule.fail.label } : f), logs: rule.fail.logs, state: rule.fail.state });
+      if (rule.after === 'stop') { out.push({ from: node, to: node, kind: 'note', label: 'skenario berhenti', title: 'Skenario berhenti di sini', text: rule.aftermath || '', refs: [] }); break; }
+    }
+    return out;
+  };
+  const renderChaosbar = () => {
+    chaosbar.innerHTML = [...chaos].map(id => `<span>${esc(ruleFor(id).name)} <button data-id="${id}" aria-label="pulihkan">×</button></span>`).join('');
+    chaosbar.querySelectorAll('button').forEach(b => b.addEventListener('click', () => toggleChaos(b.dataset.id)));
+  };
+  const toggleChaos = id => {
+    if (!ruleFor(id)) return;
+    if (chaos.has(id)) chaos.delete(id); else chaos.add(id);
+    if (SVG_NODE[id]) SVG_NODE[id].classList.toggle('down', chaos.has(id));
+    renderChaosbar();
+    if (scenario) select(scenario.id, true);
+  };
+
+  // ---------- state ----------
+  let scenario = null, idx = -1, playing = false, timer = null, tour = false;
+  const timers = new Set(), rafs = new Set();
+  const speedSel = document.getElementById('speed');
+  const speed = () => parseFloat(speedSel.value);
+  const activeEls = new Set();
+
+  const clearActive = () => {
+    activeEls.forEach(e => e.classList.remove('active', 'hit'));
+    activeEls.clear();
+  };
+  const mark = (e, cls) => { if (!e) return; e.classList.add(cls); activeEls.add(e); };
+
+  const pointFor = (id, towards, topic) => {
+    if (id === 'kafka' && topic && topicRect[topic]) return anchor(topicRect[topic], towards);
+    return anchor(RECT[id], towards);
+  };
+  const centerFor = (id, topic) => (id === 'kafka' && topic && topicRect[topic]) ? center(topicRect[topic]) : center(RECT[id]);
+
+  const stopAnim = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    timers.forEach(t => clearTimeout(t)); timers.clear();
+    rafs.forEach(r => cancelAnimationFrame(r)); rafs.clear();
+  };
+  const clearPackets = () => { gFlow.querySelectorAll('.flow, .pkt, .pktlabel').forEach(n => n.remove()); };
+  const ping = (id, topic) => {
+    const c = centerFor(id, topic);
+    pulse.setAttribute('cx', c.x); pulse.setAttribute('cy', c.y);
+    pulse.classList.remove('go'); void pulse.getBoundingClientRect(); pulse.classList.add('go');
+  };
+  const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
+
+  // Satu jalur: satu garis, `count` paket yang berangkat bergiliran, label di paket pertama.
+  const runFlow = (f, delay, onDone) => {
+    const a = pointFor(f.from, centerFor(f.to, f.topic), f.topic);
+    const b = pointFor(f.to, centerFor(f.from, f.topic), f.topic);
+    const path = el('path', { class: 'flow ' + f.kind, d: `M${a.x},${a.y} L${b.x},${b.y}` }, gFlow);
+    let lbl = null;
+    if (f.label) {
+      lbl = el('text', { class: 'pktlabel', 'text-anchor': 'middle', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 10 }, gFlow);
+      lbl.textContent = f.label;
+    }
+    const count = Math.max(1, f.count || 1);
+    const dur = reduced ? 0 : (f.dur || 1300) / speed();
+    const stagger = reduced ? 0 : 170 / speed();
+    let arrived = 0;
+    later(() => {
+      path.classList.add('on'); if (lbl) lbl.classList.add('on');
+      for (let k = 0; k < count; k++) {
+        later(() => {
+          const c = el('circle', { class: 'pkt ' + f.kind, r: 6 }, gFlow);
+          let t0 = null;
+          const frame = now => {
+            if (t0 === null) t0 = now;
+            const t = dur === 0 ? 1 : Math.min(1, (now - t0) / dur);
+            const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            c.setAttribute('cx', a.x + (b.x - a.x) * e);
+            c.setAttribute('cy', a.y + (b.y - a.y) * e);
+            c.style.opacity = 1;
+            if (t < 1) { const r = requestAnimationFrame(frame); rafs.add(r); }
+            else {
+              c.style.opacity = 0.35;
+              if (++arrived === count) { ping(f.to, f.topic); onDone(); }
+            }
+          };
+          const r = requestAnimationFrame(frame); rafs.add(r);
+        }, k * stagger);
+      }
+    }, delay);
+  };
+
+  // Lompat (deep-link, klik langkah, mundur) memutar ulang efek langkah sebelumnya tanpa animasi,
+  // supaya lencana replika, lag, log, dan state sama seperti bila dijalankan berurutan.
+  const catchUp = i => {
+    clearReplicas(); Object.keys(lagState).forEach(k => delete lagState[k]); setLag({}); setGauges([]);
+    resetObs(); if (scenario.chart) drawChart(scenario.chart);
+    for (let k = 0; k < i; k++) {
+      const s = scenario.steps[k];
+      if (s.replicas) setReplicas(s.replicas);
+      if (s.lag) { Object.assign(lagState, s.lag); setLag(lagState); }
+      if (s.gauge) setGauges(s.gauge);
+      renderObs(s, k);
+    }
+    Object.values(BADGE).forEach(b => b.g.classList.remove('bump'));
+  };
+  const showStep = (i, thenAdvance) => {
+    stopAnim();
+    clearPackets();
+    if (i !== idx + 1) catchUp(i);
+    const st = scenario.steps[i];
+    idx = i;
+    clearActive();
+    const flows = st.flows || [{ from: st.from, to: st.to, kind: st.kind, label: st.label, topic: st.topic, count: st.count }];
+    const failish = st.kind === 'fail';
+    flows.forEach(f => {
+      const cls = (f.kind === 'fail' || failish) ? 'hit' : 'active';
+      mark(SVG_NODE[f.from], cls); mark(SVG_NODE[f.to], cls);
+      if (f.topic && TOPIC_EL[f.topic]) mark(TOPIC_EL[f.topic], cls);
+    });
+    if (st.replicas) setReplicas(st.replicas);
+    if (st.lag) { Object.assign(lagState, st.lag); setLag(lagState); }
+    if (st.gauge) setGauges(st.gauge);
+    renderObs(st, i);
+    if (location.hash !== `#${scenario.id}/${i + 1}`) history.replaceState(null, '', `#${scenario.id}/${i + 1}`);
+    renderNarration();
+    renderProgress();
+
+    const holdBase = 1000 + Math.min(2200, (st.text || '').length * 9);
+    const finish = () => {
+      if (!thenAdvance) return;
+      timer = setTimeout(() => { if (playing) next(true); }, holdBase / speed());
+    };
+
+    // langkah tanpa perpindahan: denyut di unitnya + label
+    if (!st.flows && (st.from === st.to || st.kind === 'note')) {
+      const c = centerFor(st.from, st.topic);
+      ping(st.from, st.topic);
+      const lbl = el('text', { class: 'pktlabel on', 'text-anchor': 'middle', x: c.x, y: c.y - 40 }, gFlow);
+      lbl.textContent = st.label;
+      finish();
+      return;
+    }
+
+    let pending = flows.length;
+    flows.forEach((f, n) => runFlow(f, n * (reduced ? 0 : 120 / speed()), () => { if (--pending === 0) finish(); }));
+  };
+
+  const next = auto => {
+    if (!scenario) return;
+    if (idx + 1 >= scenario.steps.length) {
+      if (tour && playing) {
+        const k = SCENARIOS.findIndex(s => s.id === scenario.id);
+        if (k + 1 < SCENARIOS.length) { select(SCENARIOS[k + 1].id, true); return; }
+        setTour(false);
+      }
+      setPlaying(false); return;
+    }
+    showStep(idx + 1, auto || playing);
+  };
+  const prev = () => { if (scenario && idx > 0) { setPlaying(false); showStep(idx - 1, false); } };
+  const goTo = i => { setPlaying(false); showStep(i, false); };
+
+  const btnPlay = document.getElementById('btn-play');
+  const setPlaying = p => {
+    playing = p;
+    btnPlay.textContent = p ? '❚❚ Jeda' : '▶ Putar';
+    if (!p) { if (timer) { clearTimeout(timer); timer = null; } }
+  };
+  const play = () => {
+    if (!scenario) return;
+    if (idx + 1 >= scenario.steps.length) { idx = -1; }
+    setPlaying(true);
+    if (idx < 0) showStep(0, true); else next(true);
+  };
+
+  // ---------- narasi ----------
+  const stepsEl = document.getElementById('steps');
+  const renderNarration = () => {
+    stepsEl.innerHTML = '';
+    scenario.steps.forEach((st, i) => {
+      const li = document.createElement('li');
+      li.className = 'step' + (i < idx ? ' past' : '') + (i === idx ? ' cur' : '') + (st.kind === 'fail' ? ' fail' : '');
+      const refs = (st.refs || []).map(r => `<span class="${/^ADR-/.test(r) ? 'adr' : ''}">${r}</span>`).join('');
+      const labels = st.flows ? st.flows.filter(f => f.label).map(f => `<code>${f.label}</code>`).join(' ') : `<code>${st.label}</code>`;
+      li.innerHTML = `<span class="n">${i + 1}</span><div><div class="t"><i class="kind ${st.kind}"></i>${st.title || st.label}</div>` +
+        `<div class="d"><p>${labels}</p>${st.text ? `<p>${st.text}</p>` : ''}${refs ? `<div class="refs">${refs}</div>` : ''}</div></div>`;
+      li.addEventListener('click', () => goTo(i));
+      stepsEl.appendChild(li);
+    });
+    const cur = stepsEl.querySelector('.cur');
+    if (cur) cur.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+    document.getElementById('counter').textContent = `${idx + 1} / ${scenario.steps.length}`;
+  };
+  const progEl = document.getElementById('prog');
+  const renderProgress = () => {
+    progEl.innerHTML = '';
+    scenario.steps.forEach((st, i) => {
+      const s = document.createElement('i');
+      if (i < idx) s.className = 'done'; else if (i === idx) s.className = st.kind === 'fail' ? 'cur fail' : 'cur';
+      s.title = `${i + 1}. ${st.title || st.label}`;
+      s.addEventListener('click', () => goTo(i));
+      progEl.appendChild(s);
+    });
+  };
+
+  // ---------- daftar skenario ----------
+  const lists = { ok: document.getElementById('list-ok'), fail: document.getElementById('list-fail'), scale: document.getElementById('list-scale') };
+  const GROUP_LABEL = { ok: 'Jalur normal', fail: 'Jalur gagal', scale: 'Beban & skala' };
+  const buttons = {};
+  SCENARIOS.forEach((sc, n) => {
+    const b = document.createElement('button');
+    b.className = 'scn' + (sc.group === 'fail' ? ' fail' : '');
+    b.innerHTML = `<span class="k">${String(n + 1).padStart(2, '0')}</span><span><span class="t">${sc.title}</span><span class="s">${sc.sub}</span></span>`;
+    b.addEventListener('click', () => select(sc.id, true));
+    lists[sc.group].appendChild(b);
+    buttons[sc.id] = b;
+  });
+  const select = (id, autoplay, startAt) => {
+    const base = SCENARIOS.find(s => s.id === id);
+    scenario = { ...base, steps: applyChaos(base) };
+    resetObs();
+    tabChart.hidden = !scenario.chart;
+    if (scenario.chart) { drawChart(scenario.chart); showPane('pane-chart'); }
+    else if (tabChart.getAttribute('aria-selected') === 'true') showPane('pane-log');
+    Object.values(buttons).forEach(b => b.removeAttribute('aria-current'));
+    buttons[id].setAttribute('aria-current', 'true');
+    document.getElementById('n-eyebrow').textContent = GROUP_LABEL[scenario.group] + ' · ' + scenario.steps.length + ' langkah';
+    document.getElementById('n-title').textContent = scenario.title;
+    document.getElementById('n-intro').textContent = scenario.intro;
+    closeDrawer();
+    idx = -1;
+    stopAnim();
+    clearPackets();
+    clearReplicas();
+    Object.keys(lagState).forEach(k => delete lagState[k]); setLag({});
+    setGauges([]);
+    setPlaying(false);
+    if (startAt != null) { showStep(Math.max(0, Math.min(startAt, scenario.steps.length - 1)), false); if (autoplay) setPlaying(true), next(true); }
+    else if (autoplay) play(); else showStep(0, false);
+  };
+
+  // ---------- rincian unit ----------
+  const drawer = document.getElementById('drawer');
+  const closeDrawer = () => { drawer.classList.remove('open'); document.querySelectorAll('.node.selected').forEach(n => n.classList.remove('selected')); };
+  const openDrawer = id => {
+    const d = DETAILS[id]; if (!d) return;
+    const node = NODES.find(n => n.id === id);
+    const title = node ? node.label : (id === 'kafka' ? 'Kafka' : 'PostgreSQL');
+    const lists = d.lists ? Object.entries(d.lists).map(([h, items]) => `<div><h4>${h}</h4><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('') : '';
+    const notes = d.notes ? `<div class="notes">${d.notes.map(n => `<p>${n}</p>`).join('')}</div>` : '';
+    const refs = d.refs ? `<div class="refs">${d.refs.map(r => `<span class="${/^ADR-/.test(r) ? 'adr' : ''}">${r}</span>`).join('')}</div>` : '';
+    drawer.innerHTML = `<button class="close" aria-label="tutup">×</button><div class="eyebrow">${id}</div><h3>${title}</h3><p class="role">${d.role}</p><div class="grid">${lists}</div>${notes}${refs}`;
+    drawer.querySelector('.close').addEventListener('click', closeDrawer);
+    drawer.classList.add('open');
+    document.querySelectorAll('.node.selected').forEach(n => n.classList.remove('selected'));
+    SVG_NODE[id] && SVG_NODE[id].classList.add('selected');
+  };
+  gNodes.addEventListener('click', e => {
+    const g = e.target.closest('.node'); if (!g) return;
+    const id = g.getAttribute('data-id');
+    if (drawer.classList.contains('open') && g.classList.contains('selected')) closeDrawer(); else openDrawer(id);
+  });
+  gNodes.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const g = e.target.closest('.node'); if (!g) return;
+    e.preventDefault(); openDrawer(g.getAttribute('data-id'));
+  });
+  gNodes.addEventListener('contextmenu', e => {
+    const g = e.target.closest('.node'); if (!g) return;
+    e.preventDefault(); toggleChaos(g.getAttribute('data-id'));
+  });
+
+  // ---------- tur, tema, bantuan ----------
+  const btnTour = document.getElementById('btn-tour');
+  const setTour = on => { tour = on; btnTour.setAttribute('aria-pressed', on); };
+  btnTour.addEventListener('click', () => { if (tour) { setTour(false); return; } setTour(true); if (!playing) play(); });
+  const THEMES = ['', 'dark', 'light'];
+  const applyTheme = t => { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); try { localStorage.setItem('selaras-theme', t); } catch (_) {} };
+  let themeIdx = 0; try { themeIdx = Math.max(0, THEMES.indexOf(localStorage.getItem('selaras-theme') || '')); } catch (_) {}
+  applyTheme(THEMES[themeIdx]);
+  const cycleTheme = () => { themeIdx = (themeIdx + 1) % THEMES.length; applyTheme(THEMES[themeIdx]); };
+  document.getElementById('btn-theme').addEventListener('click', cycleTheme);
+  const help = document.getElementById('help');
+  const toggleHelp = () => help.classList.toggle('open');
+  document.getElementById('btn-help').addEventListener('click', toggleHelp);
+  help.addEventListener('click', e => { if (e.target === help) help.classList.remove('open'); });
+
+  // ---------- kontrol ----------
+  btnPlay.addEventListener('click', () => playing ? setPlaying(false) : play());
+  document.getElementById('btn-next').addEventListener('click', () => { setPlaying(false); next(false); });
+  document.getElementById('btn-prev').addEventListener('click', prev);
+  document.getElementById('btn-restart').addEventListener('click', () => { idx = -1; play(); });
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('select, input, textarea')) return;
+    if (e.key === ' ') { e.preventDefault(); playing ? setPlaying(false) : play(); }
+    else if (e.key === 'ArrowRight') { setPlaying(false); next(false); }
+    else if (e.key === 'ArrowLeft') prev();
+    else if (e.key === 'Escape') { closeDrawer(); help.classList.remove('open'); }
+    else if (e.key === '?') toggleHelp();
+    else if (e.key === 't' || e.key === 'T') btnTour.click();
+    else if (e.key === 'd' || e.key === 'D') cycleTheme();
+    else if (e.key === '1') showPane('pane-log');
+    else if (e.key === '2') showPane('pane-state');
+    else if (e.key === '3' && !tabChart.hidden) showPane('pane-chart');
+  });
+
+  // #id membuka skenario, #id/7 membuka langkah ke-7; alamat ikut berubah saat melangkah.
+  const parseHash = () => { const m = /^#([a-z-]+)(?:\/(\d+))?$/.exec(location.hash); if (!m) return null; const s = SCENARIOS.find(x => x.id === m[1]); return s ? { id: s.id, step: m[2] ? parseInt(m[2], 10) - 1 : null } : null; };
+  // ?chaos=redis,gemini mematikan unit sejak halaman dibuka (untuk berbagi tautan).
+  const q = new URLSearchParams(location.search).get('chaos');
+  if (q) q.split(',').forEach(id => { if (ruleFor(id) && !chaos.has(id)) { chaos.add(id); if (SVG_NODE[id]) SVG_NODE[id].classList.add('down'); } });
+  renderChaosbar();
+  const h0 = parseHash();
+  if (h0 && h0.step != null) select(h0.id, false, h0.step); else select(h0 ? h0.id : SCENARIOS[0].id, !reduced);
+  window.addEventListener('hashchange', () => { const h = parseHash(); if (!h) return; if (h.id === scenario.id && (h.step == null || h.step === idx)) return; if (h.step != null) select(h.id, false, h.step); else select(h.id, true); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idempotensi penerima · Selaras Flow Reel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="reel.css">
+</head>
+<body>
+<script>
+// ---------- IDENTITAS REEL ----------
+// Lapisan 3 (mekanisme): pasangan wajib M1. Relay memilih duplikat daripada kehilangan; di sinilah duplikat itu dihentikan.
+const REEL = {
+  id: 'M2', tier: 3, num: { id: 'M2 · mekanisme', en: 'M2 · mechanism' },
+  title: { id: 'Idempotensi penerima', en: 'Consumer idempotency' },
+  kicker: { id: 'Selaras Flow Reel · mekanisme M2 · mode debugger', en: 'Selaras Flow Reel · mechanism M2 · debugger mode' },
+  intro: { id: '12 langkah · 7 komponen · tiga cabang "bagaimana kalau" · satu INSERT yang memutuskan · <kbd>spasi</kbd> jeda', en: '12 steps · 7 components · three "what if" branches · one deciding INSERT · <kbd>space</kbd> pause' },
+};
+const CODE = {
+  edgekey: { file: 'internal/edge/handler/idempotency.go:20', src: `<c>// The key from the header is used AS-IS as the job key downstream (llm-worker, single scope).
+// Without this binding, two users who happen - or choose - to use the same key cancel each
+// other out: the second job is dropped as a duplicate of the first.</c>
+func idempotencyKeyFor(claims domain.Claims, header string) *commonv1.IdempotencyKey {
+	if header == "" { return nil }   <c>// downstream derives its own key from the aggregate</c>
+	return &commonv1.IdempotencyKey{Value: claims.UserID.String() + "\\x1f" + header}
+}` },
+  usecase: { file: 'internal/assessment/app/request_personalization.go:115', src: `key := req.IdempotencyKey
+if key == "" { key = "personalization:" + assessment.ID.String() }   <c>// without a client key: one job per assessment</c>
+envelope := &eventsv1.Envelope{
+	EventId:        jobID.String(),
+	IdempotencyKey: &commonv1.IdempotencyKey{Value: key},
+	Payload: &eventsv1.Envelope_PersonalizationRequested{ … },
+}
+if err := uow.Do(ctx, func(q pg.Querier) error {
+	if _, err := s.statusWriter(q).SetPersonalizationStatus(ctx, assessment.ID, domain.PersonalizationPending, …); err != nil { return err }
+	return events(q).Write(ctx, "assessment", assessment.ID.String(), envelope)   <c>// outbox (M1)</c>
+}); err != nil { return nil, fmt.Errorf("requesting personalisation: %w", err) }` },
+  keyof: { file: 'internal/llmworker/worker.go:655', src: `<c>// A key sent by the caller wins; if there is none, the event_id is used. Both are needed:
+// the first keeps a repeated request from the same user from producing two jobs,
+// the second keeps a redelivery from the relay from producing two jobs.</c>
+func idempotencyKeyOf(env *eventsv1.Envelope) string {
+	if key := env.GetIdempotencyKey().GetValue(); key != "" {
+		return key
+	}
+	return env.GetEventId()
+}` },
+  handle: { file: 'internal/llmworker/worker.go:256', src: `func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
+	var env eventsv1.Envelope
+	if err := proto.Unmarshal(rec.Value, &env); err != nil { …; return nil }   <c>// skipped, not retried forever</c>
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	key := idempotencyKeyOf(&env)
+	if key == "" {
+		c.log.ErrorContext(ctx, "a message carried no idempotency key and was skipped", "event_id", env.GetEventId())
+		return nil
+	}
+<c>	// Stage one: claim. If the key has been used before, the job has been done and there is
+	// nothing to do - this is what holds back duplicates from the at-least-once relay.</c>
+	claimed, job, err := c.claim(ctx, key, req)
+	if err != nil { return err }
+	if !claimed {
+		c.log.InfoContext(ctx, "a job arrived again and was skipped", "idempotency_key", key, "event_id", env.GetEventId())
+		c.metrics.Observe(ctx, OutcomeSkipped, 0)
+		return nil   <c>// nil = the offset advances; the duplicate ends here</c>
+	}
+	return c.work(ctx, job, req, started)
+}` },
+  guard: { file: 'internal/platform/idempotency/guard.go:40', src: `<c>// scope separates different consumers. Without it, a cache writer that has handled an event
+// would make the notification sender think it has too - and the notification is never sent.</c>
+func NewGuard(db pg.Querier, scope string) (*Guard, error) {
+	if db == nil { return nil, errors.New("nil querier") }
+	if scope == "" { return nil, errors.New("a guard without a scope would let one consumer silence another") }
+	return &Guard{db: db, scope: scope}, nil
+}
+<c>// The separator is "\\x1f" (unit separator), not a character that can appear inside scope or key.
+// With an ordinary separator like ":", scope "a" + key "b:c" and scope "a:b" + key "c" would be the same.</c>
+func (g *Guard) scopedKey(key string) string {
+	return g.scope + "\\x1f" + key
+}` },
+  claim: { file: 'internal/platform/idempotency/guard.go:57', src: `<c>// The decision comes from the database's primary key through ON CONFLICT DO NOTHING - one statement,
+// not SELECT then INSERT. The latter has a gap between the two, and two processes entering
+// at once would both read "not yet" and both do the work.</c>
+func (g *Guard) Claim(ctx context.Context, key string) (bool, error) {
+	if key == "" { return false, errors.New("an empty idempotency key would collapse every job into one") }
+	const q = \`
+		INSERT INTO processed_messages (key, scope, created_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (key) DO NOTHING\`
+	tag, err := g.db.Exec(ctx, q, g.scopedKey(key), g.scope, time.Now())
+	if err != nil { return false, fmt.Errorf("claiming the idempotency key: %w", err) }
+	return tag.RowsAffected() == 1, nil
+}` },
+  schema: { file: 'internal/platform/idempotency/schema.sql:8', src: `CREATE TABLE processed_messages (
+    key TEXT PRIMARY KEY,      <c>-- INSERT ... ON CONFLICT DO NOTHING can only act as a guard if the database enforces the uniqueness</c>
+    scope TEXT NOT NULL,       <c>-- folded into the key on the Go side; stored separately so it can be filtered on while investigating</c>
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    result BYTEA               <c>-- the result of the work, if any</c>
+);
+<c>-- This table is DELIBERATELY not partitioned, unlike the outbox. Partitioning requires the partition key
+-- in every unique constraint, so the uniqueness of key alone would stop being enforced across partitions.
+-- That is precisely the one thing this table promises. Growth is handled by sweeping old rows (Sweep).</c>
+CREATE INDEX processed_messages_by_age ON processed_messages (created_at);` },
+  wclaim: { file: 'internal/llmworker/worker.go:434', src: `func (c *Consumer) claim(ctx context.Context, key string, req *Request) (claimed bool, job *Job, err error) {
+	err = pg.InTx(ctx, c.pool, func(q pg.Querier) error {
+		guard, err := idempotency.NewGuard(q, Scope)   <c>// Scope = "llm-worker"</c>
+		ok, err := guard.Claim(ctx, key)
+		if !ok { return nil }
+<c>		// An existing job with this key is reused, not created anew. It exists if a previous attempt
+		// was halted midway, and its attempt counter has to accumulate on the same row.</c>
+		existing, found, err := c.jobs.ByKey(ctx, q, key)
+		if found { job = existing; claimed = true; return nil }
+		job = &Job{ Key: key, Kind: req.Kind, AggregateType: req.AggregateType, … }
+		if err := c.jobs.Create(ctx, q, job); err != nil { return err }   <c>// the claim and the job row commit TOGETHER</c>
+		claimed = true; return nil
+	})
+	if err != nil { return false, nil, err }
+	return claimed, job, nil
+}` },
+  work: { file: 'internal/llmworker/worker.go:331', src: `func (c *Consumer) work(ctx context.Context, job *Job, req *Request, started time.Time) error {
+	for attempt := job.Attempts; attempt &lt; MaxAttempts; attempt++ {
+		answer, genErr := c.generate(ctx, req)
+		if genErr == nil {
+			err := c.recordSuccess(ctx, job, req, answer); return err   <c>// llm_jobs completed + outbox, one transaction</c>
+		}
+		if ctx.Err() != nil {
+<c>			// Shut down in the middle of an attempt. The claim is released so the next delivery - after a restart,
+			// with the offset indeed uncommitted - really works on it instead of skipping it.</c>
+			return c.abandon(ctx, job, genErr)
+		}
+		if errors.Is(genErr, llm.ErrRateLimited) {   <c>// quota, not a job failure (ADR-025)</c>
+			if err := c.release(ctx, job); err != nil { return err }
+			return &parkedError{cause: genErr}
+		}
+		dead := attempt+1 >= MaxAttempts
+		if err := c.recordFailure(ctx, job, req, genErr, dead); err != nil { return err }
+		if dead { return nil }
+	}
+	return nil
+}` },
+  release: { file: 'internal/llmworker/worker.go:410', src: `<c>// A separate context: the caller may arrive with an already cancelled ctx (shutdown), and a failed
+// release leaves a claim that closes the key forever.</c>
+func (c *Consumer) release(ctx context.Context, job *Job) error {
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	return pg.InTx(releaseCtx, c.pool, func(q pg.Querier) error {
+		guard, err := idempotency.NewGuard(q, Scope)
+		return guard.Release(releaseCtx, job.Key)
+	})
+}
+<c>// guard.go: Release is the ONLY way a failed job can be tried again. It is dangerous when called
+// in the wrong place: releasing the claim of a job that SUCCEEDED means that job is done twice.</c>
+func (g *Guard) Release(ctx context.Context, key string) error {
+	const q = \`DELETE FROM processed_messages WHERE key = $1\`
+	if _, err := g.db.Exec(ctx, q, g.scopedKey(key)); err != nil { return err }
+	…
+}` },
+  complete: { file: 'internal/assessment/adapter/consumer/results.go:214', src: `key := idempotencyKeyOf(env)
+return pg.InTx(ctx, r.pool, func(q pg.Querier) error {
+	guard, err := idempotency.NewGuard(q, Scope)   <c>// Scope = "assessment-results", not "llm-worker"</c>
+	claimed, err := guard.Claim(ctx, key)
+	if !claimed {
+<c>		// Already stored. The outbox relay is at-least-once, so a message arriving twice is a normal state.</c>
+		return nil
+	}
+	if err := r.svc.StorePersonalization(ctx, done.GetAssessmentId(), report); err != nil { return err }
+<c>	// The status and the report are written in the same transaction. If either could happen without the other,
+	// a client would see an existing report with status pending - or status completed without a report.</c>
+	if _, err := r.statuses(q).SetPersonalizationStatus(ctx, id, domain.PersonalizationCompleted, nil, ""); err != nil { return err }
+	return nil
+})` },
+  sweep: { file: 'internal/platform/idempotency/guard.go:80', src: `<c>// SaveResult is called in the same transaction as Claim; Result returns exactly the same answer
+// for a repeated request. Both exist in this package; no service calls them yet (grep 2026-09-09).</c>
+func (g *Guard) SaveResult(ctx context.Context, key string, result []byte) error {
+	const q = \`UPDATE processed_messages SET result = $2 WHERE key = $1\`
+	…
+}
+<c>// Sweep deletes records older than the given age. The age has to be longer than any retry window:
+// sweeping too early makes an old message that arrives late be done twice.
+// Not scheduled in any cmd/ yet; the llm-worker runbook: "prune by age (Sweep), not everything".</c>
+func Sweep(ctx context.Context, db pg.Querier, olderThan time.Duration) (int64, error) {
+	if olderThan &lt;= 0 { return 0, errors.New("sweeping with no age limit would erase every claim") }
+	const q = \`DELETE FROM processed_messages WHERE created_at < $1\`
+	tag, err := db.Exec(ctx, q, time.Now().Add(-olderThan))
+	if err != nil { return 0, err }
+	return tag.RowsAffected(), nil
+}` },
+};
+
+// ---------- KANVAS ----------
+const NODES = {
+  gateway: { x: 180,  y: 300, label: 'edge-gateway',       sub: 'idempotencyKeyFor()',           icon: 'gate' },
+  svc:     { x: 460,  y: 300, label: 'assessment-svc',     sub: 'use case · konsumen hasil',     icon: 'svc' },
+  worker:  { x: 1450, y: 300, label: 'llm-worker',         sub: 'scope "llm-worker"',            icon: 'worker' },
+  worker2: { x: 900,  y: 470, label: 'llm-worker (pod 2)', sub: 'pengiriman yang sama, bersamaan', icon: 'worker' },
+  pm:      { x: 1450, y: 640, label: 'processed_messages', sub: 'svc_llm · key PRIMARY KEY',     icon: 'table' },
+  pm2:     { x: 300,  y: 640, label: 'processed_messages', sub: 'svc_assessment · scope sendiri', icon: 'table' },
+};
+const RAIL_X = 640;
+const RAILS = { jobs: { y: 300, label: 'llm.jobs', n: 12, hot: 7 }, results: { y: 640, label: 'llm.results', n: 12, hot: 7 } };
+const SLOT_X = i => RAIL_X + 15 + i * 56 + 24;
+const EDGES = {
+  E1: { d: 'M236,300 L404,300',                        kind: 'grpc', lbl: ['gRPC · IdempotencyKey', 320, 286],  a: 'gateway', b: 'svc' },
+  E2: { d: 'M516,300 L640,300',                        kind: 'evt',  lbl: ['outbox → relay', 578, 286],        a: 'svc', b: 'rail-jobs' },
+  E3: { d: 'M1340,300 L1394,300',                      kind: 'evt',  lbl: ['Poll', 1367, 286],                  a: 'rail-jobs', b: 'worker' },
+  E4: { d: 'M1450,356 L1450,584',                      kind: 'db',   lbl: ['INSERT … ON CONFLICT DO NOTHING', 1300, 476], a: 'worker', b: 'pm' },
+  E5: { d: 'M1394,316 C1250,380 1250,640 1340,640',    kind: 'evt',  lbl: ['outbox → llm.results', 1235, 550], a: 'worker', b: 'rail-results' },
+  E6: { d: 'M640,640 C560,640 460,540 460,356',        kind: 'evt',  lbl: ['llm.results process', 540, 550],  a: 'rail-results', b: 'svc' },
+  E7: { d: 'M420,350 C350,420 300,500 300,570',        kind: 'db',   lbl: ['Claim · scope lain', 300, 480],   a: 'svc', b: 'pm2' },
+  E8: { d: 'M1071,334 C1071,380 930,370 905,414',      kind: 'evt',  lbl: ['pesan yang sama', 1000, 380],      a: 'rail-jobs', b: 'worker2' },
+  E9: { d: 'M956,480 C1150,500 1300,560 1394,620',     kind: 'db',   lbl: ['INSERT yang sama', 1180, 560],     a: 'worker2', b: 'pm' },
+};
+const PANEL = {
+  svc:    { side: 'above', title: 'di dalam assessment-svc', blocks: [['interceptor', 'authn'], ['use case', 'kunci pekerjaan'], ['konsumen', 'llm.results'], ['guard', 'assessment-results']] },
+  worker: { side: 'above', dx: -120, title: 'di dalam llm-worker', blocks: [['PollFetches', 'llm.jobs'], ['idempotencyKeyOf', 'kunci'], ['claim', 'INSERT · ON CONFLICT'], ['work', 'generate + simpan']] },
+};
+const PANEL_GEOM = id => { const p = PANEL[id]; if (!p) return null; const bw = p.bw || 96, gap = p.gap || 12, w = p.blocks.length * bw + (p.blocks.length - 1) * gap + 40, hgt = 96; const x = -w / 2 + (p.dx || 0), y = p.side === 'below' ? 118 : -216; return { x, y, w, h: hgt, bw, gap }; };
+const railW = n => n === 1 ? 240 : n <= 4 ? 160 + n * 56 : 700;
+const BOX = id => { const b = id.startsWith('rail-') ? { x: RAIL_X, y: RAILS[id.slice(5)].y - 34, w: railW(RAILS[id.slice(5)].n), h: 68 } : { x: NODES[id].x - 70, y: NODES[id].y - 70, w: 140, h: 176 };
+  const g = NODES[id] && PANEL_GEOM(id); if (!g) return b; const px = NODES[id].x + g.x, py = NODES[id].y + g.y; const x = Math.min(b.x, px), y = Math.min(b.y, py); return { x, y, w: Math.max(b.x + b.w, px + g.w) - x, h: Math.max(b.y + b.h, py + g.h) - y }; };
+
+// ---------- STATE ----------
+const initial = () => ({ shown: [], edges: [], trail: [], txCount: 0, msgCount: 0, focus: null, slots: {}, rows: { pm: [], pm2: [] }, dead: [], ticks: {},
+  key: { client: 'k-3f1', bound: null, job: null }, pm: [], pm2: [], jobs: [], deliveries: 0, skipped: 0, runs: 0, outcome: null });
+const show = (S, ...ids) => ids.forEach(id => { if (!S.shown.includes(id)) S.shown.push(id); });
+const edge = (S, ...ids) => ids.forEach(id => { if (!S.edges.includes(id)) S.edges.push(id); });
+const KEY = 'u_91c2␟k-3f1';
+
+// ---------- LANGKAH ----------
+const STEPS = [
+  { at: 'gateway', proc: ['Header Idempotency-Key: "k-3f1"', 'idempotencyKeyFor: u_91c2 + "\\x1f" + k-3f1', 'Tanpa header → nil: hilir menurunkan kunci dari agregat'], done: 'kunci diikat', title: 'Kunci klien diikat ke pengguna sebelum masuk ke sistem', text: 'Kunci dari header dipakai apa adanya sebagai kunci pekerjaan di hilir. Tanpa pengikatan, dua pengguna yang memakai "k-3f1" saling meniadakan. Pemisahnya karakter kontrol U+001F, bukan ":", supaya id dan kunci tidak bisa dirangkai menjadi kunci milik orang lain.', refs: ['internal/edge/handler/idempotency.go'], zoom: 'key', code: 'edgekey', lines: 'claims.UserID.String() + "\\x1f" + header', branch: ['tanpa-ikatan'],
+    mut: S => { show(S, 'gateway'); S.focus = 'gateway'; S.key.bound = KEY; } },
+  { travel: [{ e: 'E1', p: 'jwt' }], at: 'svc', proc: [{ t: 'key = req.IdempotencyKey (u_91c2␟k-3f1)', b: 1 }, { t: 'Kosong? → "personalization:" + id penilaian', b: 1 }, { t: 'Envelope{EventId: jobID, IdempotencyKey: key} → outbox', b: 1 }], done: 'kunci di envelope', title: 'Use case menetapkan kunci pekerjaan dan menaruhnya di envelope', text: 'Dua sumber kunci, dua kegunaan: kunci klien menahan permintaan ulang dari pengguna yang sama; event_id (bila klien tidak mengirim kunci) menahan pengiriman ulang dari relay. Envelope-nya masuk ke outbox lewat mekanisme M1.', refs: ['internal/assessment/app/request_personalization.go'], zoom: 'key', code: 'usecase', lines: 'IdempotencyKey: &commonv1.IdempotencyKey{Value: key}',
+    mut: S => { show(S, 'svc'); edge(S, 'E1'); S.focus = 'svc'; S.key.job = KEY; S.txCount = 1; } },
+  { travel: [{ e: 'E2', p: 'evt' }], at: 'rail-jobs', down: 'M1', proc: [{ t: 'Relay at-least-once: satu event, mungkin dua pengiriman', fx: ['slot:jobs:lit'] }, 'Kunci partisi = id penilaian → partisi 7'], done: 'partisi 7', title: 'Pesan tiba di llm.jobs, dan mungkin akan tiba lagi', text: 'Relay (M1) menandai terkirim setelah broker mengakui. Relay yang mati di antaranya mengirim ulang pesan yang sama. Duplikat itu bukan galat; ia keadaan normal yang harus ditahan di sini.', refs: ['internal/platform/outbox/relay.go', 'ADR-004'], zoom: 'kafka',
+    mut: S => { show(S, 'rail-jobs'); edge(S, 'E2'); S.focus = 'rail-jobs'; S.slots.jobs = 'lit'; S.msgCount = 1; } },
+  { travel: [{ e: 'E3', p: 'evt' }], at: 'worker', proc: [{ t: 'PollFetches: pengiriman #1', b: 0 }, { t: 'idempotencyKeyOf: kunci klien menang; event_id bila tidak ada', b: 1 }, { t: 'Kunci kosong → dilewati dan dicatat, bukan diulang selamanya', b: 1 }], done: 'key = u_91c2␟k-3f1', title: 'Worker memilih kunci: milik klien, atau event_id', text: 'Kunci kosong akan meruntuhkan semua pekerjaan menjadi satu (Claim menolaknya). Worker mencatat pesan tanpa kunci dan melewatinya supaya partisi tidak tersumbat selamanya.', refs: ['internal/llmworker/worker.go'], zoom: 'key', code: 'keyof', lines: 'if key := env.GetIdempotencyKey().GetValue()',
+    mut: S => { show(S, 'worker'); edge(S, 'E3'); S.focus = 'worker'; S.deliveries = 1; } },
+  { at: 'worker', proc: [{ t: 'pg.InTx: BEGIN', b: 2 }, { t: 'NewGuard(q, "llm-worker"): tanpa scope ditolak', b: 2 }, { t: 'scopedKey = "llm-worker" + "\\x1f" + kunci', b: 2 }], done: 'guard siap', title: 'Guard hidup di dalam transaksi, dengan scope yang wajib', text: 'Guard menerima Querier, bukan kolam koneksi: klaim dan pekerjaannya harus commit bersama. Scope ikut ke dalam kunci supaya dua konsumen yang membaca event yang sama tidak saling membungkam.', refs: ['internal/platform/idempotency/guard.go'], zoom: 'pm', code: 'guard', lines: 'return g.scope + "\\x1f" + key', proof: 'TestAGuardWithoutAScopeIsRefused',
+    mut: S => { S.focus = 'worker'; S.txCount = 2; } },
+  { at: 'worker', proc: [{ t: 'INSERT INTO processed_messages (key, scope, created_at) VALUES ($1, $2, $3) ON CONFLICT (key) DO NOTHING', b: 2, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'one' }], fx: ['row:pm:1', 'tick:pm:1 baris'] }, { t: 'RowsAffected = 1 → klaim milik transaksi ini', b: 2 }], done: 'claimed', title: 'Satu INSERT yang memutuskan; kunci primer yang menjadi wasitnya', text: 'Bukan SELECT lalu INSERT: di antara keduanya ada celah tempat dua proses sama-sama membaca "belum". ON CONFLICT DO NOTHING menyerahkan keputusannya ke kunci primer, yang hanya bisa dimenangkan satu kali.', refs: ['internal/platform/idempotency/guard.go', 'internal/platform/idempotency/schema.sql'], zoom: 'pm', code: 'claim', lines: 'ON CONFLICT (key) DO NOTHING', proof: 'TestTheSameKeyIsClaimedOnce', branch: ['balapan'],
+    mut: S => { show(S, 'pm'); edge(S, 'E4'); S.focus = 'pm'; S.rows.pm = [1]; S.pm.push({ key: 'llm-worker␟' + KEY, scope: 'llm-worker', st: 'claimed' }); S.ticks.pm = '1 baris'; } },
+  { at: 'worker', proc: [{ t: 'llm_jobs.ByKey: belum ada → Create (pending, attempts 0)', b: 3 }, { t: 'COMMIT: klaim dan baris pekerjaan menjadi nyata bersama', b: 3, fx: ['flash:pm'] }], done: 'klaim + pekerjaan · 1 tx', title: 'Klaim dan pekerjaannya commit bersama, atau batal bersama', text: 'Klaim yang commit sendiri lalu pekerjaannya gagal meninggalkan kunci yang tercatat selesai untuk pekerjaan yang tidak pernah terjadi, dan tidak ada percobaan ulang yang bisa memperbaikinya.', refs: ['internal/llmworker/worker.go', 'internal/platform/idempotency/guard_integration_test.go'], zoom: 'jobs', code: 'wclaim', lines: 'c.jobs.Create(ctx, q, job)', proof: 'TestAFailedJobCanBeRetried',
+    mut: S => { S.focus = 'worker'; S.jobs.push({ id: 'jb_c210', st: 'pending', att: 0 }); S.pm[0].st = 'committed'; } },
+  { at: 'worker', proc: [{ t: 'work: generate (Gemini) … 4,2 s', b: 3 }, { t: 'recordSuccess: llm_jobs completed + outbox, satu transaksi', b: 3, go: [{ e: 'E5', p: 'evt' }], fx: ['slot:results:lit'] }], done: 'completed', title: 'Pekerjaan dikerjakan sekali; hasilnya keluar lewat outbox lagi', text: 'Tahap dua terpisah dari klaim: panggilan penyedia berjalan di luar transaksi. Kegagalan di tengah punya jalannya sendiri: klaim dilepas supaya pengiriman berikutnya benar-benar mengerjakannya. Pilih apa yang terjadi.', refs: ['internal/llmworker/worker.go'], zoom: 'jobs', code: 'work', lines: 'c.recordSuccess(ctx, job, req, answer)', branch: ['gagal-ditengah'],
+    mut: S => { show(S, 'rail-results'); edge(S, 'E5'); S.focus = 'rail-results'; S.jobs[0].st = 'completed'; S.jobs[0].att = 1; S.runs = 1; S.slots.results = 'lit'; S.msgCount = 2; S.txCount = 3; } },
+  { jump: true, travel: [{ e: 'E3', p: 'evt' }], at: 'worker', proc: [{ t: 'PollFetches: pesan yang SAMA, pengiriman #2', b: 0 }, { t: 'Kunci sama → Claim lagi', b: 2, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'zero' }], fx: ['shake:pm'] }, { t: 'ON CONFLICT DO NOTHING: RowsAffected = 0', b: 2 }, { t: 'log "a job arrived again and was skipped"; offset maju', b: 0 }], done: 'skipped', title: 'Duplikat tiba: INSERT tidak mengubah apa pun, pesan dilewati', text: 'Tidak ada galat, tidak ada percobaan ulang. Klaim yang tersimpan menjawab pertanyaannya dan handler mengembalikan nil supaya offset maju. Test-nya mengirim pekerjaan dua kali dan menghitung satu baris hasil.', refs: ['internal/llmworker/worker.go'], zoom: 'pm', code: 'handle', lines: 'a job arrived again and was skipped', proof: 'TestWorkRunsOnceWhenTheJobArrivesTwice',
+    mut: S => { S.focus = 'worker'; S.deliveries = 2; S.skipped = 1; S.slots.jobs = 'used'; } },
+  { jump: true, travel: [{ e: 'E6', p: 'evt' }], at: 'svc', proc: [{ t: 'isMine(rec): header aggregate_type cocok', b: 2 }, { t: 'NewGuard(q, "assessment-results"): scope BERBEDA dari worker', b: 3 }, { t: 'scopedKey berbeda walau event yang sama', b: 3 }], done: 'scope sendiri', title: 'Konsumen hasil memakai scope sendiri: klaim worker tidak membungkamnya', text: 'Event yang sama dibaca dua konsumen berbeda dengan tujuan berbeda. Tanpa scope, konsumen yang lebih dulu selesai akan membuat yang lain mengira dirinya juga sudah. Tabelnya pun terpisah per schema service.', refs: ['internal/assessment/adapter/consumer/results.go', 'internal/platform/idempotency/guard.go'], zoom: 'key', code: 'guard', lines: 'return &Guard{db: db, scope: scope}, nil', proof: 'TestTwoConsumersDoNotSilenceEachOther',
+    mut: S => { edge(S, 'E6'); S.focus = 'svc'; S.slots.results = 'used'; } },
+  { at: 'svc', proc: [{ t: 'INSERT … ON CONFLICT DO NOTHING (schema svc_assessment)', b: 3, go: [{ e: 'E7', p: 'sql' }, { e: 'E7', rev: true, p: 'one' }], fx: ['row:pm2:1', 'tick:pm2:1 baris'] }, { t: 'StorePersonalization + status completed, transaksi yang sama', b: 3, fx: ['flash:pm2'] }], done: 'laporan tersimpan 1×', title: 'Klaim, simpan laporan, ubah status: satu transaksi di sisi penerima', text: 'Status tanpa laporan atau laporan tanpa status tidak bisa terjadi. Pesan hasil yang tiba dua kali (relay worker juga at-least-once) berhenti di klaim kedua dengan tenang.', refs: ['internal/assessment/adapter/consumer/results.go'], zoom: 'pm', code: 'complete', lines: 'claimed, err := guard.Claim(ctx, key)',
+    mut: S => { show(S, 'pm2'); edge(S, 'E7'); S.focus = 'pm2'; S.rows.pm2 = [1]; S.pm2.push({ key: 'assessment-results␟' + KEY, scope: 'assessment-results', st: 'committed' }); S.ticks.pm2 = '1 baris'; S.txCount = 4; } },
+  { at: 'pm', jump: true, proc: ['Tabel sengaja tidak dipartisi: keunikan key harus global', 'SaveResult/Result: tersedia di paket, belum dipakai service mana pun', 'Sweep(olderThan): tersedia, belum dijadwalkan di cmd/ mana pun'], done: 'sisa pekerjaan', title: 'Yang sudah dan yang belum: hasil tersimpan dan penyapuan masih menunggu pemanggil', text: 'Klaim bekerja penuh. Dua kemampuan lain ada di paket dengan test-nya tetapi belum dipasang: SaveResult/Result (jawaban yang sama untuk permintaan ulang) dan Sweep (pangkas berdasarkan umur). Runbook llm-worker melarang mengosongkan tabel ini: setiap pekerjaan berbayar akan dibayar dua kali.', refs: ['internal/platform/idempotency/schema.sql', 'docs/runbook/llm-worker.md'], zoom: 'pm', code: 'sweep', lines: 'DELETE FROM processed_messages WHERE created_at < $1', proof: ['TestTheStoredResultComesBack', 'TestSweepKeepsRecentClaims'],
+    mut: S => { S.focus = 'pm'; S.outcome = 'Dua pengiriman, satu pekerjaan, satu laporan; dua konsumen dengan scope masing-masing'; } },
+];
+
+const BRANCHES = {
+  'tanpa-ikatan': { label: 'Kunci klien tidak diikat ke pengguna', resume: false, fail: true, steps: [
+    { at: 'gateway', proc: [{ t: 'Andai kunci dipakai apa adanya: "k-3f1"', bad: true }, { t: 'Pengguna B (u_7d20) juga mengirim "k-3f1"' }], title: 'Dua pengguna, satu kunci: siapa yang kalah?', text: 'Kunci klien bebas dipilih klien. Di sistem lama, kunci tanpa ikatan berarti pekerjaan pengguna kedua dibuang sebagai duplikat pekerjaan pengguna pertama; sengaja atau kebetulan, hasilnya sama.', refs: ['internal/edge/handler/idempotency.go'], zoom: 'key', code: 'edgekey', lines: 'if header == "" { return nil }',
+      mut: S => { S.focus = 'gateway'; S.key.bound = 'k-3f1 (tanpa ikatan)'; } },
+    { travel: [{ e: 'E1', p: 'jwt' }, { e: 'E2', p: 'evt' }, { e: 'E3', p: 'evt' }], at: 'worker', proc: [{ t: 'A: claim "llm-worker␟k-3f1" → RowsAffected 1', b: 2, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'one' }], fx: ['row:pm:1'] }, { t: 'B: claim "llm-worker␟k-3f1" → RowsAffected 0', b: 2, bad: true, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'zero' }], fx: ['shake:pm'] }, { t: 'Pekerjaan B dibuang sebagai duplikat pekerjaan A', bad: true }], done: 'B hilang', title: 'Pekerjaan B tidak pernah dikerjakan, dan tidak ada yang tahu', text: 'Karena itulah gateway mengikat kunci: "u_91c2␟k-3f1" dan "u_7d20␟k-3f1" adalah dua kunci berbeda. Pemisah U+001F tidak bisa muncul di dalam id maupun kunci, jadi tidak ada rangkaian yang bisa menyamar sebagai kunci orang lain.', refs: ['internal/edge/handler/idempotency.go', 'internal/platform/idempotency/guard.go'], zoom: 'pm', code: 'claim', lines: 'return tag.RowsAffected() == 1, nil',
+      mut: S => { show(S, 'svc', 'rail-jobs', 'worker', 'pm'); edge(S, 'E1', 'E2', 'E3', 'E4'); S.focus = 'pm'; S.rows.pm = [1]; S.pm.push({ key: 'llm-worker␟k-3f1', scope: 'llm-worker', st: 'milik A' }); S.deliveries = 2; S.skipped = 1; S.outcome = 'Tanpa ikatan ke pengguna, kunci klien bisa membungkam pekerjaan orang lain'; } },
+  ] },
+  'balapan': { label: 'Dua pod mengklaim bersamaan', resume: true, steps: [
+    { at: 'worker2', bg: true, proc: [{ t: 'Pod 2 menerima pengiriman #2 pada milidetik yang sama', go: [{ e: 'E8', p: 'evt' }] }, { t: 'INSERT yang sama, bersamaan', go: [{ e: 'E9', p: 'sql' }, { e: 'E9', rev: true, p: 'zero' }], fx: ['shake:pm'] }, { t: 'Kunci primer memutuskan: satu menang, satu RowsAffected = 0' }, { t: 'Tanpa SELECT-lalu-INSERT: tidak ada celah "sama-sama membaca belum"' }], done: '1 pemenang', title: 'Balapan sungguhan: dua INSERT bersamaan, kunci primer memilih satu', text: 'Test-nya melepas delapan goroutine ke kunci yang sama dan menghitung tepat satu pemenang. Pemenangnya bebas; yang penting bukan siapa, melainkan bahwa hanya ada satu.', refs: ['internal/platform/idempotency/guard_integration_test.go'], zoom: 'pm', code: 'claim', lines: 'INSERT INTO processed_messages (key, scope, created_at)', proof: 'TestAConcurrentRaceStillYieldsOneWinner',
+      mut: S => { show(S, 'worker2'); edge(S, 'E8', 'E9'); S.focus = 'pm'; S.deliveries = 2; S.skipped = 1; } },
+  ] },
+  'gagal-ditengah': { label: 'Pod dimatikan di tengah pekerjaan', resume: false, fail: true, steps: [
+    { at: 'worker', jump: true, proc: [{ t: 'SIGTERM saat generate berjalan: ctx dibatalkan', b: 3, bad: true, fx: ['off:worker'] }, { t: 'abandon → release: DELETE FROM processed_messages WHERE key = $1', b: 2, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'ack' }], fx: ['unrow:pm:1', 'tick:pm:klaim dilepas'] }, { t: 'context.WithoutCancel + 10 s: pelepasan tidak ikut batal', b: 2 }], done: 'klaim dilepas', title: 'Klaim dilepas dengan context yang tidak ikut dibatalkan', text: 'Ctx pemanggil sudah mati; memakainya berarti pelepasannya sendiri gagal, dan klaim yang tertinggal menutup kuncinya selamanya. Release hanya dipanggil di jalur kegagalan yang memang akan diulang; melepas klaim pekerjaan yang berhasil berarti membayar dua kali.', refs: ['internal/llmworker/worker.go', 'internal/platform/idempotency/guard.go'], zoom: 'pm', code: 'release', lines: 'context.WithoutCancel',
+      mut: S => { S.focus = 'worker'; S.dead = ['worker']; S.rows.pm = []; S.pm = []; S.jobs[0].st = 'pending'; S.ticks.pm = 'klaim dilepas'; S.slots.results = null; S.msgCount = 1; } },
+    { jump: true, travel: [{ e: 'E3', p: 'evt' }], at: 'worker', proc: [{ t: 'Pod hidup lagi; offset belum dikomit → pesan datang lagi', b: 0, fx: ['on:worker'] }, { t: 'Claim: RowsAffected = 1 lagi', b: 2, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'one' }], fx: ['row:pm:1', 'tick:pm:1 baris'] }, { t: 'llm_jobs.ByKey: baris lama dipakai ulang; attempts menumpuk di sana', b: 3 }], done: 'dikerjakan, bukan dilewati', title: 'Pengiriman berikutnya benar-benar mengerjakannya, dengan penghitung yang sama', text: 'Klaim di transaksi yang sama dengan pekerjaan batal bersama pekerjaannya (test); klaim yang sudah commit dilepas lewat Release. Baris llm_jobs yang lama dipakai ulang supaya batas tiga percobaan tetap tercapai.', refs: ['internal/llmworker/worker.go'], zoom: 'jobs', code: 'wclaim', lines: 'existing, found, err := c.jobs.ByKey(ctx, q, key)', proof: 'TestAFailedJobCanBeRetried',
+      mut: S => { S.focus = 'worker'; S.dead = []; S.rows.pm = [1]; S.pm.push({ key: 'llm-worker␟' + KEY, scope: 'llm-worker', st: 'claimed (ulang)' }); S.deliveries = 2; S.ticks.pm = '1 baris'; S.outcome = 'Klaim dilepas saat mati, diklaim ulang saat hidup: tidak ada pekerjaan yang hilang atau digandakan'; } },
+  ] },
+};
+const CHAPTERS = [
+  { name: 'Kunci', sub: 'dari header klien sampai envelope, diikat ke pengguna' },
+  { name: 'Klaim', sub: 'satu INSERT, satu pemenang, commit bersama pekerjaannya' },
+  { name: 'Duplikat', sub: 'pengiriman kedua berhenti; konsumen lain punya scope sendiri' },
+];
+STEPS.forEach((s, i) => { s.ch = i <= 2 ? 0 : i <= 7 ? 1 : 2; });
+BRANCHES['tanpa-ikatan'].steps.forEach(s => { s.ch = 0; });
+BRANCHES['balapan'].steps.forEach(s => { s.ch = 1; });
+BRANCHES['gagal-ditengah'].steps.forEach(s => { s.ch = 1; });
+const PAYLOAD = {
+  jwt: { shape: 'jwt' }, evt: { shape: 'env' }, sql: { shape: 'card', text: 'SQL' }, one: { shape: 'card', text: '1' }, zero: { shape: 'card', text: '0' }, ack: { shape: 'ack' }, err: { shape: 'err' },
+};
+
+// ---------- RINCIAN ----------
+const st = s => `<span class="st ${s}">${s}</span>`;
+const li = (state, txt) => `<div class="${state || ''}"><i></i><span>${txt}</span></div>`;
+const ZOOM = {
+  key: S => ['Kunci idempotensi · tiga lapisan', `<div class="kv"><b>header klien</b><span>${S.key.client}</span><b>diikat gateway</b><span class="${S.key.bound ? 'lit' : ''}">${S.key.bound || '—'}</span><b>di envelope</b><span class="${S.key.job ? 'lit' : ''}">${S.key.job || '—'}</span><b>scope llm-worker</b><span>llm-worker␟${S.key.job || '…'}</span><b>scope assessment-results</b><span>assessment-results␟${S.key.job || '…'}</span></div><div class="z">␟ = U+001F unit separator: tidak bisa muncul di id maupun kunci, jadi "a␟b:c" ≠ "a:b␟c"</div>`],
+  kafka: S => ['Kafka · llm.jobs ↔ llm.results', `<div class="z">llm.jobs · kunci <b>as_3b9d</b> → partisi 7 · pengiriman: <b>${S.deliveries}</b></div><div class="slots">${Array.from({ length: 12 }, (_, i) => `<div class="${i === 7 && S.slots.jobs ? 'lit' : ''}">${i}</div>`).join('')}</div><div class="z">llm.results · partisi 7</div><div class="slots">${Array.from({ length: 12 }, (_, i) => `<div class="${i === 7 && S.slots.results ? 'lit' : ''}">${i}</div>`).join('')}</div>`],
+  pm: S => ['processed_messages · dua schema, dua scope', `<div class="tbl"><div class="th">svc_llm.processed_messages <span>key · scope</span></div>${S.pm.length ? S.pm.map(p => `<div class="row new"><span class="id">${p.scope}</span><span>${p.key}</span>${st(p.st)}</div>`).join('') : '<div class="row"><span class="id">—</span><span>kosong</span><span></span></div>'}</div><div class="tbl"><div class="th">svc_assessment.processed_messages <span>key · scope</span></div>${S.pm2.length ? S.pm2.map(p => `<div class="row new"><span class="id">${p.scope}</span><span>${p.key}</span>${st(p.st)}</div>`).join('') : '<div class="row"><span class="id">—</span><span>kosong</span><span></span></div>'}</div><div class="kv"><b>pengiriman</b><span>${S.deliveries}</span><b>dilewati</b><span class="${S.skipped ? 'lit' : ''}">${S.skipped}</span><b>dikerjakan</b><span>${S.runs}</span></div>`],
+  jobs: S => ['llm_jobs · schema svc_llm', `<div class="tbl"><div class="th">llm_jobs <span>id · key · status · attempts</span></div>${S.jobs.length ? S.jobs.map(j => `<div class="row new"><span class="id">${j.id}</span><span>${KEY}</span><span class="st ${j.st}">${j.st} · ${j.att}</span></div>`).join('') : '<div class="row"><span class="id">—</span><span>belum ada</span><span></span></div>'}</div><div class="list">${['Claim (guard) di transaksi yang sama', 'ByKey: baris lama dipakai ulang bila ada', 'Create bila belum ada', 'COMMIT keduanya'].map(t => li(S.jobs.length ? 'done' : '', t)).join('')}</div>`],
+};
+</script>
+<script src="manifest.js"></script>
+<script src="reel.js"></script>
+</body>
+</html>

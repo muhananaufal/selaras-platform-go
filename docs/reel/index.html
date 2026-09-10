@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selaras Flow Reels</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #f3f1ec; --panel: #ffffff; --panel-2: #f7f5f0; --ink: #1b2230; --ink-2: #4d5566; --ink-3: #7c8494;
+    --line: #dcd7cc; --line-2: #e9e5dc; --accent: #b45309; --accent-soft: #fbe9d2; --accent-ink: #ffffff;
+    --l1: #0f766e; --l2: #b45309; --l3: #6d28d9; --ok: #15803d;
+    --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif; --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0e1319; --panel: #151c24; --panel-2: #1b232d; --ink: #e7e3d8; --ink-2: #aab0bb; --ink-3: #7b8391; --line: #2a3340; --line-2: #222b36; --accent: #f5b64c; --accent-soft: #3a2c14; --accent-ink: #0e1319; --l1: #4fd1c5; --l2: #f5b64c; --l3: #b794f6; --ok: #7bd88f; } }
+  :root[data-theme="dark"] { --bg: #0e1319; --panel: #151c24; --panel-2: #1b232d; --ink: #e7e3d8; --ink-2: #aab0bb; --ink-3: #7b8391; --line: #2a3340; --line-2: #222b36; --accent: #f5b64c; --accent-soft: #3a2c14; --accent-ink: #0e1319; --l1: #4fd1c5; --l2: #f5b64c; --l3: #b794f6; --ok: #7bd88f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+  a { color: var(--accent); }
+  h1, h2, h3 { font-family: var(--display); letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  code { font-family: var(--mono); font-size: 0.84em; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 2rem 1.5rem 5rem; display: grid; gap: 2.6rem; }
+  header { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: start; }
+  header .eyebrow { font-family: var(--display); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+  header h1 { font-size: 2.4rem; font-weight: 800; line-height: 1.08; margin: 0.3rem 0 0.5rem; }
+  header p { margin: 0; color: var(--ink-2); max-width: 70ch; font-size: 1.05rem; }
+  .tools { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; align-content: start; }
+  .btn { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font: inherit; font-size: 0.82rem; font-weight: 500; color: inherit; text-decoration: none; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .search { display: grid; gap: 0.5rem; }
+  .search input { font: inherit; width: 100%; padding: 0.6rem 0.9rem; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  .search .hint { font-size: 0.8rem; color: var(--ink-3); }
+  .progress { display: flex; align-items: center; gap: 0.7rem; font-family: var(--mono); font-size: 0.78rem; color: var(--ink-3); }
+  .progress i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; position: relative; }
+  .progress i::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--p, 0%); background: var(--accent); }
+  section { display: grid; gap: 1rem; }
+  section > h2 { font-size: 1.35rem; font-weight: 800; display: flex; align-items: baseline; gap: 0.7rem; }
+  section > h2 .chip { font-family: var(--display); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--c); border: 1px solid var(--c); border-radius: 999px; padding: 0.1rem 0.55rem; }
+  section > h2 small { font-family: var(--body); font-weight: 400; font-size: 0.9rem; color: var(--ink-2); }
+  .tier[data-l="1"] { --c: var(--l1); } .tier[data-l="2"] { --c: var(--l2); } .tier[data-l="3"] { --c: var(--l3); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.9rem; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.95rem 1.05rem 1rem; display: grid; grid-template-rows: auto auto 1fr auto; gap: 0.45rem; border-top: 3px solid var(--c); }
+  .card.hidden { display: none; }
+  .card .top { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 0.7rem; color: var(--ink-3); }
+  .card .top .st { padding: 0.05rem 0.45rem; border-radius: 999px; border: 1px solid var(--line); }
+  .card .top .st.jadi { color: var(--ok); border-color: var(--ok); }
+  .card .top .st.watched { color: var(--accent); border-color: var(--accent); }
+  .card h3 { font-size: 1.05rem; font-weight: 800; }
+  .card p { margin: 0; color: var(--ink-2); font-size: 0.88rem; }
+  .card .mech { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .card .mech span { font-family: var(--mono); font-size: 0.64rem; color: var(--l3); border: 1px solid var(--l3); border-radius: 4px; padding: 0 0.3rem; opacity: 0.8; }
+  .card .act { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.3rem; }
+  .card .act .plan { font-size: 0.78rem; color: var(--ink-3); }
+  .card.belum { opacity: 0.8; }
+  .idx { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.4rem 1.2rem; font-size: 0.86rem; }
+  .idx div { display: grid; grid-template-columns: 6rem 1fr auto; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--line-2); align-items: baseline; }
+  .idx code { color: var(--ink-3); }
+  .idx .r { font-family: var(--mono); font-size: 0.66rem; color: var(--ink-3); white-space: nowrap; }
+  .idx .r b { color: var(--accent); font-weight: 600; }
+  details summary { cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 0.95rem; }
+  footer { color: var(--ink-3); font-size: 0.82rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+  .empty { color: var(--ink-3); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow" data-t="eyebrow">selaras-platform-go · showcase</div>
+      <h1 data-t="h1">Selaras Flow Reels</h1>
+      <p data-t="lede">Bagaimana satu platform kesehatan berbasis Go bekerja, dari yang dialami pengguna sampai baris kode yang menjaganya: satu cerita, sebelas alur per fitur, sebelas mekanisme. Tiap reel adalah animasi yang bisa diputar, dijeda, dan dibaca; setiap langkahnya bersumber dari kode nyata.</p>
+    </div>
+    <div class="tools">
+      <button class="btn" id="b-lang">English</button>
+      <button class="btn" id="b-theme">◐ <span data-t="theme">Tema</span></button>
+      <a class="btn" href="runtime.html" data-t="map">Peta sistem</a>
+      <a class="btn" href="plan.html" data-t="plan">Rencana</a>
+    </div>
+  </header>
+
+  <div class="search">
+    <input id="q" type="search" placeholder="Cari: outbox, ADR-025, relay.go, KEDA, idempotensi…" data-ph="search">
+    <div class="hint" data-t="hint">Mencari di judul, ringkasan, berkas sumber, dan ADR tiap reel. Reel yang belum dibuat tetap muncul dengan tanda direncanakan.</div>
+    <div class="progress"><span id="prog-t">0 / 23</span><i id="prog"></i><span data-t="watched">sudah ditonton</span></div>
+  </div>
+
+  <section class="tier" data-l="1" id="t1"><h2><span class="chip">Lapisan 1</span><span data-t="t1">Cerita</span><small data-t="t1s">apa yang dialami orang</small></h2><div class="grid" id="g1"></div></section>
+  <section class="tier" data-l="2" id="t2"><h2><span class="chip">Lapisan 2</span><span data-t="t2">Alur per fitur</span><small data-t="t2s">komponen mana yang bekerja, berurutan bagaimana</small></h2><div class="grid" id="g2"></div></section>
+  <section class="tier" data-l="3" id="t3"><h2><span class="chip">Lapisan 3</span><span data-t="t3">Mekanisme lintas fitur</span><small data-t="t3s">pernyataan mana yang dijalankan, mengapa, dan apa yang terjadi bila putus</small></h2><div class="grid" id="g3"></div></section>
+
+  <section>
+    <h2 data-t="idx">Indeks keputusan dan dokumen</h2>
+    <details open><summary data-t="adr">26 catatan keputusan arsitektur (ADR)</summary><div class="idx" id="adr"></div></details>
+    <details><summary data-t="docs">Dokumen, laporan, dan RFC</summary><div class="idx" id="docs"></div></details>
+    <details><summary data-t="rb">15 runbook</summary><div class="idx" id="rb"></div></details>
+  </section>
+
+  <footer data-t="foot">Satu berkas mesin bersama (reel.js), tiap reel hanya data. Semua langkah bersumber dari repo selaras-platform-go; angka latensi ilustratif berskala dari laporan kinerja.</footer>
+</div>
+<script src="manifest.js"></script>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  let LANG = 'id'; try { LANG = localStorage.getItem('selaras-lang') || 'id'; } catch (_) {}
+  const T = v => (v && typeof v === 'object' && 'id' in v) ? (v[LANG] || v.id) : v;
+  const UI = {
+    id: { eyebrow: 'selaras-platform-go · showcase', h1: 'Selaras Flow Reels', theme: 'Tema', map: 'Peta sistem', plan: 'Rencana', hint: 'Mencari di judul, ringkasan, berkas sumber, dan ADR tiap reel. Reel yang belum dibuat tetap muncul dengan tanda direncanakan.', watched: 'sudah ditonton', t1: 'Cerita', t1s: 'apa yang dialami orang', t2: 'Alur per fitur', t2s: 'komponen mana yang bekerja, berurutan bagaimana', t3: 'Mekanisme lintas fitur', t3s: 'pernyataan mana yang dijalankan, mengapa, dan apa yang terjadi bila putus', idx: 'Indeks keputusan dan dokumen', adr: '26 catatan keputusan arsitektur (ADR)', docs: 'Dokumen, laporan, dan RFC', rb: '15 runbook', foot: 'Satu berkas mesin bersama (reel.js), tiap reel hanya data. Semua langkah bersumber dari repo selaras-platform-go; angka latensi ilustratif berskala dari laporan kinerja.', search: 'Cari: outbox, ADR-025, relay.go, KEDA, idempotensi…', play: 'Putar', again: 'Putar lagi', planned: 'direncanakan', done: 'jadi', seen: 'ditonton', lede: 'Bagaimana satu platform kesehatan berbasis Go bekerja, dari yang dialami pengguna sampai baris kode yang menjaganya: satu cerita, sebelas alur per fitur, sebelas mekanisme. Tiap reel adalah animasi yang bisa diputar, dijeda, dan dibaca; setiap langkahnya bersumber dari kode nyata.', lang: 'English', uses: 'memakai', usedby: 'dipakai' },
+    en: { eyebrow: 'selaras-platform-go · showcase', h1: 'Selaras Flow Reels', theme: 'Theme', map: 'System map', plan: 'Plan', hint: 'Searches titles, summaries, source files, and ADRs of every reel. Reels not built yet still appear, marked as planned.', watched: 'watched', t1: 'Story', t1s: 'what a person experiences', t2: 'Flows per feature', t2s: 'which components work, in what order', t3: 'Cross-cutting mechanisms', t3s: 'which statements run, why, and what happens when it breaks midway', idx: 'Index of decisions and documents', adr: '26 architecture decision records (ADR)', docs: 'Documents, reports, and RFCs', rb: '15 runbooks', foot: 'One shared engine file (reel.js); each reel is data only. Every step is sourced from the selaras-platform-go repo; latency figures are illustratively scaled from the performance report.', search: 'Search: outbox, ADR-025, relay.go, KEDA, idempotency…', play: 'Play', again: 'Play again', planned: 'planned', done: 'built', seen: 'watched', lede: 'How a Go-based health platform works, from what the user experiences down to the lines of code that guard it: one story, eleven feature flows, eleven mechanisms. Each reel is an animation you can play, pause, and read; every step is sourced from real code.', lang: 'Bahasa Indonesia', uses: 'uses', usedby: 'used by' },
+  };
+  const ui = k => UI[LANG][k] || UI.id[k];
+  document.querySelectorAll('[data-t]').forEach(e => { e.textContent = ui(e.dataset.t); });
+  $('#q').placeholder = ui('search'); $('#b-lang').textContent = ui('lang');
+  document.documentElement.lang = LANG;
+  let watched = new Set(); try { watched = new Set(JSON.parse(localStorage.getItem('selaras-watched') || '[]')); } catch (_) {}
+  const byId = Object.fromEntries(REELS.map(r => [r.id, r]));
+  const card = r => {
+    const el = document.createElement('article'); el.className = 'card ' + r.status; el.dataset.id = r.id;
+    const hay = [r.id, T(r.title), T(r.sub), ...(r.refs || []), ...(r.mech || []), ...ADRS.filter(a => a.reels.includes(r.id)).map(a => a.id + ' ' + a.title)].join(' ').toLowerCase();
+    el.dataset.hay = hay;
+    const seen = watched.has(r.id);
+    const links = r.tier === 3 ? REELS.filter(x => (x.mech || []).includes(r.id)).map(x => x.id) : (r.mech || []);
+    el.innerHTML = `<div class="top"><span>${r.num}</span><span class="st ${seen ? 'watched' : r.status}">${seen ? ui('seen') : r.status === 'jadi' ? ui('done') : ui('planned')}</span></div>
+      <h3>${T(r.title)}</h3><p>${T(r.sub)}</p>
+      <div class="mech" title="${r.tier === 3 ? ui('usedby') : ui('uses')}">${links.map(m => `<span>${m}</span>`).join('')}</div>
+      <div class="act">${r.status === 'jadi' ? `<a class="btn primary" href="${r.file}">▶ ${seen ? ui('again') : ui('play')}</a>` : `<span class="plan">${ui('planned')} · <a href="plan.html#${r.tier === 1 ? 'l1' : r.tier === 2 ? 'l2' : 'l3'}">rencana</a></span>`}</div>`;
+    return el;
+  };
+  REELS.forEach(r => $('#g' + r.tier).appendChild(card(r)));
+  const built = REELS.filter(r => r.status === 'jadi').length;
+  $('#prog-t').textContent = `${[...watched].filter(id => byId[id]).length} / ${REELS.length}`;
+  $('#prog').style.setProperty('--p', (100 * [...watched].filter(id => byId[id]).length / REELS.length) + '%');
+  const reelLinks = ids => ids.length ? ids.map(id => `<b>${id}</b>`).join(' ') : '—';
+  $('#adr').innerHTML = ADRS.map(a => `<div><code>${a.id}</code><span>${a.title}</span><span class="r">${reelLinks(a.reels)}</span></div>`).join('');
+  $('#docs').innerHTML = DOCS.map(d => `<div><code>${d.id}</code><span>${d.title}</span><span class="r">${reelLinks(d.reels)}</span></div>`).join('');
+  $('#rb').innerHTML = RUNBOOKS.map(d => `<div><code>runbook</code><span>${d.id}</span><span class="r">${reelLinks(d.reels)}</span></div>`).join('');
+  $('#q').addEventListener('input', e => { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.classList.toggle('hidden', !!q && !c.dataset.hay.includes(q))); });
+  $('#b-lang').addEventListener('click', () => { try { localStorage.setItem('selaras-lang', LANG === 'id' ? 'en' : 'id'); } catch (_) {} location.reload(); });
+  const THEMES = ['', 'dark', 'light']; let ti = 0; try { ti = Math.max(0, THEMES.indexOf(localStorage.getItem('selaras-theme') || '')); } catch (_) {}
+  const applyTheme = t => { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); try { localStorage.setItem('selaras-theme', t); } catch (_) {} };
+  applyTheme(THEMES[ti]);
+  $('#b-theme').addEventListener('click', () => { ti = (ti + 1) % THEMES.length; applyTheme(THEMES[ti]); });
+  void built;
+})();
+</script>
+</body>
+</html>

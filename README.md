@@ -136,6 +136,7 @@ migrations/<unit>/     migrasi per skema
 deploy/compose · helm · k8s · k3d
 test/acceptance · e2e · chaos · k6 · drill
 docs/adr · rfc · runbook   dan laporan pengukuran
+docs/reel/             showcase interaktif: alur dan mekanisme dianimasikan langkah demi langkah dari kode sumbernya
 ```
 
 Rencana migrasi, evidence ledger, backlog 200-an task, dan katalog temuan

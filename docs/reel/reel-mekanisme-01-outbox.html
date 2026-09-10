@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transactional outbox dan relay · Selaras Flow Reel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="reel.css">
+</head>
+<body>
+<script>
+// ---------- IDENTITAS REEL ----------
+// Lapisan 3 (mekanisme): tiap langkah adalah satu pernyataan SQL atau satu fungsi. Kartu kode terbuka dan barisnya disorot (mode debugger).
+const REEL = {
+  id: 'M1', tier: 3, num: { id: 'M1 · mekanisme', en: 'M1 · mechanism' },
+  title: { id: 'Transactional outbox dan relay', en: 'Transactional outbox and relay' },
+  kicker: { id: 'Selaras Flow Reel · mekanisme M1 · mode debugger', en: 'Selaras Flow Reel · mechanism M1 · debugger mode' },
+  intro: { id: '13 langkah · 6 komponen · empat cabang "bagaimana kalau" · kode dan baris tersorot tiap langkah · <kbd>spasi</kbd> jeda', en: '13 steps · 6 components · four "what if" branches · code with the live line highlighted · <kbd>space</kbd> pause' },
+};
+// Cuplikan asli dari selaras-platform-go (path:baris awal). <b> = baris kunci, <c> = komentar dari kodenya.
+const CODE = {
+  publish: { file: 'internal/profile/app/publish.go:65', src: `func (s *Service) UpdateAndPublish(ctx context.Context, userID domain.UserID, changes domain.ProfileChanges) (*domain.Profile, error) {
+	if !s.PublishesEvents() { return s.Update(ctx, userID, changes) }
+	var updated *domain.Profile
+	err := s.uow.Do(ctx, func(q pg.Querier) error {
+<c>		// A temporary service on top of this transaction. Using s.profiles here would mean the profile
+		// change commits on its own, separate from its event - and a process dying in between leaves
+		// a changed profile nobody knows about.</c>
+		txService := &Service{profiles: s.repos(q), now: s.now}
+		profile, err := txService.Update(ctx, userID, changes)
+		if err != nil { return err }
+		updated = profile
+		return s.events(q).Write(ctx, "user_profile", profile.UserID().String(), envelopeFor(profile))
+	})
+	if err != nil { return nil, err }
+	return updated, nil
+}` },
+  write: { file: 'internal/platform/outbox/outbox.go:64', src: `func (w *Writer) Write(ctx context.Context, aggregateType, aggregateID string, envelope *eventsv1.Envelope) error {
+	if aggregateType == "" || aggregateID == "" { return errors.New("an outbox row needs an aggregate to key on") }
+	eventType := EventTypeOf(envelope)
+	if eventType == "" { return errors.New("the envelope carries no event") }
+<c>	// The trace context is copied into the envelope BEFORE serialisation. The relay knows nothing
+	// about the request that gave birth to this row; only the payload content can cross to the consumer.</c>
+	telemetry.InjectEnvelope(ctx, envelope)
+	payload, err := proto.Marshal(envelope)
+	id, err := uuid.NewV7()
+	const q = \`
+		INSERT INTO outbox (id, created_at, aggregate_type, aggregate_id, event_type, payload)
+		VALUES ($1, $2, $3, $4, $5, $6)\`
+<c>	// created_at is given explicitly, not left to the database's now(). It is the partition key.</c>
+	if _, err := w.db.Exec(ctx, q, id, envelope.GetOccurredAt().AsTime(), aggregateType, aggregateID, eventType, payload); err != nil {
+		return fmt.Errorf("writing to the outbox: %w", err)
+	}
+	return nil
+}` },
+  schema: { file: 'internal/platform/outbox/schema.sql:8', src: `CREATE TABLE outbox (
+    id UUID NOT NULL,                       <c>-- UUIDv7: time-ordered</c>
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),  <c>-- part of the primary key because it is the partition key</c>
+    aggregate_type TEXT NOT NULL,
+    aggregate_id   TEXT NOT NULL,           <c>-- the Kafka partition key later on</c>
+    event_type TEXT NOT NULL,
+    payload BYTEA NOT NULL,                 <c>-- the protobuf envelope as it is, not JSONB</c>
+    published_at TIMESTAMPTZ,               <c>-- NULL means not published yet</c>
+    attempts INT NOT NULL DEFAULT 0,
+    last_error TEXT,
+    PRIMARY KEY (id, created_at)
+) PARTITION BY RANGE (created_at);
+CREATE TABLE outbox_default PARTITION OF outbox DEFAULT;   <c>-- an INSERT for a month whose partition does not exist yet must not fail</c>
+CREATE INDEX outbox_unpublished ON outbox (created_at) WHERE published_at IS NULL;   <c>-- partial index: stays small</c>` },
+  run: { file: 'internal/platform/outbox/relay.go:103', src: `func (r *Relay) Run(ctx context.Context) error {
+	r.log.InfoContext(ctx, "outbox relay started", "batch", r.opts.Batch, "interval", r.opts.Interval)
+	for {
+		moved, err := r.Once(ctx)
+		switch {
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			return nil   <c>// a requested stop is not a failure</c>
+		case err != nil:
+<c>			// One failed iteration does not kill the relay. A database restarting
+			// or a broker electing a leader is a transient state.</c>
+			r.log.ErrorContext(ctx, "outbox relay round failed", "error", err)
+		}
+		if err == nil && moved >= r.opts.Batch { continue }   <c>// still more to send: spin again without a pause</c>
+		select {
+		case &lt;-ctx.Done(): return nil
+		case &lt;-time.After(r.opts.Interval):   <c>// 1 s (cmd/*/relay.go: Batch 50, Interval 1 s)</c>
+		}
+	}
+}` },
+  unpublished: { file: 'internal/platform/outbox/outbox.go:131', src: `<c>// FOR UPDATE SKIP LOCKED, and both are needed: FOR UPDATE holds the rows one relay is sending,
+// SKIP LOCKED makes another relay skip them instead of waiting.
+// The caller MUST run this inside a transaction - the lock is released when the transaction ends.</c>
+func (r *Reader) Unpublished(ctx context.Context, limit int) ([]Record, error) {
+	if limit &lt;= 0 || limit &gt; 1000 { limit = 100 }
+	const q = \`
+		SELECT id, created_at, aggregate_type, aggregate_id, event_type, payload, attempts
+		FROM outbox
+		WHERE published_at IS NULL
+		ORDER BY created_at
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED\`
+	rows, err := r.db.Query(ctx, q, limit)
+	…
+}` },
+  once: { file: 'internal/platform/outbox/relay.go:141', src: `func (r *Relay) Once(ctx context.Context) (int, error) {
+	var moved int
+	err := pg.InTx(ctx, r.pool, func(q pg.Querier) error {
+		reader := NewReader(q)
+		records, err := reader.Unpublished(ctx, r.opts.Batch)
+		if len(records) == 0 { return nil }
+		msgs, routable, unroutable := r.toMessages(records)
+		if len(unroutable) > 0 { reader.MarkFailed(ctx, unroutable, "no topic is defined for this event type") }
+<c>		// Publishing is time-bounded, SEPARATE from the transaction.</c>
+		pubCtx, cancelPub := context.WithTimeout(ctx, r.opts.PublishTimeout)
+		sent, pubErr := r.pub.Publish(pubCtx, msgs)
+		cancelPub()
+		for _, i := range sent { published = append(published, routable[i]) }
+		if err := reader.MarkPublished(ctx, published, time.Now()); err != nil { return err }
+		moved = len(published)
+		if pubErr != nil {
+<c>			// Failures are recorded, then the error is deliberately SWALLOWED here: returning it would
+			// roll back this transaction, and with it the published mark for events that really arrived.</c>
+			failed := …   <c>// routable rows that are not in sent</c>
+			if err := reader.MarkFailed(ctx, failed, pubErr.Error()); err != nil { return err }
+			r.log.WarnContext(ctx, "some outbox events could not be published", "published", len(published), "failed", len(failed), "error", pubErr)
+		}
+		return nil
+	})
+	if err != nil { return 0, fmt.Errorf("relaying a batch: %w", err) }
+	return moved, nil
+}` },
+  tomessages: { file: 'internal/platform/outbox/relay.go:220', src: `func (r *Relay) toMessages(records []Record) (msgs []kafka.Message, routable, unroutable []uuid.UUID) {
+	for _, rec := range records {
+		topic, err := TopicFor(rec.EventType)   <c>// routing.go: profile.updated → TopicProfileUpdated</c>
+		if err != nil { unroutable = append(unroutable, rec.ID); continue }
+		msgs = append(msgs, kafka.Message{
+			Topic: topic,
+<c>			// The key is aggregate_id, so every event of one aggregate lands on the same partition.</c>
+			Key:   []byte(rec.AggregateID),
+			Value: rec.Payload,
+			Headers: map[string]string{ "event_type": rec.EventType, "aggregate_type": rec.AggregateType, "outbox_id": rec.ID.String() },
+		})
+		routable = append(routable, rec.ID)
+	}
+	return msgs, routable, unroutable
+}` },
+  kpublish: { file: 'internal/platform/kafka/publisher.go:46', src: `<c>// It returns success PER MESSAGE, not one boolean for the whole batch.
+// Waiting (ProduceSync) is deliberate too: publishing without waiting means the outbox row
+// is marked published on hope, and the outbox loses its entire purpose.</c>
+func (p *Publisher) Publish(ctx context.Context, msgs []Message) ([]int, error) {
+	for i, m := range msgs {
+		if len(m.Key) == 0 { return nil, errors.New("a message with no key would lose its ordering") }
+		rec := &kgo.Record{Topic: m.Topic, Key: m.Key, Value: m.Value}
+		index[rec] = i
+	}
+	results := p.client.ProduceSync(ctx, records...)
+<c>	// Mapped back through pointer identity, NOT through the index: the order of ProduceSync's results
+	// is the order of completion, not the order of sending.</c>
+	for _, res := range results {
+		i, found := index[res.Record]
+		if res.Err != nil { firstErr = res.Err; continue }
+		ok = append(ok, i)
+	}
+	return ok, firstErr
+}` },
+  mark: { file: 'internal/platform/outbox/outbox.go:166', src: `func (r *Reader) MarkPublished(ctx context.Context, ids []uuid.UUID, at time.Time) error {
+	if len(ids) == 0 { return nil }
+	const q = \`UPDATE outbox SET published_at = $2 WHERE id = ANY($1) AND published_at IS NULL\`
+	_, err := r.db.Exec(ctx, q, ids, at)
+	…
+}
+<c>// MarkFailed bumps the counter and stores the error, but does NOT mark the row published.</c>
+func (r *Reader) MarkFailed(ctx context.Context, ids []uuid.UUID, cause string) error {
+	const q = \`UPDATE outbox SET attempts = attempts + 1, last_error = $2 WHERE id = ANY($1)\`
+	_, err := r.db.Exec(ctx, q, ids, truncate(cause, 1000))   <c>// a network error can carry a connection dump</c>
+	…
+}` },
+  consumer: { file: 'internal/assessment/adapter/consumer/results.go:298', src: `<c>// Does NOT use the idempotency guard, and that is deliberate: this store is idempotent by
+// shape - an UPSERT that only wins when the event is newer.</c>
+func (r *Results) cacheProfile(ctx context.Context, env *eventsv1.Envelope, updated *eventsv1.ProfileUpdated) error {
+	observedAt := env.GetOccurredAt().AsTime()
+	return pg.InTx(ctx, r.pool, func(q pg.Querier) error {
+		stored, err := cache.NewProfiles(q).Store(ctx, updated.GetUserId(), updated.GetUserProfileId(), …, observedAt)
+		if !stored {
+<c>			// An event older than what is already stored. Not an error.</c>
+			r.log.DebugContext(ctx, "a profile event was older than the cached snapshot", "user_id", updated.GetUserId())
+		}
+		return nil
+	})
+}` },
+};
+
+// ---------- KANVAS ----------
+const NODES = {
+  svc:      { x: 240,  y: 220, label: 'profile-svc',    sub: 'UpdateAndPublish()',        icon: 'svc' },
+  pg:       { x: 540,  y: 220, label: 'user_profiles',  sub: 'PostgreSQL · svc_profile',  icon: 'db' },
+  outbox:   { x: 860,  y: 220, label: 'outbox',         sub: 'tabel di schema yang sama', icon: 'table' },
+  relay2:   { x: 540,  y: 560, label: 'relay (pod 2)',  sub: 'replika kedua profile-svc', icon: 'relay' },
+  relay:    { x: 860,  y: 560, label: 'relay',          sub: 'goroutine di profile-svc',  icon: 'relay' },
+  consumer: { x: 1420, y: 560, label: 'assessment-svc', sub: 'konsumen profile.updated',  icon: 'proc' },
+};
+const RAIL_X = 1000;
+const RAILS = { topic: { y: 560, label: 'profile.updated', n: 3, hot: 1, note: '3 partisi' } };
+const SLOT_X = i => RAIL_X + 15 + i * 56 + 24;
+const EDGES = {
+  E1: { d: 'M296,220 L484,220',                        kind: 'db',  lbl: ['UPDATE user_profiles', 390, 206],  a: 'svc',    b: 'pg' },
+  E2: { d: 'M596,220 L804,220',                        kind: 'db',  lbl: ['INSERT outbox · schema sama', 700, 206], a: 'pg', b: 'outbox' },
+  E3: { d: 'M860,276 L860,504',                        kind: 'db',  lbl: ['SELECT … FOR UPDATE SKIP LOCKED', 1000, 396], a: 'outbox', b: 'relay' },
+  E4: { d: 'M916,560 L1000,560',                       kind: 'evt', lbl: ['Publish', 958, 546],                 a: 'relay',  b: 'rail-topic' },
+  E5: { d: 'M1328,560 L1364,560',                      kind: 'evt', lbl: ['Poll', 1346, 546],                   a: 'rail-topic', b: 'consumer' },
+  E6: { d: 'M596,560 C700,560 760,300 804,232',        kind: 'db',  lbl: ['SKIP LOCKED: dilewati', 690, 470],   a: 'relay2', b: 'outbox' },
+};
+const PANEL = {
+  svc:   { side: 'below', title: 'di dalam UpdateAndPublish()', blocks: [['uow.Do', 'BEGIN'], ['txService.Update', 'user_profiles'], ['events(q).Write', 'outbox'], ['COMMIT', 'keduanya']] },
+  relay: { side: 'below', title: 'di dalam Relay.Once()', blocks: [['pg.InTx', 'BEGIN'], ['Unpublished', 'SKIP LOCKED'], ['Publish', 'acks=all · 10 s'], ['MarkPublished', 'UPDATE'], ['COMMIT', 'lepas kunci']] },
+};
+const PANEL_GEOM = id => { const p = PANEL[id]; if (!p) return null; const bw = p.bw || 96, gap = p.gap || 12, w = p.blocks.length * bw + (p.blocks.length - 1) * gap + 40, hgt = 96; const x = -w / 2 + (p.dx || 0), y = p.side === 'below' ? 118 : -216; return { x, y, w, h: hgt, bw, gap }; };
+const railW = n => n === 1 ? 240 : n <= 4 ? 160 + n * 56 : 700;
+const BOX = id => { const b = id.startsWith('rail-') ? { x: RAIL_X, y: RAILS[id.slice(5)].y - 34, w: railW(RAILS[id.slice(5)].n), h: 68 } : { x: NODES[id].x - 70, y: NODES[id].y - 70, w: 140, h: 176 };
+  const g = NODES[id] && PANEL_GEOM(id); if (!g) return b; const px = NODES[id].x + g.x, py = NODES[id].y + g.y; const x = Math.min(b.x, px), y = Math.min(b.y, py); return { x, y, w: Math.max(b.x + b.w, px + g.w) - x, h: Math.max(b.y + b.h, py + g.h) - y }; };
+
+// ---------- STATE ----------
+// rows: baris ikon yang menyala per node (r1..r3); slots: status slot panas per rel; dead: node yang prosesnya mati.
+const initial = () => ({ shown: [], edges: [], trail: [], txCount: 0, msgCount: 0, focus: null, slots: {}, rows: { pg: [], outbox: [] }, dead: [], ticks: {},
+  tx: [], ob: [], prof: { lang: 'id', ver: 3 }, relay: 0, msg: null, attempts: 0, lastErr: null, delivered: 0, stored: 0, outcome: null });
+const show = (S, ...ids) => ids.forEach(id => { if (!S.shown.includes(id)) S.shown.push(id); });
+const edge = (S, ...ids) => ids.forEach(id => { if (!S.edges.includes(id)) S.edges.push(id); });
+const OB = () => ({ id: '0199…7a1c', created_at: '2026-09-09 09:14:02.118+07', type: 'profile.updated', agg: 'user_profile · u_91c2', published_at: null, attempts: 0, last_error: null });
+
+// ---------- LANGKAH ----------
+// Setiap langkah = satu pernyataan/fungsi. lines: baris kode yang disorot di kartu kode (cocokkan teks). proof: nama test yang membuktikannya.
+const STEPS = [
+  { at: 'svc', proc: [{ t: 'PATCH /profile → UpdateAndPublish(userID, changes)', b: 0 }, { t: 'PublishesEvents() = true: jalur dengan outbox', b: 0 }], title: 'Satu use case yang harus mengubah data DAN memberi tahu dunia', text: 'Profil berubah, dan assessment-svc perlu tahu supaya cuplikan profilnya ikut berubah. Dua sistem berbeda (Postgres dan Kafka) tidak bisa di-commit bersama; outbox membuat keduanya lahir dari satu transaksi Postgres.', refs: ['internal/profile/app/publish.go', 'ADR-004'], zoom: 'tx', code: 'publish', lines: 'func (s *Service) UpdateAndPublish',
+    mut: S => { show(S, 'svc'); S.focus = 'svc'; } },
+  { at: 'svc', proc: [{ t: 'uow.Do(ctx, …): BEGIN', b: 0 }, { t: 'txService := &Service{profiles: s.repos(q)}: hidup di atas transaksi ini', b: 1 }], title: 'BEGIN, lalu service sementara yang hanya mengenal transaksi ini', text: 'Bila Update memakai repo biasa, perubahan profil commit sendiri, terpisah dari eventnya. Service sementara di atas Querier transaksi membuat itu mustahil secara struktur, bukan sekadar disiplin.', refs: ['internal/profile/app/publish.go'], zoom: 'tx', code: 'publish', lines: 'txService := &Service',
+    mut: S => { S.focus = 'svc'; S.tx.push({ q: 'BEGIN', st: 'lit' }); S.txCount = 1; } },
+  { travel: [{ e: 'E1', p: 'sql' }], at: 'pg', proc: [{ t: 'UPDATE user_profiles SET language = $2, version = version + 1 WHERE user_id = $1', fx: ['row:pg:1'] }, { t: 'Baris berubah di dalam transaksi: belum terlihat siapa pun' }], title: 'Tulisan bisnis: satu baris berubah, masih tak terlihat', text: 'Sampai COMMIT, pembaca lain masih melihat versi lama. Kalau proses mati sekarang, Postgres membatalkannya sendiri.', refs: ['internal/profile/adapter/postgres'], zoom: 'tx', code: 'publish', lines: 'txService.Update(ctx, userID, changes)',
+    mut: S => { show(S, 'pg'); edge(S, 'E1'); S.focus = 'pg'; S.rows.pg = [1]; S.tx.push({ q: 'UPDATE user_profiles … WHERE user_id = u_91c2', st: 'lit' }); S.prof = { lang: 'en', ver: 4, pending: true }; } },
+  { travel: [{ e: 'E1', rev: true, p: 'ack' }], at: 'svc', proc: [{ t: 'events(q).Write("user_profile", u_91c2, envelopeFor(profile))', b: 2 }, { t: 'InjectEnvelope: konteks trace disalin ke payload', b: 2 }, { t: 'proto.Marshal → BYTEA · id = UUIDv7 · created_at eksplisit', b: 2 }], title: 'Writer menyusun baris outbox dengan Querier yang sama', text: 'Trace disalin ke dalam envelope sebelum diserialkan: relay tidak tahu permintaan mana yang melahirkan baris ini, jadi satu-satunya yang bisa menyeberang ke konsumen adalah isi payload. Id UUIDv7 membuat urutan baca sama dengan urutan tulis.', refs: ['internal/platform/outbox/outbox.go', 'ADR-004'], zoom: 'tx', code: 'write', lines: 'telemetry.InjectEnvelope', proof: 'TestTheStoredEnvelopeCarriesTheWritingSpan',
+    mut: S => { S.focus = 'svc'; S.tx.push({ q: 'envelope ProfileUpdated{user_id, sex, language…} + trace', st: 'lit' }); } },
+  { travel: [{ e: 'E1', p: 'sql' }, { e: 'E2', p: 'sql' }], at: 'outbox', proc: [{ t: 'INSERT INTO outbox (id, created_at, aggregate_type, aggregate_id, event_type, payload)', fx: ['row:outbox:1'] }, { t: 'created_at adalah kunci partisi: jatuh ke partisi bulan ini, atau outbox_default' }, { t: 'published_at NULL: masuk indeks parsial outbox_unpublished' }], title: 'INSERT ke outbox: tabel di schema yang sama, transaksi yang sama', text: 'Outbox hidup di schema service itu sendiri, bukan di basis data terpisah, supaya INSERT ini dan UPDATE tadi commit bersama. Tabelnya dipartisi per bulan sejak hari pertama (F3-17); partisi bawaan menjamin INSERT tidak pernah gagal hanya karena bulannya baru.', refs: ['internal/platform/outbox/schema.sql', 'ADR-004'], zoom: 'outbox', code: 'schema', lines: 'PARTITION BY RANGE', branch: ['crash-tx'],
+    mut: S => { show(S, 'outbox'); edge(S, 'E2'); S.focus = 'outbox'; S.rows.outbox = [1]; S.ob.push(OB()); S.tx.push({ q: 'INSERT INTO outbox (…) VALUES (…)', st: 'lit' }); } },
+  { travel: [{ e: 'E2', rev: true, p: 'ack' }, { e: 'E1', rev: true, p: 'ack' }], at: 'svc', proc: [{ t: 'COMMIT', b: 3, go: [{ e: 'E1', p: 'commit' }, { e: 'E1', rev: true, p: 'ack' }], fx: ['flash:pg', 'flash:outbox', 'tick:pg:v4 ✓', 'tick:outbox:1 baris'] }, { t: 'Keduanya tampak bersamaan, atau tidak sama sekali', b: 3 }], done: '2 tabel · 1 transaksi', title: 'COMMIT: profil baru dan eventnya menjadi nyata pada detik yang sama', text: 'Inilah seluruh inti mekanismenya. Tidak ada jendela waktu di mana profil sudah berubah tetapi eventnya belum ada, atau sebaliknya. Kafka belum tersentuh sama sekali.', refs: ['internal/platform/outbox/outbox_integration_test.go', 'ADR-004'], zoom: 'tx', code: 'publish', lines: 'return s.events(q).Write', proof: ['TestABusinessWriteAndItsEventCommitTogether', 'TestAFailureRollsBackBoth'],
+    mut: S => { S.focus = 'svc'; S.tx.forEach(t => { t.st = 'done'; }); S.tx.push({ q: 'COMMIT', st: 'done' }); S.prof.pending = false; S.ticks.pg = 'v4 ✓'; S.ticks.outbox = '1 baris'; } },
+  { at: 'relay', jump: true, proc: [{ t: 'Relay.Run: putaran berikutnya (Interval 1 s saat kosong)', b: 0 }, { t: 'Goroutine di proses yang sama, terpisah dari permintaan pengguna', b: 0 }], title: 'Pekerja latar bangun: relay adalah goroutine, bukan service', text: 'Setiap service yang menulis outbox menjalankan relaynya sendiri (cmd/*/relay.go: Batch 50, Interval 1 s, PublishTimeout bawaan 10 s). Saat outbox masih berisi, ia berputar lagi tanpa jeda; satu putaran yang gagal dicatat, bukan mematikan relay.', refs: ['internal/platform/outbox/relay.go', 'cmd/profile-svc/relay.go'], zoom: 'relay', code: 'run', lines: 'time.After(r.opts.Interval)',
+    mut: S => { show(S, 'relay'); S.focus = 'relay'; S.relay = 1; } },
+  { at: 'relay', proc: [{ t: 'pg.InTx: BEGIN', b: 0 }, { t: 'SELECT … WHERE published_at IS NULL ORDER BY created_at LIMIT 50 FOR UPDATE SKIP LOCKED', b: 1, go: [{ e: 'E3', rev: true, p: 'sql' }, { e: 'E3', p: 'rows' }] }, { t: 'Baris ev_7a terkunci oleh transaksi ini sampai COMMIT', b: 1 }], done: '1 baris terkunci', title: 'FOR UPDATE SKIP LOCKED: kunci baris, dan biarkan relay lain melewatinya', text: 'FOR UPDATE menahan baris yang sedang dikirim; SKIP LOCKED membuat relay lain melewatinya alih-alih mengantre. Kuncinya hidup hanya selama transaksi, karena itu Once() membaca, menerbitkan, dan menandai di SATU transaksi.', refs: ['internal/platform/outbox/outbox.go'], zoom: 'relay', code: 'unpublished', lines: 'FOR UPDATE SKIP LOCKED', branch: ['dua-relay'],
+    mut: S => { edge(S, 'E3'); S.focus = 'relay'; S.relay = 2; S.ob[0].locked = true; S.txCount = 2; } },
+  { at: 'relay', proc: [{ t: 'toMessages: TopicFor("profile.updated") → profile.updated', b: 1 }, { t: 'Key = aggregate_id (u_91c2) · Value = payload apa adanya', b: 1 }, { t: 'Header event_type, aggregate_type, outbox_id', b: 1 }], title: 'Baris menjadi pesan: kuncinya aggregate_id, isinya tidak disandikan ulang', text: 'Event yang tidak punya topic (TopicFor gagal) tidak akan pernah bisa dikirim: relay menaikkan attempts-nya dengan "no topic is defined for this event type" supaya ia bisa ditemukan, bukan dibaca ulang tiap detik selamanya.', refs: ['internal/platform/outbox/relay.go', 'internal/platform/outbox/routing.go'], zoom: 'kafka', code: 'tomessages', lines: 'Key:   []byte(rec.AggregateID)', proof: ['TestTheMessageKeyIsTheAggregate', 'TestEveryEventInTheContractHasATopic'],
+    mut: S => { S.focus = 'relay'; S.relay = 3; S.msg = { topic: 'profile.updated', key: 'u_91c2', headers: { event_type: 'profile.updated', aggregate_type: 'user_profile', outbox_id: '0199…7a1c' } }; } },
+  { at: 'relay', proc: [{ t: 'pubCtx := WithTimeout(ctx, PublishTimeout 10 s)', b: 2 }, { t: 'ProduceSync: kirim, tunggu pengakuan broker (acks=all)', b: 2, go: [{ e: 'E4', p: 'evt' }], fx: ['slot:topic:lit'] }, { t: 'Hasil per pesan, dipetakan lewat pointer record, bukan indeks', b: 2 }], done: 'sent = [0]', title: 'Publish di luar transaksi, dibatasi waktu, menunggu pengakuan', text: 'Menerbitkan tanpa menunggu berarti menandai terkirim berdasarkan harapan. Batas 10 s ada karena klien Kafka menyangga dan mencoba ulang di dalam: tanpa batas, relay tergantung puluhan detik saat broker mati, tanpa mencatat apa pun (ditemukan test ketahanan F3-14). Di titik inilah dua hal bisa salah; pilih.', refs: ['internal/platform/kafka/publisher.go', 'internal/platform/outbox/relay.go'], zoom: 'kafka', code: 'kpublish', lines: 'ProduceSync', branch: ['broker-mati', 'mati-setelah-publish'],
+    mut: S => { show(S, 'rail-topic'); edge(S, 'E4'); S.focus = 'rail-topic'; S.relay = 4; S.slots.topic = 'lit'; S.msgCount = 1; S.delivered = 1; } },
+  { at: 'rail-topic', proc: ['hash(u_91c2) mod 3 = 1 → partisi 1', 'Semua event profil u_91c2 selalu ke partisi ini'], done: 'partisi 1', title: 'Partisi ditentukan kuncinya; urutan per agregat terjaga', text: 'Kafka hanya menjamin urutan di dalam satu partisi. Kunci = aggregate_id memastikan "profil diperbarui" dan "profil dihapus" milik pengguna yang sama tidak saling mendahului.', refs: ['internal/platform/kafka/topics.go', 'ADR-014'], zoom: 'kafka', code: 'tomessages', lines: 'Key:   []byte(rec.AggregateID)',
+    mut: S => { S.focus = 'rail-topic'; } },
+  { travel: [{ e: 'E4', rev: true, p: 'ack' }], at: 'relay', proc: [{ t: 'UPDATE outbox SET published_at = now() WHERE id = ANY($1) AND published_at IS NULL', b: 3, go: [{ e: 'E3', rev: true, p: 'sql' }, { e: 'E3', p: 'ack' }], fx: ['unrow:outbox:1', 'row:outbox:2', 'tick:outbox:published_at ✓'] }, { t: 'COMMIT: kunci SKIP LOCKED dilepas, moved = 1', b: 4, fx: ['flash:outbox'] }], done: 'moved = 1', title: 'Tandai SETELAH broker mengakui, lalu COMMIT melepas kuncinya', text: 'Urutannya mengikat: publish dulu, baru tandai. Terbalik berarti proses yang mati di antaranya kehilangan event selamanya. Dengan urutan ini, yang paling buruk adalah duplikat, dan duplikat bisa ditahan penerima (M2).', refs: ['internal/platform/outbox/outbox.go', 'internal/platform/outbox/relay.go'], zoom: 'outbox', code: 'mark', lines: 'SET published_at = $2', proof: 'TestTheRelayMovesEveryEventOnce',
+    mut: S => { S.focus = 'relay'; S.relay = 6; S.rows.outbox = [2]; S.ob[0].published_at = '09:14:03.201+07'; S.ob[0].locked = false; S.slots.topic = 'lit'; S.ticks.outbox = 'published_at ✓'; } },
+  { at: 'consumer', jump: true, travel: [{ e: 'E5', p: 'evt' }], down: 'M2', proc: ['PollFetches: pesan dari partisi 1', 'cacheProfile: UPSERT, menang hanya bila occurred_at lebih baru', 'Tanpa guard: idempoten karena bentuknya'], done: 'cuplikan profil diperbarui', title: 'Penerima menyimpan cuplikan; duplikat tidak akan mengubah apa pun', text: 'Konsumen ini sengaja tidak memakai penjaga idempotensi: UPSERT yang hanya menang bila lebih baru sudah idempoten karena bentuknya. Konsumen yang efeknya tidak idempoten (worker LLM, penyimpan laporan) memakai guard; itu isi M2.', refs: ['internal/assessment/adapter/consumer/results.go'], zoom: 'consumer', code: 'consumer', lines: 'stored, err := cache.NewProfiles(q).Store',
+    mut: S => { show(S, 'consumer'); edge(S, 'E5'); S.focus = 'consumer'; S.slots.topic = 'used'; S.stored = 1; S.txCount = 3; S.outcome = 'Profil dan eventnya lahir dari satu COMMIT; event sampai sekali, tersimpan sekali'; } },
+];
+
+// Cabang "bagaimana kalau". after/branch menentukan titik sisipnya; fail menandai suasana (musik minor, tanpa konfeti).
+const BRANCHES = {
+  'crash-tx': { label: 'Proses mati sebelum COMMIT', resume: false, fail: true, steps: [
+    { at: 'svc', proc: [{ t: 'profile-svc mati (SIGKILL) sebelum COMMIT', bad: true, fx: ['off:svc'] }, { t: 'Koneksi putus; Postgres membatalkan transaksinya' }], title: 'Mati di tengah: tidak ada yang sempat menjadi nyata', text: 'Pod di-evict, OOM, atau deploy yang tidak sabar. Transaksi yang belum COMMIT adalah milik Postgres untuk dibatalkan, dan ia membatalkan semuanya, bukan sebagian.', refs: ['internal/platform/outbox/outbox_integration_test.go'], zoom: 'tx', code: 'publish', lines: 'return s.events(q).Write',
+      mut: S => { S.focus = 'svc'; S.dead = ['svc']; } },
+    { at: 'pg', proc: [{ t: 'ROLLBACK: UPDATE user_profiles lenyap', fx: ['unrow:pg:1', 'tick:pg:rollback'] }, { t: 'INSERT outbox ikut lenyap', fx: ['unrow:outbox:1', 'tick:outbox:rollback'] }, 'Tidak ada profil tanpa event, tidak ada event tanpa profil'], done: 'ROLLBACK · 0 baris', title: 'ROLLBACK membatalkan keduanya bersama', text: 'Inilah yang tidak bisa diberikan "tulis DB lalu publish ke Kafka": di sana proses yang mati di antaranya meninggalkan profil yang berubah tanpa ada yang tahu. Test-nya menggagalkan tulisan kedua dan memastikan tulisan pertama ikut hilang.', refs: ['internal/platform/outbox/outbox_integration_test.go'], zoom: 'outbox', code: 'publish', lines: 'if err != nil { return err }', proof: 'TestAFailureRollsBackBoth',
+      mut: S => { S.focus = 'pg'; S.rows.pg = []; S.rows.outbox = []; S.ob = []; S.tx.forEach(t => { t.st = 'bad'; }); S.tx.push({ q: 'ROLLBACK', st: 'bad' }); S.prof = { lang: 'id', ver: 3 }; S.ticks.pg = 'rollback'; S.ticks.outbox = 'rollback'; } },
+    { at: 'svc', down: 'M2', proc: [{ t: 'Pod dinyalakan ulang; klien mengulang PATCH yang sama', fx: ['on:svc'] }, 'Kunci idempotensi klien membuat ulangan ini aman (M2)'], done: 'siap diulang', title: 'Klien mengulang, sistem mengerjakannya dari awal dengan bersih', text: 'Karena tidak ada setengah-jadi yang tertinggal, ulangan dari klien adalah permintaan biasa. Bagaimana ulangan itu tidak menghasilkan dua pekerjaan adalah mekanisme M2.', refs: ['internal/edge/handler/idempotency.go'], zoom: 'tx', code: 'publish', lines: 'func (s *Service) UpdateAndPublish',
+      mut: S => { S.focus = 'svc'; S.dead = []; S.outcome = 'Transaksi batal utuh: tidak ada profil setengah jadi, tidak ada event yatim'; } },
+  ] },
+  'dua-relay': { label: 'Dua replika relay bersamaan', resume: true, steps: [
+    { at: 'relay2', bg: true, proc: [{ t: 'Pod 2 bangun pada detik yang sama: BEGIN' }, { t: 'SELECT … FOR UPDATE SKIP LOCKED', go: [{ e: 'E6', p: 'sql' }, { e: 'E6', rev: true, p: 'zero' }] }, { t: 'ev_7a sedang dikunci pod 1 → dilewati, bukan ditunggu' }, { t: '0 baris: COMMIT, tidur 1 s' }], done: '0 baris', title: 'Relay kedua melewati baris yang terkunci, tanpa mengantre', text: 'Tanpa SKIP LOCKED dua relay berbaris dan hanya satu yang bekerja; tanpa FOR UPDATE keduanya mengirim event yang sama. Dengan keduanya, replika bertambah berarti throughput bertambah, bukan duplikat bertambah.', refs: ['internal/platform/outbox/outbox.go'], zoom: 'relay', code: 'unpublished', lines: 'SKIP LOCKED makes another relay skip them',
+      mut: S => { show(S, 'relay2'); edge(S, 'E6'); S.focus = 'relay2'; S.txCount = 3; } },
+  ] },
+  'broker-mati': { label: 'Broker Kafka mati', resume: false, fail: true, steps: [
+    { travel: [{ e: 'E4', rev: true, p: 'err' }], at: 'relay', proc: [{ t: 'Broker diam: ProduceSync menyangga dan mencoba ulang di dalam', b: 2, bad: true, fx: ['busy:topic'] }, { t: '10 s: PublishTimeout habis, pubCtx dibatalkan', b: 2, bad: true }, { t: 'sent kosong → MarkPublished tidak mengubah apa pun', b: 3 }], done: 'sent = []', title: 'Batas waktu memutus penantian; tidak ada yang ditandai terkirim', text: 'Tanpa PublishTimeout, relay tergantung selama klien Kafka mencoba ulang di dalam, dengan attempts nol dan last_error kosong: penyelidik tidak menemukan apa pun. Ini benar-benar terjadi di test ketahanan F3-14 dengan broker sungguhan yang dimatikan.', refs: ['internal/platform/outbox/relay.go'], zoom: 'relay', code: 'once', lines: 'PublishTimeout', proof: 'TestNothingIsMarkedSentWhenTheBrokerRefusesEverything',
+      mut: S => { S.focus = 'relay'; S.slots.topic = null; S.msgCount = 0; S.delivered = 0; S.relay = 5; } },
+    { at: 'relay', proc: [{ t: 'UPDATE outbox SET attempts = attempts + 1, last_error = $2 WHERE id = ANY($1)', b: 3, go: [{ e: 'E3', rev: true, p: 'sql' }, { e: 'E3', p: 'ack' }], fx: ['tick:outbox:attempts 1'] }, { t: 'Galat DITELAN dengan sengaja; transaksi tetap COMMIT', b: 4 }, { t: 'log: "some outbox events could not be published"' }], done: 'attempts 1 · published_at NULL', title: 'MarkFailed mencatat, lalu galatnya ditelan supaya yang berhasil tidak dibatalkan', text: 'Bila Once() mengembalikan pubErr, transaksinya batal, dan bersamanya tanda terkirim untuk event lain di batch yang sama yang sudah sampai. Event itu akan dikirim ulang tanpa alasan. Karena itu galatnya dicatat di baris dan di log, bukan dikembalikan.', refs: ['internal/platform/outbox/outbox.go', 'internal/platform/outbox/relay.go'], zoom: 'outbox', code: 'once', lines: 'reader.MarkFailed(ctx, failed, pubErr.Error())', proof: 'TestAPartialFailureKeepsTheRestPublished',
+      mut: S => { S.focus = 'relay'; S.ob[0].attempts = 1; S.ob[0].last_error = 'context deadline exceeded'; S.ob[0].locked = false; S.ticks.outbox = 'attempts 1'; S.attempts = 1; } },
+    { at: 'relay', proc: [{ t: '1 s kemudian: SELECT menemukan baris yang sama lagi', b: 1, go: [{ e: 'E3', rev: true, p: 'sql' }, { e: 'E3', p: 'rows' }] }, { t: 'Broker kembali: Publish berhasil', b: 2, go: [{ e: 'E4', p: 'evt' }], fx: ['slot:topic:lit'] }, { t: 'attempts dan last_error tetap tinggal: jejak untuk penyelidikan', b: 3 }], done: 'terkirim · attempts 1', title: 'Outbox menahan event sampai broker kembali; jejaknya tidak dihapus', text: 'Yang membedakan "gagal sementara" dari "gagal selamanya" hanyalah penghitungnya, dan itu keputusan operator lewat dashboard outbox, bukan keputusan relay. Event tidak pernah dibuang oleh kode.', refs: ['docs/runbook/profile-svc.md', 'internal/platform/outbox/relay.go'], zoom: 'outbox', code: 'run', lines: 'outbox relay round failed',
+      mut: S => { S.focus = 'rail-topic'; S.slots.topic = 'lit'; S.msgCount = 1; S.delivered = 1; S.ob[0].published_at = '09:14:15.044+07'; S.rows.outbox = [2]; S.ticks.outbox = 'published_at ✓'; S.outcome = 'Event tertahan di outbox dengan jejak attempts, lalu terkirim saat broker kembali'; } },
+  ] },
+  'mati-setelah-publish': { label: 'Relay mati setelah publish, sebelum tandai', resume: false, steps: [
+    { travel: [{ e: 'E4', rev: true, p: 'ack' }], at: 'relay', proc: [{ t: 'Broker sudah mengakui pesan', b: 2 }, { t: 'Relay mati SEBELUM MarkPublished', bad: true, fx: ['off:relay'] }, { t: 'Transaksi batal: kunci dilepas, published_at tetap NULL' }], title: 'Broker punya pesannya; basis data tidak tahu itu', text: 'Dua sistem, dua kebenaran. Transaksi relay batal, jadi baris itu tampak belum pernah dikirim, padahal sudah. Inilah satu-satunya celah at-least-once, dan ia dipilih dengan sadar.', refs: ['internal/platform/outbox/relay_test.go'], zoom: 'outbox', code: 'once', lines: 'reader.MarkPublished(ctx, published, time.Now())', proof: 'TestAKillMidFlightLosesNothing',
+      mut: S => { S.focus = 'relay'; S.dead = ['relay']; S.ob[0].locked = false; } },
+    { at: 'relay', jump: true, proc: [{ t: 'Relay hidup lagi: SELECT menemukan baris yang sama', b: 1, fx: ['on:relay'], go: [{ e: 'E3', rev: true, p: 'sql' }, { e: 'E3', p: 'rows' }] }, { t: 'Publish lagi: pesan yang sama tiba untuk KEDUA kalinya', b: 2, go: [{ e: 'E4', p: 'evt' }], fx: ['slot:topic:lit'] }, { t: 'Test: 6 event, 3 dikirim ulang, 9 pengiriman total' }], done: '2 pengiriman', title: 'Duplikat yang nyata, dan dinyatakan terbuka di test-nya', text: 'Test-nya menghitung 9 pengiriman untuk 6 event supaya jaminan sebenarnya, at-least-once, tidak diam-diam berubah menjadi klaim exactly-once di dokumentasi.', refs: ['internal/platform/outbox/relay_test.go'], zoom: 'kafka', code: 'once', lines: 'sent, pubErr := r.pub.Publish(pubCtx, msgs)', proof: 'TestAKillMidFlightLosesNothing',
+      mut: S => { S.focus = 'rail-topic'; S.dead = []; S.msgCount = 2; S.delivered = 2; S.slots.topic = 'lit'; } },
+    { travel: [{ e: 'E4', rev: true, p: 'ack' }], at: 'relay', proc: [{ t: 'UPDATE outbox SET published_at = now() … AND published_at IS NULL', b: 3, go: [{ e: 'E3', rev: true, p: 'sql' }, { e: 'E3', p: 'ack' }], fx: ['unrow:outbox:1', 'row:outbox:2', 'tick:outbox:published_at ✓'] }, { t: 'COMMIT', b: 4, fx: ['flash:outbox'] }], done: 'moved = 1', title: 'Kali ini penandaannya sampai; baris itu tidak akan dibaca lagi', text: 'Klausa AND published_at IS NULL menjaga penandaan tetap idempoten: penandaan kedua untuk baris yang sudah tertandai tidak mengubah apa pun.', refs: ['internal/platform/outbox/outbox.go'], zoom: 'outbox', code: 'mark', lines: 'AND published_at IS NULL',
+      mut: S => { S.focus = 'relay'; S.rows.outbox = [2]; S.ob[0].published_at = '09:14:07.930+07'; S.ticks.outbox = 'published_at ✓'; } },
+    { at: 'consumer', jump: true, travel: [{ e: 'E5', p: 'evt' }, { e: 'E5', p: 'evt', jump: true }], down: 'M2', proc: ['Pesan #1 tiba: cuplikan profil disimpan', 'Pesan #2 tiba: occurred_at sama, UPSERT tidak menang → tidak ada perubahan', 'Duplikat ditahan penerima, bukan pengirim'], done: '2 tiba · 1 tersimpan', title: 'Dua kali tiba, sekali berubah: penerima yang idempoten menutup celahnya', text: 'Relay memilih duplikat daripada kehilangan karena duplikat bisa ditahan penerima, sedangkan kehilangan tidak bisa ditahan siapa pun. Penerima yang efeknya tidak idempoten memakai penjaga di M2.', refs: ['internal/assessment/adapter/consumer/results.go', 'internal/platform/idempotency/guard.go'], zoom: 'consumer', code: 'consumer', lines: 'if !stored {',
+      mut: S => { show(S, 'consumer'); edge(S, 'E5'); S.focus = 'consumer'; S.slots.topic = 'used'; S.stored = 1; S.txCount = 3; S.outcome = 'Dua pengiriman, satu perubahan: at-least-once di pengirim, idempoten di penerima'; } },
+  ] },
+};
+const CHAPTERS = [
+  { name: 'Tulis', sub: 'data bisnis dan eventnya lahir dari satu transaksi' },
+  { name: 'Angkut', sub: 'relay: kunci baris, terbitkan, baru tandai' },
+  { name: 'Tiba', sub: 'sekali atau dua kali, penerima yang menahan' },
+];
+STEPS.forEach((s, i) => { s.ch = i <= 5 ? 0 : i <= 11 ? 1 : 2; });
+BRANCHES['crash-tx'].steps.forEach(s => { s.ch = 0; });
+BRANCHES['dua-relay'].steps.forEach(s => { s.ch = 1; });
+BRANCHES['broker-mati'].steps.forEach(s => { s.ch = 1; });
+BRANCHES['mati-setelah-publish'].steps.forEach((s, i) => { s.ch = i < 3 ? 1 : 2; });
+const PAYLOAD = {
+  sql: { shape: 'card', text: 'SQL' }, ack: { shape: 'ack' }, rows: { shape: 'card', text: 'ROWS' }, zero: { shape: 'card', text: '0' },
+  commit: { shape: 'card', text: 'COMMIT' }, evt: { shape: 'env' }, err: { shape: 'err' },
+};
+
+// ---------- RINCIAN ----------
+const st = s => `<span class="st ${s}">${s}</span>`;
+const li = (state, txt) => `<div class="${state || ''}"><i></i><span>${txt}</span></div>`;
+const ZOOM = {
+  tx: S => ['Transaksi profile-svc · uow.Do', `<div class="tbl"><div class="th">user_profiles <span>user_id · language · version</span></div><div class="row ${S.prof.ver !== 3 ? 'new' : ''}"><span class="id">u_91c2</span><span>${S.prof.lang} · v${S.prof.ver}</span>${S.prof.pending ? st('uncommitted') : st(S.prof.ver === 3 ? 'lama' : 'committed')}</div></div><div class="tx ${S.tx.length && S.tx[S.tx.length - 1].q === 'COMMIT' ? 'done' : S.tx.length ? 'lit' : ''}"><span class="txl">pernyataan di transaksi ini</span>${S.tx.length ? S.tx.map(t => li(t.st === 'done' ? 'done' : t.st === 'bad' ? 'bad' : 'lit', t.q)).join('') : li('', 'belum dibuka')}</div>`],
+  outbox: S => ['outbox · partisi outbox_2026_09', `<div class="tbl"><div class="th">outbox <span>id · event_type · published_at · attempts</span></div>${S.ob.length ? S.ob.map(o => `<div class="row new"><span class="id">${o.id}</span><span>${o.type} · ${o.agg}${o.locked ? ' · <em>terkunci relay</em>' : ''}</span>${o.published_at ? st('published') : st('unpublished')}</div><div class="row"><span class="id">↳</span><span>created_at ${o.created_at} · published_at ${o.published_at || 'NULL'} · attempts ${o.attempts}${o.last_error ? ' · last_error "' + o.last_error + '"' : ''}</span><span></span></div>`).join('') : '<div class="row"><span class="id">—</span><span>kosong</span><span></span></div>'}</div><div class="z">indeks parsial <b>outbox_unpublished</b> (created_at) WHERE published_at IS NULL → ${S.ob.filter(o => !o.published_at).length} baris</div>`],
+  relay: S => ['relay · Relay.Once() dalam SATU transaksi', `<div class="list">${['pg.InTx: BEGIN', 'Unpublished(50): SELECT … FOR UPDATE SKIP LOCKED', 'toMessages: TopicFor + key aggregate_id + header', 'Publish(pubCtx 10 s): ProduceSync, hasil per pesan', 'MarkFailed untuk yang gagal (galat ditelan)', 'MarkPublished(sent, now()) lalu COMMIT'].map((t, i) => li(i < S.relay ? 'done' : i === S.relay ? 'lit' : '', t)).join('')}</div><div class="kv"><b>Batch</b><span>50</span><b>Interval</b><span>1 s (kosong) · 0 (masih ada isinya)</span><b>PublishTimeout</b><span>10 s (bawaan)</span></div>`],
+  kafka: S => ['Kafka · profile.updated · 3 partisi', `<div class="z">${S.msg ? `topic <b>${S.msg.topic}</b> · key <b>${S.msg.key}</b> → hash mod 3 → partisi 1` : 'belum ada pesan'}</div><div class="slots">${Array.from({ length: 3 }, (_, i) => `<div class="${i === 1 && S.slots.topic ? 'lit' : ''}">${i}</div>`).join('')}</div>${S.msg ? `<div class="kv">${Object.entries(S.msg.headers).map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join('')}<b>pengiriman</b><span class="${S.delivered > 1 ? 'lit' : ''}">${S.delivered} kali</span></div>` : ''}`],
+  consumer: S => ['assessment-svc · cacheProfile()', `<div class="list">${['isMine(rec): header aggregate_type cocok', 'proto.Unmarshal envelope', 'cache.Profiles.Store(…, observedAt): UPSERT menang bila lebih baru', 'stored=false → log debug, bukan galat'].map((t, i) => li(S.stored ? 'done' : '', t)).join('')}</div><div class="tbl"><div class="th">profile_snapshots <span>user_id · language · observed_at</span></div>${S.stored ? '<div class="row new"><span class="id">u_91c2</span><span>en · 09:14:02.118</span><span class="st ok">tersimpan 1×</span></div>' : '<div class="row"><span class="id">—</span><span>belum ada</span><span></span></div>'}</div>`],
+};
+</script>
+<script src="manifest.js"></script>
+<script src="reel.js"></script>
+</body>
+</html>

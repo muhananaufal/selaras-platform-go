@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personalisasi laporan lewat LLM · Selaras Flow Reel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="reel.css">
+</head>
+<body>
+<script>
+// ---------- IDENTITAS REEL ----------
+// Teks boleh string (id) atau { id, en }. Kolom en diisi belakangan.
+const REEL = {
+  id: '04', tier: 2, num: { id: '04 · alur', en: '04 · flow' },
+  title: { id: 'Personalisasi laporan lewat LLM', en: 'Report personalisation through the LLM' },
+  kicker: { id: 'Selaras Flow Reel · alur 04', en: 'Selaras Flow Reel · flow 04' },
+  intro: { id: '17 langkah · 8 komponen · dua cabang "bagaimana kalau" · <kbd>spasi</kbd> jeda · <kbd>⋯</kbd> menu', en: '17 steps · 8 components · two "what if" branches · <kbd>space</kbd> pause · <kbd>⋯</kbd> menu' },
+};
+const CODE = {
+  handler: { file: 'internal/edge/handler/assessment.go:209', src: `func (h *Assessment) Personalize(c *gin.Context) {
+	claims, ok := middleware.ClaimsFrom(c)
+	if !ok { httperr.Write(c, http.StatusUnauthorized, httperr.CodeUnauthenticated, "Unauthenticated."); return }
+	req := &assessmentv1.RequestPersonalizationRequest{ Slug: c.Param("slug"), UserId: claims.UserID.String() }
+<b>	req.IdempotencyKey = idempotencyKeyFor(claims, c.GetHeader("Idempotency-Key"))</b>
+	resp, err := h.assessments.RequestPersonalization(c.Request.Context(), req)
+	if err != nil { httperr.FromGRPC(c, err); return }
+	status := http.StatusAccepted
+	if resp.GetStatus() == assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED {
+<c>		// The report already exists. 200, not 202: there is nothing to wait for.</c>
+		status = http.StatusOK
+	}
+	writeData(c, status, personalizationView{ JobID: resp.GetJobId(), Status: personalizationStatusName(resp.GetStatus()) })
+}` },
+  auth: { file: 'internal/edge/middleware/auth.go:48', src: `claims, err := tokens.Verify(raw)
+if err != nil {
+<c>	// The reason for the refusal is NOT stated. Telling "bad signature" from "expired"
+	// tells an attacker that the signature is right - meaning the key has leaked.</c>
+	unauthorized(c); return
+}
+<b>c.Request = c.Request.WithContext(authn.WithToken(c.Request.Context(), raw))</b>
+current, err := revocations.IsCurrent(c.Request.Context(), claims.UserID, claims.Generation)
+if err != nil {
+<c>	// FAIL-CLOSED (ADR-020). The answer is 503, not 401: the client did nothing wrong.</c>
+	httperr.Write(c, http.StatusServiceUnavailable, httperr.CodeUnavailable, "Cannot verify the session right now."); return
+}
+if !current { unauthorized(c); return }` },
+  idem: { file: 'internal/edge/handler/idempotency.go:20', src: `func idempotencyKeyFor(claims domain.Claims, header string) *commonv1.IdempotencyKey {
+	if header == "" { return nil }
+<c>	// The separator is a control character, not ":", so a user id and a client key
+	// cannot be strung together into someone else's key.</c>
+<b>	return &commonv1.IdempotencyKey{Value: claims.UserID.String() + "\\x1f" + header}</b>
+}` },
+  interceptor: { file: 'internal/platform/authn/interceptor.go:49', src: `raw, hasToken := bearerFromIncoming(ctx)
+claimed, hasUserID := userIDOf(req)
+if hasToken {
+	p, err := verifier.Verify(raw)
+	if err != nil { return nil, status.Error(codes.Unauthenticated, "the access token is not valid") }
+	principal = p
+	ctx = withPrincipal(ctx, p)
+}
+if hasUserID {
+	if !hasToken { return nil, status.Error(codes.Unauthenticated, "this request needs an access token") }
+<b>	if claimed != principal.UserID {</b>
+<c>		// 403, not 404: this is not "resource does not exist" (S9), this is a caller claiming to be someone else.</c>
+		return nil, status.Error(codes.PermissionDenied, "the access token does not belong to this user")
+	}
+}` },
+  usecase: { file: 'internal/assessment/app/request_personalization.go:101', src: `assessment, err := s.Get(ctx, req.Slug, req.UserID)   <c>// ownership through the ordinary read path (ADR-023)</c>
+if err != nil { return nil, err }
+if assessment.ResultDetails != nil {
+	return &PersonalizationTicket{JobID: assessment.ID.String(), AlreadyRunning: true}, nil
+}
+key := req.IdempotencyKey
+if key == "" { key = "personalization:" + assessment.ID.String() }
+envelope := &eventsv1.Envelope{ EventId: jobID.String(), IdempotencyKey: &commonv1.IdempotencyKey{Value: key},
+	Payload: &eventsv1.Envelope_PersonalizationRequested{ PersonalizationRequested: &eventsv1.PersonalizationRequested{
+		AssessmentId: assessment.ID.String(), Slug: assessment.Slug, JobId: jobID.String() } } }
+<c>// Two writes, one transaction: the mark that this assessment is being worked on, and the event requesting it.</c>
+<b>if err := uow.Do(ctx, func(q pg.Querier) error {</b>
+<b>	if _, err := s.statusWriter(q).SetPersonalizationStatus(ctx, assessment.ID, domain.PersonalizationPending,</b>
+<b>		[]domain.PersonalizationStatus{domain.PersonalizationNotRequested, domain.PersonalizationFailed}, ""); err != nil { return err }</b>
+<b>	return events(q).Write(ctx, "assessment", assessment.ID.String(), envelope)</b>
+}); err != nil { return nil, fmt.Errorf("requesting personalisation: %w", err) }
+return &PersonalizationTicket{JobID: jobID.String()}, nil` },
+  relay: { file: 'internal/platform/outbox/relay.go:144', src: `err := pg.InTx(ctx, r.pool, func(q pg.Querier) error {
+	reader := NewReader(q)
+<b>	records, err := reader.Unpublished(ctx, r.opts.Batch)</b>   <c>// FOR UPDATE SKIP LOCKED, the lock lives for this transaction</c>
+	msgs, routable, unroutable := r.toMessages(records)
+	if len(unroutable) > 0 { reader.MarkFailed(ctx, unroutable, "no topic is defined for this event type") }
+<c>	// Publishing is time-bounded, SEPARATE from the transaction.</c>
+	pubCtx, cancelPub := context.WithTimeout(ctx, r.opts.PublishTimeout)
+<b>	sent, pubErr := r.pub.Publish(pubCtx, msgs)</b>
+	cancelPub()
+	for _, i := range sent { published = append(published, routable[i]) }
+<b>	if err := reader.MarkPublished(ctx, published, time.Now()); err != nil { return err }</b>
+	if pubErr != nil {
+<c>		// Failures are recorded, then the error is deliberately SWALLOWED here: returning it would
+		// undo the published mark for events that really arrived.</c>
+		reader.MarkFailed(ctx, failed, pubErr.Error())
+		r.log.WarnContext(ctx, "some outbox events could not be published", "published", len(published), "failed", len(failed), "error", pubErr)
+	}
+	return nil
+})` },
+  topics: { file: 'internal/platform/kafka/topics.go:52', src: `{
+	Name:       "llm.jobs",
+	Partitions: 12,
+	Why: "The only topic that needs real parallelism. Its jobs wait on the " +
+		"network for tens of seconds, so the partition count decides how many " +
+		"jobs may wait at once. Twelve is the maxReplicaCount ceiling of " +
+		"llm-worker in F9-22; raising it later is easy, lowering it is not.",
+},
+{
+	Name:       "llm.results",
+	Partitions: 12,
+<b>	Why: "Paired with llm.jobs so one worker can hold the corresponding partition in both.",</b>
+}` },
+  worker: { file: 'internal/llmworker/worker.go:257', src: `var env eventsv1.Envelope
+if err := proto.Unmarshal(rec.Value, &env); err != nil {
+	c.log.ErrorContext(ctx, "a message could not be decoded and was skipped", "offset", rec.Offset, "error", err)
+	return nil   <c>// skipped, not retried forever</c>
+}
+ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)   <c>// a child of the request span that wrote this event</c>
+key := idempotencyKeyOf(&env)   <c>// the client key wins; event_id when there is none</c>
+<b>claimed, job, err := c.claim(ctx, key, req)</b>
+if !claimed {
+	c.log.InfoContext(ctx, "a job arrived again and was skipped", "idempotency_key", key, "event_id", env.GetEventId())
+	return nil
+}
+<c>// Stage two: work, with retries IN-PROCESS. The message is held until it finishes or gives up;
+// its partition is held along with it - and that is precisely what keeps the order per aggregate.</c>
+<b>return c.work(ctx, job, req, started)</b>` },
+  claim: { file: 'internal/platform/idempotency/guard.go:57', src: `func (g *Guard) Claim(ctx context.Context, key string) (bool, error) {
+	if key == "" { return false, errors.New("an empty idempotency key would collapse every job into one") }
+	const q = \`
+<b>		INSERT INTO processed_messages (key, scope, created_at)</b>
+<b>		VALUES ($1, $2, $3)</b>
+<b>		ON CONFLICT (key) DO NOTHING\`</b>
+	tag, err := g.db.Exec(ctx, q, g.scopedKey(key), g.scope, time.Now())
+	if err != nil { return false, fmt.Errorf("claiming the idempotency key: %w", err) }
+<c>	// The decision comes from the database's primary key - one statement, not SELECT then INSERT.</c>
+	return tag.RowsAffected() == 1, nil
+}` },
+  results: { file: 'internal/assessment/adapter/consumer/results.go:160', src: `func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
+<b>	if !isMine(rec) { return nil }</b>   <c>// filtered on the aggregate_type header, before anything is unpacked</c>
+	var env eventsv1.Envelope
+	if err := proto.Unmarshal(rec.Value, &env); err != nil { …; return nil }
+	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
+	switch payload := env.GetPayload().(type) {
+	case *eventsv1.Envelope_PersonalizationCompleted:
+		return r.complete(ctx, &env, payload.PersonalizationCompleted)
+	case *eventsv1.Envelope_LlmJobFailed:
+		return r.fail(ctx, &env, payload.LlmJobFailed, rec)
+	default:
+		return nil   <c>// another service's: skipped, not failed, so the offset keeps advancing</c>
+	}
+}
+<c>// complete(): claim the guard with scope "assessment.results" + StorePersonalization + status=completed,
+// ALL in one transaction. A status without a report, or a report without a status, cannot happen.</c>` },
+};
+
+
+
+// ---------- KANVAS ----------
+const NODES = {
+  klien:      { x: 130,  y: 330, label: 'Klien',          sub: 'aplikasi',              icon: 'phone' },
+  gateway:    { x: 430,  y: 330, label: 'edge-gateway',   sub: 'REST → gRPC',           icon: 'gate' },
+  redis:      { x: 430,  y: 620, label: 'Redis',          sub: 'rate limit · generasi', icon: 'redis' },
+  assessment: { x: 760,  y: 330, label: 'assessment-svc', sub: 'Go · gRPC',             icon: 'svc' },
+  pg:         { x: 1090, y: 330, label: 'PostgreSQL',     sub: 'svc_assessment',        icon: 'db' },
+  worker:     { x: 1390, y: 620, label: 'llm-worker',     sub: 'konsumen llm.jobs',     icon: 'worker' },
+  gemini:     { x: 1390, y: 330, label: 'Gemini',         sub: 'generateContent',       icon: 'gemini' },
+};
+const RAILS = { jobs: { y: 640, label: 'llm.jobs', n: 12 }, results: { y: 760, label: 'llm.results', n: 12 }, dlq: { y: 860, label: 'llm.dlq', n: 1 } };
+const SLOT_X = i => 575 + i * 56 + 24;
+const EDGES = {
+  E1:  { d: 'M186,330 L374,330',                     kind: 'http', lbl: ['HTTP', 280, 316],                   a: 'klien', b: 'gateway' },
+  E2:  { d: 'M430,386 L430,562',                     kind: 'db',   lbl: ['Redis', 452, 480],                  a: 'gateway', b: 'redis' },
+  E3:  { d: 'M486,330 L704,330',                     kind: 'grpc', lbl: ['gRPC + bearer', 595, 316],          a: 'gateway', b: 'assessment' },
+  E4:  { d: 'M816,330 L1034,330',                    kind: 'db',   lbl: ['pgx · satu transaksi', 925, 316],   a: 'assessment', b: 'pg' },
+  E5:  { d: 'M1090,386 C1090,500 991,480 991,596',   kind: 'evt',  lbl: ['relay outbox', 1066, 500],          a: 'pg', b: 'rail-jobs' },
+  E6:  { d: 'M1015,640 C1200,640 1250,620 1334,620', kind: 'evt',  lbl: ['PollFetches', 1160, 626],           a: 'rail-jobs', b: 'worker' },
+  E7:  { d: 'M1390,564 L1390,386',                   kind: 'ext',  lbl: ['llm.generate', 1412, 480],          a: 'worker', b: 'gemini' },
+  E9:  { d: 'M1334,640 C1250,760 1200,760 1015,760', kind: 'evt',  lbl: ['personalization.completed', 1120, 792], a: 'worker', b: 'rail-results' },
+  E10: { d: 'M967,760 C640,760 760,600 760,386',     kind: 'evt',  lbl: ['llm.results process', 690, 560],    a: 'rail-results', b: 'assessment' },
+  E11: { d: 'M1334,640 C1250,870 1100,860 625,860',  kind: 'evt',  lbl: ['llm.job.failed', 1000, 848],         a: 'worker', b: 'rail-dlq' },
+  E12: { d: 'M575,826 C575,640 760,600 760,386',     kind: 'evt',  lbl: ['llm.dlq process', 610, 600],         a: 'rail-dlq', b: 'assessment' },
+};
+// Isi dalam unit: urutan blok yang dilewati permintaan. Ditempatkan di bawah/atas ikon supaya tidak menabrak tetangga.
+const PANEL = {
+  gateway:    { side: 'below', title: 'di dalam edge-gateway', blocks: [['otelgin', 'span'], ['LimitBody', '≤ 1 MiB'], ['Authenticate', 'JWT + Redis'], ['RateLimit', '10/menit'], ['Personalize()', 'handler']] },
+  assessment: { side: 'below', title: 'di dalam assessment-svc', blocks: [['interceptor', 'authn'], ['use case', 'app'], ['aturan', 'domain'], ['transaksi', 'repo + outbox'], ['konsumen', 'llm.results']] },
+  worker:     { side: 'above', dx: -10, bw: 90, gap: 10, title: 'di dalam llm-worker', blocks: [['PollFetches', 'llm.jobs'], ['klaim', 'idempotensi'], ['penyedia', 'llm.generate'], ['simpan', 'llm_jobs + outbox']] },
+};
+const PANEL_GEOM = id => { const p = PANEL[id]; if (!p) return null; const bw = p.bw || 96, gap = p.gap || 12, w = p.blocks.length * bw + (p.blocks.length - 1) * gap + 40, hgt = 96; const x = -w / 2 + (p.dx || 0), y = p.side === 'below' ? 118 : -216; return { x, y, w, h: hgt, bw, gap }; };
+const BOX = id => { const b = id.startsWith('rail-') ? { x: 560, y: RAILS[id.slice(5)].y - 34, w: RAILS[id.slice(5)].n === 1 ? 240 : 700, h: 68 } : { x: NODES[id].x - 70, y: NODES[id].y - 70, w: 140, h: 176 };
+  const g = NODES[id] && PANEL_GEOM(id); if (!g) return b; const px = NODES[id].x + g.x, py = NODES[id].y + g.y; const x = Math.min(b.x, px), y = Math.min(b.y, py); return { x, y, w: Math.max(b.x + b.w, px + g.w) - x, h: Math.max(b.y + b.h, py + g.h) - y }; };
+const BOX_OLD = id => id.startsWith('rail-') ? { x: 560, y: RAILS[id.slice(5)].y - 34, w: 700, h: 68 } : { x: NODES[id].x - 70, y: NODES[id].y - 70, w: 140, h: 176 };
+
+// ---------- STATE ----------
+const initial = () => ({ shown: [], edges: [], trail: [], latU: 0, latS: 0, txCount: 0, msgCount: 0, slotDlq: null, focus: null, mw: {}, jwt: false, gen: null, rate: null, idem: false, ic: 0, uc: 0, tx: null, ra: 'not_requested', outbox: [], resp: null, relay: 0, slotJobs: null, slotRes: null, pm: [], jobs: [], llmOutbox: null, gemini: null, report: false, ticks: {} });
+const show = (S, ...ids) => ids.forEach(id => { if (!S.shown.includes(id)) S.shown.push(id); });
+const edge = (S, ...ids) => ids.forEach(id => { if (!S.edges.includes(id)) S.edges.push(id); });
+
+// ---------- LANGKAH ----------
+// travel/go/after: perjalanan titik; p = muatan yang dibawa titik. lat: waktu yang bertambah (u = pengguna menunggu, s = sistem bekerja),
+// ilustratif berskala dari docs/performance-report.md (p50 tulis ~8 ms; llm.generate ~4 s dengan penyedia nyata).
+const STEPS = [
+  { at: 'klien', proc: ['Menyusun permintaan PATCH', 'Menyertakan token masuk', 'Kirim'], title: 'Klien mengirim satu permintaan dan tidak menunggu penyedia', text: 'Satu PATCH tanpa badan, dengan token dan kunci idempotensi. Yang akan pulang adalah tiket, bukan laporan.', refs: ['test/postman/selaras.postman_collection.json'], zoom: 'http',
+    mut: S => { show(S, 'klien'); S.focus = 'klien'; } },
+  { travel: [{ e: 'E1', p: 'req' }], at: 'gateway', proc: [{ t: 'Buka jejak (span) untuk rute ini', b: 0 }, { t: 'Ukur badan: 0 B ≤ 1 MiB', b: 1 }], done: 'badan ✓', lat: { u: 0.4 }, title: 'Gerbang memeriksa ukuran dulu', text: 'Badan di atas 1 MiB ditolak sebelum validasi apa pun berjalan; cara termurah menjatuhkan service adalah mengirimkannya sesuatu yang sangat besar.', refs: ['internal/edge/middleware/bodylimit.go', 'internal/edge/middleware/tracing.go'], zoom: 'mw',
+    mut: S => { show(S, 'gateway'); edge(S, 'E1'); S.focus = 'gateway'; S.mw = { trace: 'done', body: 'done' }; } },
+  { at: 'gateway', proc: [{ t: 'Baca token pengguna', b: 2 }, { t: 'Cek tanda tangan Ed25519 dengan kunci publik', b: 2 }, { t: 'Tanya Redis: token ini sudah dicabut?', b: 2, go: [{ e: 'E2', p: 'get' }, { e: 'E2', rev: true, p: 'ack' }] }, { t: 'Belum dicabut: generasi 1 = generasi 1', b: 2 }], done: '✓ JWT sah', lat: { u: 0.6 }, title: 'Tanda tangan diperiksa lokal, pencabutan diperiksa ke Redis', text: 'Gateway memverifikasi Ed25519 sendiri tanpa memanggil identity-svc. Generasi token dibandingkan dengan cache Redis; gagal memastikan pencabutan berarti 503, bukan 401: gagal-tertutup.', refs: ['internal/edge/middleware/auth.go', 'ADR-020'], zoom: 'jwt', code: 'auth',
+    mut: S => { show(S, 'redis'); edge(S, 'E2'); S.focus = 'gateway'; S.mw.auth = 'done'; S.jwt = true; S.gen = 1; S.ticks.gateway = '✓ JWT'; } },
+  { at: 'gateway', proc: [{ t: 'Hitung laju di Redis: permintaan ke-1 dari 10 per menit', b: 3, go: [{ e: 'E2', p: 'incr' }, { e: 'E2', rev: true, p: 'ack' }] }, { t: 'Ikat kunci idempotensi ke pengguna', b: 4 }], done: 'kunci diikat', lat: { u: 0.3 }, title: 'Batas laju per pengguna, lalu kunci idempotensi diikat', text: 'Jalur ini membelanjakan uang: 10 permintaan per menit per pengguna lewat satu INCR di Redis. Kunci klien digabung dengan user id supaya dua pengguna dengan kunci sama tidak saling meniadakan pekerjaan.', refs: ['internal/edge/middleware/ratelimit.go', 'internal/edge/handler/idempotency.go'], zoom: 'idem', code: 'idem',
+    mut: S => { S.focus = 'gateway'; S.mw.rate = 'done'; S.mw.handler = 'done'; S.rate = 1; S.idem = true; } },
+  { travel: [{ e: 'E3', p: 'jwt' }], down: 'M3', at: 'assessment', proc: [{ t: 'Terima panggilan gRPC', b: 0 }, { t: 'Cek token lagi dengan kunci publik yang sama', b: 0 }, { t: 'user_id di permintaan = pemilik token?', b: 0 }], done: '✓ sub = user_id', lat: { u: 0.8 }, title: 'Service memeriksa token sendiri, bukan sekadar percaya', text: 'Sebelum ADR-026, service mempercayai user_id yang dikirimkan. Kini interceptor memverifikasi tanda tangan dan mencocokkan sub token dengan user_id; tidak cocok berarti PermissionDenied.', refs: ['internal/platform/authn/interceptor.go', 'ADR-026'], zoom: 'grpc', code: 'interceptor',
+    mut: S => { show(S, 'assessment'); edge(S, 'E3'); S.focus = 'assessment'; S.ic = 4; S.ticks.assessment = '✓ sub = user_id'; } },
+  { at: 'assessment', proc: [{ t: 'Muat penilaian milik pengguna ini', b: 1 }, { t: 'Sudah ada laporan? belum → lanjut', b: 2 }, { t: 'Tentukan kunci pekerjaan', b: 1 }], lat: { u: 0.5 }, title: 'Kepemilikan dulu, lalu jalan pintas bila laporan sudah ada', text: 'Slug milik orang lain diperlakukan seperti tidak ada. Bila laporan sudah tersimpan, tiket dikembalikan tanpa pekerjaan berbayar kedua.', refs: ['internal/assessment/app/request_personalization.go', 'ADR-023'], zoom: 'usecase', code: 'usecase',
+    mut: S => { S.focus = 'assessment'; S.uc = 4; } },
+  { at: 'assessment', proc: [{ t: 'Buka satu transaksi', b: 3 }, { t: 'Tandai penilaian: sedang diproses', b: 3 }, { t: 'Tulis "tolong buatkan laporan" ke outbox', b: 3 }], lat: { u: 0.2 }, title: 'Dua tulisan yang harus terjadi bersama', text: 'Status dan event permintaannya ditulis di transaksi yang sama. Tanpa ini: penilaian yang menunggu selamanya, atau pekerjaan yang tidak ada yang menunggu.', refs: ['internal/assessment/app/request_personalization.go', 'ADR-004'], zoom: 'usecase', code: 'usecase',
+    mut: S => { S.focus = 'assessment'; S.tx = 'lit'; } },
+  { travel: [{ e: 'E4', p: 'sql' }], down: 'M1', at: 'pg', proc: [{ t: 'UPDATE risk_assessments → pending', fx: ['row:pg:1'] }, { t: 'INSERT outbox (permintaan laporan)', fx: ['row:pg:2'] }, { t: 'COMMIT', fx: ['tick:pg:2 baris · 1 tx', 'flash:pg'] }], done: '2 baris · 1 transaksi', lat: { u: 2.5 }, title: 'Postgres: satu baris berubah, satu baris lahir, satu COMMIT', text: 'Outbox hidup di schema yang sama dengan datanya supaya satu transaksi bisa menulis keduanya. Itulah inti transactional outbox.', refs: ['internal/platform/outbox/schema.sql', 'ADR-004'], zoom: 'db',
+    mut: S => { show(S, 'pg'); edge(S, 'E4'); S.focus = 'pg'; S.tx = 'done'; S.ra = 'pending'; S.outbox.push({ id: 'ev_c3', type: 'personalization.requested', st: 'pending' }); S.ticks.pg = '2 baris · 1 tx'; S.txCount = (S.txCount || 0) + 1; } },
+  { travel: [{ e: 'E4', rev: true, p: 'ack' }, { e: 'E3', rev: true, p: 'ticket' }, { e: 'E1', rev: true, p: 'ticket' }], at: 'klien', proc: ['Terima tiket: 202 Accepted', 'Tidak perlu menunggu LLM'], done: 'tiket diterima', lat: { u: 0.7 }, title: 'Klien menerima tiket dalam milidetik', text: 'Tidak ada penyedia LLM di jalur ini. Sistem lama memanggil Gemini di dalam permintaan HTTP dan pengguna menunggu puluhan detik.', refs: ['internal/edge/handler/assessment.go', 'docs/performance-report.md'], zoom: 'http', code: 'handler',
+    mut: S => { S.focus = 'klien'; S.resp = { code: '202 Accepted · 6 ms', body: '{"data":{"job_id":"019…c210","status":"pending"}}' }; S.userDone = true; } },
+  { at: 'pg', jump: true, down: 'M1', proc: ['Relay: ambil baris outbox yang belum terkirim', { t: 'Kirim ke Kafka, tunggu pengakuan (acks=all)', go: [{ e: 'E5', p: 'evt' }], fx: ['slot:jobs:lit'] }, 'Tandai baris outbox: terkirim'], done: 'outbox → Kafka', lat: { s: 12 }, title: 'Relay mengangkut baris outbox ke broker, at-least-once', text: 'Pekerja latar yang terpisah dari permintaan pengguna. Menerbitkan dulu, baru menandai: proses yang mati di antaranya menghasilkan duplikat, bukan kehilangan; duplikat ditahan penerima, kehilangan tidak bisa ditahan siapa pun.', refs: ['internal/platform/outbox/relay.go'], zoom: 'relay', code: 'relay',
+    mut: S => { show(S, 'rail-jobs'); edge(S, 'E5'); S.focus = 'rail-jobs'; S.relay = 4; S.outbox[0].st = 'sent'; S.slotJobs = 'lit'; S.msgCount = (S.msgCount || 0) + 1; } },
+  { at: 'rail-jobs', down: 'M4', proc: ['Kunci pesan = id penilaian (as_3b9d)', 'hash(kunci) mod 12 = 7', 'Pesan untuk penilaian yang sama selalu ke partisi ini'], done: 'partisi 7', title: 'Pesan mendarat di partisi 7, ditentukan kuncinya', text: 'Kafka hanya menjamin urutan di dalam satu partisi, jadi kunci = aggregate_id inilah yang menjamin urutan per penilaian. Dua belas partisi = plafon paralelisme worker.', refs: ['internal/platform/kafka/topics.go', 'docs/topics.md', 'ADR-014'], zoom: 'kafka', code: 'topics',
+    mut: S => { S.focus = 'rail-jobs'; } },
+  { travel: [{ e: 'E6', p: 'evt' }], down: 'M2', at: 'worker', proc: [{ t: 'Ambil pesan dari partisi 7', b: 0 }, { t: 'Klaim kunci: INSERT … ON CONFLICT DO NOTHING', b: 1 }, { t: 'Catat pekerjaan: pending', b: 1 }], done: 'klaim ✓', lat: { s: 15 }, title: 'llm-worker mengklaim pekerjaan: satu INSERT yang memutuskan', text: 'Satu pernyataan, bukan SELECT lalu INSERT: dua proses yang masuk bersamaan tidak bisa sama-sama membaca "belum". Duplikat dari relay berhenti di sini.', refs: ['internal/llmworker/worker.go', 'internal/platform/idempotency/guard.go'], zoom: 'worker', code: 'claim',
+    mut: S => { show(S, 'worker'); edge(S, 'E6'); S.focus = 'worker'; S.slotJobs = 'used'; S.pm.push({ key: 'u_91c2␟k-3f1', scope: 'llm-worker' }); S.jobs.push({ id: 'jb_c210', kind: 'personalization', st: 'pending', att: 0 }); S.ticks.worker = 'klaim ✓'; S.txCount = (S.txCount || 0) + 1; } },
+  { at: 'worker', down: 'M5', proc: [{ t: 'Susun prompt dari templat + konteks penilaian', b: 2 }, { t: 'Kirim ke Gemini, menunggu jawaban…', b: 2, go: [{ e: 'E7', p: 'llm' }] }, { t: 'Worker ini menunggu; pengguna dan 11 partisi lain tidak', b: 2, fx: ['busy:jobs'] }], lat: { s: 4200 }, title: 'Panggilan penyedia, sengaja di luar transaksi', text: 'Panggilan ini sinkron untuk worker dan partisinya: pesan ditahan sampai selesai supaya urutan per penilaian terjaga. Pengguna sudah memegang tiket, dan sebelas partisi lain tetap dikerjakan worker lain bersamaan. Di titik inilah sistem paling sering gagal; pilih apa yang terjadi.', refs: ['internal/llm/gemini/gemini.go', 'ADR-025'], zoom: 'gemini', code: 'worker', branch: true,
+    mut: S => { show(S, 'gemini'); edge(S, 'E7'); S.focus = 'gemini'; S.gemini = 'wait'; } },
+  { at: 'gemini', proc: ['Model menjawab: JSON sesuai bentuk yang diminta'], done: '4,2 s', title: 'Jawaban tiba, diperiksa bentuknya', text: 'Jawaban yang bukan JSON sesuai templat diperlakukan sebagai kegagalan pekerjaan, bukan kegagalan penyedia; bedanya menentukan apakah dicoba ulang atau diparkir.', refs: ['internal/llm/gemini/gemini.go'], zoom: 'gemini',
+    mut: S => { S.focus = 'gemini'; S.gemini = 'done'; S.ticks.gemini = '4,2 s'; } },
+  { travel: [{ e: 'E7', rev: true, p: 'doc' }], at: 'worker', proc: [{ t: 'Simpan hasil: pekerjaan selesai', b: 3 }, { t: 'Tulis "laporan jadi" ke outbox', b: 3 }, { t: 'Relay mengangkutnya ke llm.results', b: 3, go: [{ e: 'E9', p: 'evt' }], fx: ['slot:results:lit'] }], done: 'selesai · 1 percobaan', lat: { s: 20 }, title: 'Hasil dan event keluarnya disimpan bersama', text: 'llm_jobs completed dan baris outbox personalization.completed ditulis di satu transaksi di schema svc_llm; relay milik worker mengangkutnya.', refs: ['internal/llmworker/worker.go'], zoom: 'worker',
+    mut: S => { show(S, 'rail-results'); edge(S, 'E9'); S.focus = 'rail-results'; S.jobs[0].st = 'completed'; S.jobs[0].att = 1; S.llmOutbox = 'sent'; S.slotRes = 'lit'; S.txCount = (S.txCount || 0) + 1; S.msgCount = (S.msgCount || 0) + 1; } },
+  { at: 'rail-results', proc: ['Kunci sama → partisi 7 lagi', 'Empat service menyaring miliknya lewat header'], done: 'partisi 7', title: 'llm.results, partisi 7 lagi: dua topic berpasangan', text: 'Jumlah partisi yang sama membuat satu worker memegang partisi yang bersesuaian di keduanya. Topic ini dipakai bersama empat service pemakai LLM.', refs: ['internal/platform/kafka/topics.go'], zoom: 'kafka', code: 'topics',
+    mut: S => { S.focus = 'rail-results'; } },
+  { travel: [{ e: 'E10', p: 'evt' }], down: 'M2', at: 'assessment', proc: [{ t: 'Pesan ini milikku? header cocok ✓', b: 4 }, { t: 'Klaim kunci (scope berbeda dari worker)', b: 3 }, { t: 'Simpan laporan + status selesai, satu transaksi', b: 3, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'ack' }], fx: ['tick:pg:completed'] }, { t: 'Klien memuat ulang: laporan sudah ada', b: 1, go: [{ e: 'E3', rev: true, p: 'doc' }, { e: 'E1', rev: true, p: 'doc' }] }], done: 'laporan tersimpan', lat: { s: 30 }, title: 'Konsumen hasil menutup lingkaran; klien melihat laporannya', text: 'Klaim guard dengan scope sendiri supaya dua konsumen tidak saling meniadakan. GET berikutnya dari klien membawa laporan.', refs: ['internal/assessment/adapter/consumer/results.go'], zoom: 'db', code: 'results',
+    mut: S => { edge(S, 'E10'); S.focus = 'klien'; S.slotRes = 'used'; S.ra = 'completed'; S.report = true; S.resp = { code: '200 OK · GET /risk-assessments/k7m2q9x4c1', body: '{"data":{"personalization":"completed","report":{…}}}' }; S.ticks.pg = 'completed'; S.txCount = (S.txCount || 0) + 1; S.outcome = 'Laporan tersimpan dan dibaca klien'; } },
+];
+
+// Cabang "bagaimana kalau", disisipkan setelah langkah bertanda branch (Gemini sedang menjawab).
+const BRANCHES = {
+  kuota: { label: 'Kuota Gemini habis', resume: true, steps: [
+    { at: 'gemini', proc: [{ t: '429 RESOURCE_EXHAUSTED: kuota habis', bad: true }, 'Bukan salah pekerjaan ini: penyedia menolak siapa pun'], title: 'Kuota habis: penyedia menolak, bukan pekerjaannya yang salah', text: 'Larian nyata pertama (2026-09-07): sepuluh pekerjaan mati dalam dua menit karena satu suite e2e menghabiskan jatah gratis harian. ADR-025 lahir dari sana.', refs: ['ADR-025', 'docs/finops.md'], zoom: 'gemini',
+      mut: S => { S.focus = 'gemini'; S.ticks.gemini = '429'; } },
+    { at: 'worker', proc: [{ t: 'Lepas klaim; percobaan tidak dihitung', b: 1, go: [{ e: 'E7', rev: true, p: 'err' }] }, { t: 'Tahan offset: pesan akan datang lagi', b: 0 }, { t: 'Parkir antrean 1 menit (berlipat sampai 15)', b: 0 }], done: 'diparkir', lat: { s: 60000 }, title: 'Parkir, bukan mati', text: 'Klaim dilepas, offset ditahan lewat Rewinder, worker diam satu menit dan berlipat dua per penolakan beruntun. Tidak ada kurikulum pengguna yang hilang karena pengguna lain lebih dulu menghabiskan jatah.', refs: ['internal/llmworker/worker.go', 'ADR-025'], zoom: 'worker',
+      mut: S => { S.focus = 'worker'; S.jobs[0].st = 'parked'; S.ticks.worker = 'parkir 1 mnt'; } },
+    { at: 'worker', proc: [{ t: 'Jeda selesai: ambil pesan yang sama lagi', b: 0 }, { t: 'Klaim ulang', b: 1 }, { t: 'Kirim ke Gemini lagi', b: 2, go: [{ e: 'E7', p: 'llm' }] }], lat: { s: 4200 }, title: 'Setelah jeda, pekerjaan yang sama dicoba lagi', text: 'Satu jawaban berhasil mengembalikan penghitung penolakan ke nol. Harga yang dibayar: seluruh worker diam selama jeda, dan itu dinyatakan terbuka di ADR-025.', refs: ['ADR-025'], zoom: 'worker',
+      mut: S => { S.focus = 'gemini'; S.jobs[0].st = 'pending'; S.ticks.worker = 'klaim ✓'; S.ticks.gemini = ''; S.branchTaken = 'kuota'; } },
+  ] },
+  dlq: { label: 'Jawaban rusak', resume: false, steps: [
+    { at: 'gemini', proc: [{ t: 'Jawaban bukan JSON yang diminta templat', bad: true }], title: 'Jawaban rusak: ini kegagalan milik pekerjaan', text: 'Mengulanginya jarang mengubah apa pun, tetapi tiga percobaan murah. Yang tidak boleh: menunggu selamanya tanpa memberi tahu siapa pun.', refs: ['internal/llmworker/worker.go'], zoom: 'gemini',
+      mut: S => { S.focus = 'gemini'; S.ticks.gemini = 'rusak'; } },
+    { at: 'worker', proc: [{ t: 'Percobaan 1 gagal, jeda 500 ms', b: 2, go: [{ e: 'E7', rev: true, p: 'err' }] }, { t: 'Percobaan 2 gagal, jeda 1 s', b: 2, go: [{ e: 'E7', p: 'llm' }, { e: 'E7', rev: true, p: 'err' }] }, { t: 'Percobaan 3 gagal: pekerjaan dinyatakan mati', b: 3, go: [{ e: 'E7', p: 'llm' }, { e: 'E7', rev: true, p: 'err' }] }], done: 'dead · 3 percobaan', lat: { s: 9000 }, title: 'Tiga percobaan, lalu menyerah dengan jujur', text: 'dead berbeda dari failed: yang pertama menunggu manusia, yang kedua menunggu percobaan berikutnya. Alert SelarasLLMJobsDying menyala seketika.', refs: ['internal/llmworker/worker.go', 'deploy/compose/observability/alerts.yml'], zoom: 'worker',
+      mut: S => { S.focus = 'worker'; S.jobs[0].st = 'dead'; S.jobs[0].att = 3; S.ticks.worker = 'dead'; S.branchTaken = 'dlq'; } },
+    { at: 'worker', proc: [{ t: 'Tulis "pekerjaan mati" ke outbox', b: 3 }, { t: 'Relay → llm.dlq, antrean surat mati', b: 3, go: [{ e: 'E11', p: 'evt' }], fx: ['slot:dlq:lit'] }], done: 'llm.dlq', lat: { s: 20 }, title: 'Antrean surat mati: satu partisi, dibaca manusia', text: 'Empat service pemakai LLM juga melanggani llm.dlq supaya pemilik pekerjaan tahu hasilnya tidak akan datang.', refs: ['docs/topics.md'], zoom: 'worker',
+      mut: S => { show(S, 'rail-dlq'); edge(S, 'E11'); S.focus = 'rail-dlq'; S.llmOutbox = 'sent'; S.slotDlq = 'lit'; S.msgCount = (S.msgCount || 0) + 1; } },
+    { travel: [{ e: 'E12', p: 'evt' }], at: 'assessment', proc: [{ t: 'Pesan ini milikku? header cocok ✓', b: 4 }, { t: 'Tandai laporan: gagal (hanya dari pending)', b: 3, go: [{ e: 'E4', p: 'sql' }, { e: 'E4', rev: true, p: 'ack' }], fx: ['tick:pg:failed'] }, { t: 'Klien memuat: status gagal, boleh minta lagi', b: 1, go: [{ e: 'E3', rev: true, p: 'err' }, { e: 'E1', rev: true, p: 'err' }] }], done: 'failed, bisa diulang', lat: { s: 30 }, title: 'Pengguna melihat "gagal", bukan menunggu selamanya', text: 'Perpindahan hanya dari pending, supaya pekerjaan yang sudah selesai tidak berubah jadi gagal karena event lama yang tiba terlambat. RequestPersonalization menerima status failed sebagai titik awal yang sah.', refs: ['internal/assessment/adapter/consumer/results.go'], zoom: 'db',
+      mut: S => { edge(S, 'E12'); S.focus = 'klien'; S.slotDlq = 'used'; S.ra = 'failed'; S.resp = { code: '200 OK · GET /risk-assessments/k7m2q9x4c1', body: '{"data":{"personalization":"failed","reason":"…not the JSON the template asked for"}}' }; S.ticks.pg = 'failed'; S.txCount = (S.txCount || 0) + 1; S.outcome = 'Pekerjaan mati; pengguna diberi tahu dan boleh meminta lagi'; } },
+  ] },
+};
+// bab: 0 Permintaan · 1 Antrean · 2 Pekerja · 3 Hasil
+const CHAPTERS = [
+  { name: 'Permintaan', sub: 'dari klien sampai basis data, dan tiket pulang dalam milidetik' },
+  { name: 'Antrean', sub: 'outbox diangkut relay ke Kafka; urutan dijaga kuncinya' },
+  { name: 'Pekerja', sub: 'llm-worker mengklaim, memanggil Gemini, menyimpan hasil' },
+  { name: 'Hasil', sub: 'laporan pulang lewat topic bersama, klien membacanya' },
+];
+STEPS.forEach((s, i) => { s.ch = i <= 8 ? 0 : i <= 10 ? 1 : i <= 14 ? 2 : 3; });
+BRANCHES.kuota.steps.forEach(s => { s.ch = 2; });
+BRANCHES.dlq.steps.forEach((s, i) => { s.ch = i < 2 ? 2 : 3; });
+// muatan titik
+const PAYLOAD = {
+  req: { shape: 'card', text: 'PATCH' }, jwt: { shape: 'jwt' }, get: { shape: 'card', text: 'GET' }, incr: { shape: 'card', text: 'INCR' },
+  sql: { shape: 'card', text: 'SQL' }, ack: { shape: 'ack' }, ticket: { shape: 'card', text: '202' }, evt: { shape: 'env' }, llm: { shape: 'spark' },
+  doc: { shape: 'doc' }, err: { shape: 'err' },
+};
+
+// ---------- RINCIAN ----------
+const st = s => `<span class="st ${s}">${s}</span>`;
+const li = (state, txt) => `<div class="${state || ''}"><i></i><span>${txt}</span></div>`;
+const ZOOM = {
+  http: S => ['Klien · HTTP', `<div class="z"><span class="m">PATCH</span> <span class="v">/api/v1/risk-assessments/k7m2q9x4c1/personalize</span><br><span class="h">Authorization:</span> <span class="v">Bearer eyJhbGciOiJFZERTQSIs…</span><br><span class="h">Idempotency-Key:</span> <span class="v">k-3f1</span>${S.resp ? `<div class="resp"><span class="m">${S.resp.code}</span><br><span class="v">${S.resp.body}</span></div>` : ''}</div>`],
+  mw: S => ['edge-gateway · rantai middleware', `<div class="chips">${[['trace', 'otelgin span'], ['body', 'LimitBody ≤ 1 MiB'], ['auth', 'Authenticate'], ['rate', 'rate limit llm 10/menit'], ['handler', 'Personalize()']].map(([k, t], i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="chip ${S.mw[k] || ''}"><i></i>${t}</span>`).join('')}</div>`],
+  jwt: S => ['edge-gateway · Authenticate', `${ZOOM.mw(S)[1]}<div class="jwt"><div><b>header</b>alg EdDSA</div><div class="${S.jwt ? 'ok' : ''}"><b>klaim</b>sub u_91c2 · upid p_4e17 · gen 1 · exp +1h</div><div class="${S.jwt ? 'ok' : ''}"><b>tanda tangan</b>Ed25519 · kunci publik ✓</div></div><div class="kv"><b>Redis GET</b><span class="${S.gen != null ? 'lit' : ''}">identity:token-generation:u_91c2 → ${S.gen ?? '?'}</span></div>`],
+  idem: S => ['edge-gateway · rate limit & Idempotency-Key', `${ZOOM.mw(S)[1]}<div class="kv" style="margin-top:0.5rem"><b>Redis INCR</b><span class="${S.rate != null ? 'lit' : ''}">ratelimit:llm:u_91c2:&lt;jendela&gt; → ${S.rate ?? '?'} dari 10</span><b>dari klien</b><span>k-3f1</span><b>ke hilir</b><span class="${S.idem ? 'lit' : ''}">u_91c2 ␟ k-3f1</span></div>`],
+  grpc: S => ['gRPC · assessment.v1.Assessment/RequestPersonalization', `<div class="kv"><b>slug</b><span>k7m2q9x4c1</span><b>user_id</b><span class="lit">u_91c2</span><b>idempotency_key</b><span>u_91c2 ␟ k-3f1</span></div><div class="list" style="margin-top:0.5rem">${['bearer dari metadata masuk', 'Verify(raw) dengan kunci publik yang sama', 'user_id == sub token? <em>bukan → PermissionDenied</em>', 'Principal{u_91c2, gen 1} → ctx'].map((t, i) => li(i < S.ic ? 'done' : '', t)).join('')}</div>`],
+  usecase: S => ['assessment-svc · RequestPersonalization()', `<div class="list">${['s.Get(slug, user_id) <em>kepemilikan (ADR-023)</em>', 'sudah ada laporan? <em>ya → AlreadyRunning</em>', 'key = kunci klien, atau "personalization:&lt;id&gt;"', 'envelope PersonalizationRequested{…}'].map((t, i) => li(i < S.uc ? 'done' : '', t)).join('')}<div class="tx ${S.tx || ''}"><span class="txl">uow.Do — satu transaksi</span>${li(S.tx === 'done' ? 'done' : S.tx === 'lit' ? 'lit' : '', 'SetPersonalizationStatus(pending, dari: not_requested | failed)')}${li(S.tx === 'done' ? 'done' : S.tx === 'lit' ? 'lit' : '', 'events(q).Write("assessment", id, envelope) → outbox')}</div></div>`],
+  db: S => ['PostgreSQL · schema svc_assessment', `<div class="tbl"><div class="th">risk_assessments <span>id · slug · personalization</span></div><div class="row ${S.ra !== 'not_requested' ? 'new' : ''}"><span class="id">as_3b9d</span><span>k7m2q9x4c1 · SCORE2 6,8 % · moderate</span>${st(S.ra)}</div>${S.report ? '<div class="row new"><span class="id">report</span><span>{summary, contributors[2], actions[3]}</span><span class="st ok">tersimpan</span></div>' : ''}</div><div class="tbl"><div class="th">outbox <span>id · event_type · status</span></div>${S.outbox.length ? S.outbox.map(o => `<div class="row new"><span class="id">${o.id}</span><span>${o.type} · as_3b9d</span>${st(o.st)}</div>`).join('') : '<div class="row"><span class="id">—</span><span>kosong</span><span></span></div>'}</div>${S.ra === 'pending' && S.outbox[0] && S.outbox[0].st === 'pending' ? '<div class="commit">COMMIT · dua baris, satu transaksi</div>' : ''}`],
+  relay: S => ['relay outbox · Relay.Once()', `<div class="list">${['SELECT … FROM outbox WHERE published_at IS NULL FOR UPDATE SKIP LOCKED', 'TopicFor("personalization.requested") → llm.jobs · key = aggregate_id', 'Publish (acks=all, idempoten) · di luar transaksi', 'MarkPublished(id) <em>menerbitkan dulu, baru menandai</em>'].map((t, i) => li(i < S.relay ? 'done' : '', t)).join('')}</div><div class="tbl"><div class="th">outbox</div><div class="row new"><span class="id">ev_c3</span><span>personalization.requested</span>${st(S.outbox[0] ? S.outbox[0].st : 'pending')}</div></div>`],
+  kafka: S => ['Kafka · topic berpasangan, 12 partisi', `<div class="z">llm.jobs · kunci <b>as_3b9d</b> → hash mod 12 → partisi 7</div><div class="slots">${Array.from({ length: 12 }, (_, i) => `<div class="${i === 7 && S.slotJobs ? 'lit' : ''}">${i}</div>`).join('')}</div><div class="z">llm.results · kunci yang sama → partisi 7</div><div class="slots">${Array.from({ length: 12 }, (_, i) => `<div class="${i === 7 && S.slotRes ? 'lit' : ''}">${i}</div>`).join('')}</div>`],
+  worker: S => ['llm-worker · schema svc_llm', `<div class="tbl"><div class="th">processed_messages <span>key · scope</span></div>${S.pm.map(p => `<div class="row new"><span class="id">${p.key}</span><span>scope ${p.scope}</span><span class="st ok">claimed</span></div>`).join('')}</div><div class="tbl"><div class="th">llm_jobs <span>id · kind · status · attempts</span></div>${S.jobs.map(j => `<div class="row new"><span class="id">${j.id}</span><span>${j.kind} · as_3b9d</span><span class="st ${j.st}">${j.st} · ${j.att}</span></div>`).join('')}${S.llmOutbox ? `<div class="row new"><span class="id">outbox</span><span>personalization.completed</span>${st(S.llmOutbox)}</div>` : ''}</div>`],
+  gemini: S => ['Gemini API · llm.generate', `<div class="prompt">templat personalization · bahasa id
+konteks: usia 47 · laki-laki · risiko 6,8 % (moderate) · perokok: tidak · TD 138/86
+bidang yang belum dibawa event: dinyatakan "belum ada"
+keluaran: JSON {summary, contributors[], actions[]}</div><div class="reply">Risiko Anda saat ini <b>moderat</b>. Penyumbang terbesar adalah tekanan darah sistolik dan kolesterol total; keduanya bisa diturunkan dalam 12 minggu dengan …</div>`],
+};
+</script>
+<script src="manifest.js"></script>
+<script src="reel.js"></script>
+</body>
+</html>
