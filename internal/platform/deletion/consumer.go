@@ -1,14 +1,14 @@
-// Package deletion menjalankan sisi unit dari saga penghapusan akun.
+// Package deletion runs a unit's side of the account-deletion saga.
 //
-// Protokolnya sama di keenam unit: baca permintaan, hapus data milik pengguna
-// itu, umumkan konfirmasinya. Yang berbeda hanya penghapusannya sendiri, dan
-// itulah satu-satunya yang diserahkan pemanggil.
+// The protocol is the same in all six units: read the request, delete that
+// user's data, announce the confirmation. Only the deletion itself differs,
+// and that is the one thing the caller supplies.
 //
-// Ditulis sekali di sini, bukan disalin enam kali, dan alasannya bukan
-// keringkasan: enam salinan berarti enam kesempatan salah satunya berhenti
-// mengonfirmasi setelah gagal, atau mengonfirmasi berhasil padahal gagal. Yang
-// pertama membuat setiap saga menggantung; yang kedua membuat akun dinyatakan
-// terhapus sementara datanya masih ada.
+// Written once here rather than copied six times, and the reason is not
+// brevity: six copies mean six chances that one of them stops confirming after
+// a failure, or confirms success when it failed. The first leaves every saga
+// hanging; the second declares an account deleted while its data is still
+// there.
 package deletion
 
 import (
@@ -30,22 +30,22 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Eraser menghapus seluruh data satu pengguna di sebuah unit.
+// Eraser deletes all of one user's data in a unit.
 //
-// Ia menerima Querier, bukan kolam koneksi: penghapusan dan konfirmasinya
-// ditulis dalam SATU transaksi. Kalau keduanya bisa terpisah, unit bisa
-// mengonfirmasi berhasil sementara penghapusannya batal - dan akun dinyatakan
-// terhapus dengan datanya masih utuh.
+// It takes a Querier, not a connection pool: the deletion and its confirmation
+// are written in ONE transaction. If the two could come apart, a unit could
+// confirm success while its deletion was rolled back - and the account would
+// be declared deleted with its data intact.
 //
-// userProfileID BOLEH kosong: profil yang tidak pernah dibuat adalah keadaan
-// yang sah (B7), dan unit yang datanya berkunci profil harus menanganinya
-// dengan tidak menghapus apa-apa alih-alih gagal.
+// userProfileID MAY be empty: a profile that was never created is a valid
+// state (B7), and a unit whose data is keyed by profile has to handle it by
+// deleting nothing rather than failing.
 //
-// Ia HARUS idempoten. Relay outbox bersifat at-least-once, dan permintaan yang
-// sama bisa tiba dua kali.
+// It MUST be idempotent. The outbox relay is at-least-once, and the same
+// request can arrive twice.
 type Eraser func(ctx context.Context, q pg.Querier, userID, userProfileID string) error
 
-// Consumer membaca user.deletion dan menghapus data unit ini.
+// Consumer reads user.deletion and deletes this unit's data.
 type Consumer struct {
 	client  *kgo.Client
 	pool    pg.Beginner
@@ -54,12 +54,12 @@ type Consumer struct {
 	log     *slog.Logger
 }
 
-// NewConsumer merakit konsumen penghapusan untuk satu unit.
+// NewConsumer assembles the deletion consumer for one unit.
 //
-// service adalah nama unit ini, dan ia HARUS sama persis dengan salah satu
-// nama di identity/domain.DeletionParticipants. Nama yang tidak cocok membuat
-// konfirmasinya ditolak identity-svc, dan saga menggantung selamanya menunggu
-// unit yang sebenarnya sudah selesai.
+// service is the name of this unit, and it MUST exactly match one of the
+// names in identity/domain.DeletionParticipants. A name that does not match
+// makes identity-svc refuse the confirmation, and the saga hangs forever
+// waiting for a unit that has in fact finished.
 func NewConsumer(
 	client *kgo.Client, pool pg.Beginner, service string, erase Eraser, log *slog.Logger,
 ) (*Consumer, error) {
@@ -85,7 +85,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			c.log.InfoContext(ctx, "deletion consumer stopped", "service", c.service)
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -97,8 +97,8 @@ func (c *Consumer) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(c.client, errs); len(recovered) > 0 {
 				c.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -133,21 +133,20 @@ func (c *Consumer) Run(ctx context.Context) error {
 			continue
 		}
 		if rewinder.Any() {
-			// Konsumen DIMUNDURKAN ke permintaan yang gagal, bukan sekadar
-			// tidak dikomit.
+			// The consumer is REWOUND to the failed request, not merely left
+			// uncommitted.
 			//
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit seluruh yang sudah dikonsumsi -
-			// termasuk permintaan yang gagal tadi. Itu benar-benar terjadi:
-			// permintaan penghapusan terlewati diam-diam oleh lima konfirmasi
-			// yang lewat di topic yang sama.
+			// Not committing alone is NOT enough: franz-go does not resend anything
+			// within the same session, so the next batch would arrive, succeed, and
+			// commit everything consumed so far - including the request that failed.
+			// That really happened: a deletion request was silently skipped past by
+			// five confirmations passing on the same topic.
 			c.log.WarnContext(ctx, "rewinding so failed deletions are redelivered",
 				"service", c.service, "handled", handled)
 			rewinder.Rewind(c.client)
 
-			// Jeda sebentar supaya kegagalan yang terus berulang tidak menjadi
-			// putaran ketat yang membanjiri log dan broker.
+			// A short pause so a failure that keeps repeating does not become a
+			// tight loop flooding the log and the broker.
 			select {
 			case <-ctx.Done():
 				return nil
@@ -172,31 +171,31 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on the span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
 	req := env.GetUserDeletionRequested()
 	if req == nil {
-		// Event lain di topic yang sama bukan urusan konsumen ini - konfirmasi
-		// dari unit lain lewat di sini juga.
+		// Other events on the same topic are none of this consumer's business -
+		// confirmations from other units pass through here too.
 		return nil
 	}
 
 	if req.GetSagaId() == "" || req.GetUserId() == "" {
-		// Tanpa keduanya, tidak ada yang bisa dihapus dan tidak ada yang bisa
-		// dilapori. Ia dicatat, bukan ditebak.
+		// Without both, there is nothing to delete and nobody to report to. It is
+		// logged, not guessed.
 		c.log.ErrorContext(ctx, "a deletion request named no saga or no user",
 			"service", c.service, "event_id", env.GetEventId())
 		return nil
 	}
 
-	// Penghapusan DAN konfirmasinya dalam satu transaksi.
+	// The deletion AND its confirmation in one transaction.
 	//
-	// Ini inti keandalan saga ini. Konfirmasi yang commit tanpa penghapusannya
-	// membuat akun dinyatakan terhapus dengan datanya masih utuh - kebohongan
-	// yang tidak akan pernah terlihat, karena tidak ada lagi yang mencarinya.
+	// This is the core of this saga's reliability. A confirmation that commits
+	// without its deletion declares the account deleted with its data intact -
+	// a lie that will never be noticed, because nothing looks for it any more.
 	err = pg.InTx(ctx, c.pool, func(q pg.Querier) error {
 		if err := c.erase(ctx, q, req.GetUserId(), req.GetUserProfileId()); err != nil {
 			return err
@@ -210,13 +209,13 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	// Kegagalan penghapusan TETAP dikonfirmasi - sebagai kegagalan.
+	// A failed deletion is STILL confirmed - as a failure.
 	//
-	// Diam adalah pilihan terburuk: saga menggantung tanpa ada yang tahu unit
-	// mana yang bermasalah, dan yang tersisa hanya satu baris log yang harus
-	// kebetulan dibaca seseorang. Konfirmasi gagal membuat sagalnya berakhir
-	// dengan status failed, akunnya ditahan, dan sebabnya tercatat di tempat
-	// yang memang dibaca saat menyelesaikannya.
+	// Silence is the worst option: the saga hangs with nobody knowing which
+	// unit is at fault, and all that is left is one log line someone would
+	// have to happen to read. A failed confirmation ends the saga with status
+	// failed, holds the account, and records the reason in the place that is
+	// actually read when resolving it.
 	c.log.ErrorContext(ctx, "could not delete this unit's data; reporting the failure",
 		"service", c.service, "saga_id", req.GetSagaId(), "error", err)
 
@@ -225,8 +224,8 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 			confirmed(req.GetSagaId(), c.service, err))
 	})
 	if reportErr != nil {
-		// Bahkan melaporkan kegagalan pun gagal. Offset ditahan supaya
-		// permintaannya datang lagi - itu satu-satunya jalan yang tersisa.
+		// Even reporting the failure failed. The offset is held so the request
+		// comes again - that is the only path left.
 		return fmt.Errorf("deletion failed (%w) and reporting it also failed: %w", err, reportErr)
 	}
 	return nil
@@ -240,10 +239,9 @@ func confirmed(sagaID, service string, cause error) *eventsv1.Envelope {
 		Succeeded: cause == nil,
 	}
 	if cause != nil {
-		// Alasannya dipotong: ia masuk ke sebuah kolom yang dibaca manusia,
-		// bukan ke tempat penyimpanan galat. Galat pgx yang panjang bisa
-		// membawa seluruh pernyataan SQL beserta parameternya - dan parameter
-		// di jalur ini adalah id pengguna.
+		// The reason is truncated: it goes into a column read by people, not into
+		// an error store. A long pgx error can carry the whole SQL statement with
+		// its parameters - and the parameter on this path is a user id.
 		reason := truncate(cause.Error(), 500)
 		payload.FailureReason = &reason
 	}
