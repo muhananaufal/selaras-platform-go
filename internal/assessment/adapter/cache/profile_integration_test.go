@@ -28,10 +28,10 @@ func setup(t *testing.T) (*pgxpool.Pool, context.Context) {
 
 func ptr(s string) *string { return &s }
 
-// countingSource mencatat berapa kali sumber aslinya dipanggil.
+// countingSource records how many times the original source was called.
 //
-// Itu angka yang diuji F2-16: bukan "cache-nya ada", melainkan "panggilannya
-// hilang".
+// That is the number F2-16 tests: not "the cache exists", but "the call is
+// gone".
 type countingSource struct {
 	calls    int
 	snapshot app.ProfileSnapshot
@@ -50,7 +50,7 @@ func quietLog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// TestACachedProfileIsReadWithoutCallingProfileSvc adalah gate F2-16.
+// TestACachedProfileIsReadWithoutCallingProfileSvc is gate F2-16.
 func TestACachedProfileIsReadWithoutCallingProfileSvc(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -72,8 +72,8 @@ func TestACachedProfileIsReadWithoutCallingProfileSvc(t *testing.T) {
 		t.Fatalf("NewSource: %v", err)
 	}
 
-	// Dibaca berkali-kali. Kalau cache-nya bekerja, tidak satu pun sampai ke
-	// sumber aslinya.
+	// Read many times. If the cache works, not one of them reaches the
+	// original source.
 	for range 5 {
 		snapshot, err := source.Snapshot(ctx, userID)
 		if err != nil {
@@ -95,8 +95,8 @@ func TestACachedProfileIsReadWithoutCallingProfileSvc(t *testing.T) {
 	}
 }
 
-// TestAnUncachedProfileFallsBackToProfileSvc menjaga pengguna yang belum
-// pernah terlihat cache tetap bisa dilayani.
+// TestAnUncachedProfileFallsBackToProfileSvc keeps a user the cache has
+// never seen servable.
 func TestAnUncachedProfileFallsBackToProfileSvc(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -120,8 +120,8 @@ func TestAnUncachedProfileFallsBackToProfileSvc(t *testing.T) {
 	}
 }
 
-// TestAnOlderEventDoesNotOverwriteANewerSnapshot adalah yang menahan konsumen
-// yang diputar ulang merusak cache.
+// TestAnOlderEventDoesNotOverwriteANewerSnapshot is what keeps a replayed
+// consumer from corrupting the cache.
 func TestAnOlderEventDoesNotOverwriteANewerSnapshot(t *testing.T) {
 	pool, ctx := setup(t)
 	profiles := cache.NewProfiles(pool)
@@ -135,7 +135,7 @@ func TestAnOlderEventDoesNotOverwriteANewerSnapshot(t *testing.T) {
 		t.Fatalf("first Store: %v", err)
 	}
 
-	// Event yang LEBIH LAMA. Ia harus kalah.
+	// An OLDER event. It has to lose.
 	stored, err := profiles.Store(ctx, userID, profileID,
 		ptr("1960-01-01"), ptr("female"), ptr("malaysia"), "en", now.Add(-time.Hour))
 	if err != nil {
@@ -154,10 +154,10 @@ func TestAnOlderEventDoesNotOverwriteANewerSnapshot(t *testing.T) {
 	}
 }
 
-// TestANewerEventWins melengkapi yang di atas.
+// TestANewerEventWins completes the one above.
 //
-// Tanpa test ini, "event lama kalah" bisa berarti "setiap event kalah" - dan
-// cache-nya tidak akan pernah diperbarui sama sekali.
+// Without this test, "old events lose" could mean "every event loses" - and
+// the cache would never be updated at all.
 func TestANewerEventWins(t *testing.T) {
 	pool, ctx := setup(t)
 	profiles := cache.NewProfiles(pool)
@@ -189,10 +189,10 @@ func TestANewerEventWins(t *testing.T) {
 	}
 }
 
-// TestAnUnstatedProfileStaysUnstated menjaga ADR-002 aturan 2.
+// TestAnUnstatedProfileStaysUnstated guards ADR-002 rule 2.
 //
-// Profil yang belum diisi adalah keadaan yang sah, dan cache tidak boleh
-// mengubahnya menjadi nilai yang terlihat seperti data.
+// An unfilled profile is a valid state, and the cache must not turn it into
+// a value that looks like data.
 func TestAnUnstatedProfileStaysUnstated(t *testing.T) {
 	pool, ctx := setup(t)
 	profiles := cache.NewProfiles(pool)
@@ -215,16 +215,15 @@ func TestAnUnstatedProfileStaysUnstated(t *testing.T) {
 	}
 }
 
-// TestABrokenCacheDoesNotStopTheCalculation menjaga cache tetap cache.
+// TestABrokenCacheDoesNotStopTheCalculation keeps the cache a cache.
 func TestABrokenCacheDoesNotStopTheCalculation(t *testing.T) {
 	pool, ctx := setup(t)
 
-	// Tabelnya disembunyikan dengan RENAME, bukan DROP lalu CREATE.
+	// The table is hidden with RENAME, not DROP then CREATE.
 	//
-	// Membuatnya ulang dengan tangan berarti bentuknya menyimpang dari
-	// migrasinya - indeks dan batasan yang hilang tidak akan terlihat sampai
-	// test lain gagal karena alasan yang tidak ada hubungannya. Rename
-	// mengembalikannya persis seperti semula.
+	// Recreating it by hand means its shape drifts from its migration -
+	// missing indexes and constraints would go unnoticed until another test
+	// fails for an unrelated reason. Rename restores it exactly as it was.
 	if _, err := pool.Exec(ctx,
 		`ALTER TABLE profile_snapshots RENAME TO profile_snapshots_hidden`); err != nil {
 		t.Fatalf("hiding the cache table: %v", err)
@@ -253,7 +252,7 @@ func TestABrokenCacheDoesNotStopTheCalculation(t *testing.T) {
 	}
 }
 
-// TestACacheWithoutASourceIsRefused menjaga pengguna yang belum terlihat.
+// TestACacheWithoutASourceIsRefused guards users not yet seen.
 func TestACacheWithoutASourceIsRefused(t *testing.T) {
 	pool, _ := setup(t)
 	if _, err := cache.NewSource(pool, nil, quietLog()); err == nil {
@@ -261,7 +260,8 @@ func TestACacheWithoutASourceIsRefused(t *testing.T) {
 	}
 }
 
-// TestASnapshotWithoutIdsIsRefused menjaga baris yang tidak bisa dicari.
+// TestASnapshotWithoutIdsIsRefused guards against rows that cannot be
+// looked up.
 func TestASnapshotWithoutIdsIsRefused(t *testing.T) {
 	pool, ctx := setup(t)
 	profiles := cache.NewProfiles(pool)
@@ -274,8 +274,8 @@ func TestASnapshotWithoutIdsIsRefused(t *testing.T) {
 	}
 }
 
-// TestAMissingSnapshotIsDistinguishable menjaga "belum ada" tetap bisa
-// dibedakan dari kegagalan.
+// TestAMissingSnapshotIsDistinguishable keeps "not there yet"
+// distinguishable from a failure.
 func TestAMissingSnapshotIsDistinguishable(t *testing.T) {
 	pool, ctx := setup(t)
 

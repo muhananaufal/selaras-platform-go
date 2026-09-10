@@ -1,8 +1,8 @@
-// Package cache menyimpan cuplikan profil yang datang lewat event (F2-16).
+// Package cache stores profile snapshots that arrive through events (F2-16).
 //
-// Ini CACHE, bukan sumber kebenaran: profile-svc tetap pemiliknya. Yang di sini
-// boleh basi, boleh hilang, dan boleh dibangun ulang dari awal topic. Yang
-// TIDAK boleh adalah menjadi satu-satunya tempat sebuah fakta ada.
+// This is a CACHE, not a source of truth: profile-svc remains the owner. What
+// is here may be stale, may be missing, and may be rebuilt from the start of
+// the topic. What it must NOT be is the only place a fact exists.
 package cache
 
 import (
@@ -17,17 +17,17 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// ErrNotCached berarti profil itu belum pernah masuk cache.
+// ErrNotCached means that profile has never entered the cache.
 var ErrNotCached = errors.New("no cached snapshot for this user")
 
-// Profiles membaca dan menulis cuplikan profil.
+// Profiles reads and writes profile snapshots.
 type Profiles struct {
 	db pg.Querier
 }
 
 func NewProfiles(db pg.Querier) *Profiles { return &Profiles{db: db} }
 
-// Snapshot mengambil cuplikan dari cache.
+// Snapshot fetches a snapshot from the cache.
 func (p *Profiles) Snapshot(ctx context.Context, userID string) (app.ProfileSnapshot, error) {
 	const q = `
 		SELECT user_profile_id, date_of_birth, sex, country_of_residence, language
@@ -50,9 +50,9 @@ func (p *Profiles) Snapshot(ctx context.Context, userID string) (app.ProfileSnap
 		return app.ProfileSnapshot{}, fmt.Errorf("reading the cached profile: %w", err)
 	}
 
-	// Language tidak ikut ke ProfileSnapshot: mesin risikonya tidak
-	// memakainya, dan menyimpannya di sana akan mengundang pemakaian yang
-	// tidak diniatkan. Ia tetap tersimpan di tabel untuk konsumen lain nanti.
+	// Language does not go into ProfileSnapshot: the risk engine does not use
+	// it, and keeping it there would invite unintended use. It stays stored in
+	// the table for other consumers later.
 	_ = language
 
 	snapshot := app.ProfileSnapshot{UserProfileID: profileID}
@@ -63,19 +63,19 @@ func (p *Profiles) Snapshot(ctx context.Context, userID string) (app.ProfileSnap
 		snapshot.CountryOfResidence = *country
 	}
 	if dob != nil {
-		// Umur dihitung DI SINI dari tanggal lahirnya, bukan disalin dari
-		// event. Umur yang disimpan menjadi salah pada ulang tahun berikutnya,
-		// dan tidak ada event yang akan datang untuk memperbaikinya.
+		// Age is computed HERE from the date of birth, not copied from the event.
+		// A stored age becomes wrong on the next birthday, and no event will ever
+		// arrive to fix it.
 		snapshot.Age = ageOn(*dob, time.Now())
 	}
 	return snapshot, nil
 }
 
-// Store menyimpan cuplikan yang datang dari sebuah event.
+// Store saves a snapshot that arrived through an event.
 //
-// observedAt adalah waktu EVENT-nya, bukan waktu penulisannya. Ia yang menahan
-// event yang tiba terlambat menimpa yang lebih baru: Kafka menjamin urutan per
-// partisi, tetapi konsumen bisa diputar ulang dan partisi bisa berpindah.
+// observedAt is the EVENT's time, not the write time. It is what keeps a
+// late-arriving event from overwriting a newer one: Kafka guarantees order per
+// partition, but consumers can be replayed and partitions can move.
 func (p *Profiles) Store(
 	ctx context.Context,
 	userID, profileID string,
@@ -113,11 +113,10 @@ func (p *Profiles) Store(
 	return tag.RowsAffected() == 1, nil
 }
 
-// dateOrNil mengubah tanggal ISO menjadi nilai basis data.
+// dateOrNil turns an ISO date into a database value.
 //
-// Tanggal yang tidak bisa dibaca menjadi NULL, bukan galat: satu event yang
-// cacat tidak boleh menghentikan seluruh antrean, dan "belum diisi" adalah
-// keadaan yang sah.
+// An unreadable date becomes NULL, not an error: one malformed event must
+// not stop the whole queue, and "not filled in" is a valid state.
 func dateOrNil(iso *string) any {
 	if iso == nil || *iso == "" {
 		return nil
@@ -136,17 +135,17 @@ func strOrNil(s *string) any {
 	return *s
 }
 
-// ageOn menghitung umur pada sebuah tanggal.
+// ageOn computes the age on a given date.
 //
-// Ulang tahun yang belum lewat dikurangi satu. Tanpa itu, orang yang lahir
-// Desember terhitung setahun lebih tua sepanjang sebelas bulan pertama - dan
-// umur adalah masukan langsung ke model risikonya.
+// A birthday not yet reached subtracts one. Without that, someone born in
+// December counts as a year older for the first eleven months - and age is a
+// direct input to the risk model.
 //
-// Perbandingannya bulan-dan-tanggal, BUKAN YearDay. Versi pertama memakai
-// YearDay dan salah di tahun kabisat: 29 Februari menggeser seluruh hari
-// sesudahnya satu angka, sehingga orang yang lahir 1 Maret terhitung sudah
-// berulang tahun pada 29 Februari - setahun lebih tua, satu hari lebih awal,
-// pada setiap orang yang lahir setelah Februari, setiap empat tahun.
+// The comparison is month-and-day, NOT YearDay. The first version used
+// YearDay and was wrong in leap years: 29 February shifts every following
+// day by one, so someone born on 1 March counted as having had their
+// birthday on 29 February - a year older, a day early, for everyone born
+// after February, every four years.
 func ageOn(birth, on time.Time) int {
 	years := on.Year() - birth.Year()
 
@@ -156,9 +155,9 @@ func ageOn(birth, on time.Time) int {
 	}
 
 	if years < 0 {
-		// Tanggal lahir di masa depan tidak mungkin - domain menolaknya -
-		// tetapi cache menerima apa pun yang datang lewat event, dan umur
-		// negatif adalah masukan yang mustahil ke model risikonya.
+		// A date of birth in the future is impossible - the domain refuses it -
+		// but the cache accepts whatever arrives through an event, and a negative
+		// age is an impossible input to the risk model.
 		return 0
 	}
 	return years

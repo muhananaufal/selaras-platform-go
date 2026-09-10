@@ -1,4 +1,4 @@
-// Package deletion menghapus penilaian risiko saat akun dihapus.
+// Package deletion removes risk assessments when an account is deleted.
 package deletion
 
 import (
@@ -8,22 +8,22 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Service adalah nama unit ini di dalam saga.
+// Service is this unit's name inside the saga.
 const Service = "assessment"
 
-// Erase menghapus penilaian dan cuplikan profil seorang pengguna.
+// Erase deletes a user's assessments and profile snapshot.
 //
-// Unit ini punya DUA kunci pemilik, dan itu bukan kelalaian: penilaian berkunci
-// user_profile_id karena itu pemilik agregatnya, sementara cache profil berkunci
-// user_id karena itu identitas yang terverifikasi di setiap permintaan (F2-16).
-// Keduanya harus dihapus.
+// This unit has TWO owner keys, and that is no oversight: assessments are keyed
+// by user_profile_id because that is the aggregate's owner, while the profile
+// cache is keyed by user_id because that is the identity verified on every
+// request (F2-16). Both have to be deleted.
 //
-// userProfileID BOLEH kosong. Itu terjadi saat profil pengguna tidak bisa
-// ditemukan waktu saga dimulai - keadaan yang sah (B7). Dalam hal itu tidak ada
-// penilaian yang bisa dihapus, dan yang benar adalah TIDAK menghapus apa pun,
-// bukan menghapus dengan kunci kosong. Kunci kosong pada kolom UUID akan
-// ditolak Postgres, dan penolakan itu akan menggagalkan seluruh saga untuk
-// pengguna yang memang tidak punya penilaian.
+// userProfileID MAY be empty. That happens when the user's profile could not be
+// found when the saga started - a valid state (B7). In that case there are no
+// assessments to delete, and the right thing is to delete NOTHING, not to delete
+// with an empty key. An empty key on a UUID column would be refused by Postgres,
+// and that refusal would fail the whole saga for a user who genuinely has no
+// assessments.
 func Erase(ctx context.Context, q pg.Querier, userID, userProfileID string) error {
 	if userProfileID != "" {
 		if _, err := q.Exec(ctx,
@@ -32,9 +32,9 @@ func Erase(ctx context.Context, q pg.Querier, userID, userProfileID string) erro
 		}
 	}
 
-	// Cuplikan profil adalah SALINAN data pribadi - tanggal lahir, jenis
-	// kelamin, negara. Salinan yang tertinggal setelah akun dihapus adalah data
-	// pribadi yang tidak seorang pun tahu masih ada.
+	// The profile snapshot is a COPY of personal data - date of birth, sex,
+	// country. A copy left behind after the account is deleted is personal data
+	// nobody knows still exists.
 	if _, err := q.Exec(ctx,
 		`DELETE FROM profile_snapshots WHERE user_id = $1`, userID); err != nil {
 		return fmt.Errorf("deleting the cached profile snapshot: %w", err)

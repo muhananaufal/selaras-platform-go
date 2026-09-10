@@ -23,9 +23,9 @@ type Server struct {
 	svc       *app.Service
 	constants score.Constants
 
-	// uow dan events boleh nil: assessment-svc tetap melayani pembacaan
-	// tanpa outbox. Yang tidak boleh adalah berpura-pura menerima pekerjaan
-	// yang tidak akan pernah ada yang mengerjakan.
+	// uow and events may be nil: assessment-svc still serves reads without an
+	// outbox. What is not allowed is pretending to accept work nobody will
+	// ever do.
 	uow    app.UnitOfWork
 	events app.EventWriterFor
 }
@@ -92,21 +92,20 @@ func (s *Server) ListAssessments(
 	return &assessmentv1.ListAssessmentsResponse{Assessments: out}, nil
 }
 
-// ResolveRiskRegion memetakan negara ke wilayah kalibrasi.
+// ResolveRiskRegion maps a country to a calibration region.
 //
-// Ia murni: tidak menyentuh basis data dan tidak punya keadaan. Itulah
-// sebabnya ia boleh dipanggil dari jalur baca profil tanpa membebani apa pun.
+// It is pure: it touches no database and has no state. That is why it may be
+// called from the profile read path without loading anything.
 func (s *Server) ResolveRiskRegion(
 	_ context.Context,
 	req *assessmentv1.ResolveRiskRegionRequest,
 ) (*assessmentv1.ResolveRiskRegionResponse, error) {
 	if req.GetCountryOfResidence() == "" {
-		// Negara kosong TIDAK dipetakan ke "high" di sini.
+		// An empty country is NOT mapped to "high" here.
 		//
-		// Nilai bawaan itu ada untuk negara yang tidak dikenali tabel, bukan
-		// untuk profil yang belum diisi. Mengembalikan "high" untuk yang
-		// kedua akan menampilkan wilayah risiko kepada pengguna yang belum
-		// memberi tahu di mana ia tinggal.
+		// That default exists for countries the table does not recognise, not for
+		// profiles not yet filled in. Returning "high" for the latter would show
+		// a risk region to a user who has not yet said where they live.
 		return nil, status.Error(codes.InvalidArgument, "no country of residence was sent")
 	}
 	return &assessmentv1.ResolveRiskRegionResponse{
@@ -114,12 +113,12 @@ func (s *Server) ResolveRiskRegion(
 	}, nil
 }
 
-// RequestPersonalization menerima permintaan lalu kembali segera.
+// RequestPersonalization accepts the request and returns immediately.
 //
-// Ia TIDAK memanggil penyedia LLM. Yang terjadi hanyalah satu baris outbox,
-// dan llm-worker yang mengerjakannya. Memanggil penyedia dari sini berarti
-// pengguna menunggu puluhan detik dan satu kegagalan penyedia menjadi
-// kegagalan HTTP yang tidak bisa dicoba ulang siapa pun.
+// It does NOT call the LLM provider. All that happens is one outbox row,
+// and llm-worker does the work. Calling the provider from here means the
+// user waits tens of seconds and one provider failure becomes an HTTP
+// failure nobody can retry.
 func (s *Server) RequestPersonalization(
 	ctx context.Context,
 	req *assessmentv1.RequestPersonalizationRequest,
@@ -138,8 +137,9 @@ func (s *Server) RequestPersonalization(
 		return nil, toStatus(ctx, "RequestPersonalization", err)
 	}
 
-	// PENDING, bukan COMPLETED, meski permintaannya berhasil diterima.
-	// Perbedaannya yang memberi tahu klien bahwa masih ada yang perlu ditunggu.
+	// PENDING, not COMPLETED, even though the request was accepted
+	// successfully. The difference is what tells the client there is still
+	// something to wait for.
 	statusOut := assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING
 	if ticket.AlreadyRunning {
 		statusOut = assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED
@@ -151,12 +151,12 @@ func (s *Server) RequestPersonalization(
 	}, nil
 }
 
-// toProto memetakan penilaian ke bentuk kontrak.
+// toProto maps an assessment to the contract shape.
 //
-// input hanya tersedia pada jalur Start, karena yang tersimpan adalah jawaban
-// mentah dalam bentuk map - bukan pesan bertipe. Menyusun ulang pesan itu dari
-// map akan menebak-nebak enum yang sudah tidak ada asalnya, jadi ia dibiarkan
-// kosong dan cuplikan mentahnya yang menjadi catatan.
+// input is only available on the Start path, because what is stored are the
+// raw answers as a map - not the typed message. Reassembling that message from
+// the map would mean guessing enums whose origin is gone, so it is left empty
+// and the raw snapshot is the record.
 func toProto(a *domain.Assessment, input *assessmentv1.AssessmentInput) *assessmentv1.RiskAssessment {
 	out := &assessmentv1.RiskAssessment{
 		Id:             a.ID.String(),
@@ -182,11 +182,11 @@ func toProto(a *domain.Assessment, input *assessmentv1.AssessmentInput) *assessm
 	return out
 }
 
-// personalizationStatus dibaca dari kolomnya, bukan diturunkan (F3-12).
+// personalizationStatus is read from its column, not derived (F3-12).
 //
-// Yang diturunkan dari ada tidaknya laporan hanya bisa membedakan dua keadaan,
-// dan keduanya menyembunyikan yang paling perlu diketahui klien: pekerjaannya
-// gagal, dan menunggu lebih lama tidak akan mengubah apa pun.
+// A value derived from whether a report exists can only distinguish two
+// states, and both hide the one the client most needs to know: the job failed,
+// and waiting longer will change nothing.
 func personalizationStatus(a *domain.Assessment) assessmentv1.PersonalizationStatus {
 	switch a.PersonalizationStatus {
 	case domain.PersonalizationPending:
@@ -198,10 +198,10 @@ func personalizationStatus(a *domain.Assessment) assessmentv1.PersonalizationSta
 	case domain.PersonalizationNotRequested:
 		return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_NOT_REQUESTED
 	default:
-		// Kolom kosong berarti baris yang ditulis sebelum kolomnya ada, atau
-		// nilai yang tidak dikenali. Laporan yang ADA tetap dilaporkan selesai:
-		// menyatakan "belum diminta" untuk laporan yang bisa dibaca klien akan
-		// menawarkan tombol untuk pekerjaan yang sudah ada hasilnya.
+		// An empty column means a row written before the column existed, or an
+		// unrecognised value. A report that EXISTS is still reported as
+		// completed: saying "not requested" for a report the client can read
+		// would offer a button for work whose result already exists.
 		if a.ResultDetails != nil {
 			return assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_COMPLETED
 		}
@@ -218,14 +218,13 @@ func modelToProto(name string) assessmentv1.RiskModel {
 	case "SCORE2-Diabetes":
 		return assessmentv1.RiskModel_RISK_MODEL_SCORE2_DIABETES
 	default:
-		// Nama model yang tidak dikenal menjadi UNSPECIFIED, bukan SCORE2.
-		// Memetakannya ke model nyata akan membuat baris yang rusak terlihat
-		// seperti penilaian biasa.
+		// An unknown model name becomes UNSPECIFIED, not SCORE2. Mapping it to a
+		// real model would make a corrupt row look like an ordinary assessment.
 		return assessmentv1.RiskModel_RISK_MODEL_UNSPECIFIED
 	}
 }
 
-// resolvedFrom membaca cuplikan nilai klinis yang tersimpan.
+// resolvedFrom reads the stored snapshot of clinical values.
 func resolvedFrom(values map[string]any) *assessmentv1.ResolvedClinicalValues {
 	if values == nil {
 		return nil
@@ -240,9 +239,9 @@ func resolvedFrom(values map[string]any) *assessmentv1.ResolvedClinicalValues {
 		HdlCholesterol:        numberOf(values, "hdl"),
 	}
 
-	// Ketiganya optional di kontrak, dan hanya ada pada jalur diabetes.
-	// Mengirimkannya sebagai nol untuk penilaian lain akan membuat klien
-	// menampilkan HbA1c nol - angka yang mustahil dan tampak seperti data.
+	// All three are optional in the contract, and only exist on the diabetes
+	// path. Sending them as zero for other assessments would make the client
+	// display an HbA1c of zero - an impossible number that looks like data.
 	if v, ok := values["hba1c"]; ok {
 		hba1c := toFloat(v)
 		out.Hba1C = &hba1c
@@ -251,9 +250,9 @@ func resolvedFrom(values map[string]any) *assessmentv1.ResolvedClinicalValues {
 		scr := toFloat(v)
 		out.SerumCreatinine = &scr
 
-		// eGFR tidak disimpan; ia diturunkan. Menghitungnya kembali dari
-		// nilai yang tersimpan lebih jujur daripada menyimpan angka yang bisa
-		// menyimpang dari rumusnya.
+		// eGFR is not stored; it is derived. Recomputing it from the stored
+		// values is more honest than storing a number that could drift from its
+		// formula.
 		egfr := score.EGFR(scr, int(numberOf(values, "age")), stringOf(values, "sex_label"))
 		out.Egfr = &egfr
 	}
@@ -272,11 +271,11 @@ func numberOf(m map[string]any, key string) float64 {
 	return toFloat(m[key])
 }
 
-// toFloat menerima kedua bentuk yang mungkin.
+// toFloat accepts both possible shapes.
 //
-// Nilai yang baru dihitung bertipe int atau float64; yang dibaca kembali dari
-// JSONB selalu float64. Menangani hanya satu di antaranya membuat cuplikan
-// yang baru dan yang tersimpan berperilaku berbeda.
+// A freshly computed value is an int or a float64; one read back from JSONB
+// is always a float64. Handling only one of them makes fresh and stored
+// snapshots behave differently.
 func toFloat(v any) float64 {
 	switch n := v.(type) {
 	case float64:
@@ -297,8 +296,8 @@ func toStatus(ctx context.Context, op string, err error) error {
 	case err == nil:
 		return nil
 
-	// Milik orang lain dan tidak ada menjawab sama. Membedakannya memberi
-	// tahu penanya bahwa slug itu ada.
+	// Someone else's and non-existent answer the same. Telling them apart
+	// tells the asker the slug exists.
 	case errors.Is(err, domain.ErrAssessmentNotFound):
 		return status.Error(codes.NotFound, "no such assessment")
 

@@ -1,8 +1,8 @@
-// Package consumer membaca hasil pekerjaan LLM dan menyimpannya.
+// Package consumer reads LLM job results and stores them.
 //
-// Ia sisi penerima dari alur yang dimulai di RequestPersonalization: permintaan
-// keluar lewat outbox, worker mengerjakannya, hasilnya kembali lewat topic
-// llm.results, dan di sinilah ia mendarat.
+// It is the receiving side of the flow that starts in RequestPersonalization:
+// the request leaves through the outbox, the worker does the work, the result
+// comes back through the llm.results topic, and this is where it lands.
 package consumer
 
 import (
@@ -26,14 +26,14 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Scope adalah ruang lingkup idempotensi konsumen ini.
+// Scope is this consumer's idempotency scope.
 //
-// Ia berbeda dari milik llm-worker dengan sengaja: dua konsumen yang memproses
-// event yang sama tidak boleh saling meniadakan. Worker yang sudah menangani
-// sebuah event tidak berarti penyimpan hasil juga sudah.
+// It differs from llm-worker's on purpose: two consumers processing the same
+// event must not cancel each other out. The worker having handled an event
+// does not mean the result store has too.
 const Scope = "assessment-results"
 
-// Results membaca llm.results dan menyimpan laporannya.
+// Results reads llm.results and stores the reports.
 type Results struct {
 	client   *kgo.Client
 	pool     pg.Beginner
@@ -71,7 +71,7 @@ func (r *Results) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			r.log.InfoContext(ctx, "assessment result consumer stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -83,8 +83,8 @@ func (r *Results) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(r.client, errs); len(recovered) > 0 {
 				r.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -116,21 +116,21 @@ func (r *Results) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Offset dikomit setelah pekerjaannya selesai, bukan berdasarkan waktu.
+		// Offsets are committed once the work is done, not on a timer.
 		if err := r.client.CommitUncommittedOffsets(ctx); err != nil {
 			r.log.ErrorContext(ctx, "committing offsets failed", "error", err)
 		}
 	}
 }
 
-// isMine menyatakan pesan ini milik assessment.
+// isMine reports whether this message belongs to assessment.
 //
-// Topic llm.results dan llm.dlq dipakai BERSAMA seluruh service yang memakai
-// llm-worker. Tanpa penyaringan ini, konsumen assessment akan mencoba
-// memperlakukan program coaching sebagai penilaian.
+// The llm.results and llm.dlq topics are SHARED by every service that uses
+// llm-worker. Without this filter, the assessment consumer would try to
+// treat a coaching program as an assessment.
 //
-// Jenisnya dibaca dari header aggregate_type yang diisi relay outbox - tanpa
-// membongkar isinya, dan tanpa menebak dari bentuknya.
+// The kind is read from the aggregate_type header the outbox relay fills in
+// - without unpacking the payload, and without guessing from its shape.
 func isMine(rec *kgo.Record) bool {
 	for _, h := range rec.Headers {
 		if h.Key != "aggregate_type" {
@@ -138,27 +138,27 @@ func isMine(rec *kgo.Record) bool {
 		}
 		switch string(h.Value) {
 		case "assessment":
-			// Hasil dan kegagalan personalisasi.
+			// Personalisation results and failures.
 			return true
 		case "user_profile":
-			// Event profil yang mengisi cache (F2-16). Ia datang dari
-			// profile-svc lewat topic yang berbeda, tetapi melewati handler
-			// yang sama.
+			// The profile event that fills the cache (F2-16). It comes from
+			// profile-svc through a different topic, but passes through the same
+			// handler.
 			return true
 		default:
 			return false
 		}
 	}
 
-	// Tanpa header, jenisnya tidak diketahui. Ia DILEWATI, bukan diterima:
-	// menerimanya berarti menebak, dan tebakan yang salah menandai penilaian
-	// orang lain.
+	// Without the header, the kind is unknown. It is SKIPPED, not accepted:
+	// accepting it means guessing, and a wrong guess marks someone else's
+	// assessment.
 	return false
 }
 
 // handle memproses satu hasil.
 func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
-	// Disaring lebih dulu, sebelum apa pun dibongkar.
+	// Filtered first, before anything is unpacked.
 	if !isMine(rec) {
 		return nil
 	}
@@ -170,8 +170,8 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on the span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
@@ -183,9 +183,10 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	case *eventsv1.Envelope_LlmJobFailed:
 		return r.fail(ctx, &env, payload.LlmJobFailed, rec)
 	default:
-		// Event lain di topic ini bukan urusan konsumen ini. Ia dilewati, bukan
-		// digagalkan - menggagalkannya akan membuat offset tidak maju dan
-		// seluruh antrean tersumbat oleh pesan yang memang bukan miliknya.
+		// Other events on this topic are none of this consumer's business. They
+		// are skipped, not failed - failing them would keep the offset from
+		// advancing and block the whole queue with messages that were never its
+		// own.
 		return nil
 	}
 }
@@ -202,9 +203,9 @@ func (r *Results) complete(
 
 	var report map[string]any
 	if err := json.Unmarshal([]byte(done.GetReportJson()), &report); err != nil {
-		// Laporan yang tidak bisa dibaca tidak akan pernah bisa dibaca. Ia
-		// dicatat sebagai kegagalan, bukan diulang selamanya - dan penilaiannya
-		// ditandai failed, bukan dibiarkan pending selamanya.
+		// A report that cannot be read will never be readable. It is recorded as
+		// a failure, not retried forever - and the assessment is marked failed,
+		// not left pending forever.
 		r.log.ErrorContext(ctx, "a completed result was not valid JSON",
 			"assessment_id", done.GetAssessmentId(), "error", err)
 		return r.markFailed(ctx, done.GetAssessmentId(), "the worker returned a report that is not valid JSON")
@@ -223,8 +224,8 @@ func (r *Results) complete(
 			return err
 		}
 		if !claimed {
-			// Sudah pernah disimpan. Relay outbox at-least-once, jadi pesan
-			// yang tiba dua kali adalah keadaan yang normal.
+			// Already stored. The outbox relay is at-least-once, so a message
+			// arriving twice is a normal state.
 			return nil
 		}
 
@@ -237,9 +238,9 @@ func (r *Results) complete(
 			return err
 		}
 
-		// Status dan laporannya ditulis di transaksi yang sama. Kalau salah
-		// satunya bisa terjadi tanpa yang lain, klien melihat laporan yang ada
-		// dengan status pending - atau status completed tanpa laporan.
+		// The status and the report are written in the same transaction. If
+		// either could happen without the other, the client would see an existing
+		// report with status pending - or status completed with no report.
 		if _, err := r.statuses(q).SetPersonalizationStatus(ctx, id,
 			domain.PersonalizationCompleted, nil, ""); err != nil {
 			return err
@@ -248,12 +249,13 @@ func (r *Results) complete(
 	})
 }
 
-// fail menandai pekerjaan yang sudah menyerah.
+// fail marks a job that has given up.
 func (r *Results) fail(
 	ctx context.Context, env *eventsv1.Envelope, failed *eventsv1.LlmJobFailed, rec *kgo.Record,
 ) error {
-	// LlmJobFailed tidak membawa id penilaian; yang membawanya adalah kunci
-	// partisi pesannya, yang diisi relay dari aggregate_id baris outbox.
+	// LlmJobFailed does not carry the assessment id; what carries it is the
+	// message's partition key, which the relay fills from the outbox row's
+	// aggregate_id.
 	assessmentID := string(rec.Key)
 	if assessmentID == "" {
 		r.log.ErrorContext(ctx, "a failure event carried no assessment key",
@@ -267,10 +269,10 @@ func (r *Results) fail(
 	return r.markFailed(ctx, assessmentID, failed.GetReason())
 }
 
-// markFailed menandai penilaian sebagai gagal dipersonalisasi.
+// markFailed marks an assessment as failed to personalise.
 //
-// Perpindahannya dibatasi dari pending saja: pekerjaan yang sudah selesai tidak
-// boleh berubah menjadi gagal karena event lama yang tiba terlambat.
+// The transition is restricted to pending only: a job already completed must
+// not turn into failed because of an old event arriving late.
 func (r *Results) markFailed(ctx context.Context, assessmentID, reason string) error {
 	id, err := domain.ParseID(assessmentID)
 	if err != nil {
@@ -286,18 +288,19 @@ func (r *Results) markFailed(ctx context.Context, assessmentID, reason string) e
 	})
 }
 
-// cacheProfile menyimpan cuplikan profil yang datang lewat event (F2-16).
+// cacheProfile stores a profile snapshot that arrived through an event
+// (F2-16).
 //
-// TIDAK memakai penjaga idempotensi, dan itu disengaja: penyimpanan ini
-// idempoten karena bentuknya - UPSERT yang hanya menang bila eventnya lebih
-// baru. Klaim idempotensi di sini hanya menambah baris yang harus disapu untuk
-// menahan sesuatu yang sudah tertahan.
+// It does NOT use the idempotency guard, and that is deliberate: this store is
+// idempotent by shape - an UPSERT that only wins when the event is newer. An
+// idempotency claim here would only add rows to sweep in order to hold back
+// something already held back.
 func (r *Results) cacheProfile(
 	ctx context.Context, env *eventsv1.Envelope, updated *eventsv1.ProfileUpdated,
 ) error {
 	if updated.GetUserId() == "" || updated.GetUserProfileId() == "" {
-		// Event tanpa salah satu id tidak bisa disimpan sebagai cuplikan yang
-		// bisa dicari. Ia dilewati dan dicatat, bukan diulang selamanya.
+		// An event missing either id cannot be stored as a snapshot that can be
+		// looked up. It is skipped and logged, not retried forever.
 		r.log.ErrorContext(ctx, "a profile event was missing an id and was skipped",
 			"event_id", env.GetEventId())
 		return nil
@@ -314,8 +317,8 @@ func (r *Results) cacheProfile(
 			return err
 		}
 		if !stored {
-			// Event yang lebih lama daripada yang sudah tersimpan. Bukan galat:
-			// konsumen yang diputar ulang akan menghasilkan banyak di antaranya.
+			// An event older than what is already stored. Not an error: a replayed
+			// consumer produces many of these.
 			r.log.DebugContext(ctx, "a profile event was older than the cached snapshot",
 				"user_id", updated.GetUserId())
 		}
@@ -323,10 +326,11 @@ func (r *Results) cacheProfile(
 	})
 }
 
-// sexOf mengembalikan pointer ke jenis kelamin, atau nil bila belum dinyatakan.
+// sexOf returns a pointer to the sex, or nil when it is not stated.
 //
-// Bedanya nyata di cache: NULL berarti "belum diisi", string kosong berarti
-// "diketahui kosong" - dan yang pertama boleh dicari ulang ke profile-svc.
+// The difference is real in the cache: NULL means "not filled in", an empty
+// string means "known to be empty" - and the first may be looked up again at
+// profile-svc.
 func sexOf(updated *eventsv1.ProfileUpdated) *string {
 	if updated.GetSex() == "" {
 		return nil
@@ -335,7 +339,7 @@ func sexOf(updated *eventsv1.ProfileUpdated) *string {
 	return &sex
 }
 
-// idempotencyKeyOf memilih kunci yang menahan duplikat.
+// idempotencyKeyOf picks the key that holds back duplicates.
 func idempotencyKeyOf(env *eventsv1.Envelope) string {
 	if key := env.GetIdempotencyKey().GetValue(); key != "" {
 		return key

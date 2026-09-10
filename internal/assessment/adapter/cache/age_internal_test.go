@@ -5,17 +5,17 @@ import (
 	"time"
 )
 
-// TestAgeIsCountedFromTheBirthdayThatHasActuallyHappened menjaga masukan
-// langsung ke model risiko.
+// TestAgeIsCountedFromTheBirthdayThatHasActuallyHappened guards a direct
+// input to the risk model.
 //
-// Umur bukan sekadar selisih tahun. Orang yang lahir Desember masih berumur
-// setahun lebih muda sepanjang sebelas bulan pertama, dan menghitungnya
-// sebagai selisih tahun saja akan menaikkan umurnya sepanjang periode itu -
-// yang menaikkan risiko yang dilaporkan kepadanya.
+// Age is not just a difference in years. Someone born in December is still
+// a year younger for the first eleven months, and counting it as a
+// difference in years alone would raise their age for that whole period -
+// which raises the risk reported to them.
 //
-// Tanggal "hari ini" diberikan eksplisit, bukan diambil dari jam: test yang
-// hasilnya bergantung pada kapan ia dijalankan akan berubah tanpa ada yang
-// mengubah kodenya.
+// The "today" date is supplied explicitly, not taken from the clock: a test
+// whose result depends on when it runs changes without anyone changing the
+// code.
 func TestAgeIsCountedFromTheBirthdayThatHasActuallyHappened(t *testing.T) {
 	date := func(s string) time.Time {
 		parsed, err := time.Parse("2006-01-02", s)
@@ -38,9 +38,9 @@ func TestAgeIsCountedFromTheBirthdayThatHasActuallyHappened(t *testing.T) {
 		{"sehari setelah ulang tahun", "1970-09-02", "2026-09-03", 56},
 		{"bayi yang belum berulang tahun", "2026-01-01", "2026-09-03", 0},
 
-		// Tanggal lahir di masa depan tidak mungkin - domain menolaknya - tetapi
-		// cache bisa menerima apa pun yang datang lewat event. Umur negatif akan
-		// menjadi masukan yang mustahil ke model risikonya.
+		// A date of birth in the future is impossible - the domain refuses it -
+		// but the cache can receive anything that arrives through an event. A
+		// negative age would be an impossible input to the risk model.
 		{"tanggal lahir di masa depan", "2030-01-01", "2026-09-03", 0},
 	}
 
@@ -53,20 +53,20 @@ func TestAgeIsCountedFromTheBirthdayThatHasActuallyHappened(t *testing.T) {
 	}
 }
 
-// TestALeapDayBirthdayDoesNotJumpAYear menjaga 29 Februari.
+// TestALeapDayBirthdayDoesNotJumpAYear guards 29 February.
 //
-// YearDay bergeser satu hari di tahun kabisat, dan perbandingan yang naif
-// membuat orang yang lahir 1 Maret terhitung berulang tahun sehari lebih awal
-// pada tahun kabisat. Bedanya satu hari, tetapi ia terjadi pada setiap orang
-// yang lahir setelah Februari, setiap empat tahun.
+// YearDay shifts by one in a leap year, and a naive comparison makes someone
+// born on 1 March count as having their birthday a day early in leap years.
+// The difference is one day, but it hits everyone born after February, every
+// four years.
 func TestALeapDayBirthdayDoesNotJumpAYear(t *testing.T) {
 	date := func(s string) time.Time {
 		parsed, _ := time.Parse("2006-01-02", s)
 		return parsed
 	}
 
-	// 2028 kabisat. Orang yang lahir 1 Maret 1990 berumur 37 pada 1 Maret 2028,
-	// dan 36 pada 29 Februari 2028.
+	// 2028 is a leap year. Someone born on 1 March 1990 is 37 on 1 March 2028,
+	// and 36 on 29 February 2028.
 	if got := ageOn(date("1990-03-01"), date("2028-03-01")); got != 38 {
 		t.Errorf("on their birthday in a leap year the age is %d, want 38", got)
 	}

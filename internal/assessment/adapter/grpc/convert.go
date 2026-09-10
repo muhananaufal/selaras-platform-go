@@ -1,22 +1,22 @@
-// Package grpc melayani kontrak assessment.v1 di atas gRPC.
+// Package grpc serves the assessment.v1 contract over gRPC.
 package grpc
 
 import (
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 )
 
-// Konversi enum kontrak menjadi string jawaban yang dibaca mesin risiko.
+// Conversion of contract enums into the answer strings the risk engine
+// reads.
 //
-// Mesinnya membaca string berbahasa Indonesia karena itulah yang dipakai
-// sistem lama, dan golden vector membuktikan paritasnya dalam bentuk itu.
-// Menggantinya berarti membuang bukti paritasnya.
+// The engine reads Indonesian strings because that is what the legacy system
+// used, and the golden vectors prove parity in that form. Replacing them
+// would throw the parity proof away.
 //
-// Kontraknya sendiri memakai enum, bukan string, sehingga nilai yang tidak
-// dikenal berhenti di batas gRPC alih-alih mengalir ke perhitungan sebagai
-// string yang tidak cocok dengan apa pun - dan diam-diam berperilaku seperti
-// nilai bawaan.
+// The contract itself uses enums, not strings, so an unknown value stops at
+// the gRPC boundary instead of flowing into the computation as a string that
+// matches nothing - and silently behaving like a default.
 //
-// Berkas ini adalah satu-satunya tempat kedua kosakata itu bertemu.
+// This file is the only place the two vocabularies meet.
 
 const (
 	answerSmokerYes = "Perokok aktif"
@@ -154,16 +154,16 @@ func adherenceAnswer(a assessmentv1.TreatmentAdherence) string {
 	}
 }
 
-// measured membaca nilai terukur dengan aman terhadap nil.
+// measured reads a measured value safely against nil.
 //
-// Getter protobuf aman terhadap penerima nil, tetapi AKSES BIDANG tidak:
-// p.MeasuredValue pada p yang nil memanikkan proses. Permintaan yang tidak
-// menyertakan satu parameter klinis - hal yang wajar bagi klien yang memakai
-// jalur proksi - karena itu bisa menjatuhkan service.
+// Protobuf getters are nil-safe, but FIELD ACCESS is not: p.MeasuredValue on
+// a nil p panics the process. A request that omits one clinical parameter -
+// normal for a client using the proxy path - could therefore take the
+// service down.
 //
-// Nilai balik kedua menjaga pembedaan yang hilang bila GetMeasuredValue()
-// dipakai langsung: nol adalah nilai terukur yang mungkin, bukan penanda
-// ketiadaan.
+// The second return value preserves the distinction that GetMeasuredValue()
+// used directly would lose: zero is a possible measured value, not a marker
+// of absence.
 func measured(p *assessmentv1.ClinicalParameter) (float64, bool) {
 	if p == nil || p.MeasuredValue == nil {
 		return 0, false
@@ -171,11 +171,11 @@ func measured(p *assessmentv1.ClinicalParameter) (float64, bool) {
 	return *p.MeasuredValue, true
 }
 
-// inputMode menerjemahkan mode masukan.
+// inputMode translates the input mode.
 //
-// Apa pun selain MANUAL menjadi proksi. Itu disengaja: UNSPECIFIED berarti
-// klien tidak menyatakan apa-apa, dan menebak dari jawaban gaya hidup jauh
-// lebih baik daripada memakai nilai terukur yang tidak pernah dikirim.
+// Anything other than MANUAL becomes proxy. That is deliberate: UNSPECIFIED
+// means the client stated nothing, and estimating from lifestyle answers is
+// far better than using a measured value that was never sent.
 func inputMode(p *assessmentv1.ClinicalParameter) string {
 	if p.GetMode() == assessmentv1.InputMode_INPUT_MODE_MANUAL {
 		return "manual"
@@ -183,24 +183,23 @@ func inputMode(p *assessmentv1.ClinicalParameter) string {
 	return "proxy"
 }
 
-// AnswersFrom mengubah masukan kontrak menjadi bentuk yang dibaca mesin.
+// AnswersFrom turns the contract input into the shape the engine reads.
 //
-// Nama kuncinya sama persis dengan yang dipakai sistem lama, karena golden
-// vector membuktikan paritasnya dalam nama-nama itu. Satu kunci yang berbeda
-// berarti estimator membaca nilai bawaannya dan menghitung terus, tanpa satu
-// pun galat.
+// The key names are exactly the ones the legacy system used, because the
+// golden vectors prove parity under those names. One differing key means the
+// estimator reads its default and keeps computing, without a single error.
 //
-// Ia diekspor supaya test bisa membuktikan konversinya menghasilkan angka yang
-// sama dengan golden vector - pembuktian yang tidak bisa dilakukan dari dalam
-// paket tanpa mengimpor harness golden ke kode produksi.
+// It is exported so tests can prove the conversion yields the same numbers as
+// the golden vectors - a proof that cannot be done from inside the package
+// without importing the golden harness into production code.
 func AnswersFrom(in *assessmentv1.AssessmentInput) map[string]any {
 	answers := map[string]any{
 		"has_diabetes":   in.GetHasDiabetes(),
 		"smoking_status": smokingAnswer(in.GetSmokingStatus()),
 
-		// Satu sumber untuk kebiasaan olahraga, di akar. Inilah B12: sistem
-		// lama membacanya dari dua tempat dengan dua nilai berbeda, sehingga
-		// potongan -7 tidak pernah berlaku.
+		// One source for the exercise habit, at the root. This is B12: the legacy
+		// system read it from two places with two different values, so the -7
+		// deduction never applied.
 		"q_exercise": exerciseAnswer(in.GetExercise()),
 
 		"sbp_input_type":   inputMode(in.GetSystolicBloodPressure()),
@@ -247,9 +246,9 @@ func AnswersFrom(in *assessmentv1.AssessmentInput) map[string]any {
 		return answers
 	}
 
-	// Bidang optional protobuf: nil berarti tidak dikirim, dan itu berbeda
-	// dari nol. Usia diagnosis nol masuk ke model sebagai (0-50)/5 dan
-	// menggeser risikonya, jadi ketiadaannya tidak boleh disamakan dengannya.
+	// An optional protobuf field: nil means not sent, and that differs from
+	// zero. An age at diagnosis of zero enters the model as (0-50)/5 and
+	// shifts the risk, so its absence must not be equated with it.
 	if in.AgeAtDiabetesDiagnosis != nil {
 		answers["age_at_diabetes_diagnosis"] = float64(in.GetAgeAtDiabetesDiagnosis())
 	}
@@ -282,19 +281,18 @@ func AnswersFrom(in *assessmentv1.AssessmentInput) map[string]any {
 	return answers
 }
 
-// saltHabits mengubah daftar kebiasaan garam menjadi daftar yang PANJANGNYA
-// dibaca estimator.
+// saltHabits turns the list of salt habits into a list whose LENGTH the
+// estimator reads.
 //
-// Estimator hanya menghitung jumlahnya, bukan isinya - lima poin per
-// kebiasaan. Isinya tetap dibawa apa adanya supaya cuplikan masukan bisa
-// dibaca kembali, tetapi yang menentukan angkanya hanya panjangnya.
+// The estimator only counts them, not their contents - five points per
+// habit. The contents are still carried as they are so the input snapshot
+// can be read back, but only the length decides the number.
 func saltHabits(habits []assessmentv1.SaltHabit) []any {
 	out := make([]any, 0, len(habits))
 	for _, h := range habits {
 		if h == assessmentv1.SaltHabit_SALT_HABIT_UNSPECIFIED {
-			// Nilai yang tidak dinyatakan bukan kebiasaan. Menghitungnya akan
-			// menambah lima poin tekanan darah untuk sesuatu yang tidak
-			// pernah dikatakan siapa pun.
+			// An unstated value is not a habit. Counting it would add five points of
+			// blood pressure for something nobody ever said.
 			continue
 		}
 		out = append(out, h.String())

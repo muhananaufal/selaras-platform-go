@@ -76,8 +76,8 @@ func newAssessment(t *testing.T, profileID domain.ProfileID) *domain.Assessment 
 	return a
 }
 
-// Angka risiko dibaca orang tentang jantungnya sendiri dan dibandingkan antar
-// waktu. Ia harus kembali PERSIS seperti disimpan, bukan mendekati.
+// A risk number is read by people about their own heart and compared over
+// time. It has to come back EXACTLY as stored, not approximately.
 func TestTheRiskFigureRoundTripsExactly(t *testing.T) {
 	repo, ctx := newRepo(t)
 	profileID := mustProfileID(t)
@@ -103,8 +103,8 @@ func TestTheRiskFigureRoundTripsExactly(t *testing.T) {
 	}
 }
 
-// Cuplikan masukan adalah satu-satunya cara membantah angkanya kelak. Ia
-// harus kembali utuh, termasuk jawaban yang tidak dipakai perhitungan.
+// The input snapshot is the only way to dispute the number later. It has to
+// come back whole, including the answers the computation does not use.
 func TestTheInputSnapshotSurvivesIntact(t *testing.T) {
 	repo, ctx := newRepo(t)
 
@@ -130,7 +130,7 @@ func TestTheInputSnapshotSurvivesIntact(t *testing.T) {
 	}
 }
 
-// result_details yang kosong dan yang belum diisi adalah dua hal berbeda.
+// An empty result_details and an unfilled one are two different things.
 func TestResultDetailsStayAbsentUntilSomethingWritesThem(t *testing.T) {
 	repo, ctx := newRepo(t)
 
@@ -171,8 +171,7 @@ func TestAnUnknownSlugIsNotFound(t *testing.T) {
 	}
 }
 
-// Riwayat selalu dibaca terbaru lebih dulu, dan hanya milik profil yang
-// diminta.
+// History is always read newest first, and only for the requested profile.
 func TestHistoryIsScopedAndOrdered(t *testing.T) {
 	repo, ctx := newRepo(t)
 
@@ -201,7 +200,7 @@ func TestHistoryIsScopedAndOrdered(t *testing.T) {
 	if len(found) != 3 {
 		t.Fatalf("%d assessments; want 3, another profile's leaked in", len(found))
 	}
-	// Terbaru lebih dulu: yang terakhir dibuat harus muncul pertama.
+	// Newest first: the one created last has to appear first.
 	if found[0].Slug != slugs[2] {
 		t.Errorf("first result is %q; want the most recent %q", found[0].Slug, slugs[2])
 	}
@@ -229,8 +228,8 @@ func TestHistoryRespectsItsLimit(t *testing.T) {
 	}
 }
 
-// Batasan basis data adalah lapis terakhir: jalur mana pun yang kelak
-// melewatkan domain tetap berhenti di sini.
+// The database constraint is the last layer: any path that one day bypasses
+// the domain still stops here.
 func TestTheDatabaseRefusesImpossibleValues(t *testing.T) {
 	_, ctx := newRepo(t)
 	pool := pgtest.Open(t, "assessment")
@@ -253,8 +252,8 @@ func TestTheDatabaseRefusesImpossibleValues(t *testing.T) {
 	}
 }
 
-// Slug adalah id publik. Dua penilaian berturut-turut tidak boleh
-// menghasilkan slug yang berdekatan, apalagi berurutan.
+// The slug is the public id. Two consecutive assessments must not produce
+// slugs that are close, let alone sequential.
 func TestSlugsAreNotGuessable(t *testing.T) {
 	seen := map[string]bool{}
 	for range 200 {

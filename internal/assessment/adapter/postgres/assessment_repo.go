@@ -1,4 +1,4 @@
-// Package postgres menyimpan penilaian risiko di Postgres.
+// Package postgres stores risk assessments in Postgres.
 package postgres
 
 import (
@@ -19,11 +19,11 @@ const constraintSlugUnique = "risk_assessments_slug_unique"
 const assessmentColumns = `id, user_profile_id, slug, model_used, final_risk_percentage,
 	inputs, generated_values, result_details, created_at, updated_at`
 
-// readColumns menambahkan kolom yang TIDAK ditulis saat pembuatan.
+// readColumns adds the columns that are NOT written at creation.
 //
-// Ia terpisah dari assessmentColumns karena yang terakhir juga dipakai INSERT,
-// dan menambahkan kolom ke sana akan membuat jumlah placeholder-nya tidak lagi
-// cocok - kekeliruan yang baru terlihat saat dijalankan.
+// It is separate from assessmentColumns because the latter is also used by the
+// INSERT, and adding columns there would make its placeholder count stop
+// matching - a mistake only visible at runtime.
 const readColumns = assessmentColumns + `, personalization_status, coalesce(personalization_error, '')`
 
 // Repository memenuhi domain.Repository.
@@ -81,9 +81,10 @@ func (r *Repository) ListForProfile(
 	profileID domain.ProfileID,
 	limit int,
 ) ([]*domain.Assessment, error) {
-	// Urutan dan batasnya ada di kueri, bukan di Go. Membaca seluruh riwayat
-	// lalu memotongnya di memori memindahkan pekerjaan basis data ke service,
-	// dan indeks gabungan di migrasi memang dibuat untuk kueri ini.
+	// The ordering and the limit are in the query, not in Go. Reading the
+	// whole history and cutting it in memory moves database work into the
+	// service, and the composite index in the migration was made for exactly
+	// this query.
 	const q = `
 		SELECT ` + readColumns + `
 		FROM risk_assessments
@@ -105,16 +106,16 @@ func (r *Repository) ListForProfile(
 		}
 		out = append(out, a)
 	}
-	// Galat iterasi diperiksa terpisah dari galat Scan. Baris yang habis di
-	// tengah karena koneksi putus terlihat seperti hasil yang lengkap kalau
-	// ini dilewati - daftar pendek yang tampak benar.
+	// The iteration error is checked separately from the Scan error. Rows that
+	// run out halfway because the connection dropped look like a complete
+	// result if this is skipped - a short list that looks right.
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading assessments: %w", err)
 	}
 	return out, nil
 }
 
-// scanner menyatukan pgx.Row dan pgx.Rows, yang keduanya bisa di-Scan.
+// scanner unifies pgx.Row and pgx.Rows, both of which can be Scanned.
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -179,11 +180,11 @@ func decode(raw []byte) (map[string]any, error) {
 	return out, nil
 }
 
-// orEmpty menjaga kolom NOT NULL tetap terisi.
+// orEmpty keeps a NOT NULL column filled.
 //
-// Map Go yang nil menjadi "null" di JSON, dan kolomnya menolaknya. Objek
-// kosong lebih jujur daripada penilaian yang gagal disimpan karena
-// jawabannya kebetulan kosong.
+// A nil Go map becomes "null" in JSON, and the column refuses it. An empty
+// object is more honest than an assessment that fails to save because its
+// answers happen to be empty.
 func orEmpty(m map[string]any) map[string]any {
 	if m == nil {
 		return map[string]any{}
@@ -191,11 +192,11 @@ func orEmpty(m map[string]any) map[string]any {
 	return m
 }
 
-// nullableJSON menyimpan NULL untuk yang belum ada, bukan objek kosong.
+// nullableJSON stores NULL for what is not there yet, not an empty object.
 //
-// result_details yang kosong dan yang belum diisi adalah dua hal berbeda:
-// yang pertama berarti llm-worker sudah menjawab dan tidak menemukan apa
-// pun, yang kedua berarti ia belum menjawab.
+// An empty result_details and an unfilled one are two different things: the
+// first means llm-worker answered and found nothing, the second means it
+// has not answered yet.
 func nullableJSON(m map[string]any) any {
 	if m == nil {
 		return nil
@@ -207,12 +208,12 @@ func nullableJSON(m map[string]any) any {
 	return encoded
 }
 
-// SetResultDetails menyimpan laporan personalisasi.
+// SetResultDetails stores the personalisation report.
 //
-// Syarat `result_details IS NULL` ada di WHERE, bukan diperiksa lebih dulu
-// dengan SELECT. Pemeriksaan pendahuluan punya celah di antara membaca dan
-// menulis, dan dua event yang tiba serempak akan sama-sama membaca "belum ada"
-// lalu sama-sama menulis - yang kedua menimpa yang pertama.
+// The `result_details IS NULL` condition sits in the WHERE, not checked first
+// with a SELECT. A preliminary check has a gap between reading and writing,
+// and two events arriving together would both read "nothing yet" and both
+// write - the second overwriting the first.
 func (r *Repository) SetResultDetails(
 	ctx context.Context, id domain.ID, report map[string]any,
 ) (bool, error) {
@@ -233,12 +234,12 @@ func (r *Repository) SetResultDetails(
 	return tag.RowsAffected() == 1, nil
 }
 
-// SetPersonalizationStatus mencatat keadaan pekerjaan personalisasi.
+// SetPersonalizationStatus records the state of the personalisation job.
 //
-// Perpindahan yang diizinkan ditegakkan di dalam WHERE, bukan diperiksa lebih
-// dulu. Pemeriksaan pendahuluan punya celah di antara membaca dan menulis: dua
-// event yang tiba serempak akan sama-sama membaca keadaan lama, dan yang
-// terlambat menimpa yang lebih baru.
+// The allowed transitions are enforced inside the WHERE, not checked
+// beforehand. A preliminary check has a gap between reading and writing: two
+// events arriving together would both read the old state, and the late one
+// would overwrite the newer.
 func (r *Repository) SetPersonalizationStatus(
 	ctx context.Context,
 	id domain.ID,
@@ -268,10 +269,10 @@ func (r *Repository) SetPersonalizationStatus(
 	return tag.RowsAffected() == 1, nil
 }
 
-// nullable mengubah string kosong menjadi NULL.
+// nullable turns an empty string into NULL.
 //
-// Kolomnya menyimpan alasan kegagalan, dan string kosong yang tersimpan akan
-// terlihat seperti "gagal tanpa alasan" - berbeda dari "tidak gagal".
+// The column stores the failure reason, and a stored empty string would look
+// like "failed for no reason" - which differs from "did not fail".
 func nullable(s string) any {
 	if s == "" {
 		return nil

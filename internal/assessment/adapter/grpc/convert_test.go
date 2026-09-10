@@ -43,17 +43,17 @@ func loadGolden(t *testing.T) goldenFile {
 	return file
 }
 
-// Ini pembuktian yang sebenarnya untuk lapisan konversi.
+// This is the real proof for the conversion layer.
 //
-// Golden vector membuktikan mesinnya benar ketika jawabannya berbentuk map.
-// Kontraknya memakai enum bertipe, jadi ada satu terjemahan di antaranya - dan
-// terjemahan adalah tempat kekeliruan bersembunyi paling nyaman: satu nama
-// kunci yang meleset membuat estimator membaca nilai bawaannya dan menghitung
-// terus, tanpa satu pun galat.
+// The golden vectors prove the engine is correct when the answers come as a
+// map. The contract uses typed enums, so there is one translation in between -
+// and translations are where mistakes hide most comfortably: one slipped key
+// name makes the estimator read its default and keep computing, without a
+// single error.
 //
-// Yang diuji di sini: masukan bertipe yang mewakili vektor yang sama harus
-// menghasilkan ANGKA yang sama. Kalau konversinya menjatuhkan atau salah
-// menamai apa pun, angkanya bergeser.
+// What is tested here: typed input representing the same vector must produce
+// the same NUMBER. If the conversion drops or misnames anything, the number
+// shifts.
 func TestTheTypedContractProducesTheSameNumbersAsTheGoldenVectors(t *testing.T) {
 	file := loadGolden(t)
 	engine := score.NewEngine(score.MustLoad())
@@ -98,12 +98,12 @@ func TestTheTypedContractProducesTheSameNumbersAsTheGoldenVectors(t *testing.T) 
 		checked, checked-mismatched)
 }
 
-// typedInputFrom membangun masukan kontrak dari jawaban golden vector.
+// typedInputFrom builds contract input from a golden vector's answers.
 //
-// Ia arah sebaliknya dari answersFrom, dan hanya ada di test. Kalau keduanya
-// ditulis dari pemahaman yang sama, keduanya bisa salah bersama - karena itu
-// yang dibandingkan bukan kedua peta itu melainkan ANGKA yang keluar di
-// ujungnya, terhadap angka yang dihasilkan sistem lama.
+// It is the inverse of answersFrom, and exists only in tests. If both were
+// written from the same understanding, both could be wrong together - which
+// is why what is compared is not the two maps but the NUMBER that comes out
+// at the end, against the number the legacy system produced.
 func typedInputFrom(a map[string]any) *assessmentv1.AssessmentInput {
 	str := func(m map[string]any, key string) string {
 		if v, ok := m[key].(string); ok {
@@ -154,8 +154,8 @@ func typedInputFrom(a map[string]any) *assessmentv1.AssessmentInput {
 		if str(p, "q_body_shape") == "Perut buncit" {
 			proxy.BodyShape = assessmentv1.BodyShape_BODY_SHAPE_CENTRAL_OBESITY
 		}
-		// Estimator hanya menghitung panjangnya, jadi kebiasaan mana pun
-		// asalkan jumlahnya sama.
+		// The estimator only counts the length, so any habits will do as long as
+		// the count matches.
 		if habits, ok := p["q_salt_diet"].([]any); ok {
 			for range habits {
 				proxy.SaltHabits = append(proxy.SaltHabits,
@@ -296,9 +296,8 @@ func adherenceOf(raw string) assessmentv1.TreatmentAdherence {
 	}
 }
 
-// Kebiasaan garam yang tidak dinyatakan bukan kebiasaan. Menghitungnya akan
-// menambah lima poin tekanan darah untuk sesuatu yang tidak pernah dikatakan
-// siapa pun.
+// An unstated salt habit is not a habit. Counting it would add five points
+// of blood pressure for something nobody ever said.
 func TestUnspecifiedSaltHabitsAreNotCounted(t *testing.T) {
 	in := &assessmentv1.AssessmentInput{
 		SbpProxy: &assessmentv1.SbpProxy{
@@ -319,9 +318,9 @@ func TestUnspecifiedSaltHabitsAreNotCounted(t *testing.T) {
 	}
 }
 
-// Mode yang tidak dinyatakan menjadi proksi, bukan manual. Manual tanpa nilai
-// terukur akan menghitung dengan nol - tekanan darah nol adalah angka yang
-// mustahil dan tetap menghasilkan hasil.
+// An unstated mode becomes proxy, not manual. Manual without a measured value
+// would compute with zero - a blood pressure of zero is an impossible number
+// that still yields a result.
 func TestAnUnspecifiedModeFallsBackToProxyRatherThanManual(t *testing.T) {
 	in := &assessmentv1.AssessmentInput{
 		SystolicBloodPressure: &assessmentv1.ClinicalParameter{},
@@ -336,8 +335,8 @@ func TestAnUnspecifiedModeFallsBackToProxyRatherThanManual(t *testing.T) {
 	}
 }
 
-// Nilai diabetes tidak boleh masuk peta jawaban ketika penggunanya tidak
-// menyatakan diabetes.
+// Diabetes values must not enter the answer map when the user did not state
+// diabetes.
 func TestDiabetesAnswersAreAbsentWithoutDiabetes(t *testing.T) {
 	in := &assessmentv1.AssessmentInput{HasDiabetes: false}
 	answers := assessmentgrpc.AnswersFrom(in)

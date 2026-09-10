@@ -1,4 +1,4 @@
-// Package profileclient mengambil cuplikan profil dari profile-svc.
+// Package profileclient fetches profile snapshots from profile-svc.
 package profileclient
 
 import (
@@ -13,20 +13,20 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 )
 
-// callTimeout membatasi setiap panggilan.
+// callTimeout bounds every call.
 //
-// Berbeda dari pemakaiannya di identity-svc, panggilan ini TIDAK best-effort:
-// tanpa profil tidak ada yang bisa dihitung. Batas waktunya tetap ada supaya
-// profile-svc yang menggantung menghasilkan galat yang jelas alih-alih
-// permintaan yang tidak pernah selesai.
+// Unlike its use in identity-svc, this call is NOT best-effort: without a
+// profile there is nothing to compute. The timeout still exists so a hanging
+// profile-svc produces a clear error instead of a request that never
+// finishes.
 const callTimeout = 5 * time.Second
 
-// Client memenuhi app.ProfileSource.
+// Client satisfies app.ProfileSource.
 //
-// Ia berkunci user_id, bukan user_profile_id (ADR-023): id profil diturunkan
-// dari profil yang dibaca, bukan diterima dari pemanggil. Itu yang membuat
-// penilaian tidak bisa ditulis ke atau dibaca dari profil orang lain oleh apa
-// pun yang kebetulan bisa menjangkau service ini.
+// It is keyed by user_id, not user_profile_id (ADR-023): the profile id is
+// derived from the profile that is read, not accepted from the caller. That
+// is what keeps an assessment from being written to or read from someone
+// else's profile by anything that happens to reach this service.
 type Client struct {
 	profiles profilev1.ProfileClient
 }
@@ -58,11 +58,11 @@ func (c *Client) Snapshot(ctx context.Context, userID string) (app.ProfileSnapsh
 	}, nil
 }
 
-// ageFrom menghitung umur dari tanggal ISO-8601.
+// ageFrom computes the age from an ISO-8601 date.
 //
-// Tanggal yang kosong menghasilkan nol, dan nol ditolak validasi di lapisan
-// use case dengan menyebut bidang mana yang kurang. Menebak umur di sini akan
-// mengubah profil yang belum diisi menjadi perhitungan yang tampak sah.
+// An empty date yields zero, and zero is refused by validation in the
+// use-case layer, naming the missing field. Guessing an age here would turn
+// an unfilled profile into a computation that looks valid.
 func ageFrom(iso string) int {
 	if iso == "" {
 		return 0
