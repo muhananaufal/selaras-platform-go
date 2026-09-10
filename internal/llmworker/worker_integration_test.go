@@ -52,20 +52,21 @@ type harness struct {
 	ctx       context.Context
 }
 
-// newHarness menyiapkan worker terhadap Kafka dan Postgres yang sungguhan.
+// newHarness sets the worker up against a real Kafka and Postgres.
 //
-// Setiap test memakai TOPIC-nya sendiri, bukan llm.jobs yang dipakai bersama.
-// Topic bersama membuat test saling mewarisi pesan: yang satu membaca pekerjaan
-// milik yang lain, dan hasilnya bergantung pada urutan jalankan.
+// Every test uses its OWN TOPIC, not the shared llm.jobs. A shared topic makes
+// tests inherit each other's messages: one reads another's jobs, and the result
+// depends on the run order.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	return newHarnessInGroup(t, "worker-test-"+uuid.NewString())
 }
 
-// newHarnessInGroup memakai group konsumen yang ditentukan pemanggil.
+// newHarnessInGroup uses a consumer group chosen by the caller.
 //
-// Kebanyakan test tidak peduli namanya asal unik; yang menguji commit offset
-// peduli, karena ia perlu menyambungkan konsumen kedua ke group yang sama.
+// Most tests do not care about the name as long as it is unique; the one
+// testing offset commits does, because it needs to connect a second consumer
+// to the same group.
 func newHarnessInGroup(t *testing.T, group string) *harness {
 	t.Helper()
 
@@ -89,12 +90,12 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 		t.Fatalf("creating the test topic: %v", err)
 	}
 
-	// Topic uji dihapus setelah testnya selesai.
+	// The test topic is deleted once its test finishes.
 	//
-	// Tanpa ini setiap jalankan meninggalkan satu topic yatim di broker, dan
-	// dua ratus lima puluh di antaranya sempat menumpuk sebelum ada yang
-	// menyadarinya. Kegagalan menghapus hanya dicatat: pembersihan yang
-	// menjatuhkan test hijau membuat orang mematikan pembersihannya.
+	// Without this every run leaves one orphaned topic on the broker, and two
+	// hundred and fifty of them had piled up before anyone noticed. A failed
+	// deletion is only logged: cleanup that fails a green test makes people
+	// switch the cleanup off.
 	t.Cleanup(func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancelCleanup()
@@ -122,7 +123,8 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 	if err != nil {
 		t.Fatalf("NewConsumer: %v", err)
 	}
-	// Jeda kuota dipendekkan: kebijakan bawaannya satu menit (ADR-025).
+	// The quota cooldown is shortened: the default policy is one minute
+	// (ADR-025).
 	consumer.WithQuotaCooldown(func(int) time.Duration { return 300 * time.Millisecond })
 
 	h := &harness{
@@ -166,10 +168,10 @@ func (h *harness) send(t *testing.T, assessmentID, idempotencyKey string) {
 	}
 }
 
-// runUntil menjalankan worker sampai kondisinya terpenuhi atau waktunya habis.
+// runUntil runs the worker until the condition holds or the time runs out.
 //
-// Ia mengembalikan galat Run, sehingga "matinya rapi" bisa diperiksa - bukan
-// hanya "berhentinya".
+// It returns Run's error, so "shut down cleanly" can be checked - not merely
+// "stopped".
 func (h *harness) runUntil(t *testing.T, timeout time.Duration, done func() bool) error {
 	t.Helper()
 
@@ -213,17 +215,17 @@ func (h *harness) countJobs(t *testing.T, aggregateID string) int {
 	return n
 }
 
-// leaveGroup menutup klien konsumen, sehingga ia keluar dari consumer group.
+// leaveGroup closes the consumer client, so it leaves the consumer group.
 //
-// Ia harus dipanggil sebelum konsumen lain di group yang sama menyambung:
-// selama anggota lama masih hidup, ia memegang partisinya dan anggota baru
-// tidak mendapat apa-apa - yang akan membuat test "tidak menerima apa pun"
-// lulus tanpa memeriksa offset sama sekali.
+// It has to be called before another consumer in the same group connects:
+// while the old member is still alive, it holds its partitions and the new
+// member gets nothing - which would make the "receives nothing" test pass
+// without checking the offset at all.
 func (h *harness) leaveGroup() {
 	h.closeOnce.Do(h.client.Close)
 }
 
-// statusOf membaca status pekerjaan, atau string kosong bila belum ada.
+// statusOf reads the job status, or an empty string if there is no job yet.
 func (h *harness) statusOf(t *testing.T, aggregateID string) string {
 	t.Helper()
 
@@ -236,11 +238,11 @@ func (h *harness) statusOf(t *testing.T, aggregateID string) string {
 	return status
 }
 
-// restart mengganti klien konsumen dengan yang baru di group yang sama.
+// restart replaces the consumer client with a new one in the same group.
 //
-// Ia meniru proses yang mati lalu dinyalakan lagi: anggota lama keluar dari
-// group, anggota baru masuk, dan pesan yang offsetnya belum dikomit dikirimkan
-// lagi kepadanya.
+// It mimics a process that dies and is started again: the old member leaves
+// the group, the new member joins, and messages whose offsets were not
+// committed are delivered to it again.
 func (h *harness) restart(t *testing.T) {
 	t.Helper()
 
@@ -270,20 +272,20 @@ func (h *harness) restart(t *testing.T) {
 	t.Cleanup(h.leaveGroup)
 }
 
-// TestAJobIsDoneAndItsResultStored adalah jalur normal, ujung ke ujung lewat
-// broker sungguhan.
+// TestAJobIsDoneAndItsResultStored is the normal path, end to end through a
+// real broker.
 func TestAJobIsDoneAndItsResultStored(t *testing.T) {
 	h := newHarness(t)
 	assessmentID := uuid.NewString()
 
 	h.send(t, assessmentID, "key-"+assessmentID)
 
-	// Yang ditunggu adalah STATUS AKHIRNYA, bukan keberadaan barisnya.
+	// What is awaited is the FINAL STATUS, not the existence of the row.
 	//
-	// Baris pekerjaan dibuat di transaksi klaim; hasilnya ditulis di transaksi
-	// berikutnya, setelah penyedia menjawab. Menunggu barisnya ada berarti
-	// berhenti di antara keduanya, dan pembacaan setelahnya akan melihat
-	// pending - kadang lulus, kadang tidak, tergantung penjadwalan.
+	// The job row is created in the claim transaction; the result is written
+	// in the next transaction, after the provider answers. Waiting for the row
+	// to exist means stopping between the two, and the read afterwards would
+	// see pending - passing sometimes and not others, depending on scheduling.
 	if err := h.runUntil(t, 60*time.Second, func() bool {
 		return h.statusOf(t, assessmentID) == llmworker.StatusCompleted
 	}); err != nil {
@@ -314,8 +316,8 @@ func TestAJobIsDoneAndItsResultStored(t *testing.T) {
 		t.Fatalf("the stored result is not JSON: %v", err)
 	}
 
-	// Dan eventnya masuk outbox dalam transaksi yang sama - bukan diterbitkan
-	// langsung, yang akan membuatnya bisa hilang saat prosesnya mati.
+	// And the event enters the outbox in the same transaction - not published
+	// directly, which would let it be lost when the process dies.
 	var eventType string
 	if err := h.pool.QueryRow(h.ctx,
 		`SELECT event_type FROM outbox WHERE aggregate_id = $1`, assessmentID,
@@ -327,11 +329,11 @@ func TestAJobIsDoneAndItsResultStored(t *testing.T) {
 	}
 }
 
-// TestTheSameJobTwiceIsDoneOnce adalah gate F3 lewat jalur yang sesungguhnya.
+// TestTheSameJobTwiceIsDoneOnce is the F3 gate through the real path.
 //
-// Dua pesan dengan kunci idempotensi yang sama, lewat broker sungguhan. Yang
-// dihitung bukan berapa pesan yang tiba, melainkan berapa kali penyedia
-// dipanggil - itulah yang berbiaya.
+// Two messages with the same idempotency key, through a real broker. What is
+// counted is not how many messages arrive but how many times the provider is
+// called - that is what costs money.
 func TestTheSameJobTwiceIsDoneOnce(t *testing.T) {
 	h := newHarness(t)
 	assessmentID := uuid.NewString()
@@ -341,9 +343,9 @@ func TestTheSameJobTwiceIsDoneOnce(t *testing.T) {
 	h.send(t, assessmentID, key)
 
 	if err := h.runUntil(t, 60*time.Second, func() bool {
-		// Ditunggu sampai KEDUA pesan terbaca, bukan sampai satu pekerjaan
-		// terbentuk - berhenti terlalu cepat akan membuat test ini lulus
-		// tanpa pernah melihat pesan kedua.
+		// Waited until BOTH messages are read, not until one job is formed -
+		// stopping too early would make this test pass without ever seeing the
+		// second message.
 		var seen int
 		if err := h.pool.QueryRow(h.ctx,
 			`SELECT count(*) FROM processed_messages`).Scan(&seen); err != nil {
@@ -354,7 +356,7 @@ func TestTheSameJobTwiceIsDoneOnce(t *testing.T) {
 		t.Fatalf("Run returned %v", err)
 	}
 
-	// Jeda pendek supaya pesan kedua sempat diproses sebelum diperiksa.
+	// A short pause so the second message is processed before the check.
 	time.Sleep(2 * time.Second)
 
 	if got := h.countJobs(t, assessmentID); got != 1 {
@@ -374,7 +376,7 @@ func TestTheSameJobTwiceIsDoneOnce(t *testing.T) {
 	}
 }
 
-// TestAFailingProviderLeavesTheJobFailed menjaga kegagalan terlihat.
+// TestAFailingProviderLeavesTheJobFailed keeps failures visible.
 func TestAFailingProviderLeavesTheJobFailed(t *testing.T) {
 	h := newHarness(t)
 	h.provider.Err = errProviderDown
@@ -398,9 +400,9 @@ func TestAFailingProviderLeavesTheJobFailed(t *testing.T) {
 		t.Fatal("the job failed without recording why")
 	}
 
-	// Kegagalan yang masih akan dicoba lagi TIDAK menerbitkan event gagal.
-	// Menerbitkannya akan membuat pemanggil mengira pekerjaannya sudah
-	// menyerah padahal belum.
+	// A failure that will still be retried does NOT publish a failure event.
+	// Publishing it would make callers think the job has given up when it has
+	// not.
 	var events int
 	if err := h.pool.QueryRow(h.ctx,
 		`SELECT count(*) FROM outbox WHERE aggregate_id = $1`, assessmentID).Scan(&events); err != nil {
@@ -411,7 +413,8 @@ func TestAFailingProviderLeavesTheJobFailed(t *testing.T) {
 	}
 }
 
-// TestATruncatedAnswerIsNotStoredAsAReport menjaga laporan setengah jadi.
+// TestATruncatedAnswerIsNotStoredAsAReport guards against half-finished
+// reports.
 func TestATruncatedAnswerIsNotStoredAsAReport(t *testing.T) {
 	h := newHarness(t)
 	h.provider.FinishReason = "MAX_TOKENS"
@@ -442,14 +445,14 @@ func TestATruncatedAnswerIsNotStoredAsAReport(t *testing.T) {
 	}
 }
 
-// TestTheOffsetIsCommittedSoWorkIsNotRepeated adalah gate F3-06 yang
-// sesungguhnya: "offset ter-commit dengan benar".
+// TestTheOffsetIsCommittedSoWorkIsNotRepeated is the real F3-06 gate: "the
+// offset is committed correctly".
 //
-// Cara membuktikannya bukan dengan memeriksa apakah fungsinya dipanggil,
-// melainkan dengan menanyakannya kepada broker: konsumen KEDUA di group yang
-// SAMA tidak boleh menerima pesan yang sudah dikerjakan konsumen pertama.
-// Kalau offsetnya tidak terkomit, ia akan menerimanya lagi - ConsumeResetOffset
-// group ini mulai dari awal topic.
+// The way to prove it is not to check whether the function was called, but to
+// ask the broker: a SECOND consumer in the SAME group must not receive a
+// message the first consumer already worked on. If the offset was not
+// committed, it will receive it again - this group's ConsumeResetOffset starts
+// from the beginning of the topic.
 func TestTheOffsetIsCommittedSoWorkIsNotRepeated(t *testing.T) {
 	addr := brokers(t)
 	h := newHarnessInGroup(t, "offset-test-"+uuid.NewString())
@@ -463,12 +466,12 @@ func TestTheOffsetIsCommittedSoWorkIsNotRepeated(t *testing.T) {
 		t.Fatalf("Run returned %v", err)
 	}
 
-	// Konsumen pertama keluar dari group SEBELUM yang kedua menyambung.
-	// Tanpa ini, yang kedua tidak mendapat partisi sama sekali dan test ini
-	// akan lulus tanpa pernah menyentuh offset.
+	// The first consumer leaves the group BEFORE the second connects. Without
+	// this, the second gets no partition at all and this test would pass
+	// without ever touching the offset.
 	h.leaveGroup()
 
-	// Konsumen kedua, group yang sama, topic yang sama.
+	// A second consumer, the same group, the same topic.
 	second, err := kafka.NewConsumer(
 		kafka.Config{Brokers: addr, ClientID: "offset-check"}, h.group, h.topic)
 	if err != nil {
@@ -489,16 +492,16 @@ func TestTheOffsetIsCommittedSoWorkIsNotRepeated(t *testing.T) {
 	}
 }
 
-// TestAFailingJobIsRetriedAndThenDeadLettered adalah gate F3-13.
+// TestAFailingJobIsRetriedAndThenDeadLettered is the F3-13 gate.
 //
-// Sebelum perbaikan ini, pekerjaan yang gagal SEKALI berhenti selamanya: klaim
-// idempotensinya sudah terpakai, offset-nya sudah dikomit, dan tidak ada yang
-// akan mengirim pesannya lagi. Batas tiga percobaan tidak pernah tercapai, dan
-// antrean surat mati tidak pernah menerima apa pun.
+// Before this fix, a job that failed ONCE stopped forever: its idempotency
+// claim was spent, its offset was committed, and nothing would send its
+// message again. The three-attempt limit was never reached, and the
+// dead-letter queue never received anything.
 //
-// Yang diperiksa di sini adalah tiga hal berurutan: pekerjaannya benar-benar
-// dicoba tiga kali, penghitungnya menumpuk di BARIS YANG SAMA, dan pada
-// percobaan ketiga ia menjadi dead beserta event kegagalannya.
+// What is checked here is three things in sequence: the job is really tried
+// three times, its counter accumulates on the SAME ROW, and on the third
+// attempt it becomes dead along with its failure event.
 func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 	h := newHarness(t)
 	h.provider.Err = errProviderDown
@@ -512,8 +515,8 @@ func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 		t.Fatalf("Run returned %v", err)
 	}
 
-	// Satu baris, bukan tiga: percobaan ulang memakai kembali pekerjaan yang
-	// sama, sehingga penghitungnya bermakna.
+	// One row, not three: retries reuse the same job, so the counter means
+	// something.
 	if got := h.countJobs(t, assessmentID); got != 1 {
 		t.Fatalf("three attempts produced %d job rows, want 1", got)
 	}
@@ -532,13 +535,13 @@ func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 		t.Fatal("the job gave up without recording why")
 	}
 
-	// Dan penyedia benar-benar dipanggil tiga kali - bukan sekadar penghitung
-	// yang naik tanpa pekerjaan yang terjadi.
+	// And the provider is really called three times - not merely a counter
+	// going up without work happening.
 	if got := h.provider.CallCount(); got != llmworker.MaxAttempts {
 		t.Fatalf("the provider was called %d times, want %d", got, llmworker.MaxAttempts)
 	}
 
-	// Event kegagalan terbit SEKALI, dan hanya setelah menyerah.
+	// The failure event is published ONCE, and only after giving up.
 	var events int
 	var eventType string
 	if err := h.pool.QueryRow(h.ctx,
@@ -554,16 +557,16 @@ func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 	}
 }
 
-// TestAnAbandonedJobResumesAfterRestart menutup jalur yang paling sulit benar.
+// TestAnAbandonedJobResumesAfterRestart closes the path hardest to get right.
 //
-// Worker dimatikan di tengah rangkaian percobaan. Yang harus terjadi setelah
-// dinyalakan lagi ada tiga, dan ketiganya mudah salah:
+// The worker is shut down in the middle of a series of attempts. Three things
+// have to happen once it is started again, and all three are easy to get wrong:
 //
-//  1. Pesannya datang lagi - offsetnya memang belum dikomit.
-//  2. Ia TIDAK dilewati sebagai duplikat - klaimnya dilepas saat menyerah.
-//  3. Penghitung percobaannya MENUMPUK di baris yang sama, bukan mulai dari nol
-//     di baris baru. Kalau tidak, batas tiga kali tidak akan pernah tercapai
-//     dan pekerjaan yang selalu gagal akan dicoba selamanya.
+// 1. The message comes back - its offset was indeed not committed. 2. It is NOT
+// skipped as a duplicate - the claim was released on giving up. 3. Its attempt
+// counter ACCUMULATES on the same row, rather than starting from zero on a new
+// row. Otherwise the limit of three is never reached and a job that always
+// fails is tried forever.
 func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	h := newHarness(t)
 	h.provider.Err = errProviderDown
@@ -571,7 +574,7 @@ func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	assessmentID := uuid.NewString()
 	h.send(t, assessmentID, "key-"+assessmentID)
 
-	// Dihentikan segera setelah kegagalan pertama tercatat.
+	// Stopped as soon as the first failure is recorded.
 	if err := h.runUntil(t, 60*time.Second, func() bool {
 		return h.attemptsOf(t, assessmentID) >= 1
 	}); err != nil {
@@ -582,8 +585,8 @@ func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 		t.Skipf("the worker reached %d attempts before it could be stopped; the race is too tight to test here", got)
 	}
 
-	// Klaimnya harus sudah dilepas, kalau tidak pengiriman berikutnya akan
-	// dilewati sebagai duplikat dan pekerjaannya berhenti selamanya.
+	// The claim must have been released, otherwise the next delivery is
+	// skipped as a duplicate and the job stops forever.
 	var claims int
 	if err := h.pool.QueryRow(h.ctx,
 		`SELECT count(*) FROM processed_messages`).Scan(&claims); err != nil {
@@ -593,7 +596,7 @@ func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 		t.Fatalf("%d claims survived the shutdown; the job can never be retried", claims)
 	}
 
-	// Dinyalakan lagi, dan kali ini dibiarkan sampai menyerah.
+	// Started again, and this time left to run until it gives up.
 	h.restart(t)
 	if err := h.runUntil(t, 90*time.Second, func() bool {
 		return h.statusOf(t, assessmentID) == llmworker.StatusDead
@@ -609,7 +612,7 @@ func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	}
 }
 
-// attemptsOf membaca penghitung percobaan, atau -1 bila pekerjaannya belum ada.
+// attemptsOf reads the attempt counter, or -1 if the job does not exist yet.
 func (h *harness) attemptsOf(t *testing.T, aggregateID string) int {
 	t.Helper()
 
@@ -622,24 +625,25 @@ func (h *harness) attemptsOf(t *testing.T, aggregateID string) int {
 	return attempts
 }
 
-// TestAnUnusableRequestTellsWhoeverIsWaiting adalah F6 yang menemukannya.
+// TestAnUnusableRequestTellsWhoeverIsWaiting is the one F6 found.
 //
-// nutrition-svc dinyalakan sementara llm-worker belum dibangun ulang. Worker
-// lama tidak mengenal MealGuideRequested, melewatinya, dan panduan itu tetap
-// pending SELAMANYA - tanpa galat, tanpa status yang berubah, hanya satu baris
-// log yang harus kebetulan dibaca seseorang. Kesenjangan versi seperti itu
-// terjadi di setiap penggelaran bertahap.
+// nutrition-svc was started while llm-worker had not been rebuilt. The old
+// worker did not know MealGuideRequested, skipped it, and that guide stayed
+// pending FOREVER - no error, no status change, only one log line someone had
+// to happen to read. Version gaps like that happen in every rolling
+// deployment.
 //
-// Kini yang menunggunya diberi tahu lewat DLQ, memakai agregat dari header dan
-// kunci partisi pesannya - persis yang sudah dibaca setiap konsumen.
+// Now whoever is waiting is told through the DLQ, using the aggregate from the
+// message's header and partition key - exactly what every consumer already
+// reads.
 func TestAnUnusableRequestTellsWhoeverIsWaiting(t *testing.T) {
 	h := newHarness(t)
 
 	guideID := uuid.NewString()
 
-	// Envelope yang TIDAK memuat permintaan LLM apa pun. Bentuknya sah,
-	// kuncinya ada, tetapi payload-nya bukan sesuatu yang worker ini kenal -
-	// persis keadaan worker lama yang bertemu jenis pekerjaan baru.
+	// An envelope that holds NO LLM request at all. Its shape is valid, its
+	// key is present, but its payload is nothing this worker knows - exactly
+	// the state of an old worker meeting a new job kind.
 	env := &eventsv1.Envelope{
 		EventId:        uuid.NewString(),
 		OccurredAt:     timestamppb.Now(),
@@ -669,8 +673,8 @@ func TestAnUnusableRequestTellsWhoeverIsWaiting(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	// Satu event gagal, membawa agregat yang benar sehingga konsumen yang
-	// menunggu bisa mengenalinya.
+	// One failure event, carrying the right aggregate so the waiting consumer
+	// can recognise it.
 	if got := h.dlqEventsFor(t, guideID); got != 1 {
 		t.Fatalf("the waiting aggregate was told %d times, want exactly 1", got)
 	}
@@ -685,24 +689,23 @@ func TestAnUnusableRequestTellsWhoeverIsWaiting(t *testing.T) {
 		t.Errorf("the failure names aggregate type %q; consumers filter on it", aggregateType)
 	}
 
-	// Dan TIDAK ada pekerjaan yang dibuat: tidak ada yang bisa dikerjakan.
+	// And NO job is created: there is nothing to work on.
 	if got := h.countJobs(t, guideID); got != 0 {
 		t.Errorf("%d jobs were created for a request nobody understands", got)
 	}
 }
 
-// TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue menjaga jalur tanpa alamat.
+// TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue guards the path without an
+// address.
 //
-// Tanpa header aggregate_type, tidak ada konsumen yang bisa mengenali event
-// gagalnya - setiap konsumen menyaring justru pada header itu. Menulis baris
-// outbox yang tidak bisa dikenali siapa pun lebih buruk daripada tidak menulis:
-// ia menambah pesan yang setiap konsumen bongkar lalu buang.
+// Without the aggregate_type header, no consumer can recognise the failure event - every
+// consumer filters precisely on that header. Writing an outbox row nobody can recognise is
+// worse than not writing: it adds a message every consumer unpacks and then discards.
 //
-// Pesan TANPA KUNCI sengaja tidak diuji di sini: publisher platform ini
-// menolaknya lebih dulu ("a message with no key would lose its ordering"), jadi
-// keadaan itu tidak bisa dibuat lewat jalur yang sesungguhnya. Penjagaannya di
-// kode tetap ada untuk produsen lain, dan itu dinyatakan - bukan diuji dengan
-// jalur palsu yang membuktikan hal lain.
+// A message WITHOUT A KEY is deliberately not tested here: this platform's publisher
+// refuses it first ("a message with no key would lose its ordering"), so that state cannot
+// be produced through the real path. The guard in the code stays for other producers, and
+// that is stated - not tested with a fake path that proves something else.
 func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) {
 	addr := brokers(t)
 	h := newHarnessInGroup(t, "unaddressed-"+uuid.NewString())
@@ -723,8 +726,8 @@ func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) 
 
 	before := h.totalOutboxRows(t)
 
-	// Kunci ADA - publisher platform ini mensyaratkannya - tetapi headernya
-	// tidak, dan tanpa header itu tidak ada konsumen yang bisa mengenalinya.
+	// The key IS present - this platform's publisher requires it - but the
+	// header is not, and without that header no consumer can recognise it.
 	if _, err := kafka.NewPublisher(h.producer).Publish(h.ctx, []kafka.Message{{
 		Topic: h.topic,
 		Key:   []byte(uuid.NewString()),
@@ -733,12 +736,12 @@ func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) 
 		t.Fatalf("publishing: %v", err)
 	}
 
-	// Worker dijalankan untuk waktu tertentu lalu dihentikan.
+	// The worker is run for a fixed time and then stopped.
 	//
-	// runUntil tidak dipakai di sini: ia menunggu sesuatu TERJADI, sementara
-	// yang harus dibuktikan justru bahwa tidak terjadi apa-apa. Memakainya akan
-	// menggagalkan test dengan "did not finish the work in time" - kalimat yang
-	// menggambarkan keberhasilan sebagai kegagalan.
+	// runUntil is not used here: it waits for something to HAPPEN, while what
+	// has to be proven is precisely that nothing happens. Using it would fail
+	// the test with "did not finish the work in time" - a sentence describing
+	// success as failure.
 	runCtx, cancel := context.WithTimeout(h.ctx, 10*time.Second)
 	defer cancel()
 
@@ -747,8 +750,8 @@ func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) 
 
 	select {
 	case err := <-stopped:
-		// Berhenti karena waktunya habis adalah yang diharapkan; berhenti
-		// karena galat berarti worker macet pada pesan ini.
+		// Stopping because the time ran out is what is expected; stopping because
+		// of an error means the worker is stuck on this message.
 		if err != nil {
 			t.Fatalf("the worker stopped with an error on an unaddressable message: %v", err)
 		}
@@ -760,14 +763,13 @@ func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) 
 		t.Errorf("%d outbox rows were written for a message nobody can be told about", after-before)
 	}
 
-	// Dan yang sesungguhnya membedakan: OFFSET-NYA MAJU.
+	// And the thing that really tells them apart: THE OFFSET ADVANCES.
 	//
-	// Tanpa penjaganya, announceUnusable meneruskan agregat kosong ke
-	// outbox.Write, yang menolaknya dengan galat yang sama - handle
-	// mengembalikan galat, offset DITAHAN, dan pesan yang tidak bisa
-	// dialamatkan itu dikirim ulang selamanya, menyumbat antrean untuk semua
-	// orang. Jumlah baris outbox tidak bisa membedakan keduanya; hanya ini
-	// yang bisa.
+	// Without its guard, announceUnusable passes an empty aggregate to
+	// outbox.Write, which refuses it with the same error - handle returns the
+	// error, the offset is HELD, and that unaddressable message is redelivered
+	// forever, clogging the queue for everyone. The outbox row count cannot
+	// tell the two apart; only this can.
 	h.leaveGroup()
 
 	second, err := kafka.NewConsumer(
@@ -789,7 +791,7 @@ func TestAnUnusableRequestWithNoAggregateTypeDoesNotBlockTheQueue(t *testing.T) 
 	}
 }
 
-// dlqEventsFor menghitung event gagal untuk sebuah agregat.
+// dlqEventsFor counts the failure events for an aggregate.
 func (h *harness) dlqEventsFor(t *testing.T, aggregateID string) int {
 	t.Helper()
 
@@ -812,15 +814,15 @@ func (h *harness) totalOutboxRows(t *testing.T) int {
 	return n
 }
 
-// errProviderDown adalah kegagalan penyedia yang BUKAN kuota: jalur coba-ulang
-// lalu dead. Kuota punya jalurnya sendiri (ADR-025, test di bawah).
+// errProviderDown is a provider failure that is NOT quota: the retry-then-dead
+// path. Quota has its own path (ADR-025, the test below).
 var errProviderDown = errors.New("fake provider is down")
 
-// TestAQuotaRefusalParksTheJobInsteadOfKillingIt adalah ADR-025 / B30.
+// TestAQuotaRefusalParksTheJobInsteadOfKillingIt is ADR-025 / B30.
 //
-// Penyedia menolak karena kuota; pekerjaan TIDAK boleh mati, TIDAK boleh
-// menghabiskan percobaan, dan harus selesai sendiri begitu kuotanya pulih -
-// tanpa restart, tanpa tangan manusia.
+// The provider refuses on quota grounds; the job must NOT die, must NOT
+// consume attempts, and has to finish on its own once the quota recovers -
+// without a restart, without a human hand.
 func TestAQuotaRefusalParksTheJobInsteadOfKillingIt(t *testing.T) {
 	h := newHarness(t)
 	h.provider.Err = llm.ErrRateLimited
@@ -828,8 +830,8 @@ func TestAQuotaRefusalParksTheJobInsteadOfKillingIt(t *testing.T) {
 	assessmentID := uuid.NewString()
 	h.send(t, assessmentID, "key-"+assessmentID)
 
-	// Diparkir: baris pekerjaan ada, klaimnya sudah dilepas, dan percobaannya
-	// tetap nol - bukan satu.
+	// Parked: the job row exists, its claim has been released, and its
+	// attempts are still zero - not one.
 	if err := h.runUntil(t, 60*time.Second, func() bool {
 		if h.countJobs(t, assessmentID) != 1 {
 			return false
@@ -849,7 +851,8 @@ func TestAQuotaRefusalParksTheJobInsteadOfKillingIt(t *testing.T) {
 		t.Fatalf("a quota refusal left the job %s", got)
 	}
 
-	// Kuota pulih. Worker yang sama, tanpa restart, harus menyelesaikannya.
+	// The quota recovers. The same worker, without a restart, has to finish
+	// it.
 	h.provider.SetErr(nil)
 	if err := h.runUntil(t, 60*time.Second, func() bool {
 		return h.statusOf(t, assessmentID) == llmworker.StatusCompleted

@@ -23,24 +23,24 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Scope adalah ruang lingkup idempotensi worker ini.
+// Scope is the idempotency scope of this worker.
 //
-// Ia tetap, dan itu penting: mengubahnya berarti seluruh pekerjaan yang sudah
-// pernah dikerjakan terlihat belum pernah, dan semuanya dikerjakan ulang.
+// It is fixed, and that matters: changing it makes every job ever done look
+// as if it had never been done, and all of it is done again.
 const Scope = "llm-worker"
 
-// MaxAttempts adalah berapa kali sebuah pesan dicoba sebelum masuk antrean
-// surat mati.
+// MaxAttempts is how many times a message is tried before it goes to the
+// dead-letter queue.
 const MaxAttempts = 3
 
-// notYetInTheEvent menandai bidang prompt yang belum dibawa eventnya.
+// notYetInTheEvent marks a prompt field the event does not carry yet.
 //
-// Ia dinyatakan apa adanya, bukan diisi tebakan. Tebakan di sini akan sampai ke
-// model sebagai fakta tentang seseorang, dan laporan yang dihasilkannya akan
-// terlihat seperti laporan biasa. F3-10 melengkapi eventnya.
+// It is stated as it is, not filled with a guess. A guess here would reach the
+// model as a fact about a person, and the report it produces would look like an
+// ordinary report. F3-10 completes the event.
 const notYetInTheEvent = "not yet carried by the event"
 
-// Consumer membaca llm.jobs dan mengerjakannya.
+// Consumer reads llm.jobs and works on them.
 type Consumer struct {
 	client   *kgo.Client
 	pool     pg.Beginner
@@ -49,27 +49,28 @@ type Consumer struct {
 	jobs     *Repository
 	log      *slog.Logger
 
-	// metrics boleh nil. Worker tanpa metrik mencatat lebih sedikit, tetapi
-	// tidak berperilaku lain - dan memaksanya wajib akan membuat test harus
-	// menyiapkan meter yang tidak diuji apa pun.
+	// metrics may be nil. A worker without metrics records less, but does not
+	// behave differently - and making it mandatory would force tests to set up
+	// a meter that tests nothing.
 	metrics *Metrics
 
-	// cooldown menentukan berapa lama worker berhenti mengambil pekerjaan
-	// setelah penyedia menolak karena kuota (ADR-025). Argumennya jumlah
-	// penolakan beruntun; nol setelah satu jawaban berhasil.
+	// cooldown determines how long the worker stops taking jobs after the
+	// provider refuses on quota grounds (ADR-025). Its argument is the number
+	// of consecutive refusals; zero after one successful answer.
 	cooldown func(consecutive int) time.Duration
 
-	// quotaHits menghitung penolakan kuota beruntun. Hanya disentuh loop Run.
+	// quotaHits counts consecutive quota refusals. Touched only by the Run
+	// loop.
 	quotaHits int
 }
 
-// DefaultQuotaCooldown adalah kebijakan bawaan: satu menit, berlipat dua
-// setiap penolakan beruntun, paling lama lima belas menit.
+// DefaultQuotaCooldown is the default policy: one minute, doubling with
+// every consecutive refusal, at most fifteen minutes.
 //
-// Satu menit karena kuota per-menit pulih dalam satu menit; lima belas menit
-// karena kuota per-hari tidak pulih berapa pun lamanya menunggu, dan satu
-// permintaan gagal setiap lima belas menit adalah harga yang murah untuk
-// pekerjaan yang tidak pernah mati.
+// One minute because a per-minute quota recovers within a minute; fifteen
+// minutes because a per-day quota does not recover however long one waits,
+// and one failed request every fifteen minutes is a cheap price for jobs
+// that never die.
 func DefaultQuotaCooldown(consecutive int) time.Duration {
 	const base, ceiling = time.Minute, 15 * time.Minute
 	if consecutive <= 1 {
@@ -82,7 +83,7 @@ func DefaultQuotaCooldown(consecutive int) time.Duration {
 	return d
 }
 
-// NewConsumer merangkai worker.
+// NewConsumer assembles the worker.
 func NewConsumer(
 	client *kgo.Client,
 	pool pg.Beginner,
@@ -109,8 +110,8 @@ func NewConsumer(
 	}, nil
 }
 
-// WithQuotaCooldown mengganti kebijakan jeda kuota; dipakai test supaya tidak
-// menunggu satu menit.
+// WithQuotaCooldown replaces the quota cooldown policy; used by tests so they
+// need not wait a minute.
 func (c *Consumer) WithQuotaCooldown(f func(consecutive int) time.Duration) *Consumer {
 	if f != nil {
 		c.cooldown = f
@@ -118,47 +119,47 @@ func (c *Consumer) WithQuotaCooldown(f func(consecutive int) time.Duration) *Con
 	return c
 }
 
-// WithMetrics memasang instrumen antrean (F3-15).
+// WithMetrics installs the queue instruments (F3-15).
 //
-// Terpisah dari NewConsumer supaya test tidak perlu menyiapkan meter yang tidak
-// menguji apa pun, dan supaya worker tetap bisa berjalan saat telemetri gagal
-// disiapkan - metrik yang hilang jauh lebih ringan akibatnya daripada worker
-// yang menolak start.
+// Separate from NewConsumer so tests need not set up a meter that tests
+// nothing, and so the worker can still run when telemetry fails to set up -
+// missing metrics are far lighter in consequence than a worker that refuses to
+// start.
 func (c *Consumer) WithMetrics(m *Metrics) *Consumer {
 	c.metrics = m
 	return c
 }
 
-// Run membaca sampai ctx selesai.
+// Run reads until ctx is done.
 //
-// Matinya rapi, dan "rapi" punya arti yang tepat di sini: pekerjaan yang sedang
-// berjalan diselesaikan, offset-nya dikomit, DAN BARU kemudian loop-nya
-// berhenti. Berhenti di tengah tanpa mengomit berarti pekerjaan yang sudah
-// selesai dikerjakan lagi oleh proses berikutnya - tidak merusak, karena
-// idempotensi menahannya, tetapi membuang waktu penyedia yang berbayar.
+// Its shutdown is clean, and "clean" has a precise meaning here: the job in
+// progress is finished, its offset is committed, AND ONLY THEN does the loop
+// stop. Stopping midway without committing means a job already done is done
+// again by the next process - not harmful, since idempotency holds it back, but
+// a waste of paid provider time.
 func (c *Consumer) Run(ctx context.Context) error {
 	c.log.InfoContext(ctx, "llm worker started", "scope", Scope)
 
 	for {
 		if ctx.Err() != nil {
 			c.log.InfoContext(ctx, "llm worker stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan; lihat komentar Run.
+			//nolint:nilerr // A requested stop is not a failure; see the Run comment.
 			return nil
 		}
 
 		fetches := c.client.PollFetches(ctx)
 		if ctx.Err() != nil {
-			// Pembatalan saat menunggu bukan kegagalan. PollFetches
-			// mengembalikan galat konteks di sini, dan melaporkannya sebagai
-			// kerusakan akan membuat setiap shutdown yang rapi terlihat buruk.
+			// Cancellation while waiting is not a failure. PollFetches returns the
+			// context error here, and reporting it as breakage would make every
+			// clean shutdown look bad.
 			c.log.InfoContext(ctx, "llm worker stopped")
-			//nolint:nilerr // Idem: PollFetches mengembalikan galat konteks saat dibatalkan.
+			//nolint:nilerr // Likewise: PollFetches returns the context error when cancelled.
 			return nil
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(c.client, errs); len(recovered) > 0 {
 				c.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -166,8 +167,8 @@ func (c *Consumer) Run(ctx context.Context) error {
 				c.log.ErrorContext(ctx, "fetching from kafka failed",
 					"topic", e.Topic, "partition", e.Partition, "error", e.Err)
 			}
-			// Broker yang sedang memilih leader adalah keadaan sementara. Jeda
-			// pendek supaya loop tidak berputar penuh terhadap galat yang sama.
+			// A broker electing a leader is a transient state. A short pause so the
+			// loop does not spin flat out against the same error.
 			select {
 			case <-ctx.Done():
 				return nil
@@ -180,10 +181,10 @@ func (c *Consumer) Run(ctx context.Context) error {
 		rewinder := kafka.NewRewinder()
 		var pause time.Duration
 		fetches.EachRecord(func(rec *kgo.Record) {
-			// ctx.Err() diperiksa PER PESAN, bukan hanya per putaran. Satu
-			// batch bisa memuat ratusan pesan yang masing-masing menunggu
-			// jaringan puluhan detik; tanpa pemeriksaan ini, shutdown menunggu
-			// seluruh batch selesai.
+			// ctx.Err() is checked PER MESSAGE, not only per iteration. One batch
+			// can hold hundreds of messages each waiting tens of seconds on the
+			// network; without this check, shutdown waits for the whole batch to
+			// finish.
 			if ctx.Err() != nil {
 				return
 			}
@@ -192,9 +193,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			switch {
 			case err == nil:
 			case errors.As(err, &parked):
-				// Penyedia menolak karena kuota (ADR-025): pekerjaannya dilepas,
-				// offsetnya ditahan, dan worker berhenti sejenak - bukan mencatat
-				// kegagalan yang mendekatkannya ke mati.
+				// The provider refused on quota grounds (ADR-025): the job is released,
+				// its offset held, and the worker pauses briefly - rather than
+				// recording a failure that brings it closer to dead.
 				c.quotaHits++
 				if d := c.cooldown(c.quotaHits); d > pause {
 					pause = d
@@ -203,9 +204,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 					"consecutive", c.quotaHits, "cooldown", pause, "error", parked.cause)
 				rewinder.Failed(rec)
 			default:
-				// Galat lain - Postgres tidak terjangkau saat klaim, misalnya -
-				// menahan offset supaya pesannya datang lagi. Sebelum ini offset
-				// tetap dikomit dan pekerjaannya hilang diam-diam.
+				// Other errors - Postgres unreachable at claim time, say - hold the
+				// offset so the message comes back. Before this, the offset was
+				// committed anyway and the job was silently lost.
 				c.log.ErrorContext(ctx, "handling a job failed",
 					"offset", rec.Offset, "partition", rec.Partition, "error", err)
 				rewinder.Failed(rec)
@@ -217,8 +218,8 @@ func (c *Consumer) Run(ctx context.Context) error {
 			continue
 		}
 		if rewinder.Any() {
-			// Sama seperti konsumen lain: tidak mengomit saja tidak cukup,
-			// franz-go tidak mengirim ulang di dalam sesi yang sama.
+			// The same as the other consumers: not committing alone is not enough,
+			// franz-go does not redeliver within the same session.
 			rewinder.Rewind(c.client)
 			if pause < time.Second {
 				pause = time.Second
@@ -231,40 +232,39 @@ func (c *Consumer) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Offset dikomit SETELAH pekerjaannya selesai, bukan berdasarkan waktu.
+		// The offset is committed AFTER the job is finished, not on a timer.
 		//
-		// Auto-commit menandai pesan selesai berdasarkan jam: pekerjaan yang
-		// gagal di tengah jalan tetap tercatat selesai, dan pesannya tidak
-		// pernah datang lagi. Itulah sebabnya klien ini dibuat dengan
-		// DisableAutoCommit.
+		// Auto-commit marks messages done by the clock: a job that failed halfway
+		// is still recorded as done, and its message never comes back. That is
+		// why this client is built with DisableAutoCommit.
 		if err := c.client.CommitUncommittedOffsets(ctx); err != nil {
-			// Gagal mengomit berarti pesan yang sama akan datang lagi.
-			// Idempotensi menahannya, jadi ini bukan kerusakan - tetapi ia
-			// harus terlihat, bukan hilang.
+			// A failed commit means the same message will come back. Idempotency
+			// holds it back, so this is not breakage - but it has to be visible, not
+			// lost.
 			c.log.ErrorContext(ctx, "committing offsets failed", "error", err)
 		}
 	}
 }
 
-// handle mengerjakan satu pesan.
+// handle works on one message.
 //
-// Alurnya: klaim -> kerjakan -> simpan hasil dan event keluarnya, DALAM SATU
-// transaksi untuk bagian yang menyentuh basis data. Panggilan ke penyedia
-// sengaja berada DI LUAR transaksi: ia bisa menunggu puluhan detik, dan
-// transaksi yang menganga selama itu menahan koneksi serta kunci tanpa alasan.
+// The flow: claim -> work -> store the result and its outgoing event, IN ONE
+// transaction for the parts that touch the database. The call to the provider
+// is deliberately OUTSIDE the transaction: it can wait tens of seconds, and a
+// transaction gaping open that long holds a connection and locks for no
+// reason.
 func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
-		// Pesan yang tidak bisa dibaca tidak akan pernah bisa dibaca. Ia
-		// dilewati, bukan diulang selamanya - dan dicatat supaya bisa
-		// diselidiki.
+		// An unreadable message will never become readable. It is skipped, not
+		// retried forever - and logged so it can be investigated.
 		c.log.ErrorContext(ctx, "a message could not be decoded and was skipped",
 			"offset", rec.Offset, "error", err)
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on its span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
@@ -277,24 +277,24 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 
 	req, err := requestOf(&env)
 	if err != nil {
-		// Pesan yang jenisnya tidak dikenali tidak akan pernah bisa dikerjakan.
-		// Ia dilewati, bukan diulang selamanya - tetapi yang menunggunya DIBERI
-		// TAHU, bukan dibiarkan menunggu tanpa akhir.
+		// A message of an unrecognised kind can never be worked on. It is
+		// skipped, not retried forever - but whoever is waiting for it is TOLD,
+		// not left waiting without end.
 		c.log.ErrorContext(ctx, "a message carried no usable LLM request",
 			"event_id", env.GetEventId(), "error", err)
 		if err := c.announceUnusable(ctx, &env, rec, err); err != nil {
-			// Tetap dilewati, bukan ditahan: menahan offset untuk pesan yang
-			// memang bukan milik siapa pun menyumbat antrean selamanya (lihat
-			// test-nya). Kegagalan mengumumkannya dicatat, itu saja.
+			// Still skipped, not held: holding the offset for a message that belongs
+			// to nobody clogs the queue forever (see its test). The failure to
+			// announce it is logged, that is all.
 			c.log.ErrorContext(ctx, "an unusable request could not be announced and was skipped",
 				"event_id", env.GetEventId(), "error", err)
 		}
 		return nil
 	}
 
-	// Tahap satu: klaim. Kalau kuncinya sudah pernah dipakai, pekerjaannya
-	// sudah dikerjakan dan tidak ada yang perlu dilakukan - inilah yang
-	// menahan duplikat dari relay yang at-least-once.
+	// Stage one: claim. If the key has been used before, the job has been done
+	// and there is nothing to do - this is what holds back duplicates from the
+	// at-least-once relay.
 	claimed, job, err := c.claim(ctx, key, req)
 	if err != nil {
 		return err
@@ -308,26 +308,26 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 
 	started := time.Now()
 
-	// Tahap dua: kerjakan, dengan percobaan ulang DI DALAM PROSES.
+	// Stage two: work, with retries IN-PROCESS.
 	//
-	// Pilihan ini disengaja, dan alternatifnya sudah dicoba lalu dibuang:
-	// membiarkan offset tidak terkomit TIDAK membuat broker mengirim pesannya
-	// lagi ke konsumen yang sama - ia hanya berpengaruh setelah rebalance atau
-	// restart. Pekerjaan yang gagal akan berhenti selamanya di status failed,
-	// batas tiga percobaan tidak pernah tercapai, dan antrean surat mati tidak
-	// pernah menerima apa pun.
+	// This choice is deliberate, and the alternative was tried and discarded:
+	// leaving the offset uncommitted does NOT make the broker send the message
+	// again to the same consumer - it only takes effect after a rebalance or
+	// restart. A failed job would stop forever in the failed status, the
+	// three-attempt limit would never be reached, and the dead-letter queue would
+	// never receive anything.
 	//
-	// Memundurkan offset lewat SetOffsets bisa dilakukan, tetapi franz-go
-	// sendiri memperingatkan pemakaiannya di dalam loop PollFetches sebagai
-	// "prone to odd interactions" [franz-go@v1.21.6/pkg/kgo/consumer.go:763-778].
+	// Rewinding the offset through SetOffsets is possible, but franz-go itself
+	// warns against using it inside the PollFetches loop as "prone to odd
+	// interactions" [franz-go@v1.21.6/pkg/kgo/consumer.go:763-778].
 	//
-	// Jadi pesannya ditahan di sini sampai selesai atau menyerah. Partisinya
-	// ikut tertahan selama itu - dan justru itu yang menjaga urutan per
-	// agregat.
+	// So the message is held here until it finishes or gives up. Its partition is
+	// held along with it for that long - and that is precisely what keeps the
+	// order per aggregate.
 	return c.work(ctx, job, req, started)
 }
 
-// work mencoba pekerjaan sampai berhasil atau menyerah.
+// work tries the job until it succeeds or gives up.
 func (c *Consumer) work(
 	ctx context.Context, job *Job, req *Request, started time.Time,
 ) error {
@@ -343,18 +343,17 @@ func (c *Consumer) work(
 		}
 
 		if ctx.Err() != nil {
-			// Dimatikan di tengah percobaan. Klaimnya dilepas supaya pengiriman
-			// berikutnya - setelah restart, dengan offset yang memang belum
-			// dikomit - benar-benar mengerjakannya alih-alih melewatinya
-			// sebagai duplikat.
+			// Shut down in the middle of an attempt. The claim is released so the
+			// next delivery - after a restart, with the offset indeed uncommitted -
+			// really works on it instead of skipping it as a duplicate.
 			c.metrics.Observe(ctx, OutcomeAbandoned, time.Since(started))
 			return c.abandon(ctx, job, genErr)
 		}
 
 		if errors.Is(genErr, llm.ErrRateLimited) {
-			// Kuota, bukan kegagalan pekerjaan (ADR-025). Klaimnya dilepas
-			// supaya pengiriman ulang mengerjakannya lagi, penghitung percobaan
-			// tidak disentuh, dan loop Run yang memutuskan berapa lama diam.
+			// Quota, not a job failure (ADR-025). The claim is released so the
+			// redelivery works on it again, the attempt counter is untouched, and
+			// the Run loop decides how long to stay quiet.
 			c.metrics.Observe(ctx, OutcomeParked, time.Since(started))
 			if err := c.release(ctx, job); err != nil {
 				return err
@@ -382,20 +381,20 @@ func (c *Consumer) work(
 	return nil
 }
 
-// retryDelay adalah jeda sebelum percobaan berikutnya.
+// retryDelay is the pause before the next attempt.
 //
-// Pendek, karena penyedianya sendiri sudah mencoba ulang dengan backoff yang
-// lebih panjang di dalam. Yang ditangani di sini adalah kegagalan yang lolos
-// dari lapisan itu - dan menunggu lama untuknya hanya menahan partisi.
+// Short, because the provider itself already retries with a longer backoff
+// inside. What is handled here is the failures that got past that layer -
+// and waiting long for them only holds the partition.
 func retryDelay(attempt int) time.Duration {
 	return time.Duration(attempt+1) * 500 * time.Millisecond
 }
 
-// abandon melepas pekerjaan yang terhenti karena prosesnya dimatikan.
+// abandon releases a job halted because the process was shut down.
 //
-// Ia dijalankan dengan context terpisah: ctx pemanggil sudah dibatalkan, dan
-// memakainya berarti pelepasannya sendiri gagal - meninggalkan klaim yang
-// menutup kuncinya selamanya.
+// It runs with a separate context: the caller's ctx is already cancelled,
+// and using it would make the release itself fail - leaving a claim that
+// closes the key forever.
 func (c *Consumer) abandon(ctx context.Context, job *Job, cause error) error {
 	c.log.WarnContext(ctx, "a job was abandoned mid-flight and will be retried after restart",
 		"job_id", job.ID, "attempts", job.Attempts, "error", cause)
@@ -403,12 +402,11 @@ func (c *Consumer) abandon(ctx context.Context, job *Job, cause error) error {
 	return c.release(ctx, job)
 }
 
-// release melepas klaim sebuah pekerjaan supaya pengiriman berikutnya
-// mengerjakannya lagi, alih-alih dilewati sebagai duplikat.
+// release lets go of a job's claim so the next delivery works on it again,
+// instead of skipping it as a duplicate.
 //
-// Context terpisah: pemanggilnya bisa datang dengan ctx yang sudah dibatalkan
-// (shutdown), dan pelepasan yang gagal meninggalkan klaim yang menutup kuncinya
-// selamanya.
+// A separate context: the caller may arrive with an already cancelled ctx
+// (shutdown), and a failed release leaves a claim that closes the key forever.
 func (c *Consumer) release(ctx context.Context, job *Job) error {
 	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -422,7 +420,8 @@ func (c *Consumer) release(ctx context.Context, job *Job) error {
 	})
 }
 
-// parkedError menandai pekerjaan yang dilepas karena kuota penyedia habis.
+// parkedError marks a job released because the provider's quota is
+// exhausted.
 type parkedError struct{ cause error }
 
 func (e *parkedError) Error() string {
@@ -431,7 +430,7 @@ func (e *parkedError) Error() string {
 
 func (e *parkedError) Unwrap() error { return e.cause }
 
-// claim membuat pekerjaan baru bila kuncinya belum pernah dipakai.
+// claim creates a new job if its key has never been used.
 func (c *Consumer) claim(
 	ctx context.Context, key string, req *Request,
 ) (claimed bool, job *Job, err error) {
@@ -449,11 +448,10 @@ func (c *Consumer) claim(
 			return nil
 		}
 
-		// Pekerjaan yang sudah ada dengan kunci ini dipakai kembali, bukan
-		// dibuat baru. Ia ada kalau percobaan sebelumnya terhenti di tengah -
-		// proses mati saat sedang mencoba ulang - dan penghitung percobaannya
-		// harus menumpuk di baris yang sama, kalau tidak batas tiga kali tidak
-		// akan pernah tercapai.
+		// An existing job with this key is reused, not created anew. It exists if
+		// a previous attempt was halted midway - the process died while retrying
+		// - and its attempt counter has to accumulate on the same row, otherwise
+		// the limit of three is never reached.
 		existing, found, err := c.jobs.ByKey(ctx, q, key)
 		if err != nil {
 			return err
@@ -486,25 +484,26 @@ func (c *Consumer) claim(
 func (c *Consumer) generate(
 	ctx context.Context, req *Request,
 ) (*llm.Response, error) {
-	// Templatnya dipilih permintaan, bukan ditetapkan di sini: satu worker
-	// mengerjakan personalisasi, kurikulum, laporan kelulusan, dan balasan
-	// chat, dan masing-masing punya prompt sendiri.
+	// The template is chosen by the request, not fixed here: one worker
+	// handles personalisation, curricula, graduation reports, and chat
+	// replies, and each has its own prompt.
 	tmpl, err := c.prompts.Latest(req.Template)
 	if err != nil {
 		return nil, err
 	}
 
-	// Data promptnya masih tipis: event-nya belum membawa profil dan riwayat.
-	// Bidang yang belum ada dinyatakan APA ADANYA alih-alih diisi tebakan -
-	// tebakan di sini akan sampai ke model sebagai fakta tentang seseorang.
+	// The prompt data is still thin: the event does not carry the profile and
+	// history yet. Fields not yet present are stated AS THEY ARE instead of
+	// being filled with a guess - a guess here would reach the model as a fact
+	// about a person.
 	rendered, err := tmpl.Render(req.Data)
 	if err != nil {
 		return nil, err
 	}
 
-	// Panggilan ke penyedia adalah bagian terlama dari trace mana pun yang
-	// melewati worker ini; ia diberi span sendiri supaya durasinya terbaca
-	// terpisah dari klaim dan penyimpanan hasilnya.
+	// The call to the provider is the longest part of any trace passing
+	// through this worker; it gets its own span so its duration reads
+	// separately from the claim and the storing of the result.
 	ctx, span := telemetry.StartSpan(ctx, "llm.generate",
 		attribute.String("selaras.llm.provider", c.provider.Name()),
 		attribute.String("selaras.llm.template", tmpl.ID()))
@@ -515,8 +514,9 @@ func (c *Consumer) generate(
 		Temperature:   0.7,
 	})
 	if err == nil {
-		// Token dicatat di tiga tempat yang masing-masing punya pembaca: span
-		// (satu trace), metrik (agregat FinOps), dan log (satu pekerjaan).
+		// Tokens are recorded in three places that each have their own reader:
+		// the span (one trace), the metrics (the FinOps aggregate), and the log
+		// (one job).
 		span.SetAttributes(
 			attribute.Int("selaras.llm.tokens.input", answer.Usage.InputTokens),
 			attribute.Int("selaras.llm.tokens.output", answer.Usage.OutputTokens),
@@ -531,16 +531,16 @@ func (c *Consumer) generate(
 	return answer, err
 }
 
-// recordSuccess menyimpan hasil dan menerbitkan event selesainya.
+// recordSuccess stores the result and publishes its completion event.
 func (c *Consumer) recordSuccess(
 	ctx context.Context, job *Job,
 	req *Request, answer *llm.Response,
 ) error {
 	if answer.Truncated() {
-		// Jawaban terpotong bukan jawaban. Menyimpannya sebagai laporan utuh
-		// akan menampilkan analisis setengah jadi seolah lengkap.
-		// Jawaban terpotong tidak akan membaik dengan diulang: promptnya sama,
-		// modelnya sama, batasnya sama. Ia langsung menyerah.
+		// A truncated answer is not an answer. Storing it as a complete report
+		// would display a half-finished analysis as if it were whole. A truncated
+		// answer will not improve by retrying: the same prompt, the same model,
+		// the same limit. It gives up immediately.
 		return c.recordFailure(ctx, job, req,
 			fmt.Errorf("%w: the provider stopped at %q", llm.ErrTruncated, answer.FinishReason), true)
 	}
@@ -556,11 +556,11 @@ func (c *Consumer) recordSuccess(
 	})
 }
 
-// completionEvent menyusun event hasil, sesuai jenis pekerjaannya.
+// completionEvent composes the result event, according to the job kind.
 //
-// Jenis event yang berbeda mendarat di topic yang berbeda (lihat
-// outbox.TopicFor), dan itu yang membuat konsumen assessment tidak perlu
-// menyaring hasil coaching dan sebaliknya.
+// Different event kinds land on different topics (see outbox.TopicFor), and
+// that is what spares the assessment consumer from filtering out coaching
+// results and vice versa.
 func completionEvent(job *Job, req *Request, answer *llm.Response) *eventsv1.Envelope {
 	env := &eventsv1.Envelope{
 		EventId:       job.ID.String(),
@@ -611,8 +611,8 @@ func completionEvent(job *Job, req *Request, answer *llm.Response) *eventsv1.Env
 	return env
 }
 
-// recordFailure mencatat kegagalan, dan menerbitkan event gagal saat pekerjaan
-// itu sudah tidak akan dicoba lagi.
+// recordFailure records a failure, and publishes the failure event once the
+// job will not be tried again.
 func (c *Consumer) recordFailure(
 	ctx context.Context, job *Job,
 	req *Request, cause error, dead bool,
@@ -629,9 +629,9 @@ func (c *Consumer) recordFailure(
 			return nil
 		}
 
-		// Event gagal hanya diterbitkan saat pekerjaannya benar-benar berhenti
-		// dicoba. Menerbitkannya di setiap kegagalan akan membuat pemanggil
-		// mengira pekerjaannya sudah menyerah padahal masih akan diulang.
+		// The failure event is published only when the job really stops being
+		// tried. Publishing it on every failure would make callers think the job
+		// has given up when it will still be retried.
 		return outbox.NewWriter(q).Write(ctx, req.AggregateType, req.AggregateID, &eventsv1.Envelope{
 			EventId:       job.ID.String(),
 			OccurredAt:    timestamppb.Now(),
@@ -646,12 +646,12 @@ func (c *Consumer) recordFailure(
 	})
 }
 
-// idempotencyKeyOf memilih kunci yang dipakai untuk menahan duplikat.
+// idempotencyKeyOf picks the key used to hold back duplicates.
 //
-// Kunci yang dikirim pemanggil menang; kalau tidak ada, event_id yang dipakai.
-// Keduanya perlu: yang pertama membuat permintaan ulang dari pengguna yang sama
-// tidak menghasilkan dua pekerjaan, yang kedua membuat pengiriman ulang dari
-// relay tidak menghasilkan dua pekerjaan.
+// A key sent by the caller wins; if there is none, the event_id is used. Both
+// are needed: the first keeps a repeated request from the same user from
+// producing two jobs, the second keeps a redelivery from the relay from
+// producing two jobs.
 func idempotencyKeyOf(env *eventsv1.Envelope) string {
 	if key := env.GetIdempotencyKey().GetValue(); key != "" {
 		return key
@@ -659,37 +659,35 @@ func idempotencyKeyOf(env *eventsv1.Envelope) string {
 	return env.GetEventId()
 }
 
-// announceUnusable memberi tahu yang menunggu bahwa hasilnya tidak akan datang.
+// announceUnusable tells whoever is waiting that the result will not come.
 //
-// Pesan yang jenisnya tidak dikenali tidak akan pernah bisa dikerjakan, dan
-// melewatinya saja membuat agregat yang menunggunya menunggu SELAMANYA - tanpa
-// galat, tanpa status yang berubah, tanpa apa pun selain satu baris log yang
-// harus kebetulan dibaca seseorang.
+// A message of an unrecognised kind can never be worked on, and merely skipping
+// it leaves the aggregate waiting for it waiting FOREVER - no error, no status
+// change, nothing but one log line someone has to happen to read.
 //
-// Itu bukan kemungkinan teoretis: ia terjadi saat nutrition-svc dinyalakan
-// dengan llm-worker yang belum dibangun ulang. Worker lama tidak mengenal
-// MealGuideRequested, melewatinya, dan panduan itu tetap pending selamanya.
-// Kesenjangan versi seperti itu terjadi di setiap penggelaran bertahap.
+// That is not a theoretical possibility: it happened when nutrition-svc was
+// started with an llm-worker that had not been rebuilt. The old worker did not
+// know MealGuideRequested, skipped it, and that guide stayed pending forever.
+// Version gaps like that happen in every rolling deployment.
 //
-// Yang diterbitkan adalah LlmJobFailed ke DLQ, dengan agregat diambil dari
-// header dan kunci partisi pesannya - persis yang sudah dibaca setiap konsumen
-// untuk mengenali kegagalan. Tanpa keduanya, tidak ada yang bisa diberi tahu,
-// dan pesannya hanya dicatat.
+// What is published is LlmJobFailed to the DLQ, with the aggregate taken from
+// the message's header and partition key - exactly what every consumer already
+// reads to recognise a failure. Without both, there is nobody to tell, and the
+// message is only logged.
 func (c *Consumer) announceUnusable(
 	ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record, cause error,
 ) error {
-	// Pesan yang tidak membawa agregat TIDAK diperiksa lagi di sini.
+	// A message without an aggregate is NOT checked again here.
 	//
-	// outbox.Write sudah menolaknya dengan syarat yang sama persis, dan
-	// menyalinnya ke sini hanya menghasilkan cabang kedua yang tidak bisa
-	// dibedakan test mana pun - saya menulisnya, lalu mutasi membuktikan
-	// menghapusnya tidak mengubah apa-apa. Satu tempat penegakan, bukan dua
-	// yang akan menyimpang.
+	// outbox.Write already refuses it under exactly the same condition, and
+	// copying that here only produces a second branch no test can distinguish
+	// - I wrote it, and then a mutation proved that removing it changed
+	// nothing. One place of enforcement, not two that will drift.
 	//
-	// Yang terjadi tanpa agregat: Write mengembalikan galat, galatnya dicatat
-	// beserta offset dan event_id, dan offset tetap MAJU - worker ini memang
-	// mengomit setelah setiap batch, karena percobaan ulangnya di dalam proses
-	// (F3-13), bukan lewat pengiriman ulang. Antreannya tidak tersumbat.
+	// What happens without an aggregate: Write returns an error, the error is
+	// logged with the offset and event_id, and the offset still ADVANCES -
+	// this worker does commit after every batch, because its retries are
+	// in-process (F3-13), not through redelivery. The queue is not clogged.
 	aggregateType := headerOf(rec, "aggregate_type")
 	aggregateID := string(rec.Key)
 

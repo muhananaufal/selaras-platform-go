@@ -9,56 +9,57 @@ import (
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 )
 
-// fieldLanguage adalah nama bidang bahasa di setiap templat prompt.
+// fieldLanguage is the name of the language field in every prompt template.
 //
-// Ia konstanta karena nama bidang templat adalah kontrak antara kode ini dan
-// berkas .tmpl: salah ketik di salah satunya menghasilkan "<no value>" yang
-// sampai ke model, atau - dengan missingkey=error - kegagalan saat render.
+// It is a constant because template field names are a contract between this
+// code and the .tmpl files: a typo in either produces "<no value>" reaching
+// the model, or - with missingkey=error - a failure at render time.
 const fieldLanguage = "Language"
 
-// Jenis pekerjaan yang dikenali worker.
+// The job kinds the worker recognises.
 const (
 	KindCurriculum = "curriculum"
 	KindChatReply  = "chat_reply"
 	KindMealGuide  = "daily_guide"
 
-	// KindGraduation menumpang topic dan pesan yang sama dengan kurikulum;
-	// pembedanya penanda di bidang difficulty. Lihat GraduationMarker.
+	// KindGraduation rides on the same topic and message as the curriculum;
+	// the discriminator is the marker in the difficulty field. See
+	// GraduationMarker.
 	KindGraduation = "graduation_report"
 )
 
-// GraduationMarker membedakan permintaan laporan kelulusan dari permintaan
-// kurikulum di topic yang sama.
+// GraduationMarker tells a graduation report request apart from a
+// curriculum request on the same topic.
 //
-// Nilainya HARUS sama dengan yang dipakai coaching-svc saat menerbitkannya.
-// Kalau tidak, permintaan laporan akan dikerjakan sebagai kurikulum - dan
-// program mendapat pekan-pekan baru alih-alih laporan.
+// Its value MUST match what coaching-svc uses when publishing. Otherwise a
+// report request is worked on as a curriculum - and the program gets new
+// weeks instead of a report.
 const GraduationMarker = "__graduation_report__"
 
-// Request adalah permintaan pekerjaan LLM, apa pun jenisnya.
+// Request is an LLM job request, whatever its kind.
 //
-// Satu bentuk untuk semua, bukan satu tipe per jenis: yang membedakannya hanya
-// prompt dan tujuan hasilnya, dan tipe terpisah akan menggandakan seluruh alur
-// klaim, percobaan ulang, dan pencatatan.
+// One shape for all, not one type per kind: what sets them apart is only the
+// prompt and the destination of the result, and separate types would duplicate
+// the whole claim, retry, and recording flow.
 type Request struct {
 	Kind string
 
-	// AggregateType dan AggregateID menyebutkan siapa yang menunggu hasilnya.
+	// AggregateType and AggregateID name who is waiting for the result.
 	AggregateType string
 	AggregateID   string
 
-	// Template adalah nama templat prompt yang dipakai.
+	// Template is the name of the prompt template used.
 	Template string
 
-	// Data mengisi templatnya.
+	// Data fills the template.
 	Data map[string]any
 }
 
-// requestOf membaca permintaan dari envelope-nya.
+// requestOf reads the request from its envelope.
 //
-// Envelope yang jenisnya tidak dikenali menghasilkan galat, bukan nil
-// diam-diam: mendiamkannya akan membuat pesan itu terhitung selesai tanpa
-// pernah dikerjakan, dan yang menunggunya menunggu selamanya.
+// An envelope of an unrecognised kind yields an error, not a silent nil:
+// staying silent would count that message as done without ever being worked
+// on, and whoever is waiting for it waits forever.
 func requestOf(env *eventsv1.Envelope) (*Request, error) {
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_PersonalizationRequested:
@@ -103,7 +104,8 @@ func curriculumRequest(req *eventsv1.CurriculumRequested) (*Request, error) {
 		return nil, errors.New("the request names no program")
 	}
 
-	// Laporan kelulusan menumpang pesan yang sama; penandanya di difficulty.
+	// The graduation report rides on the same message; its marker is in
+	// difficulty.
 	if req.GetDifficulty() == GraduationMarker {
 		return &Request{
 			Kind:          KindGraduation,
@@ -120,8 +122,8 @@ func curriculumRequest(req *eventsv1.CurriculumRequested) (*Request, error) {
 	}
 
 	if req.GetDifficulty() == "" {
-		// Kesulitan menentukan bentuk seluruh kurikulum. Menebaknya berarti
-		// pengguna mendapat program yang tidak ia minta.
+		// The difficulty determines the shape of the whole curriculum. Guessing
+		// it means the user gets a program they did not ask for.
 		return nil, errors.New("the request names no difficulty")
 	}
 
@@ -145,8 +147,8 @@ func chatReplyRequest(req *eventsv1.ChatReplyRequested) (*Request, error) {
 		return nil, errors.New("the request names no message")
 	}
 
-	// Thread coaching dan percakapan umum memakai pesan yang sama; yang
-	// membedakan tujuan hasilnya adalah coaching_thread_id.
+	// Coaching threads and general conversations use the same message; what
+	// tells the destinations apart is coaching_thread_id.
 	aggregateType := "conversation"
 	aggregateID := req.GetConversationId()
 	if threadID := req.GetCoachingThreadId(); threadID != "" {
@@ -170,26 +172,27 @@ func chatReplyRequest(req *eventsv1.ChatReplyRequested) (*Request, error) {
 	}, nil
 }
 
-// defaultCurriculumWeeks adalah panjang kurikulum yang diminta ke model.
+// defaultCurriculumWeeks is the curriculum length requested from the model.
 //
-// Empat pekan, mengikuti bentuk program di sistem lama. Ia diminta, bukan
-// dipaksakan: jumlah pekan yang benar-benar datang yang menentukan tanggal
-// akhir program (F4-18), dan model yang mengembalikan lima pekan menghasilkan
-// program lima pekan.
+// Four weeks, following the program shape of the legacy system. It is
+// requested, not enforced: the number of weeks that actually arrives
+// determines the program's end date (F4-18), and a model returning five weeks
+// yields a five-week program.
 const defaultCurriculumWeeks = 4
 
-// defaultLanguage adalah bahasa jawaban selama event-nya belum membawa
-// preferensi penggunanya.
+// defaultLanguage is the answer language while the event does not yet carry
+// the user's preference.
 //
-// Ia bawaan SEMENTARA dan disebut begitu: profil menyimpan bahasa, dan begitu
-// event membawanya, nilai inilah yang diganti - bukan ditambah cabang baru.
+// It is a PROVISIONAL default and named as such: the profile stores the
+// language, and once the event carries it, this value is what gets replaced -
+// not extended with a new branch.
 const defaultLanguage = "Bahasa Indonesia"
 
-// mealGuideContext adalah bentuk konteks yang dibawa MealGuideRequested.
+// mealGuideContext is the shape of the context carried by MealGuideRequested.
 //
-// Bidangnya diketahui, jadi ia struct dan bukan map[string]any: map memaksa
-// setiap pembacanya menebak tipe di tempat pemakaian, dan salah tebak di sini
-// akan sampai ke prompt sebagai teks yang salah bentuk.
+// Its fields are known, so it is a struct and not map[string]any: a map
+// forces every reader to guess the types at the point of use, and a wrong
+// guess here reaches the prompt as malformed text.
 type mealGuideContext struct {
 	Language     string `json:"language"`
 	HealthFocus  string `json:"health_focus"`
@@ -216,16 +219,16 @@ type mealGuideContext struct {
 	LearningHistory []string `json:"learning_history"`
 }
 
-// mealGuideRequest membaca permintaan panduan menu.
+// mealGuideRequest reads a menu guide request.
 //
-// Berbeda dari permintaan LLM lain di worker ini, konteksnya DIBACA dari event,
-// bukan diisi penanda "belum dibawa event". Itu bukan ketidakseragaman yang
-// kebetulan: konteks ini memuat catatan alergi, dan prompt tanpa catatan itu
-// meminta model menyarankan makanan kepada orang yang alergi terhadapnya.
+// Unlike the other LLM requests in this worker, its context is READ from the
+// event rather than filled with a "not yet in the event" marker. That is not an
+// accidental inconsistency: this context holds the allergy note, and a prompt
+// without that note asks the model to suggest food to someone allergic to it.
 //
-// Konteks yang tidak bisa dibaca menjadi GALAT, bukan konteks kosong. Panduan
-// yang gagal dibuat terlihat sebagai gagal; panduan yang dibuat tanpa catatan
-// alergi terlihat seperti panduan biasa.
+// An unreadable context becomes an ERROR, not an empty context. A guide that
+// failed to be produced looks failed; a guide produced without the allergy note
+// looks like an ordinary guide.
 func mealGuideRequest(req *eventsv1.MealGuideRequested) (*Request, error) {
 	if req.GetGuideId() == "" {
 		return nil, errors.New("the request names no guide")
@@ -249,9 +252,8 @@ func mealGuideRequest(req *eventsv1.MealGuideRequested) (*Request, error) {
 		AggregateID:   req.GetGuideId(),
 		Template:      "daily_guide",
 		Data: map[string]any{
-			// Catatan alergi diserahkan APA ADANYA, termasuk saat kosong.
-			// Kalimatnya sudah disiapkan supaya "tidak ada" terbaca sebagai
-			// tidak ada, bukan sebagai bidang yang hilang.
+			// The allergy note is handed over AS-IS, including when it is empty. The
+			// sentence is prepared so "none" reads as none, not as a missing field.
 			"Allergies":    orNone(parsed.Preferences.Allergies, "tidak ada catatan alergi"),
 			"HealthFocus":  orNone(parsed.HealthFocus, "kesehatan jantung umum"),
 			"DailyMission": orNone(parsed.DailyMission, "menjaga pola hidup sehat"),
@@ -276,10 +278,10 @@ func mealGuideRequest(req *eventsv1.MealGuideRequested) (*Request, error) {
 	}, nil
 }
 
-// orNone mengganti kosong dengan kalimat yang bisa dibaca model.
+// orNone replaces empty with a sentence the model can read.
 //
-// Bidang kosong di dalam prompt terbaca sebagai kekeliruan render, dan model
-// yang menemuinya cenderung mengarangnya sendiri.
+// An empty field inside a prompt reads like a render mistake, and a model
+// that meets one tends to make something up.
 func orNone(v, fallback string) string {
 	if strings.TrimSpace(v) == "" {
 		return fallback

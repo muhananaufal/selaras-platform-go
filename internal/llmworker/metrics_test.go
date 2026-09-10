@@ -11,8 +11,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
 
-// collect membaca seluruh titik data llm_tokens_total sebagai peta
-// "kind|provider|template" -> nilai.
+// collect reads every data point of llm_tokens_total as a
+// "kind|provider|template" -> value map.
 func collect(t *testing.T, reader *sdkmetric.ManualReader) map[string]int64 {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -69,7 +69,7 @@ func TestTokenUsageIsCountedByKind(t *testing.T) {
 	}
 }
 
-// Penyedia yang tidak melaporkan token tidak boleh menghasilkan deret nol.
+// A provider that reports no tokens must not produce a zero series.
 func TestUnreportedUsageLeavesNoSeries(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	meter := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("test")

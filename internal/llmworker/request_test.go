@@ -11,12 +11,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm/prompt"
 )
 
-// goldenContext adalah dokumen yang BENAR-BENAR dihasilkan nutrition-svc.
+// goldenContext is the document ACTUALLY produced by nutrition-svc.
 //
-// Ia dibaca dari testdata milik paket itu, bukan disalin ke sini sebagai
-// literal kedua. Dua salinan di dua paket akan menyimpang tanpa ada yang tahu,
-// dan yang terlihat kemudian hanyalah prompt dengan bidang kosong-kosong.
-// Dengan satu berkas, mengubah salah satu sisi membuat sisi lain gagal.
+// It is read from that package's testdata, not copied here as a second
+// literal. Two copies in two packages would drift without anyone knowing, and
+// what shows up later is only a prompt with blank fields. With one file,
+// changing either side makes the other fail.
 const goldenContext = "../nutrition/app/testdata/meal_guide_context.json"
 
 func fullMealGuideContext(t *testing.T) string {
@@ -30,14 +30,14 @@ func fullMealGuideContext(t *testing.T) string {
 	return string(raw)
 }
 
-// TestTheMealGuidePromptCarriesTheAllergyNote adalah alasan keseluruhan
-// context_json ada di dalam eventnya.
+// TestTheMealGuidePromptCarriesTheAllergyNote is the whole reason context_json
+// is inside the event.
 //
-// Permintaan LLM lain di worker ini masih memakai penanda "belum dibawa event"
-// untuk konteksnya, dan itu bisa diterima: laporan yang kurang lengkap tetap
-// bisa dibaca sebagai kurang lengkap. Panduan menu tidak begitu. Prompt yang
-// berangkat tanpa catatan alergi menghasilkan saran makanan yang terlihat sah
-// sepenuhnya, dan yang membacanya adalah orang yang alergi terhadapnya.
+// The other LLM requests in this worker still use a "not yet in the event"
+// marker for their context, and that is acceptable: an incomplete report can
+// still be read as incomplete. A menu guide cannot. A prompt that leaves
+// without the allergy note produces food advice that looks entirely valid, and
+// the person reading it is the one allergic to it.
 func TestTheMealGuidePromptCarriesTheAllergyNote(t *testing.T) {
 	req, err := mealGuideRequest(&eventsv1.MealGuideRequested{
 		GuideId:     "01930000-0000-7000-8000-000000000001",
@@ -55,9 +55,9 @@ func TestTheMealGuidePromptCarriesTheAllergyNote(t *testing.T) {
 		t.Errorf("the aggregate type is %q; the consumer filters on it", req.AggregateType)
 	}
 
-	// Prompt-nya dirender sungguhan, bukan hanya diperiksa peta datanya. Nama
-	// bidang di templat dan kunci di sini adalah kontrak yang mudah menyimpang,
-	// dan yang menyimpang diam-diam hanya terlihat sebagai prompt yang aneh.
+	// The prompt is really rendered, not just its data map inspected. The field
+	// names in the template and the keys here are a contract that drifts
+	// easily, and what drifts silently only shows up as a strange prompt.
 	rendered := render(t, req)
 
 	for _, want := range []string{
@@ -74,7 +74,7 @@ func TestTheMealGuidePromptCarriesTheAllergyNote(t *testing.T) {
 	}
 }
 
-// TestAMealGuideRequestWithoutContextIsRefused menutup jalur diamnya.
+// TestAMealGuideRequestWithoutContextIsRefused closes the silent path.
 func TestAMealGuideRequestWithoutContextIsRefused(t *testing.T) {
 	for name, req := range map[string]*eventsv1.MealGuideRequested{
 		"no guide":       {ContextJson: fullMealGuideContext(t)},
@@ -93,10 +93,10 @@ func TestAMealGuideRequestWithoutContextIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnAbsentAllergyNoteIsStatedNotLeftBlank menjaga prompt tetap terbaca.
+// TestAnAbsentAllergyNoteIsStatedNotLeftBlank keeps the prompt readable.
 //
-// Bidang kosong di dalam prompt terbaca sebagai kekeliruan render, dan model
-// yang menemuinya cenderung mengarang isinya sendiri.
+// An empty field inside a prompt reads like a render mistake, and a model
+// that meets one tends to make up its content.
 func TestAnAbsentAllergyNoteIsStatedNotLeftBlank(t *testing.T) {
 	req, err := mealGuideRequest(&eventsv1.MealGuideRequested{
 		GuideId:     "01930000-0000-7000-8000-000000000001",
@@ -114,27 +114,27 @@ func TestAnAbsentAllergyNoteIsStatedNotLeftBlank(t *testing.T) {
 		t.Error("an absent learning history rendered as a blank field")
 	}
 
-	// Bahasa jatuh ke bawaan, bukan menjadi kosong.
+	// The language falls back to the default rather than becoming empty.
 	if !strings.Contains(rendered, "BAHASA: "+defaultLanguage) &&
 		!strings.Contains(rendered, "bahasa: "+defaultLanguage) {
 		t.Errorf("the prompt names no language; it should fall back to %q", defaultLanguage)
 	}
 }
 
-// TestTheMealGuideContextMatchesWhatIsStored mengikat kedua salinannya.
+// TestTheMealGuideContextMatchesWhatIsStored binds the two copies.
 //
-// context_json di event dan generation_context di basis data HARUS berbentuk
-// sama: yang satu dipakai membuat panduannya, yang lain dipakai menjelaskan
-// panduan itu kemudian. Dua bentuk yang menyimpang berarti penjelasannya
-// menggambarkan permintaan yang berbeda dari yang benar-benar dikirim.
+// context_json in the event and generation_context in the database MUST have
+// the same shape: one is used to produce the guide, the other to explain
+// that guide later. Two drifting shapes would mean the explanation describes
+// a different request from the one actually sent.
 func TestTheMealGuideContextMatchesWhatIsStored(t *testing.T) {
 	var parsed mealGuideContext
 	if err := json.Unmarshal([]byte(fullMealGuideContext(t)), &parsed); err != nil {
 		t.Fatalf("the context shape does not parse: %v", err)
 	}
 
-	// Bidang yang paling mudah salah nama diperiksa satu per satu: kesalahan
-	// ketik pada tag JSON menghasilkan nilai kosong, bukan galat.
+	// The fields most easily misnamed are checked one by one: a typo in a JSON
+	// tag produces an empty value, not an error.
 	if parsed.Preferences.Allergies == "" {
 		t.Error("allergies did not survive parsing; check the json tag")
 	}
@@ -149,7 +149,7 @@ func TestTheMealGuideContextMatchesWhatIsStored(t *testing.T) {
 	}
 }
 
-// render menjalankan templat permintaan dengan datanya.
+// render runs the request template with its data.
 func render(t *testing.T, req *Request) string {
 	t.Helper()
 
@@ -162,8 +162,9 @@ func render(t *testing.T, req *Request) string {
 		t.Fatalf("the template %q named by the request does not exist: %v", req.Template, err)
 	}
 
-	// Render GAGAL bila templatnya menyebut bidang yang tidak ada di Data.
-	// Itulah yang membuat test ini menguji kontrak, bukan sekadar isi peta.
+	// Rendering FAILS if the template mentions a field that is not in Data.
+	// That is what makes this test exercise the contract, not merely the map's
+	// content.
 	out, err := tmpl.Render(req.Data)
 	if err != nil {
 		t.Fatalf("rendering %s with the worker's own data failed: %v", req.Template, err)

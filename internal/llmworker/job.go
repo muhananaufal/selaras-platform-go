@@ -1,9 +1,9 @@
-// Package llmworker mengerjakan permintaan LLM yang datang lewat Kafka.
+// Package llmworker performs the LLM requests that arrive through Kafka.
 //
-// Ia berdiri di antara tiga hal yang bisa gagal sendiri-sendiri: broker,
-// penyedia model, dan basis data. Yang menjaga ketiganya tetap konsisten adalah
-// dua mekanisme yang sudah ada - idempotensi di sisi masuk, outbox di sisi
-// keluar - dan paket ini yang merangkainya.
+// It stands between three things that can each fail on their own: the broker,
+// the model provider, and the database. What keeps the three consistent is two
+// mechanisms that already exist - idempotency on the way in, the outbox on the
+// way out - and this package is what wires them together.
 package llmworker
 
 import (
@@ -18,7 +18,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Job adalah satu pekerjaan yang tersimpan.
+// Job is one stored job.
 type Job struct {
 	ID            uuid.UUID
 	CreatedAt     time.Time
@@ -33,8 +33,8 @@ type Job struct {
 	Attempts      int
 }
 
-// Status yang mungkin. Nilainya ditegakkan batasan CHECK di basis data, dan
-// dinamai di sini supaya tidak ada literal yang menyimpang dari sana.
+// The possible statuses. The values are enforced by a CHECK constraint in
+// the database, and named here so no literal drifts from it.
 const (
 	StatusPending   = "pending"
 	StatusRunning   = "running"
@@ -43,21 +43,21 @@ const (
 	StatusDead      = "dead"
 )
 
-// Jenis pekerjaan.
+// Job kinds.
 const (
 	KindPersonalization = "personalization"
 )
 
-// Repository menyimpan pekerjaan.
+// Repository stores jobs.
 //
-// Ia menerima Querier di setiap metode, bukan menyimpan kolam koneksi, karena
-// setiap penulisan di sini harus bisa ikut ke dalam transaksi yang sama dengan
-// klaim idempotensi dan baris outbox-nya.
+// It takes a Querier in every method rather than holding a connection pool,
+// because every write here has to be able to join the same transaction as its
+// idempotency claim and its outbox row.
 type Repository struct{}
 
 func NewRepository() *Repository { return &Repository{} }
 
-// Create menyimpan pekerjaan baru berstatus pending.
+// Create stores a new job in the pending state.
 func (r *Repository) Create(ctx context.Context, q pg.Querier, job *Job) error {
 	if job == nil {
 		return errors.New("nil job")
@@ -94,11 +94,11 @@ func (r *Repository) Create(ctx context.Context, q pg.Querier, job *Job) error {
 	return nil
 }
 
-// Complete menyimpan hasilnya.
+// Complete stores the result.
 //
-// Ia menolak hasil kosong. Batasan CHECK di basis data juga menolaknya, dan
-// keduanya disengaja: yang di sini memberi pesan yang bisa dibaca, yang di sana
-// menjamin tidak ada jalur lain yang bisa melewatinya.
+// It refuses an empty result. The CHECK constraint in the database refuses it
+// too, and both are deliberate: the one here gives a readable message, the one
+// there guarantees no other path can get past it.
 func (r *Repository) Complete(
 	ctx context.Context, q pg.Querier,
 	id uuid.UUID, createdAt time.Time,
@@ -126,11 +126,11 @@ func (r *Repository) Complete(
 	return nil
 }
 
-// Fail mencatat percobaan yang gagal.
+// Fail records a failed attempt.
 //
-// dead menandai pekerjaan yang tidak akan dicoba lagi. Membedakannya dari
-// failed penting: yang pertama menunggu manusia, yang kedua menunggu percobaan
-// berikutnya, dan menyamakannya berarti salah satunya diperlakukan keliru.
+// dead marks a job that will not be tried again. Telling it apart from failed
+// matters: the first waits for a human, the second waits for the next attempt,
+// and conflating them means one of the two is handled wrongly.
 func (r *Repository) Fail(
 	ctx context.Context, q pg.Querier,
 	id uuid.UUID, createdAt time.Time,
@@ -152,10 +152,10 @@ func (r *Repository) Fail(
 	return nil
 }
 
-// ByKey mencari pekerjaan lewat kunci idempotensinya.
+// ByKey looks a job up by its idempotency key.
 //
-// found bernilai false kalau belum ada. Ia dipakai untuk menjawab permintaan
-// ulang dengan hasil yang sama persis, alih-alih hanya "sudah pernah".
+// found is false if there is none yet. It is used to answer a repeated
+// request with exactly the same result, instead of merely "already seen".
 func (r *Repository) ByKey(ctx context.Context, q pg.Querier, key string) (*Job, bool, error) {
 	const query = `
 		SELECT id, created_at, idempotency_key, kind, aggregate_type, aggregate_id,
@@ -180,7 +180,7 @@ func (r *Repository) ByKey(ctx context.Context, q pg.Querier, key string) (*Job,
 	return &job, true, nil
 }
 
-// truncate menjaga pesan galat tetap masuk akal ukurannya.
+// truncate keeps an error message at a sensible size.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s

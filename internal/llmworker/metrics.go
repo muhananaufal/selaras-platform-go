@@ -14,42 +14,42 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
 
-// Metrics adalah tiga angka yang menjawab "apakah antreannya sehat" (F3-15).
+// Metrics are the three numbers that answer "is the queue healthy" (F3-15).
 //
-// Tiga, bukan tiga puluh. Metrik yang tidak akan dilihat siapa pun saat ada
-// masalah hanya menambah yang harus disaring, dan yang tersisa di sini adalah
-// yang benar-benar mengubah tindakan: seberapa jauh tertinggal, berapa lama
-// satu pekerjaan, dan berapa yang gagal.
+// Three, not thirty. A metric nobody will look at when something is wrong
+// only adds to what has to be filtered out, and what remains here is what
+// actually changes an action: how far behind, how long one job takes, and how
+// many fail.
 type Metrics struct {
-	// duration mengukur berapa lama satu pekerjaan, dari klaim sampai selesai.
+	// duration measures how long one job takes, from claim to completion.
 	//
-	// Histogram, bukan rata-rata: rata-rata menyembunyikan ekor, dan ekor itulah
-	// yang membuat antrean menumpuk. Satu pekerjaan yang menunggu lima menit
-	// menahan partisinya selama itu.
+	// A histogram, not an average: an average hides the tail, and the tail is
+	// what makes the queue pile up. One job waiting five minutes holds its
+	// partition for that long.
 	duration metric.Float64Histogram
 
-	// outcomes menghitung pekerjaan menurut hasilnya.
+	// outcomes counts jobs by their result.
 	//
-	// Satu penghitung dengan atribut, bukan tiga penghitung terpisah: jumlah
-	// yang berhasil dan yang gagal harus bisa dibandingkan tanpa menjumlahkan
-	// deret yang berbeda.
+	// One counter with an attribute, not three separate counters: the number
+	// of successes and failures has to be comparable without summing different
+	// series.
 	outcomes metric.Int64Counter
 
-	// tokens menghitung token yang DILAPORKAN penyedia, per jenis (masukan,
-	// keluaran, pikiran), penyedia, dan templat. Ini angka yang FinOps
-	// (docs/finops.md) tunggu sejak F9: sebelum ini biaya per pekerjaan
-	// ditaksir dari ukuran templat dibagi empat.
+	// tokens counts the tokens the provider REPORTS, by kind (input, output,
+	// thinking), provider, and template. This is the number FinOps
+	// (docs/finops.md) has been waiting for since F9: before this, the cost
+	// per job was estimated from the template size divided by four.
 	tokens metric.Int64Counter
 }
 
-// Jenis token untuk atribut penghitung.
+// Token kinds for the counter attribute.
 const (
 	TokensInput    = "input"
 	TokensOutput   = "output"
 	TokensThoughts = "thoughts"
 )
 
-// Outcome adalah nilai atribut untuk penghitung hasil.
+// Outcome is the attribute value for the outcome counter.
 const (
 	OutcomeCompleted = "completed"
 	OutcomeFailed    = "failed"
@@ -87,12 +87,12 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 	return &Metrics{duration: duration, outcomes: outcomes, tokens: tokens}, nil
 }
 
-// Observe mencatat satu pekerjaan yang selesai.
+// Observe records one finished job.
 func (m *Metrics) Observe(ctx context.Context, outcome string, took time.Duration) {
 	if m == nil {
-		// Worker boleh berjalan tanpa metrik. Ia mencatat lebih sedikit, tetapi
-		// tidak berperilaku lain - dan nil check di sini lebih baik daripada
-		// setiap pemanggil harus mengingatnya.
+		// A worker may run without metrics. It records less, but does not behave
+		// differently - and a nil check here beats every caller having to
+		// remember it.
 		return
 	}
 
@@ -101,10 +101,10 @@ func (m *Metrics) Observe(ctx context.Context, outcome string, took time.Duratio
 	m.duration.Record(ctx, took.Seconds(), attrs)
 }
 
-// ObserveUsage mencatat token satu jawaban.
+// ObserveUsage records the tokens of one answer.
 //
-// Nol tidak dicatat: penyedia palsu tidak melaporkan token, dan deret bernilai
-// nol untuknya akan terbaca seolah pekerjaan itu gratis.
+// Zero is not recorded: the fake provider reports no tokens, and a zero-valued
+// series for it would read as if the job were free.
 func (m *Metrics) ObserveUsage(ctx context.Context, provider, template string, u llm.Usage) {
 	if m == nil || u.Total() == 0 {
 		return
@@ -123,22 +123,22 @@ func (m *Metrics) ObserveUsage(ctx context.Context, provider, template string, u
 	}
 }
 
-// LagReporter melaporkan consumer lag secara berkala.
+// LagReporter reports consumer lag periodically.
 //
-// Lag TIDAK bisa dihitung dari sisi konsumen sendiri: ia perlu tahu offset
-// terakhir di broker, dan itu pertanyaan admin. Karena itu ia diambil lewat
-// kadm, bukan dari klien konsumennya.
+// Lag CANNOT be computed from the consumer's side alone: it needs the
+// latest offset on the broker, and that is an admin question. That is why
+// it is fetched through kadm, not from the consumer client.
 type LagReporter struct {
 	admin *kadm.Client
 	group string
 	gauge metric.Int64ObservableGauge
 }
 
-// NewLagReporter mendaftarkan pengukuran lag pada meter.
+// NewLagReporter registers the lag measurement on the meter.
 //
-// Ia observable gauge, bukan nilai yang didorong: lag berubah terus, dan
-// mendorongnya berarti memilih ritme sendiri yang belum tentu sama dengan
-// ritme pembacanya. Observable gauge diukur saat ditanya.
+// It is an observable gauge, not a pushed value: lag changes constantly,
+// and pushing it means choosing a rhythm of our own that need not match the
+// reader's. An observable gauge is measured when asked.
 func NewLagReporter(meter metric.Meter, client *kgo.Client, group string) (*LagReporter, error) {
 	switch {
 	case meter == nil:
@@ -163,11 +163,10 @@ func NewLagReporter(meter metric.Meter, client *kgo.Client, group string) (*LagR
 	return r, nil
 }
 
-// observe membaca lag saat metriknya diminta.
+// observe reads the lag when the metric is requested.
 func (r *LagReporter) observe(ctx context.Context, o metric.Observer) error {
-	// Batas waktu sendiri: pembacaan metrik tidak boleh menggantung karena
-	// broker yang lambat. Halaman metrik yang tidak pernah menjawab sama
-	// buruknya dengan metrik yang tidak ada.
+	// Its own deadline: a metrics read must not hang because of a slow broker.
+	// A metrics page that never answers is as bad as no metrics at all.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -178,18 +177,18 @@ func (r *LagReporter) observe(ctx context.Context, o metric.Observer) error {
 
 	described, ok := lags[r.group]
 	if !ok {
-		// Group yang belum pernah ada bukan galat - worker yang baru dinyalakan
-		// belum bergabung. Melaporkannya sebagai galat akan membuat halaman
-		// metriknya gagal selama beberapa detik pertama setiap start.
+		// A group that has never existed is not an error - a freshly started
+		// worker has not joined yet. Reporting it as an error would make the
+		// metrics page fail during the first few seconds of every start.
 		return nil
 	}
 
 	for topic, partitions := range described.Lag {
 		for partition, memberLag := range partitions {
 			if memberLag.Err != nil || memberLag.Lag < 0 {
-				// Lag -1 berarti offsetnya tidak bisa dibaca
-				// [kadm@v1.18.0/groups.go:1412]. Melaporkannya sebagai angka
-				// akan menampilkan -1 di grafik seolah itu pengukuran.
+				// A lag of -1 means the offset could not be read
+				// [kadm@v1.18.0/groups.go:1412]. Reporting it as a number would show -1
+				// on a graph as if it were a measurement.
 				continue
 			}
 			o.ObserveInt64(r.gauge, memberLag.Lag, metric.WithAttributes(
