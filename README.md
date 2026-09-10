@@ -12,7 +12,7 @@ terbukti ditulis sebagai yang belum terbukti.
 > (REST edge, seven gRPC domain services, one LLM worker) over PostgreSQL
 > schema-per-service, Kafka with a transactional outbox, OpenTelemetry, Helm
 > on k3d, chaos and restore drills. Every number below links to the file that
-> measured it. Docs are in Indonesian; code, identifiers, and logs are English.
+> measured it. Docs are in Indonesian; code, comments, identifiers, and logs are English.
 
 ## Bentuk sistem
 
