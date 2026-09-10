@@ -6,17 +6,17 @@ import (
 	"testing"
 )
 
-// TestTheProviderAbstractionCannotReachTheNetwork adalah bukti R6, bukan janji.
+// TestTheProviderAbstractionCannotReachTheNetwork is proof of R6, not a
+// promise.
 //
-// F3-07 mensyaratkan nol panggilan jaringan saat `go test ./...`. Cara paling
-// sederhana untuk menyatakan itu adalah menghitung permintaan HTTP, tetapi
-// penghitung hanya membuktikan apa yang terjadi pada jalankan itu. Ini
-// membuktikan sesuatu yang lebih kuat: paket ini - berikut penyedia palsunya -
-// TIDAK BISA menyentuh jaringan, karena tidak ada satu pun paket jaringan di
-// seluruh pohon dependensinya.
+// F3-07 requires zero network calls during `go test ./...`. The simplest way to
+// state that is to count HTTP requests, but a counter only proves what happened
+// on that run. This proves something stronger: this package - fake provider
+// included - CANNOT touch the network, because there is not a single network
+// package in its entire dependency tree.
 //
-// Adapter Gemini hidup di paket anak (internal/llm/gemini) justru supaya
-// batasan ini tetap bisa ditegakkan di sini.
+// The Gemini adapter lives in a child package (internal/llm/gemini) precisely
+// so this constraint can keep being enforced here.
 func TestTheProviderAbstractionCannotReachTheNetwork(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps",
 		"github.com/muhananaufal/selaras-platform-go/internal/llm").Output()
@@ -39,8 +39,8 @@ func TestTheProviderAbstractionCannotReachTheNetwork(t *testing.T) {
 		t.Fatalf("internal/llm depends on %v; the fake provider could reach the network", found)
 	}
 
-	// Pohon dependensinya dibaca dengan benar, bukan kosong karena perintahnya
-	// gagal diam-diam.
+	// The dependency tree was read correctly, not empty because the command
+	// failed silently.
 	if len(strings.Fields(string(out))) < 5 {
 		t.Fatalf("go list returned only %d dependencies; the check proved nothing",
 			len(strings.Fields(string(out))))

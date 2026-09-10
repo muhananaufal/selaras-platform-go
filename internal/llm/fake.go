@@ -11,46 +11,47 @@ import (
 	"time"
 )
 
-// Fake adalah penyedia yang dipakai seluruh test.
+// Fake is the provider every test uses.
 //
-// Ia ada supaya `go test ./...` tidak pernah menyentuh jaringan (R6). Test yang
-// memanggil penyedia sungguhan lambat, berbiaya, gagal saat internet mati, dan
-// hasilnya berubah dari satu jalankan ke jalankan berikutnya - test yang
-// hasilnya berubah tidak membuktikan apa-apa.
+// It exists so `go test ./...` never touches the network (R6). Tests that call
+// a real provider are slow, cost money, fail when the internet is down, and
+// change their result from one run to the next - a test whose result changes
+// proves nothing.
 //
-// Jawabannya deterministik: prompt yang sama selalu menghasilkan jawaban yang
-// sama. Itu yang membuat test idempotensi bisa membedakan "dikerjakan sekali"
-// dari "dikerjakan dua kali dengan hasil kebetulan sama".
+// Its answers are deterministic: the same prompt always yields the same answer.
+// That is what lets an idempotency test tell "done once" from "done twice with
+// a coincidentally equal result".
 type Fake struct {
 	mu sync.Mutex
 
-	// Answer, bila diisi, dipakai apa adanya. Kosong berarti jawaban turunan
-	// yang deterministik.
+	// Answer, when set, is used as-is. Empty means a derived, deterministic
+	// answer.
 	Answer string
 
-	// Err, bila diisi, dikembalikan alih-alih jawaban. Ia yang membuat jalur
-	// kegagalan bisa diuji tanpa mematikan apa pun.
+	// Err, when set, is returned instead of an answer. It is what makes the
+	// failure path testable without shutting anything down.
 	Err error
 
-	// FinishReason bawaan "stop". Diisi lain untuk menguji jawaban terpotong.
+	// FinishReason defaults to "stop". Set otherwise to test a truncated
+	// answer.
 	FinishReason string
 
-	// Model adalah nama yang dilaporkan sebagai penjawab.
+	// Model is the name reported as the responder.
 	Model string
 
-	// Delay menahan setiap jawaban selama durasi ini, dengan tetap menghormati
-	// pembatalan ctx. Mode "Gemini lambat" untuk chaos F9-14.
+	// Delay holds every answer for this duration, while still honouring ctx
+	// cancellation. The "slow Gemini" mode for chaos F9-14.
 	Delay time.Duration
 
-	// FailFirst membuat sekian panggilan pertama gagal, lalu selebihnya
-	// berhasil. Mode "Gemini sesekali gagal": yang diuji adalah jalur percobaan
-	// ulang worker, bukan sekadar jalur gagal.
+	// FailFirst makes that many first calls fail, and the rest succeed. The
+	// "Gemini fails occasionally" mode: what is tested is the worker's retry
+	// path, not merely the failure path.
 	FailFirst int
 
 	calls []Request
 }
 
-// NewFake membuat penyedia palsu dengan nilai bawaan yang masuk akal.
+// NewFake creates a fake provider with sensible defaults.
 func NewFake() *Fake {
 	return &Fake{FinishReason: "stop", Model: "fake-1"}
 }
@@ -59,11 +60,11 @@ var _ Provider = (*Fake)(nil)
 
 func (f *Fake) Name() string { return "fake" }
 
-// Generate menjawab tanpa menyentuh apa pun di luar proses ini.
+// Generate answers without touching anything outside this process.
 func (f *Fake) Generate(ctx context.Context, req Request) (*Response, error) {
-	// ctx tetap dihormati meski tidak ada jaringan. Penyedia palsu yang
-	// mengabaikan pembatalan akan menyembunyikan worker yang tidak bisa
-	// dihentikan, dan itu justru yang ingin diuji.
+	// ctx is still honoured even without a network. A fake provider that
+	// ignores cancellation would hide a worker that cannot be stopped, and
+	// that is exactly what is meant to be tested.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -111,33 +112,33 @@ func (f *Fake) Generate(ctx context.Context, req Request) (*Response, error) {
 	}, nil
 }
 
-// Calls mengembalikan salinan permintaan yang pernah diterima.
+// Calls returns a copy of the requests received so far.
 //
-// Salinan, bukan slice aslinya: mengembalikan yang asli akan membuat pemanggil
-// bisa mengubah catatan yang sedang ditulis goroutine lain.
+// A copy, not the original slice: returning the original would let the caller
+// mutate a record another goroutine is writing.
 func (f *Fake) Calls() []Request {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]Request(nil), f.calls...)
 }
 
-// CallCount adalah jumlah permintaan yang pernah masuk.
+// CallCount is the number of requests received so far.
 func (f *Fake) CallCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.calls)
 }
 
-// deterministicAnswer menurunkan jawaban dari promptnya.
+// deterministicAnswer derives an answer from the prompt.
 //
-// Bentuknya mengikuti BENTUK YANG DIMINTA promptnya, bukan satu bentuk untuk
-// semua. Alasannya ditemukan dengan menjalankannya: versi pertama selalu
-// mengembalikan bentuk yang sama, sehingga kurikulum yang diminta coaching-svc
-// tersimpan sebagai laporan kelulusan - konsumennya membedakan keduanya dari
-// ada tidaknya "weeks", dan jawaban palsu itu tidak punya keduanya.
+// Its shape follows the SHAPE THE PROMPT ASKS FOR, not one shape for all. The
+// reason was found by running it: the first version always returned the same
+// shape, so the curriculum coaching-svc asked for was stored as a graduation
+// report - its consumer tells the two apart by the presence of "weeks", and
+// that fake answer had neither.
 //
-// Jawaban palsu yang bentuknya berbeda dari yang sesungguhnya membuat test
-// lulus terhadap sesuatu yang tidak pernah terjadi di produksi.
+// A fake answer whose shape differs from the real one makes tests pass against
+// something that never happens in production.
 func deterministicAnswer(req Request) string {
 	sum := sha256.Sum256([]byte(req.System + "\x1f" + req.Prompt))
 	digest := hex.EncodeToString(sum[:])
@@ -147,9 +148,9 @@ func deterministicAnswer(req Request) string {
 	payload["prompt_version"] = req.PromptVersion
 	payload["digest"] = digest
 
-	// Marshal map[string]any dengan kunci yang tetap tidak bisa gagal, tetapi
-	// galatnya tetap tidak diabaikan: mengabaikannya berarti jawaban kosong
-	// akan lolos sebagai jawaban yang sah.
+	// Marshalling a map[string]any with fixed keys cannot fail, but the error
+	// is still not ignored: ignoring it would let an empty answer pass as a
+	// valid one.
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Sprintf("{%q:%q}", "error", err.Error())
@@ -157,12 +158,13 @@ func deterministicAnswer(req Request) string {
 	return string(encoded)
 }
 
-// shapeFor menghasilkan kerangka jawaban yang sesuai templat yang memintanya.
+// shapeFor produces an answer skeleton matching the template that asked for
+// it.
 //
-// Ia dikenali dari PromptVersion, yang berbentuk "<nama templat>@<versi>".
-// Isinya sengaja minimal tetapi BERBENTUK BENAR: yang diuji jalur ujung ke
-// ujung adalah apakah hasilnya bisa dibaca dan disimpan, bukan apakah isinya
-// bermakna secara klinis.
+// It is recognised from PromptVersion, which has the form "<template
+// name>@<version>". The content is deliberately minimal but CORRECTLY SHAPED:
+// what the end-to-end paths test is whether the result can be read and
+// stored, not whether its content is clinically meaningful.
 func shapeFor(promptVersion, digest string) map[string]any {
 	name, _, _ := strings.Cut(promptVersion, "@")
 
@@ -204,17 +206,17 @@ func shapeFor(promptVersion, digest string) map[string]any {
 		}
 
 	default:
-		// Personalisasi dan apa pun yang belum dikenali: bentuk lama, yang
-		// sudah cukup untuk membuktikan jawaban sampai dan tersimpan.
+		// Personalisation and anything not yet recognised: the old shape, which
+		// is enough to prove the answer arrives and is stored.
 		return map[string]any{}
 	}
 }
 
-// fakeWeeks menghasilkan empat pekan berisi satu misi utama per hari.
+// fakeWeeks produces four weeks holding one main mission per day.
 //
-// Tanggalnya berurutan tanpa lompatan, seperti yang diminta prompt-nya: pembaca
-// kurikulum menolak tanggal yang tidak bisa dibaca, dan kerangka yang melanggar
-// aturannya sendiri tidak membuktikan apa pun.
+// The dates run consecutively without gaps, as the prompt asks: the curriculum
+// reader refuses unreadable dates, and a skeleton that breaks its own rules
+// proves nothing.
 func fakeWeeks() []map[string]any {
 	start := time.Now().Truncate(24 * time.Hour)
 
@@ -244,11 +246,11 @@ func fakeWeeks() []map[string]any {
 	return weeks
 }
 
-// SetErr mengganti galat yang dikembalikan setiap panggilan berikutnya.
+// SetErr replaces the error returned by every subsequent call.
 //
-// Ia ada untuk test yang mengubah nasib penyedia DI TENGAH worker berjalan
-// (kuota habis, lalu pulih); menulis f.Err langsung dari goroutine lain adalah
-// data race yang ditangkap -race di CI.
+// It exists for tests that change the provider's fate WHILE the worker is
+// running (quota exhausted, then recovered); writing f.Err directly from
+// another goroutine is a data race that -race catches in CI.
 func (f *Fake) SetErr(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

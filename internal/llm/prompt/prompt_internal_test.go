@@ -6,13 +6,13 @@ import (
 	"text/template"
 )
 
-// TestATemplateThatRendersNothingIsRefused menutup jalur yang tidak bisa
-// dicapai dari luar paket.
+// TestATemplateThatRendersNothingIsRefused closes a path that cannot be reached
+// from outside the package.
 //
-// Templat yang menghasilkan teks kosong akan membuang satu permintaan ke
-// penyedia, dan jawabannya tidak akan berhubungan dengan apa pun. Karena
-// seluruh templat yang ter-embed menghasilkan teks, jalur ini hanya bisa diuji
-// dari dalam - dan tanpa test ini, penjaganya bisa dilepas tanpa ada yang tahu.
+// A template that renders to empty text would waste one request to the
+// provider, and the answer would relate to nothing. Since every embedded
+// template renders to text, this path can only be tested from inside - and
+// without this test, its guard could be removed without anyone knowing.
 func TestATemplateThatRendersNothingIsRefused(t *testing.T) {
 	blank := Template{
 		Name:    "blank",
@@ -29,15 +29,15 @@ func TestATemplateThatRendersNothingIsRefused(t *testing.T) {
 	}
 }
 
-// TestParseNameRejectsBadFilenames menjaga penamaan berkas templat.
+// TestParseNameRejectsBadFilenames guards the naming of template files.
 //
-// Nama yang salah bentuk akan membuat versinya tidak terbaca, dan versi yang
-// tidak terbaca membuat hasil tersimpan kehilangan asal-usulnya.
+// A malformed name makes the version unreadable, and an unreadable version
+// makes stored results lose their provenance.
 func TestParseNameRejectsBadFilenames(t *testing.T) {
 	bad := []string{
-		"personalization.tmpl",    // tanpa versi
-		"personalization.vx.tmpl", // versi bukan angka
-		"personalization.v0.tmpl", // versi mulai dari 1
+		"personalization.tmpl",    // no version
+		"personalization.vx.tmpl", // version is not a number
+		"personalization.v0.tmpl", // versions start at 1
 		".v1.tmpl",                // tanpa nama
 	}
 

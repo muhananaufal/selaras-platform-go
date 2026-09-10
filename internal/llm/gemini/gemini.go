@@ -1,9 +1,9 @@
-// Package gemini bicara HTTP ke Generative Language API milik Google.
+// Package gemini speaks HTTP to Google's Generative Language API.
 //
-// Ia dipisahkan dari internal/llm dengan sengaja: paket induknya dijaga agar
-// tidak punya satu pun paket jaringan di pohon dependensinya, sehingga penyedia
-// palsu yang dipakai seluruh test TIDAK BISA menyentuh jaringan. Semua yang
-// tahu cara menyambung ada di sini.
+// It is split from internal/llm deliberately: the parent package is kept free
+// of any network package in its dependency tree, so the fake provider every
+// test uses CANNOT touch the network. Everything that knows how to connect
+// lives here.
 package gemini
 
 import (
@@ -23,59 +23,58 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
 
-// DefaultEndpoint adalah alamat API yang sesungguhnya.
+// DefaultEndpoint is the real API address.
 const DefaultEndpoint = "https://generativelanguage.googleapis.com/v1beta/models"
 
-// Config adalah yang dibutuhkan adapter ini.
+// Config is what this adapter needs.
 type Config struct {
-	// APIKey tidak punya nilai bawaan, dan itu disengaja (ADR-016). Kunci
-	// bawaan berarti ada keadaan di mana sistem berjalan dengan kredensial
-	// yang tidak pernah diniatkan siapa pun.
+	// APIKey has no default, and that is deliberate (ADR-016). A default key
+	// means there is a state in which the system runs with a credential nobody
+	// ever intended.
 	APIKey string
 
-	// Model adalah nama model, misalnya "gemini-2.5-flash-lite".
+	// Model is the model name, for example "gemini-2.5-flash-lite".
 	Model string
 
-	// Endpoint bisa diarahkan ke server lain untuk pengujian. Kosong berarti
+	// Endpoint can be pointed at another server for testing. Empty means
 	// DefaultEndpoint.
 	Endpoint string
 
-	// Timeout adalah batas waktu SATU percobaan, bukan seluruh rangkaian
-	// percobaan. Membedakannya penting: batas yang mencakup seluruh percobaan
-	// membuat percobaan terakhir mendapat sisa waktu yang tidak bisa
-	// diperkirakan.
+	// Timeout is the deadline of ONE attempt, not of the whole series of
+	// attempts. The distinction matters: a deadline covering the whole series
+	// gives the last attempt an unpredictable remainder of time.
 	Timeout time.Duration
 
-	// MaxAttempts termasuk percobaan pertama. 1 berarti tanpa percobaan ulang.
+	// MaxAttempts includes the first attempt. 1 means no retries.
 	MaxAttempts int
 
-	// BaseBackoff adalah jeda setelah percobaan pertama yang gagal. Jeda
-	// berikutnya berlipat dua, dengan jitter.
+	// BaseBackoff is the pause after the first failed attempt. The following
+	// pauses double, with jitter.
 	BaseBackoff time.Duration
 
-	// HTTPClient bisa disuntikkan. Kosong berarti klien dengan Timeout di atas.
+	// HTTPClient can be injected. Empty means a client with the Timeout above.
 	HTTPClient *http.Client
 }
 
-// Nilai bawaan yang dipakai saat Config membiarkannya kosong.
+// Defaults used when Config leaves a field empty.
 const (
 	defaultTimeout     = 120 * time.Second
 	defaultMaxAttempts = 3
 	defaultBaseBackoff = time.Second
 )
 
-// Client adalah penyedia LLM yang bicara ke Gemini.
+// Client is the LLM provider that speaks to Gemini.
 type Client struct {
 	cfg  Config
 	http *http.Client
 }
 
-// New membuat klien.
+// New creates the client.
 //
-// Ia menolak konfigurasi yang tidak lengkap alih-alih memakai nilai bawaan
-// untuk kredensial: proses yang gagal saat start jauh lebih mudah dijelaskan
-// daripada proses yang berjalan lalu ditolak penyedia pada permintaan pertama
-// yang sungguhan.
+// It refuses an incomplete configuration instead of using defaults for
+// credentials: a process that fails at start is far easier to explain than a
+// process that runs and is then refused by the provider on the first real
+// request.
 func New(cfg Config) (*Client, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("GEMINI_API_KEY is not set")
@@ -107,8 +106,8 @@ var _ llm.Provider = (*Client)(nil)
 
 func (c *Client) Name() string { return "gemini" }
 
-// Generate meminta satu jawaban, dengan percobaan ulang untuk kegagalan yang
-// memang layak diulang.
+// Generate asks for one answer, with retries for failures that are worth
+// retrying.
 func (c *Client) Generate(ctx context.Context, req llm.Request) (*llm.Response, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -123,9 +122,9 @@ func (c *Client) Generate(ctx context.Context, req llm.Request) (*llm.Response, 
 		lastErr = err
 
 		if !retryable(err) {
-			// Permintaan yang ditolak karena bentuknya salah akan ditolak
-			// dengan cara yang sama berapa kali pun diulang. Mengulanginya
-			// hanya menghabiskan kuota dan menunda kegagalannya.
+			// A request refused because its shape is wrong will be refused the same
+			// way however many times it is repeated. Repeating it only spends quota
+			// and delays the failure.
 			return nil, err
 		}
 		if attempt == c.cfg.MaxAttempts {
@@ -141,11 +140,11 @@ func (c *Client) Generate(ctx context.Context, req llm.Request) (*llm.Response, 
 	return nil, fmt.Errorf("gemini gave up after %d attempts: %w", c.cfg.MaxAttempts, lastErr)
 }
 
-// wait adalah jeda sebelum percobaan berikutnya: backoff sendiri, atau jeda
-// yang diminta penyedia bila lebih panjang. Mengulang lebih cepat daripada
-// yang diminta hanya membakar percobaan pada jawaban 429 yang sama - itulah
-// yang terjadi pada larian nyata pertama (docs/finops.md). Dibatasi Timeout
-// supaya permintaan "coba lagi besok" tidak menahan partisi selamanya.
+// wait is the pause before the next attempt: our own backoff, or the pause
+// the provider asks for if that is longer. Retrying faster than asked only
+// burns attempts on the same 429 answer - that is what happened on the
+// first real run (docs/finops.md). Bounded by Timeout so a "try again
+// tomorrow" request does not hold the partition forever.
 func (c *Client) wait(attempt int, err error) time.Duration {
 	d := c.backoff(attempt)
 	var api *apiError
@@ -158,24 +157,24 @@ func (c *Client) wait(attempt int, err error) time.Duration {
 	return d
 }
 
-// backoff menghitung jeda sebelum percobaan berikutnya.
+// backoff computes the pause before the next attempt.
 //
-// Jitter-nya bukan hiasan: tanpa itu, seluruh worker yang gagal pada saat yang
-// sama akan mencoba lagi pada saat yang sama juga, dan penyedia yang baru pulih
-// langsung dihantam gelombang yang sama besarnya.
+// Its jitter is not decoration: without it, every worker that failed at the
+// same moment would retry at the same moment too, and a provider that has just
+// recovered is hit by a wave of the same size straight away.
 func (c *Client) backoff(attempt int) time.Duration {
 	d := c.cfg.BaseBackoff << (attempt - 1)
 
-	// Jitter penuh: acak di [0, d]. Ia menyebar percobaan ulang selebar
-	// mungkin, dan itu yang paling menjauhkan gelombang berikutnya.
-	//nolint:gosec // Ini penjadwalan, bukan kriptografi.
+	// Full jitter: random in [0, d]. It spreads retries as widely as possible,
+	// and that is what keeps the next wave furthest apart.
+	//nolint:gosec // This is scheduling, not cryptography.
 	return time.Duration(rand.Int64N(int64(d) + 1))
 }
 
-// attempt menjalankan satu permintaan.
+// attempt runs one request.
 func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, error) {
-	// Batas waktu per percobaan, di atas ctx pemanggil. Yang mana pun yang
-	// habis lebih dulu yang berlaku.
+	// A per-attempt deadline, on top of the caller's ctx. Whichever runs out
+	// first applies.
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 	defer cancel()
 
@@ -192,8 +191,9 @@ func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, e
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	// Kunci dikirim lewat header, BUKAN lewat query string seperti sistem lama.
-	// Query string muncul di log proxy, riwayat, dan pesan galat; header tidak.
+	// The key is sent through a header, NOT through the query string as in the
+	// legacy system. Query strings show up in proxy logs, history, and error
+	// messages; headers do not.
 	httpReq.Header.Set("x-goog-api-key", c.cfg.APIKey)
 
 	httpResp, err := c.http.Do(httpReq)
@@ -201,10 +201,10 @@ func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, e
 		return nil, &transportError{err: err}
 	}
 	defer func() {
-		// Sisanya dibuang lebih dulu supaya koneksinya bisa dipakai ulang
-		// alih-alih dibuang bersamanya. Galat di sini dicatat, bukan
-		// dikembalikan: jawabannya sudah terbaca, dan kegagalan membersihkan
-		// koneksi tidak membatalkannya.
+		// The remainder is drained first so the connection can be reused instead
+		// of discarded along with it. An error here is logged, not returned: the
+		// answer has already been read, and a failure to clean up the connection
+		// does not invalidate it.
 		if _, err := io.Copy(io.Discard, io.LimitReader(httpResp.Body, 4<<10)); err != nil {
 			slog.Warn("draining the gemini response", "error", err)
 		}
@@ -213,8 +213,8 @@ func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, e
 		}
 	}()
 
-	// Dibaca dengan batas. Tanpa batas, satu jawaban yang mengoceh - atau
-	// server yang keliru - bisa memenuhi memori worker.
+	// Read with a bound. Without one, one rambling answer - or a misbehaving
+	// server - could fill the worker's memory.
 	limit := int64(req.Limit())
 	raw, err := io.ReadAll(io.LimitReader(httpResp.Body, limit+1))
 	if err != nil {
@@ -230,25 +230,25 @@ func (c *Client) attempt(ctx context.Context, req llm.Request) (*llm.Response, e
 	return decode(raw, req)
 }
 
-// transportError menandai kegagalan yang berasal dari jaringan, bukan dari
-// jawaban penyedia. Ia selalu layak dicoba lagi.
+// transportError marks a failure that came from the network, not from the
+// provider's answer. It is always worth retrying.
 type transportError struct{ err error }
 
 func (e *transportError) Error() string { return "reaching gemini: " + e.err.Error() }
 func (e *transportError) Unwrap() error { return e.err }
 
-// apiError adalah penolakan yang datang dari penyedia beserta statusnya.
+// apiError is a refusal from the provider together with its status.
 type apiError struct {
 	status  int
 	message string
 
-	// quota menyebutkan kuota MANA yang habis (google.rpc.QuotaFailure), bila
-	// ada. "Per hari" dan "per menit" menuntut tindakan yang berbeda, dan
-	// pesan bebasnya tidak membedakan keduanya.
+	// quota names WHICH quota is exhausted (google.rpc.QuotaFailure), if any.
+	// "Per day" and "per minute" call for different actions, and the free-text
+	// message does not tell them apart.
 	quota string
 
-	// retryAfter adalah jeda yang DIMINTA penyedia (google.rpc.RetryInfo atau
-	// header Retry-After). Nol berarti tidak diminta.
+	// retryAfter is the pause the provider ASKED for (google.rpc.RetryInfo or
+	// the Retry-After header). Zero means none was asked for.
 	retryAfter time.Duration
 }
 
@@ -267,11 +267,11 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// retryable memutuskan apakah sebuah kegagalan layak diulang.
+// retryable decides whether a failure is worth retrying.
 //
-// Yang layak: kegagalan jaringan, 429, dan 5xx - semuanya keadaan sementara.
-// Yang tidak: 4xx selain 429, karena permintaan yang sama akan ditolak dengan
-// cara yang sama. Membedakannya menghemat kuota dan mempercepat kegagalannya.
+// Worth it: network failures, 429, and 5xx - all transient states. Not worth
+// it: 4xx other than 429, because the same request will be refused the same
+// way. Telling them apart saves quota and speeds up the failure.
 func retryable(err error) bool {
 	var transport *transportError
 	if errors.As(err, &transport) {
@@ -286,9 +286,9 @@ func retryable(err error) bool {
 }
 
 func statusError(status int, raw []byte, header http.Header) error {
-	// Bentuk google.rpc.Status. Nama bidang diverifikasi dari jawaban 429
-	// nyata gemini-3.8-flash pada 2026-09-07 (kuota gratis 20 permintaan per
-	// hari per model), bukan dari ingatan.
+	// The google.rpc.Status shape. The field names were verified against a
+	// real 429 answer from gemini-3.8-flash on 2026-09-07 (free quota of 20
+	// requests per day per model), not from memory.
 	var envelope struct {
 		Error struct {
 			Message string `json:"message"`
@@ -319,8 +319,8 @@ func statusError(status int, raw []byte, header http.Header) error {
 		out.message = out.message[:500] + "..."
 	}
 
-	// Retry-After (detik) menang bila ada: ia yang dibaca proxy dan CDN di
-	// depan penyedia, dan lebih dekat ke keadaan sebenarnya.
+	// Retry-After (seconds) wins when present: it is what the proxies and CDNs
+	// in front of the provider read, and it is closer to the real state.
 	if secs, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After"))); err == nil && secs > 0 {
 		out.retryAfter = time.Duration(secs) * time.Second
 	}

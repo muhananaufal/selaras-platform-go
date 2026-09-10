@@ -8,9 +8,9 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm"
 )
 
-// Bentuk kawat Generative Language API. Hanya bagian yang benar-benar dipakai
-// yang dimodelkan: memodelkan seluruh respons berarti setiap bidang baru di
-// sisi Google menjadi urusan repo ini.
+// The wire shape of the Generative Language API. Only the parts actually used
+// are modelled: modelling the whole response means every new field on
+// Google's side becomes this repo's business.
 type generateRequest struct {
 	Contents          []content         `json:"contents"`
 	SystemInstruction *content          `json:"systemInstruction,omitempty"`
@@ -36,16 +36,17 @@ type generateResponse struct {
 		FinishReason string  `json:"finishReason"`
 	} `json:"candidates"`
 
-	// PromptFeedback membawa alasan saat permintaannya sendiri ditolak filter.
-	// Tanpa membacanya, penolakan itu terlihat seperti jawaban kosong biasa.
+	// PromptFeedback carries the reason when the request itself is refused by
+	// the filter. Without reading it, that refusal looks like an ordinary
+	// empty answer.
 	PromptFeedback struct {
 		BlockReason string `json:"blockReason"`
 	} `json:"promptFeedback"`
 
 	ModelVersion string `json:"modelVersion"`
 
-	// UsageMetadata: nama bidang diverifikasi dari jawaban nyata
-	// gemini-3.8-flash pada 2026-09-07, bukan dari ingatan.
+	// UsageMetadata: the field names were verified against a real
+	// gemini-3.8-flash answer on 2026-09-07, not from memory.
 	UsageMetadata struct {
 		PromptTokenCount     int `json:"promptTokenCount"`
 		CandidatesTokenCount int `json:"candidatesTokenCount"`
@@ -64,9 +65,9 @@ func buildRequest(req llm.Request) generateRequest {
 	cfg := generationConfig{}
 	var wanted bool
 	if req.Temperature > 0 {
-		// Pointer, bukan nilai: temperature 0 yang dikirim eksplisit berarti
-		// "sepenuhnya deterministik", yang berbeda dari "pakai bawaan
-		// penyedia". Bidang yang dihilangkan menyampaikan yang kedua.
+		// A pointer, not a value: an explicitly sent temperature of 0 means
+		// "fully deterministic", which differs from "use the provider default".
+		// An omitted field conveys the latter.
 		t := req.Temperature
 		cfg.Temperature = &t
 		wanted = true
@@ -81,7 +82,7 @@ func buildRequest(req llm.Request) generateRequest {
 	return out
 }
 
-// decode membaca jawaban penyedia menjadi bentuk yang dipakai sistem.
+// decode reads the provider's answer into the shape the system uses.
 func decode(raw []byte, req llm.Request) (*llm.Response, error) {
 	var parsed generateResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
@@ -89,8 +90,8 @@ func decode(raw []byte, req llm.Request) (*llm.Response, error) {
 	}
 
 	if parsed.PromptFeedback.BlockReason != "" {
-		// Permintaan yang diblokir filter bukan kegagalan jaringan. Mengulang
-		// permintaan yang sama akan diblokir dengan cara yang sama.
+		// A request blocked by the filter is not a network failure. Repeating the
+		// same request will be blocked the same way.
 		return nil, fmt.Errorf("gemini blocked the prompt: %s", parsed.PromptFeedback.BlockReason)
 	}
 	if len(parsed.Candidates) == 0 {
@@ -127,20 +128,20 @@ func decode(raw []byte, req llm.Request) (*llm.Response, error) {
 	}, nil
 }
 
-// stripFence membuang pembungkus markdown yang kadang disisipkan model.
+// stripFence removes the markdown wrapper the model sometimes inserts.
 //
-// Sistem lama melakukan hal yang sama [GeminiReportService.php:325-327]. Ia
-// tetap perlu meski response_mime_type sudah diminta: permintaan itu tidak
-// selalu dihormati, dan JSON yang terbungkus tiga backtick akan gagal di-parse
-// oleh siapa pun yang menerimanya.
+// The legacy system did the same [GeminiReportService.php:325-327]. It is
+// still needed even though response_mime_type is requested: that request is
+// not always honoured, and JSON wrapped in three backticks fails to parse for
+// whoever receives it.
 func stripFence(s string) string {
 	trimmed := strings.TrimSpace(s)
 	if !strings.HasPrefix(trimmed, "```") {
 		return trimmed
 	}
 
-	// Baris pertama dibuang seluruhnya - ia memuat pagar beserta label
-	// bahasanya, yang bisa "json", "JSON", atau tidak ada sama sekali.
+	// The first line is dropped entirely - it holds the fence together with
+	// its language label, which may be "json", "JSON", or absent altogether.
 	if nl := strings.IndexByte(trimmed, '\n'); nl >= 0 {
 		trimmed = trimmed[nl+1:]
 	} else {

@@ -1,9 +1,11 @@
-// Package llm adalah batas antara sistem ini dan penyedia model bahasa.
+// Package llm is the boundary between this system and the language model
+// provider.
 //
-// Batas itu ada karena satu alasan yang praktis: penyedia berubah, mahal, dan
-// tidak bisa dipanggil dari test. Yang di dalam sini hanya bentuk permintaan
-// dan jawabannya; yang tahu cara bicara HTTP ke Google ada di paket anaknya,
-// dan paket ini TIDAK boleh mengimpornya - dijaga oleh boundary_test.go.
+// That boundary exists for one practical reason: providers change, cost
+// money, and cannot be called from tests. What lives in here is only the
+// shape of a request and its answer; what knows how to speak HTTP to Google
+// lives in a child package, and this package must NOT import it - guarded by
+// boundary_test.go.
 package llm
 
 import (
@@ -13,125 +15,129 @@ import (
 	"strings"
 )
 
-// Request adalah satu permintaan ke model.
+// Request is one request to the model.
 type Request struct {
-	// System adalah instruksi peran. Ia dipisahkan dari Prompt karena penyedia
-	// memperlakukannya berbeda, dan menggabungkannya menjadi satu string akan
-	// membuang perbedaan itu.
+	// System is the role instruction. It is separated from Prompt because
+	// providers treat it differently, and merging the two into one string
+	// would throw that difference away.
 	System string
 
 	Prompt string
 
-	// PromptVersion adalah versi templat yang menghasilkan Prompt.
+	// PromptVersion is the version of the template that produced Prompt.
 	//
-	// Ia wajib. Hasil yang tersimpan tanpa versi promptnya tidak bisa
-	// dijelaskan setelah promptnya berubah: tidak ada cara mengetahui apakah
-	// jawaban yang aneh berasal dari model atau dari templat yang sudah
-	// diganti (F3-09).
+	// It is required. A stored result without its prompt version cannot be
+	// explained once the prompt changes: there is no way to know whether a
+	// strange answer came from the model or from a template replaced since
+	// (F3-09).
 	PromptVersion string
 
-	// Temperature 0 berarti "pakai bawaan penyedia". Nilai negatif ditolak.
+	// A Temperature of 0 means "use the provider default". Negative values are
+	// refused.
 	Temperature float64
 
-	// MaxOutputBytes membatasi ukuran jawaban yang mau diterima.
+	// MaxOutputBytes bounds the size of an answer we are willing to accept.
 	//
-	// Tanpa batas, satu jawaban yang mengoceh bisa memenuhi memori worker dan
-	// kolom basis datanya. Nol berarti memakai DefaultMaxOutputBytes.
+	// Without a bound, one rambling answer could fill the worker's memory and
+	// its database column. Zero means DefaultMaxOutputBytes.
 	MaxOutputBytes int
 
-	// JSON meminta jawaban berupa JSON. Penyedia yang mendukungnya diminta
-	// menegakkannya; yang tidak, jawabannya tetap diperiksa di sisi ini.
+	// JSON asks for the answer as JSON. Providers that support it are asked to
+	// enforce it; for those that do not, the answer is still checked on this
+	// side.
 	JSON bool
 }
 
-// DefaultMaxOutputBytes adalah batas bawaan ukuran jawaban.
+// DefaultMaxOutputBytes is the default bound on answer size.
 //
-// Laporan personalisasi terpanjang di sistem lama berada jauh di bawah ini;
-// angkanya dipilih longgar supaya tidak memotong jawaban yang sah, tetapi tetap
-// terbatas supaya jawaban yang kabur tidak menghabiskan memori.
+// The longest personalisation report in the legacy system was far below this;
+// the number is chosen loosely so a valid answer is never cut, but still
+// bounded so a runaway answer does not exhaust memory.
 const DefaultMaxOutputBytes = 256 * 1024
 
-// Response adalah jawaban model beserta yang perlu dicatat bersamanya.
+// Response is the model's answer together with what has to be recorded
+// alongside it.
 type Response struct {
 	Text string
 
-	// Model adalah nama model yang benar-benar menjawab, sebagaimana dilaporkan
-	// penyedia - bukan nama yang diminta. Keduanya bisa berbeda saat penyedia
-	// mengalihkan permintaan, dan yang perlu dicatat adalah yang menjawab.
+	// Model is the name of the model that actually answered, as reported by the
+	// provider - not the name requested. The two can differ when the provider
+	// reroutes a request, and what has to be recorded is the one that answered.
 	Model string
 
-	// PromptVersion dibawa kembali dari permintaannya supaya pemanggil tidak
-	// perlu memasangkannya sendiri.
+	// PromptVersion is carried back from the request so callers need not pair
+	// it up themselves.
 	PromptVersion string
 
-	// FinishReason menyebutkan mengapa model berhenti. Jawaban yang terpotong
-	// karena batas token bukan jawaban yang selesai, dan membedakannya
-	// mencegah laporan setengah jadi tersimpan sebagai laporan utuh.
+	// FinishReason says why the model stopped. An answer cut off by the token
+	// limit is not a finished answer, and telling them apart keeps a
+	// half-finished report from being stored as a whole one.
 	FinishReason string
 
-	// Usage adalah token yang dilaporkan penyedia untuk jawaban ini. Nol
-	// berarti penyedianya tidak melaporkan apa-apa (penyedia palsu), BUKAN
-	// gratis; FinOps membedakan keduanya lewat nama penyedianya.
+	// Usage is the tokens the provider reported for this answer. Zero means
+	// the provider reported nothing (the fake provider), NOT free; FinOps
+	// tells the two apart through the provider name.
 	Usage Usage
 }
 
-// Usage adalah hitungan token satu panggilan, sebagaimana dilaporkan penyedia.
+// Usage is the token count of one call, as reported by the provider.
 //
-// Dilaporkan, bukan ditaksir: taksiran byte/4 di docs/finops.md adalah yang
-// digantikan angka ini. Thoughts dipisah karena model yang berpikir
-// (Gemini 3.x) menagihnya sebagai keluaran walau teksnya tidak pernah sampai.
+// Reported, not estimated: the bytes/4 estimate in docs/finops.md is what
+// these numbers replace. Thoughts are separate because thinking models (Gemini
+// 3.x) bill them as output even though their text never arrives.
 type Usage struct {
 	InputTokens    int
 	OutputTokens   int
 	ThoughtsTokens int
 }
 
-// Total adalah seluruh token yang ditagih untuk panggilan itu.
+// Total is every token billed for that call.
 func (u Usage) Total() int {
 	return u.InputTokens + u.OutputTokens + u.ThoughtsTokens
 }
 
-// Truncated menyatakan jawabannya terpotong.
+// Truncated says the answer was cut off.
 func (r *Response) Truncated() bool {
 	return !strings.EqualFold(r.FinishReason, "stop") && r.FinishReason != ""
 }
 
-// Provider adalah yang dibutuhkan sistem dari sebuah model bahasa.
+// Provider is what the system needs from a language model.
 //
-// Sesempit ini dengan sengaja. Antarmuka yang mencerminkan seluruh kemampuan
-// penyedia akan mengunci sistem pada bentuk penyedia itu, dan penyedia
-// berikutnya tidak akan cocok.
+// This narrow, deliberately. An interface mirroring the provider's full
+// capabilities would lock the system to that provider's shape, and the next
+// provider would not fit.
 type Provider interface {
-	// Name adalah nama penyedia untuk log dan metrik.
+	// Name is the provider name for logs and metrics.
 	Name() string
 
-	// Generate meminta satu jawaban.
+	// Generate asks for one answer.
 	//
-	// Ia WAJIB menghormati ctx: pekerjaan LLM menunggu jaringan selama puluhan
-	// detik, dan worker yang tidak bisa dihentikan di tengahnya akan menahan
-	// shutdown sampai timeout paksa.
+	// It MUST honour ctx: an LLM job waits on the network for tens of seconds,
+	// and a worker that cannot be stopped in the middle of it holds shutdown
+	// until the forced timeout.
 	Generate(ctx context.Context, req Request) (*Response, error)
 }
 
-// Galat yang dikenali pemanggil.
+// Errors that callers recognise.
 var (
-	// ErrRateLimited berarti penyedia menolak sementara karena kuota. Ia layak
-	// dicoba lagi, dan itulah sebabnya ia dibedakan dari galat lain.
+	// ErrRateLimited means the provider refused temporarily on quota grounds.
+	// It is worth retrying, and that is why it is distinguished from other
+	// errors.
 	ErrRateLimited = errors.New("the provider is rate limiting us")
 
-	// ErrTruncated berarti jawabannya melewati batas yang diminta.
+	// ErrTruncated means the answer exceeded the requested limit.
 	ErrTruncated = errors.New("the answer was cut off")
 
-	// ErrEmptyAnswer berarti penyedia menjawab tanpa isi. Ia bukan kegagalan
-	// jaringan, jadi mencoba lagi biasanya sia-sia - tetapi menyimpannya
-	// sebagai jawaban jauh lebih buruk.
+	// ErrEmptyAnswer means the provider answered with no content. It is not a
+	// network failure, so retrying is usually pointless - but storing it as an
+	// answer is far worse.
 	ErrEmptyAnswer = errors.New("the provider answered with nothing")
 )
 
-// Validate memeriksa permintaan sebelum ia dikirim ke mana pun.
+// Validate checks a request before it is sent anywhere.
 //
-// Ia di sini, bukan di tiap adapter, supaya penyedia baru tidak bisa
-// melonggarkan aturannya diam-diam.
+// It lives here, not in each adapter, so a new provider cannot silently
+// loosen the rules.
 func (r Request) Validate() error {
 	if strings.TrimSpace(r.Prompt) == "" {
 		return errors.New("an empty prompt would spend a request on nothing")
@@ -148,7 +154,7 @@ func (r Request) Validate() error {
 	return nil
 }
 
-// Limit mengembalikan batas ukuran yang berlaku.
+// Limit returns the size bound in effect.
 func (r Request) Limit() int {
 	if r.MaxOutputBytes <= 0 {
 		return DefaultMaxOutputBytes

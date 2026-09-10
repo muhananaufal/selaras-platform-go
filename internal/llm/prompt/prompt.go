@@ -1,9 +1,9 @@
-// Package prompt menyimpan templat prompt beserta versinya.
+// Package prompt stores the prompt templates together with their versions.
 //
-// Versinya bukan hiasan. Hasil yang tersimpan tanpa versi promptnya tidak bisa
-// dijelaskan setelah promptnya berubah: saat sebuah laporan lama terlihat
-// aneh, tidak ada cara mengetahui apakah modelnya yang menjawab begitu atau
-// templatnya yang sudah diganti sejak itu (F3-09).
+// The version is not decoration. A stored result without its prompt version
+// cannot be explained once the prompt changes: when an old report looks
+// strange, there is no way to know whether the model answered like that or the
+// template has been replaced since (F3-09).
 package prompt
 
 import (
@@ -21,40 +21,39 @@ import (
 	"text/template"
 )
 
-// templates memuat berkas templat ke dalam binernya.
+// templates loads the template files into the binary.
 //
-// Ia di-embed, bukan dibaca dari disk saat berjalan. Templat yang dibaca dari
-// disk berarti biner yang sama bisa berperilaku berbeda tergantung berkas di
-// sekitarnya - dan versi yang dicatat di hasil berhenti berarti apa-apa.
+// They are embedded, not read from disk at run time. Templates read from disk
+// mean the same binary can behave differently depending on the files around
+// it - and the version recorded on the result stops meaning anything.
 //
 //go:embed templates/*.tmpl
 var templates embed.FS
 
-// Template adalah satu templat prompt pada satu versi.
+// Template is one prompt template at one version.
 type Template struct {
-	// Name adalah nama use case-nya, misalnya "personalization".
+	// Name is the name of its use case, for example "personalization".
 	Name string
 
-	// Version naik setiap kali isinya berubah.
+	// Version goes up every time the content changes.
 	Version int
 
-	// Checksum adalah SHA-256 isi templatnya.
+	// Checksum is the SHA-256 of the template's content.
 	//
-	// Ia yang membuat versi tidak bisa berbohong: templat yang diubah tanpa
-	// menaikkan versinya akan tetap terlihat berbeda di sini, dan test yang
-	// membandingkannya akan gagal.
+	// It is what keeps the version from lying: a template changed without
+	// bumping its version still looks different here, and the test that
+	// compares it fails.
 	Checksum string
 
 	tmpl *template.Template
 }
 
-// ID adalah penanda yang disimpan bersama hasilnya, misalnya
-// "personalization@3".
+// ID is the marker stored with the result, for example "personalization@3".
 func (t Template) ID() string {
 	return t.Name + "@" + strconv.Itoa(t.Version)
 }
 
-// Render mengisi templat dengan datanya.
+// Render fills the template with its data.
 func (t Template) Render(data any) (string, error) {
 	var buf bytes.Buffer
 	if err := t.tmpl.Execute(&buf, data); err != nil {
@@ -63,24 +62,24 @@ func (t Template) Render(data any) (string, error) {
 
 	out := strings.TrimSpace(buf.String())
 	if out == "" {
-		// Templat yang menghasilkan teks kosong akan membuang satu permintaan
-		// ke penyedia, dan jawabannya tidak akan berhubungan dengan apa pun.
+		// A template that renders to empty text would waste one request to the
+		// provider, and the answer would relate to nothing.
 		return "", fmt.Errorf("%s rendered to nothing", t.ID())
 	}
 	return out, nil
 }
 
-// Library adalah seluruh templat yang tersedia.
+// Library is every available template.
 type Library struct {
 	byName map[string]Template
 }
 
-// Load membaca seluruh templat yang ter-embed.
+// Load reads every embedded template.
 //
-// Nama berkasnya menentukan nama dan versinya: "personalization.v1.tmpl".
-// Versinya ada di nama berkas, bukan di dalam isinya, supaya menaikkan versi
-// berarti membuat berkas baru - dan berkas lama tetap ada untuk menjelaskan
-// hasil yang dihasilkannya.
+// The file name determines the name and the version:
+// "personalization.v1.tmpl". The version is in the file name, not inside the
+// content, so bumping the version means creating a new file - and the old
+// file stays to explain the results it produced.
 func Load() (*Library, error) {
 	entries, err := fs.Glob(templates, "templates/*.tmpl")
 	if err != nil {
@@ -90,8 +89,8 @@ func Load() (*Library, error) {
 		return nil, errors.New("no prompt templates were embedded")
 	}
 
-	// Diurutkan supaya versi tertinggi yang menang secara deterministik, bukan
-	// bergantung pada urutan yang kebetulan dikembalikan Glob.
+	// Sorted so the highest version wins deterministically, rather than
+	// depending on whatever order Glob happens to return.
 	sort.Strings(entries)
 
 	lib := &Library{byName: make(map[string]Template, len(entries))}
@@ -120,8 +119,8 @@ func Load() (*Library, error) {
 		}
 
 		if existing, ok := lib.byName[name]; ok && existing.Version > version {
-			// Versi lama tetap ada di repo untuk menjelaskan hasil lama, tetapi
-			// yang dipakai selalu yang tertinggi.
+			// Old versions stay in the repo to explain old results, but the one used
+			// is always the highest.
 			continue
 		}
 		lib.byName[name] = candidate
@@ -129,7 +128,7 @@ func Load() (*Library, error) {
 	return lib, nil
 }
 
-// Latest mengembalikan versi tertinggi sebuah templat.
+// Latest returns the highest version of a template.
 func (l *Library) Latest(name string) (Template, error) {
 	t, ok := l.byName[name]
 	if !ok {
@@ -138,7 +137,7 @@ func (l *Library) Latest(name string) (Template, error) {
 	return t, nil
 }
 
-// Names mengembalikan nama templat yang tersedia, terurut.
+// Names returns the names of the available templates, sorted.
 func (l *Library) Names() []string {
 	out := make([]string, 0, len(l.byName))
 	for name := range l.byName {

@@ -16,12 +16,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/llm/gemini"
 )
 
-// Seluruh test di sini bicara ke httptest.Server di loopback.
+// Every test here speaks to an httptest.Server on loopback.
 //
-// Itu bukan pelanggaran R6: yang dilarang adalah memanggil penyedia
-// sungguhan - lambat, berbiaya, dan hasilnya berubah tiap jalankan. Server
-// palsu di loopback tidak meninggalkan mesin, dan ia satu-satunya cara menguji
-// perilaku HTTP yang sebenarnya: status, backoff, dan batas ukuran.
+// That is not a violation of R6: what is forbidden is calling the real
+// provider - slow, costly, and changing its result on every run. A fake server
+// on loopback never leaves the machine, and it is the only way to test the
+// actual HTTP behaviour: statuses, backoff, and size limits.
 
 func request() llm.Request {
 	return llm.Request{
@@ -59,7 +59,7 @@ func client(t *testing.T, srv *httptest.Server, tune func(*gemini.Config)) *gemi
 	return c
 }
 
-// TestAnAnswerComesBack adalah jalur normal.
+// TestAnAnswerComesBack is the normal path.
 func TestAnAnswerComesBack(t *testing.T) {
 	var gotPath, gotKey, gotBody string
 
@@ -96,8 +96,8 @@ func TestAnAnswerComesBack(t *testing.T) {
 		t.Fatalf("the request went to %q", gotPath)
 	}
 
-	// Kunci lewat header, tidak pernah di URL. Query string muncul di log
-	// proxy dan riwayat; header tidak.
+	// The key through a header, never in the URL. Query strings show up in
+	// proxy logs and history; headers do not.
 	if gotKey != "not-a-real-key" {
 		t.Fatalf("the api key header is %q", gotKey)
 	}
@@ -109,7 +109,7 @@ func TestAnAnswerComesBack(t *testing.T) {
 	}
 }
 
-// TestARateLimitIsRetriedAndThenSucceeds adalah alasan backoff ada.
+// TestARateLimitIsRetriedAndThenSucceeds is the reason backoff exists.
 func TestARateLimitIsRetriedAndThenSucceeds(t *testing.T) {
 	var calls atomic.Int32
 
@@ -135,10 +135,10 @@ func TestARateLimitIsRetriedAndThenSucceeds(t *testing.T) {
 	}
 }
 
-// TestABadRequestIsNotRetried menghemat kuota dan mempercepat kegagalannya.
+// TestABadRequestIsNotRetried saves quota and speeds up the failure.
 //
-// Permintaan yang ditolak karena bentuknya salah akan ditolak dengan cara yang
-// sama berapa kali pun diulang.
+// A request refused because its shape is wrong will be refused the same way
+// however many times it is repeated.
 func TestABadRequestIsNotRetried(t *testing.T) {
 	var calls atomic.Int32
 
@@ -161,7 +161,7 @@ func TestABadRequestIsNotRetried(t *testing.T) {
 	}
 }
 
-// TestARateLimitThatNeverLiftsIsReported menjaga galatnya tetap bisa dikenali.
+// TestARateLimitThatNeverLiftsIsReported keeps the error recognisable.
 func TestARateLimitThatNeverLiftsIsReported(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -175,7 +175,7 @@ func TestARateLimitThatNeverLiftsIsReported(t *testing.T) {
 	}
 }
 
-// TestAServerErrorIsRetried menjaga 5xx tetap dianggap sementara.
+// TestAServerErrorIsRetried keeps 5xx treated as transient.
 func TestAServerErrorIsRetried(t *testing.T) {
 	var calls atomic.Int32
 
@@ -193,7 +193,7 @@ func TestAServerErrorIsRetried(t *testing.T) {
 	}
 }
 
-// TestAnOversizedAnswerIsRefused menjaga memori worker.
+// TestAnOversizedAnswerIsRefused protects the worker's memory.
 func TestAnOversizedAnswerIsRefused(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, answer(strings.Repeat("x", 10_000)))
@@ -209,8 +209,8 @@ func TestAnOversizedAnswerIsRefused(t *testing.T) {
 	}
 }
 
-// TestACancelledContextStopsTheRetryLoop menjaga worker tetap bisa dimatikan
-// di tengah rangkaian percobaan.
+// TestACancelledContextStopsTheRetryLoop keeps the worker stoppable in the
+// middle of a series of attempts.
 func TestACancelledContextStopsTheRetryLoop(t *testing.T) {
 	var calls atomic.Int32
 
@@ -244,7 +244,8 @@ func TestACancelledContextStopsTheRetryLoop(t *testing.T) {
 	}
 }
 
-// TestAFencedAnswerIsUnwrapped menjaga perilaku yang sudah ada di sistem lama.
+// TestAFencedAnswerIsUnwrapped keeps a behaviour the legacy system already
+// had.
 func TestAFencedAnswerIsUnwrapped(t *testing.T) {
 	cases := map[string]string{
 		"```json\n{\"a\":1}\n```": `{"a":1}`,
@@ -270,8 +271,8 @@ func TestAFencedAnswerIsUnwrapped(t *testing.T) {
 	}
 }
 
-// TestAnEmptyAnswerIsRefused menjaga jawaban kosong tidak tersimpan sebagai
-// laporan.
+// TestAnEmptyAnswerIsRefused keeps an empty answer from being stored as a
+// report.
 func TestAnEmptyAnswerIsRefused(t *testing.T) {
 	bodies := []string{
 		`{"candidates":[]}`,
@@ -292,8 +293,8 @@ func TestAnEmptyAnswerIsRefused(t *testing.T) {
 	}
 }
 
-// TestABlockedPromptIsReportedAsItself menjaga penolakan filter tidak terlihat
-// seperti jawaban kosong biasa.
+// TestABlockedPromptIsReportedAsItself keeps a filter refusal from looking
+// like an ordinary empty answer.
 func TestABlockedPromptIsReportedAsItself(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"promptFeedback":{"blockReason":"SAFETY"}}`)
@@ -306,8 +307,8 @@ func TestABlockedPromptIsReportedAsItself(t *testing.T) {
 	}
 }
 
-// TestATruncatedAnswerIsVisible menjaga laporan setengah jadi tidak tersimpan
-// sebagai laporan utuh.
+// TestATruncatedAnswerIsVisible keeps a half-finished report from being
+// stored as a whole one.
 func TestATruncatedAnswerIsVisible(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"half a rep"}]},`+
@@ -334,8 +335,9 @@ func TestAClientWithoutAKeyIsRefused(t *testing.T) {
 	}
 }
 
-// TestTokenUsageIsReported: angka token datang dari penyedia, bukan ditaksir.
-// Bentuk usageMetadata di sini disalin dari jawaban nyata gemini-3.8-flash.
+// TestTokenUsageIsReported: the token numbers come from the provider, not
+// from an estimate. The usageMetadata shape here is copied from a real
+// gemini-3.8-flash answer.
 func TestTokenUsageIsReported(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -358,7 +360,7 @@ func TestTokenUsageIsReported(t *testing.T) {
 	}
 }
 
-// Penyedia yang tidak melaporkan token memberi nol, bukan galat.
+// A provider that reports no tokens gives zero, not an error.
 func TestMissingUsageIsZero(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -375,16 +377,16 @@ func TestMissingUsageIsZero(t *testing.T) {
 	}
 }
 
-// quota429 adalah body 429 yang benar-benar dikirim gemini-3.8-flash pada
-// 2026-09-07, dipendekkan pada pesan bebasnya saja.
+// quota429 is the 429 body gemini-3.8-flash actually sent on 2026-09-07,
+// shortened only in its free-text message.
 const quota429 = `{"error":{"code":429,"message":"You exceeded your current quota.","status":"RESOURCE_EXHAUSTED",` +
 	`"details":[{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"x","url":"y"}]},` +
 	`{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"m",` +
 	`"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaDimensions":{"model":"gemini-3.8-flash"},"quotaValue":"20"}]},` +
 	`{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"%s"}]}}`
 
-// TestTheProvidersRetryDelayIsHonoured: jeda yang diminta 429 dipakai, bukan
-// backoff milidetik sendiri - mengulang lebih cepat hanya membakar percobaan.
+// TestTheProvidersRetryDelayIsHonoured: the pause the 429 asks for is used,
+// not our own millisecond backoff - retrying faster only burns attempts.
 func TestTheProvidersRetryDelayIsHonoured(t *testing.T) {
 	var calls atomic.Int32
 	var gaps []time.Time
@@ -415,8 +417,8 @@ func TestTheProvidersRetryDelayIsHonoured(t *testing.T) {
 	}
 }
 
-// Jeda yang diminta tidak boleh melampaui Timeout: "coba lagi besok" tidak
-// boleh menahan partisi worker sampai besok.
+// The requested pause must not exceed Timeout: "try again tomorrow" must
+// not hold the worker's partition until tomorrow.
 func TestARetryDelayIsCappedByTheTimeout(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -440,8 +442,8 @@ func TestARetryDelayIsCappedByTheTimeout(t *testing.T) {
 	}
 }
 
-// Kuota yang habis disebut namanya: per hari dan per menit menuntut tindakan
-// yang berbeda, dan pesan bebasnya tidak membedakan keduanya.
+// The exhausted quota is named: per day and per minute call for different
+// actions, and the free-text message does not tell them apart.
 func TestTheExhaustedQuotaIsNamed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -461,7 +463,7 @@ func TestTheExhaustedQuotaIsNamed(t *testing.T) {
 	}
 }
 
-// Retry-After di header menang atas retryDelay di body.
+// Retry-After in the header wins over retryDelay in the body.
 func TestRetryAfterHeaderWins(t *testing.T) {
 	var calls atomic.Int32
 	var gaps []time.Time

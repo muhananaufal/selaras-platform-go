@@ -20,11 +20,11 @@ func request() llm.Request {
 	}
 }
 
-// TestTheFakeIsDeterministic adalah alasan penyedia palsu ini ada.
+// TestTheFakeIsDeterministic is the reason this fake provider exists.
 //
-// Test yang hasilnya berubah dari satu jalankan ke jalankan berikutnya tidak
-// membuktikan apa-apa, dan test idempotensi kehilangan seluruh maknanya kalau
-// dua pemanggilan menghasilkan jawaban berbeda.
+// A test whose result changes from one run to the next proves nothing, and an
+// idempotency test loses all its meaning if two calls produce different
+// answers.
 func TestTheFakeIsDeterministic(t *testing.T) {
 	ctx := context.Background()
 
@@ -41,9 +41,9 @@ func TestTheFakeIsDeterministic(t *testing.T) {
 		t.Fatalf("two identical requests answered differently:\n  %s\n  %s", first.Text, second.Text)
 	}
 
-	// Dan prompt yang berbeda menghasilkan jawaban yang berbeda - tanpa itu,
-	// determinisme di atas bisa berarti "selalu jawaban yang sama apa pun
-	// promptnya", yang tidak membuktikan apa pun.
+	// And different prompts produce different answers - without that, the
+	// determinism above could mean "always the same answer whatever the
+	// prompt", which proves nothing.
 	other := request()
 	other.Prompt = "explain something else"
 	third, err := llm.NewFake().Generate(ctx, other)
@@ -55,7 +55,7 @@ func TestTheFakeIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestTheFakeAnswersJSON menjaga bentuk jawabannya sama dengan yang sungguhan.
+// TestTheFakeAnswersJSON keeps the answer shape the same as the real one.
 func TestTheFakeAnswersJSON(t *testing.T) {
 	got, err := llm.NewFake().Generate(context.Background(), request())
 	if err != nil {
@@ -74,7 +74,7 @@ func TestTheFakeAnswersJSON(t *testing.T) {
 	}
 }
 
-// TestARequestWithoutAPromptVersionIsRefused menjaga F3-09 dari hulunya.
+// TestARequestWithoutAPromptVersionIsRefused guards F3-09 at its source.
 func TestARequestWithoutAPromptVersionIsRefused(t *testing.T) {
 	req := request()
 	req.PromptVersion = ""
@@ -84,7 +84,7 @@ func TestARequestWithoutAPromptVersionIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnEmptyPromptIsRefused menjaga permintaan yang terbuang.
+// TestAnEmptyPromptIsRefused guards against a wasted request.
 func TestAnEmptyPromptIsRefused(t *testing.T) {
 	req := request()
 	req.Prompt = "   \n\t "
@@ -108,7 +108,7 @@ func TestAnOversizedAnswerIsRefused(t *testing.T) {
 	}
 }
 
-// TestACancelledContextStopsTheCall menjaga worker tetap bisa dimatikan.
+// TestACancelledContextStopsTheCall keeps the worker stoppable.
 func TestACancelledContextStopsTheCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -118,7 +118,7 @@ func TestACancelledContextStopsTheCall(t *testing.T) {
 	}
 }
 
-// TestTheFakeRecordsWhatItWasAsked membuat test lain bisa memeriksa promptnya.
+// TestTheFakeRecordsWhatItWasAsked lets other tests inspect the prompt.
 func TestTheFakeRecordsWhatItWasAsked(t *testing.T) {
 	fake := llm.NewFake()
 	ctx := context.Background()
@@ -140,7 +140,7 @@ func TestTheFakeRecordsWhatItWasAsked(t *testing.T) {
 	}
 }
 
-// TestAFailingProviderIsReported menjaga jalur kegagalan bisa diuji.
+// TestAFailingProviderIsReported keeps the failure path testable.
 func TestAFailingProviderIsReported(t *testing.T) {
 	fake := llm.NewFake()
 	fake.Err = llm.ErrRateLimited
@@ -150,8 +150,8 @@ func TestAFailingProviderIsReported(t *testing.T) {
 	}
 }
 
-// TestATruncatedAnswerIsVisible menjaga laporan setengah jadi tidak tersimpan
-// sebagai laporan utuh.
+// TestATruncatedAnswerIsVisible keeps a half-finished report from being
+// stored as a whole one.
 func TestATruncatedAnswerIsVisible(t *testing.T) {
 	fake := llm.NewFake()
 	fake.FinishReason = "MAX_TOKENS"
@@ -174,14 +174,13 @@ func TestATruncatedAnswerIsVisible(t *testing.T) {
 	}
 }
 
-// TestTheFakeMatchesTheShapeItsPromptAsksFor menutup celah yang ditemukan
-// dengan menjalankannya.
+// TestTheFakeMatchesTheShapeItsPromptAsksFor closes a gap found by running it.
 //
-// Versi pertama penyedia palsu mengembalikan bentuk yang SAMA untuk setiap
-// templat. Akibatnya nyata: konsumen coaching membedakan kurikulum dari laporan
-// kelulusan lewat ada tidaknya "weeks", dan jawaban palsu yang tidak punya
-// keduanya tersimpan sebagai laporan - program tetap menunggu kurikulum
-// selamanya.
+// The first version of the fake provider returned the SAME shape for every
+// template. The consequence was real: the coaching consumer tells a curriculum
+// from a graduation report by the presence of "weeks", and a fake answer with
+// neither was stored as a report - the program kept waiting for its curriculum
+// forever.
 func TestTheFakeMatchesTheShapeItsPromptAsksFor(t *testing.T) {
 	cases := map[string][]string{
 		"curriculum@1": {"program_title", "weeks"},
@@ -211,9 +210,9 @@ func TestTheFakeMatchesTheShapeItsPromptAsksFor(t *testing.T) {
 		}
 	}
 
-	// Dan kurikulumnya benar-benar berisi pekan bernomor berurutan dengan
-	// tanggal yang bisa dibaca - kerangka yang melanggar aturan prompt-nya
-	// sendiri tidak membuktikan apa pun.
+	// And the curriculum really holds consecutively numbered weeks with
+	// readable dates - a skeleton that breaks its own prompt's rules proves
+	// nothing.
 	req := request()
 	req.PromptVersion = "curriculum@1"
 
@@ -256,8 +255,8 @@ func TestTheFakeMatchesTheShapeItsPromptAsksFor(t *testing.T) {
 	}
 }
 
-// Dua mode gangguan untuk chaos F9-14. Keduanya milik penyedia palsu supaya
-// "Gemini lambat" dan "Gemini gagal" bisa dimainkan tanpa Gemini.
+// Two disruption modes for chaos F9-14. Both belong to the fake provider so
+// "slow Gemini" and "failing Gemini" can be played without Gemini.
 
 func TestTheFakeCanBeSlowAndStillHonoursCancellation(t *testing.T) {
 	fake := llm.NewFake()
@@ -275,7 +274,7 @@ func TestTheFakeCanBeSlowAndStillHonoursCancellation(t *testing.T) {
 		t.Fatalf("the fake slept the full delay (%s) instead of stopping at cancellation", elapsed)
 	}
 
-	// Dengan waktu yang cukup, jawabannya datang - setelah jedanya.
+	// Given enough time, the answer comes - after the delay.
 	fake.Delay = 50 * time.Millisecond
 	started = time.Now()
 	if _, err := fake.Generate(context.Background(), request()); err != nil {

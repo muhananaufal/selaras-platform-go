@@ -27,7 +27,7 @@ func library(t *testing.T) *prompt.Library {
 	return lib
 }
 
-// TestTheTemplateRendersWithItsData adalah bentuk paling dasar.
+// TestTheTemplateRendersWithItsData is the most basic shape.
 func TestTheTemplateRendersWithItsData(t *testing.T) {
 	tmpl, err := library(t).Latest("personalization")
 	if err != nil {
@@ -45,16 +45,17 @@ func TestTheTemplateRendersWithItsData(t *testing.T) {
 		}
 	}
 
-	// Tidak ada placeholder yang tertinggal belum terisi.
+	// No placeholder is left unfilled.
 	if strings.Contains(out, "{{") || strings.Contains(out, "<no value>") {
 		t.Error("the rendered prompt still contains unfilled placeholders")
 	}
 }
 
-// TestAMissingFieldIsRefused menjaga prompt setengah terisi tidak terkirim.
+// TestAMissingFieldIsRefused keeps a half-filled prompt from being sent.
 //
-// Tanpa missingkey=error, bidang yang hilang menjadi "<no value>" - dan model
-// menerima prompt yang menyebutkan risiko "<no value>%" tanpa ada yang tahu.
+// Without missingkey=error, a missing field becomes "<no value>" - and the
+// model receives a prompt mentioning a risk of "<no value>%" without anyone
+// knowing.
 func TestAMissingFieldIsRefused(t *testing.T) {
 	tmpl, err := library(t).Latest("personalization")
 	if err != nil {
@@ -69,7 +70,7 @@ func TestAMissingFieldIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheIDCarriesNameAndVersion menjaga penanda yang disimpan bersama hasilnya.
+// TestTheIDCarriesNameAndVersion guards the marker stored with the result.
 func TestTheIDCarriesNameAndVersion(t *testing.T) {
 	tmpl, err := library(t).Latest("personalization")
 	if err != nil {
@@ -80,16 +81,15 @@ func TestTheIDCarriesNameAndVersion(t *testing.T) {
 	}
 }
 
-// TestTheChecksumMatchesTheTemplateOnDisk adalah yang membuat versi tidak bisa
-// berbohong.
+// TestTheChecksumMatchesTheTemplateOnDisk is what keeps the version from lying.
 //
-// Templat yang diubah tanpa menaikkan versinya akan menghasilkan checksum lain,
-// dan test ini gagal - memaksa perubahannya menjadi versi baru, bukan
-// perubahan diam-diam yang membuat hasil lama tidak bisa dijelaskan.
+// A template changed without bumping its version produces a different checksum,
+// and this test fails - forcing the change to become a new version, not a
+// silent change that leaves old results unexplainable.
 //
-// Angka di bawah SENGAJA ditulis tangan. Menghitungnya ulang di dalam test akan
-// membuatnya selalu cocok dengan apa pun isinya, dan test-nya berhenti menguji
-// apa pun.
+// The numbers below are DELIBERATELY written by hand. Recomputing them inside
+// the test would make them always match whatever the content is, and the test
+// would stop testing anything.
 func TestTheChecksumMatchesTheTemplateOnDisk(t *testing.T) {
 	want := map[string]string{
 		"personalization": "2583db805e2f43b7464cc519bf32553e9ee60a22b8a12fd5715418f17ef7d91b",
@@ -115,10 +115,10 @@ func TestTheChecksumMatchesTheTemplateOnDisk(t *testing.T) {
 	}
 }
 
-// TestOnlyKnownTemplatesExist menjaga daftar tetap disengaja.
+// TestOnlyKnownTemplatesExist keeps the list deliberate.
 //
-// Templat yang menyelinap masuk tanpa lewat sini berarti ada prompt yang
-// dikirim ke model tanpa seorang pun pernah membacanya.
+// A template that slips in without passing through here means a prompt is
+// sent to the model without anyone ever having read it.
 func TestOnlyKnownTemplatesExist(t *testing.T) {
 	want := []string{"chat_reply", "curriculum", "daily_guide", "graduation", "personalization"}
 
@@ -133,8 +133,7 @@ func TestOnlyKnownTemplatesExist(t *testing.T) {
 	}
 }
 
-// TestAnUnknownTemplateIsRefused menjaga kesalahan ketik tidak menjadi prompt
-// kosong.
+// TestAnUnknownTemplateIsRefused keeps a typo from becoming an empty prompt.
 func TestAnUnknownTemplateIsRefused(t *testing.T) {
 	if _, err := library(t).Latest("personalisation"); err == nil {
 		t.Fatal("a misspelled template name was accepted")
