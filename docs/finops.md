@@ -107,7 +107,7 @@ boleh dipakai untuk menagih siapa pun.
 
 ### Yang diukur (2026-09-07, gemini-3.8-flash, kunci tingkat gratis)
 
-Metrik `llm_tokens_total{kind,provider,template}` (F9, commit `a24c408`)
+Metrik `llm_tokens_total{kind,provider,template}` (F9, commit `3d16abd`)
 membaca `usageMetadata` dari jawaban penyedia — bukan taksiran. Diambil dari
 `/metrics` llm-worker setelah suite e2e dijalankan dengan `LLM_PROVIDER=gemini`
 [fakta: `llm_tokens_total` dan `llm_jobs_total`, dibaca 2026-09-07]:
@@ -137,7 +137,7 @@ Tiga hal yang taksiran tidak tahu dan pengukuran tahu:
    (`llm_jobs_total`). Kurikulum dan panduan menu di e2e gagal bukan karena
    kodenya, melainkan karena kuota — dan itu menyingkap dua cacat klien
    (B30): jeda `retryDelay` yang diminta penyedia diabaikan, dan kuota yang
-   habis tidak disebut namanya di galat. Keduanya diperbaiki (`cb0dc12`).
+   habis tidak disebut namanya di galat. Keduanya diperbaiki (`0c9fc01`).
    Yang BELUM: pekerjaan yang jatuh pada kuota harian tetap mati setelah tiga
    percobaan dalam hitungan detik — worker belum punya cara "parkir sampai
    kuota pulih". Ini keputusan rancangan, dicatat sebagai hutang.
