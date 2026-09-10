@@ -15,8 +15,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// Tabel outbox skema identity dipakai sebagai subjek: ia terpartisi menurut
-// created_at dengan partisi DEFAULT, persis bentuk yang dipelihara.
+// The identity schema's outbox table is the subject: it is partitioned by
+// created_at with a DEFAULT partition, exactly the shape being maintained.
 func setup(t *testing.T) (*pgxpool.Pool, context.Context, *partition.Maintainer) {
 	t.Helper()
 	pool := pgtest.Open(t, "identity")
@@ -25,8 +25,8 @@ func setup(t *testing.T) (*pgxpool.Pool, context.Context, *partition.Maintainer)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 
-	// Partisi bulanan dari test sebelumnya dibuang supaya setiap test mulai
-	// dari tabel yang hanya punya partisi DEFAULT.
+	// Monthly partitions from previous tests are dropped so every test starts
+	// from a table that has only the DEFAULT partition.
 	dropMonthly(t, ctx, pool)
 	t.Cleanup(func() { dropMonthly(t, context.Background(), pool) })
 
@@ -114,7 +114,7 @@ func TestThisAndNextMonthGetPartitionsAndRerunsAreIdempotent(t *testing.T) {
 		t.Fatalf("created = %q", got)
 	}
 
-	// Baris bulan ini mendarat di partisi bulanan, bukan DEFAULT.
+	// This month's row lands in the monthly partition, not DEFAULT.
 	insertAt(t, ctx, pool, now, false)
 	var where string
 	if err := pool.QueryRow(ctx, `SELECT tableoid::regclass::text FROM outbox LIMIT 1`).Scan(&where); err != nil {
@@ -136,7 +136,7 @@ func TestThisAndNextMonthGetPartitionsAndRerunsAreIdempotent(t *testing.T) {
 func TestOldPartitionsAreDroppedWholeAndYoungOnesKept(t *testing.T) {
 	pool, ctx, m := setup(t)
 
-	// Tiga bulan berturut-turut dibuat dengan memutar "sekarang".
+	// Three consecutive months are created by turning "now".
 	for _, month := range []time.Month{time.January, time.February, time.March} {
 		if _, err := m.Run(ctx, outbox(0), time.Date(2030, month, 3, 0, 0, 0, 0, time.UTC)); err != nil {
 			t.Fatal(err)
@@ -145,9 +145,9 @@ func TestOldPartitionsAreDroppedWholeAndYoungOnesKept(t *testing.T) {
 	insertAt(t, ctx, pool, time.Date(2030, time.January, 10, 0, 0, 0, 0, time.UTC), true)
 	insertAt(t, ctx, pool, time.Date(2030, time.March, 10, 0, 0, 0, 0, time.UTC), true)
 
-	// Retensi 30 hari pada 20 Maret: Januari seluruhnya lebih tua, Februari
-	// berakhir 1 Maret - juga lebih tua dari 18 Februari? Tidak: cutoff 18
-	// Februari, akhir Februari (1 Maret) SESUDAH cutoff, jadi Februari tetap.
+	// 30-day retention on 20 March: January is entirely older, February ends
+	// on 1 March - also older than 18 February? No: the cutoff is 18 February,
+	// the end of February (1 March) is AFTER the cutoff, so February stays.
 	report, err := m.Run(ctx, outbox(30*24*time.Hour), time.Date(2030, time.March, 20, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
@@ -187,9 +187,9 @@ func TestLeftoversInTheDefaultPartitionArePrunedByRetentionAndPredicate(t *testi
 	pool, ctx, m := setup(t)
 	old := time.Date(2029, time.June, 1, 0, 0, 0, 0, time.UTC)
 
-	// Tanpa partisi bulanan, keduanya jatuh ke DEFAULT.
-	insertAt(t, ctx, pool, old, true)  // sudah terkirim: boleh dipangkas
-	insertAt(t, ctx, pool, old, false) // BELUM terkirim: harus bertahan
+	// Without monthly partitions, both fall into DEFAULT.
+	insertAt(t, ctx, pool, old, true)  // already published: may be pruned
+	insertAt(t, ctx, pool, old, false) // NOT yet published: must survive
 
 	report, err := m.Run(ctx, outbox(7*24*time.Hour), time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -207,7 +207,7 @@ func TestADefaultPartitionHoldingThisMonthIsReportedNotFatal(t *testing.T) {
 	pool, ctx, m := setup(t)
 	now := time.Date(2031, time.August, 12, 0, 0, 0, 0, time.UTC)
 
-	// Baris bulan ini sudah ada di DEFAULT sebelum pemelihara pernah jalan.
+	// This month's row was already in DEFAULT before the maintainer ever ran.
 	insertAt(t, ctx, pool, now, false)
 
 	report, err := m.Run(ctx, outbox(0), now)

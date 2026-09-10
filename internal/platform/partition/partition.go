@@ -1,20 +1,18 @@
-// Package partition memelihara tabel yang dipartisi menurut bulan.
+// Package partition maintains tables partitioned by month.
 //
-// Dua pekerjaan, keduanya idempoten sehingga aman dijalankan sesering apa pun
-// (F9-29):
+// Two jobs, both idempotent so they are safe to run however often (F9-29):
 //
-//   - MEMBUAT partisi untuk bulan berjalan dan bulan berikutnya, supaya baris
-//     baru tidak jatuh ke partisi DEFAULT. Bulan berikutnya dibuat sekarang,
-//     bukan pada tanggal satu: pemelihara yang tidak sempat berjalan di
-//     pergantian bulan tidak boleh membuat INSERT gagal.
-//   - MELEPAS partisi yang seluruh rentangnya lebih tua dari retensi tabel.
-//     Dilepas utuh (DETACH lalu DROP), bukan dihapus baris per baris: satu
-//     perintah metadata, bukan jutaan tuple mati yang harus di-vacuum.
+//   - CREATE partitions for the current and the next month, so new rows do
+//     not fall into the DEFAULT partition. Next month is created now, not on
+//     the first of the month: a maintainer that failed to run over the month
+//     boundary must not make INSERTs fail.
+//   - DROP partitions whose entire range is older than the table's
+//     retention. Dropped whole (DETACH then DROP), not deleted row by row:
+//     one metadata command, not millions of dead tuples to vacuum.
 //
-// Baris yang terlanjur berada di partisi DEFAULT - misalnya dari sebelum
-// pemelihara pertama kali berjalan - dipangkas dengan DELETE menurut retensi.
-// Itu satu-satunya jalur baris-per-baris, dan ia hanya menyentuh sisa
-// transisi.
+// Rows that ended up in the DEFAULT partition - from before the maintainer
+// first ran, say - are pruned with DELETE according to the retention. That is
+// the only row-by-row path, and it only touches transitional leftovers.
 package partition
 
 import (
@@ -29,26 +27,27 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Table adalah satu tabel terpartisi yang dipelihara.
+// Table is one partitioned table under maintenance.
 type Table struct {
 	Schema string
 	Name   string
 
-	// Column adalah kunci partisinya; created_at di seluruh tabel proyek ini.
+	// Column is its partition key; created_at across every table in this
+	// project.
 	Column string
 
-	// Retention adalah berapa lama baris disimpan. Nol berarti SELAMANYA:
-	// partisi dibuat tetapi tidak pernah dilepas. Pesan pengguna memakai nol -
-	// menghapusnya adalah keputusan produk, bukan pemeliharaan.
+	// Retention is how long rows are kept. Zero means FOREVER: partitions are
+	// created but never dropped. User messages use zero - deleting them is a
+	// product decision, not maintenance.
 	Retention time.Duration
 
-	// Prune adalah predikat tambahan untuk baris yang boleh dipangkas dari
-	// partisi DEFAULT, misalnya "published_at IS NOT NULL" untuk outbox.
-	// Kosong berarti seluruh baris yang lebih tua dari retensi.
+	// Prune is an extra predicate for rows that may be pruned from the DEFAULT
+	// partition, for example "published_at IS NOT NULL" for the outbox. Empty
+	// means every row older than the retention.
 	Prune string
 }
 
-// Report adalah yang terjadi pada satu jalankan.
+// Report is what happened during one run.
 type Report struct {
 	Created []string
 	Dropped []string
@@ -74,10 +73,11 @@ func New(db pg.Querier, log *slog.Logger) (*Maintainer, error) {
 
 var safeIdent = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
-// Run memelihara setiap tabel sekali, relatif terhadap now.
+// Run maintains every table once, relative to now.
 //
-// now diberikan, bukan dibaca dari jam: test harus bisa memutar waktu, dan
-// operator yang menjalankannya untuk "bulan depan" harus bisa mengatakannya.
+// now is supplied, not read from the clock: tests have to be able to turn
+// time, and an operator running it for "next month" has to be able to say
+// so.
 func (m *Maintainer) Run(ctx context.Context, tables []Table, now time.Time) (Report, error) {
 	var report Report
 	for _, t := range tables {
@@ -97,8 +97,8 @@ func (m *Maintainer) Run(ctx context.Context, tables []Table, now time.Time) (Re
 func (t Table) validate() error {
 	for _, s := range []string{t.Schema, t.Name, t.Column} {
 		if !safeIdent.MatchString(s) {
-			// Nama tabel masuk ke DDL lewat penggabungan string - tidak ada
-			// parameter untuk pengenal - jadi bentuknya dibatasi ketat.
+			// The table name enters the DDL through string concatenation - there are
+			// no parameters for identifiers - so its shape is constrained strictly.
 			return fmt.Errorf("identifier %q is not a plain lowercase identifier", s)
 		}
 	}
@@ -112,15 +112,16 @@ func PartitionName(table string, month time.Time) string {
 
 var partitionSuffix = regexp.MustCompile(`_y(\d{4})m(\d{2})$`)
 
-// monthOf membaca bulan dari nama partisi; false bila bukan partisi bulanan
-// (partisi DEFAULT, misalnya).
+// monthOf reads the month from a partition name; false when it is not a
+// monthly partition (the DEFAULT partition, say).
 func monthOf(name string) (time.Time, bool) {
 	match := partitionSuffix.FindStringSubmatch(name)
 	if match == nil {
 		return time.Time{}, false
 	}
-	// Regex di atas sudah menjamin keduanya angka; galat di sini mustahil,
-	// tetapi diperiksa supaya nama yang aneh dilewati, bukan ditebak.
+	// The regex above already guarantees both are digits; an error here is
+	// impossible, but it is checked so an odd name is skipped rather than
+	// guessed.
 	year, err := strconv.Atoi(match[1])
 	if err != nil {
 		return time.Time{}, false
@@ -137,7 +138,8 @@ func startOfMonth(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
-// ensure membuat partisi bulan ini dan bulan depan bila belum ada.
+// ensure creates this month's and next month's partitions if they do not
+// exist yet.
 func (m *Maintainer) ensure(ctx context.Context, t Table, now time.Time, report *Report) error {
 	this := startOfMonth(now)
 	for _, month := range []time.Time{this, this.AddDate(0, 1, 0)} {
@@ -153,13 +155,13 @@ func (m *Maintainer) ensure(ctx context.Context, t Table, now time.Time, report 
 		from := month.Format("2006-01-02")
 		to := month.AddDate(0, 1, 0).Format("2006-01-02")
 
-		// Partisi DEFAULT yang sudah memuat baris untuk bulan ini membuat
-		// PostgreSQL menolak CREATE: baris itu akan melanggar batasan default
-		// yang baru. Diperiksa LEBIH DULU, bukan ditangkap dari galatnya:
-		// galat membatalkan transaksi yang sedang berjalan, dan dry-run
-		// berjalan di dalam satu transaksi. Bulan itu dilewati dan dicatat -
-		// baris di default dipangkas menurut retensi, dan bulan berikutnya
-		// akan punya partisinya sendiri karena belum ada satu pun barisnya.
+		// A DEFAULT partition that already holds rows for this month makes
+		// PostgreSQL refuse the CREATE: those rows would violate the new default
+		// constraint. Checked FIRST, not caught from the error: an error aborts
+		// the running transaction, and a dry run executes inside one transaction.
+		// That month is skipped and reported - the rows in default are pruned by
+		// retention, and the following month will get its own partition because
+		// none of its rows exist yet.
 		crowded, err := m.defaultHasRows(ctx, t, from, to)
 		if err != nil {
 			return err
@@ -177,11 +179,11 @@ func (m *Maintainer) ensure(ctx context.Context, t Table, now time.Time, report 
 			return fmt.Errorf("creating %s: %w", name, err)
 		}
 
-		// Pemiliknya disamakan dengan tabel induk. Pemelihara berjalan dengan
-		// peran admin yang menjangkau semua skema; tanpa ini, partisi baru
-		// menjadi milik admin dan peran service - pemilik tabel induknya -
-		// tidak bisa mengubah atau membuangnya (ADR-006: satu peran per
-		// skema, dan skemanya miliknya).
+		// The owner is aligned with the parent table. The maintainer runs as the
+		// admin role that reaches every schema; without this, a new partition
+		// would belong to admin and the service role - the parent table's owner -
+		// could neither alter nor drop it (ADR-006: one role per schema, and the
+		// schema is its own).
 		owner, err := m.ownerOf(ctx, t.Schema, t.Name)
 		if err != nil {
 			return err
@@ -194,8 +196,8 @@ func (m *Maintainer) ensure(ctx context.Context, t Table, now time.Time, report 
 	return nil
 }
 
-// retire melepas partisi yang seluruh rentangnya lebih tua dari retensi, dan
-// memangkas sisa di partisi DEFAULT.
+// retire drops partitions whose entire range is older than the retention,
+// and prunes the leftovers in the DEFAULT partition.
 func (m *Maintainer) retire(ctx context.Context, t Table, now time.Time, report *Report) error {
 	if t.Retention <= 0 {
 		return nil
@@ -231,13 +233,13 @@ func (m *Maintainer) retire(ctx context.Context, t Table, now time.Time, report 
 		if !ok {
 			continue
 		}
-		// Seluruh rentang harus lebih tua dari cutoff: akhir bulan (eksklusif)
-		// sebelum atau sama dengan cutoff.
+		// The whole range must be older than the cutoff: the (exclusive) end of
+		// the month before or equal to the cutoff.
 		if month.AddDate(0, 1, 0).After(cutoff) {
 			continue
 		}
-		// DETACH dulu, baru DROP: bila DROP gagal, partisinya sudah keluar
-		// dari tabel dan bisa diperiksa sebagai tabel biasa.
+		// DETACH first, then DROP: if the DROP fails, the partition is already
+		// out of the table and can be inspected as an ordinary table.
 		if _, err := m.db.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s.%s DETACH PARTITION %s.%s`,
 			t.Schema, t.Name, t.Schema, name)); err != nil {
 			return fmt.Errorf("detaching %s: %w", name, err)
@@ -248,7 +250,7 @@ func (m *Maintainer) retire(ctx context.Context, t Table, now time.Time, report 
 		report.Dropped = append(report.Dropped, t.Schema+"."+name)
 	}
 
-	// Sisa di partisi DEFAULT: satu-satunya jalur baris-per-baris.
+	// Leftovers in the DEFAULT partition: the only row-by-row path.
 	where := fmt.Sprintf(`%s < $1`, t.Column)
 	if t.Prune != "" {
 		where += " AND (" + t.Prune + ")"
@@ -278,8 +280,9 @@ func (m *Maintainer) ownerOf(ctx context.Context, schema, name string) (string, 
 	return owner, nil
 }
 
-// defaultHasRows menjawab apakah partisi DEFAULT memuat baris dalam rentang
-// [from, to) - keadaan yang membuat partisi bulan itu tidak bisa dibuat.
+// defaultHasRows answers whether the DEFAULT partition holds rows in the
+// range [from, to) - the state that makes that month's partition impossible
+// to create.
 func (m *Maintainer) defaultHasRows(ctx context.Context, t Table, from, to string) (bool, error) {
 	var found bool
 	err := m.db.QueryRow(ctx, fmt.Sprintf(
