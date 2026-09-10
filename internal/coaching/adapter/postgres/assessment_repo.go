@@ -13,7 +13,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// AssessmentRepository memenuhi domain.AssessmentRepository.
+// AssessmentRepository implements domain.AssessmentRepository.
 type AssessmentRepository struct {
 	db pg.Querier
 }
@@ -24,12 +24,12 @@ func NewAssessmentRepository(db pg.Querier) *AssessmentRepository {
 
 var _ domain.AssessmentRepository = (*AssessmentRepository)(nil)
 
-// Record menyimpan rujukan; id yang sudah ada dibiarkan apa adanya.
+// Record stores a reference; an id that already exists is left as it is.
 func (r *AssessmentRepository) Record(
 	ctx context.Context, ref *domain.AssessmentRef,
 ) (bool, error) {
-	// Bukan encodeJSON: cuplikan kosong pun disimpan sebagai {}, karena kolomnya
-	// NOT NULL dan "tidak ada cuplikan" bukan keadaan yang sah untuk rujukan.
+	// Not encodeJSON: even an empty snapshot is stored as {}, because the column
+	// is NOT NULL and "no snapshot" is not a valid state for a reference.
 	snapshot, err := json.Marshal(ref.Snapshot)
 	if err != nil {
 		return false, fmt.Errorf("encoding the assessment snapshot: %w", err)
@@ -48,7 +48,7 @@ func (r *AssessmentRepository) Record(
 	return tag.RowsAffected() == 1, nil
 }
 
-// FindBySlug mencari lewat slug publiknya.
+// FindBySlug looks a reference up by its public slug.
 func (r *AssessmentRepository) FindBySlug(
 	ctx context.Context, slug string,
 ) (*domain.AssessmentRef, error) {

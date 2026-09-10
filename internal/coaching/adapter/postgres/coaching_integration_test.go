@@ -18,9 +18,9 @@ func setup(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
 	pool := pgtest.Open(t, "coaching")
 
-	// Program lebih dulu: pekan, tugas, thread, dan pesan ikut terhapus lewat
-	// cascade, jadi mengosongkannya satu per satu hanya menambah cara untuk
-	// meninggalkan sisa.
+	// Programs first: weeks, tasks, threads, and messages are deleted along
+	// with them through the cascade, so emptying them one by one only adds
+	// ways to leave remnants.
 	pgtest.Truncate(t, pool, "coaching_programs")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -81,7 +81,7 @@ func curriculum(weeks int) *domain.Curriculum {
 	return c
 }
 
-// TestAProgramRoundTrips adalah bentuk paling dasar.
+// TestAProgramRoundTrips is the most basic shape.
 func TestAProgramRoundTrips(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := coachingpg.NewProgramRepository(pool)
@@ -116,17 +116,17 @@ func TestAProgramRoundTrips(t *testing.T) {
 		t.Fatalf("a new program has curriculum status %q, want pending", found.CurriculumStatus)
 	}
 
-	// Slug dinormalkan saat dicari: huruf besar dan spasi datang dari
-	// salin-tempel, bukan dari niat mencari sesuatu yang lain.
+	// The slug is normalised when looked up: uppercase and surrounding spaces
+	// come from copy-paste, not from an intent to look for something else.
 	if _, err := repo.FindBySlug(ctx, "  "+p.Slug+"  "); err != nil {
 		t.Fatalf("FindBySlug with surrounding space: %v", err)
 	}
 }
 
-// TestOnlyOneActiveProgramPerUser adalah D2, ditegakkan basis data.
+// TestOnlyOneActiveProgramPerUser is D2, enforced by the database.
 //
-// Sistem lama memeriksa lalu membatalkan yang lama, dan dua permintaan serempak
-// sama-sama melihat "tidak ada yang aktif" lalu sama-sama membuat satu.
+// The legacy system checked and then cancelled the old one, and two concurrent
+// requests both saw "nothing active" and both created one.
 func TestOnlyOneActiveProgramPerUser(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := coachingpg.NewProgramRepository(pool)
@@ -143,7 +143,7 @@ func TestOnlyOneActiveProgramPerUser(t *testing.T) {
 		t.Fatalf("the second active program returned %v, want ErrActiveProgramExists", err)
 	}
 
-	// Setelah yang pertama dijeda, yang kedua boleh masuk.
+	// After the first is paused, the second may enter.
 	if err := first.Toggle(day("2026-01-06")); err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
@@ -154,8 +154,8 @@ func TestOnlyOneActiveProgramPerUser(t *testing.T) {
 		t.Fatalf("after pausing the first, the second was still refused: %v", err)
 	}
 
-	// Dan melanjutkan yang pertama sekarang ditolak - dua program aktif tetap
-	// tidak boleh ada.
+	// And resuming the first is now refused - two active programs still must
+	// not exist.
 	if err := first.Toggle(day("2026-01-07")); err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestOnlyOneActiveProgramPerUser(t *testing.T) {
 	}
 }
 
-// TestOnlyOneProgramPerAssessment adalah D3.
+// TestOnlyOneProgramPerAssessment is D3.
 func TestOnlyOneProgramPerAssessment(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := coachingpg.NewProgramRepository(pool)
@@ -177,16 +177,16 @@ func TestOnlyOneProgramPerAssessment(t *testing.T) {
 		t.Fatalf("first Create: %v", err)
 	}
 
-	// Pengguna LAIN, penilaian yang sama. Ia tetap ditolak: satu penilaian,
-	// satu program.
+	// ANOTHER user, the same assessment. It is still refused: one assessment,
+	// one program.
 	second := newProgram(t, userID(t), 4)
 	second.RiskAssessmentID = assessmentID
 	if err := repo.Create(ctx, second); !errors.Is(err, domain.ErrAssessmentUsed) {
 		t.Fatalf("a second program for the same assessment returned %v, want ErrAssessmentUsed", err)
 	}
 
-	// Program tanpa penilaian tidak saling menghalangi: NULL bukan nilai yang
-	// bertabrakan dengan NULL lain.
+	// Programs without an assessment do not block each other: NULL is not a
+	// value that collides with another NULL.
 	for range 3 {
 		p := newProgram(t, userID(t), 4)
 		if err := repo.Create(ctx, p); err != nil {
@@ -195,14 +195,14 @@ func TestOnlyOneProgramPerAssessment(t *testing.T) {
 	}
 }
 
-// TestFindingTheActiveProgram menjaga pembacaan yang paling sering dipakai.
+// TestFindingTheActiveProgram guards the most frequently used read.
 func TestFindingTheActiveProgram(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := coachingpg.NewProgramRepository(pool)
 
 	owner := userID(t)
 
-	// Belum ada: bukan galat.
+	// None yet: not an error.
 	if _, found, err := repo.FindActiveForUser(ctx, owner); err != nil || found {
 		t.Fatalf("a user with no program reported found=%v err=%v", found, err)
 	}
@@ -220,7 +220,7 @@ func TestFindingTheActiveProgram(t *testing.T) {
 		t.Fatalf("the wrong program came back")
 	}
 
-	// Setelah dijeda, ia tidak lagi aktif.
+	// After being paused, it is no longer active.
 	if err := p.Toggle(day("2026-01-06")); err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestFindingTheActiveProgram(t *testing.T) {
 	}
 }
 
-// TestACurriculumIsWrittenWholeOrNotAtAll adalah F4-08.
+// TestACurriculumIsWrittenWholeOrNotAtAll is F4-08.
 func TestACurriculumIsWrittenWholeOrNotAtAll(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -267,8 +267,8 @@ func TestACurriculumIsWrittenWholeOrNotAtAll(t *testing.T) {
 		}
 	}
 
-	// Judul, deskripsi, dan tanggal akhir program ikut diperbarui dari
-	// kurikulumnya - end_date tetap satu-satunya sumber kebenaran (F4-18).
+	// The program's title, description, and end date are updated from its
+	// curriculum too - end_date stays the single source of truth (F4-18).
 	reloaded, err := coachingpg.NewProgramRepository(pool).FindBySlug(ctx, p.Slug)
 	if err != nil {
 		t.Fatalf("FindBySlug: %v", err)
@@ -284,11 +284,11 @@ func TestACurriculumIsWrittenWholeOrNotAtAll(t *testing.T) {
 	}
 }
 
-// TestASecondCurriculumIsRefusedWithoutDuplicating menjaga pengiriman ulang.
+// TestASecondCurriculumIsRefusedWithoutDuplicating guards redelivery.
 //
-// Relay outbox at-least-once, jadi event kurikulum yang tiba dua kali adalah
-// keadaan yang normal. Yang tidak normal adalah program dengan delapan pekan
-// dari kurikulum empat pekan.
+// The outbox relay is at-least-once, so a curriculum event arriving twice is
+// a normal state. What is not normal is a program with eight weeks from a
+// four-week curriculum.
 func TestASecondCurriculumIsRefusedWithoutDuplicating(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -319,7 +319,7 @@ func TestASecondCurriculumIsRefusedWithoutDuplicating(t *testing.T) {
 	}
 }
 
-// TestATaskTogglesAndIsCounted menjaga F4-14 dan laporan kelulusan.
+// TestATaskTogglesAndIsCounted guards F4-14 and the graduation report.
 func TestATaskTogglesAndIsCounted(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -355,8 +355,8 @@ func TestATaskTogglesAndIsCounted(t *testing.T) {
 		t.Fatalf("UpdateTask: %v", err)
 	}
 
-	// Idempoten: menyelesaikan yang sudah selesai tidak mengubah apa pun, dan
-	// pemanggil memakai nilai itu untuk tidak menerbitkan event kedua.
+	// Idempotent: completing what is already complete changes nothing, and the
+	// caller uses that value to not publish a second event.
 	if task.Complete(now.Add(time.Hour)) {
 		t.Fatal("completing an already-completed task reported a change")
 	}
@@ -369,7 +369,7 @@ func TestATaskTogglesAndIsCounted(t *testing.T) {
 		t.Fatalf("counts came back as %d/%d, want 1/4", completed, total)
 	}
 
-	// Dan tanggal penyelesaiannya benar-benar tersimpan.
+	// And the completion date is really stored.
 	stored, err := repo.FindTask(ctx, task.ID)
 	if err != nil {
 		t.Fatalf("FindTask: %v", err)
@@ -378,8 +378,8 @@ func TestATaskTogglesAndIsCounted(t *testing.T) {
 		t.Fatalf("the stored task says completed=%v at=%v", stored.IsCompleted, stored.CompletedAt)
 	}
 
-	// Dibuka lagi: waktunya HARUS hilang, kalau tidak laporan kelulusan
-	// menghitungnya sebagai selesai.
+	// Reopened: the timestamp MUST be gone, otherwise the graduation report
+	// counts it as done.
 	stored.Reopen(now.Add(2 * time.Hour))
 	if err := repo.UpdateTask(ctx, stored); err != nil {
 		t.Fatalf("UpdateTask after reopen: %v", err)
@@ -393,7 +393,7 @@ func TestATaskTogglesAndIsCounted(t *testing.T) {
 	}
 }
 
-// TestATaskKnowsItsProgram menjaga jalur otorisasi tugas.
+// TestATaskKnowsItsProgram guards the task authorisation path.
 func TestATaskKnowsItsProgram(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -423,7 +423,7 @@ func TestATaskKnowsItsProgram(t *testing.T) {
 	}
 }
 
-// TestDeletingAProgramTakesEverythingWithIt adalah F4-11.
+// TestDeletingAProgramTakesEverythingWithIt is F4-11.
 func TestDeletingAProgramTakesEverythingWithIt(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -458,9 +458,9 @@ func TestDeletingAProgramTakesEverythingWithIt(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	// Setiap tabel anak ikut kosong. Diperiksa lewat SQL langsung, bukan lewat
-	// repository: repository yang keliru bisa melaporkan kosong untuk data
-	// yang masih ada.
+	// Every child table is empty too. Checked through direct SQL, not through
+	// the repository: a mistaken repository could report empty for data that
+	// is still there.
 	for table, where := range map[string]string{
 		"coaching_weeks":    "coaching_program_id = $1",
 		"coaching_threads":  "coaching_program_id = $1",
@@ -482,11 +482,11 @@ func TestDeletingAProgramTakesEverythingWithIt(t *testing.T) {
 	}
 }
 
-// TestTheContextWindowTakesTheNewestMessages adalah D8.
+// TestTheContextWindowTakesTheNewestMessages is D8.
 //
-// Mengambil dua puluh pesan PERTAMA akan memberi model awal percakapan dan
-// melewatkan yang baru saja dikatakan - jawaban yang dihasilkannya akan
-// menjawab pertanyaan lain.
+// Taking the FIRST twenty messages would give the model the start of the
+// conversation and skip what was just said - the answer it produces would
+// answer a different question.
 func TestTheContextWindowTakesTheNewestMessages(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -522,8 +522,7 @@ func TestTheContextWindowTakesTheNewestMessages(t *testing.T) {
 		t.Fatalf("the window holds %d messages, want 20", len(window))
 	}
 
-	// Terurut terlama lebih dulu DI DALAM jendelanya, dan jendelanya berisi
-	// yang paling baru.
+	// Ordered oldest first WITHIN the window, and the window holds the newest.
 	for i := 1; i < len(window); i++ {
 		if window[i].CreatedAt.Before(window[i-1].CreatedAt) {
 			t.Fatalf("message %d is older than the one before it", i)
@@ -536,7 +535,7 @@ func TestTheContextWindowTakesTheNewestMessages(t *testing.T) {
 		t.Fatalf("the window starts at %v, want the 11th message", window[0].CreatedAt)
 	}
 
-	// Tanpa batas, seluruhnya.
+	// No limit, all of it.
 	all, err := threads.ListMessages(ctx, thread.ID, 0)
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
@@ -546,7 +545,7 @@ func TestTheContextWindowTakesTheNewestMessages(t *testing.T) {
 	}
 }
 
-// TestThreadsRoundTrip menjaga operasi thread.
+// TestThreadsRoundTrip guards the thread operations.
 func TestThreadsRoundTrip(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -595,15 +594,15 @@ func TestThreadsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestAProgramThatEndsBeforeItStartsIsRefusedByTheDatabaseToo menjaga invarian
-// tetap ditegakkan meski ada jalur yang melewati konstruktornya.
+// TestAProgramThatEndsBeforeItStartsIsRefusedByTheDatabaseToo keeps the
+// invariant enforced even when a path bypasses the constructor.
 func TestAProgramThatEndsBeforeItStartsIsRefusedByTheDatabaseToo(t *testing.T) {
 	pool, ctx := setup(t)
 
 	p := newProgram(t, userID(t), 4)
 
-	// Ditulis dengan SQL langsung, melewati Validate. Batasan CHECK yang ada
-	// hanya di Go akan hilang begitu ada jalur kedua yang menulis.
+	// Written with direct SQL, bypassing Validate. A CHECK constraint that
+	// exists only in Go is lost as soon as a second path writes.
 	_, err := pool.Exec(ctx, `
 		INSERT INTO coaching_programs
 			(id, user_id, slug, title, description, status, difficulty, start_date, end_date)

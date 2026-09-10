@@ -1,4 +1,4 @@
-// Package grpc melayani coaching.v1.
+// Package grpc serves coaching.v1.
 package grpc
 
 import (
@@ -13,7 +13,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// programToProto memetakan program ke bentuk kontrak.
+// programToProto maps a program to its contract shape.
 func programToProto(view *app.ProgramView) *coachingv1.CoachingProgram {
 	if view == nil || view.Program == nil {
 		return nil
@@ -32,8 +32,8 @@ func programToProto(view *app.ProgramView) *coachingv1.CoachingProgram {
 		EndDate:          p.EndDate.Format(time.DateOnly),
 		CurriculumStatus: curriculumToProto(p.CurriculumStatus),
 
-		// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-		// mengiterasi daftar akan gagal alih-alih menampilkan daftar kosong.
+		// An empty slice, not nil: nil becomes `null` in JSON, and a client
+		// iterating the list fails instead of showing an empty list.
 		Weeks:   make([]*coachingv1.CoachingWeek, 0, len(view.Weeks)),
 		Threads: make([]*coachingv1.CoachingThread, 0, len(view.Threads)),
 
@@ -47,8 +47,9 @@ func programToProto(view *app.ProgramView) *coachingv1.CoachingProgram {
 		out.SourceAssessment = &coachingv1.SourceAssessment{
 			AssessmentId: p.RiskAssessmentID,
 		}
-		// Cuplikan penilaiannya disalin saat program dibuat, jadi ia tetap bisa
-		// dijelaskan meski penilaiannya sudah berubah atau hilang.
+		// The assessment snapshot was copied when the program was created, so it
+		// stays explainable even if the assessment has since changed or
+		// disappeared.
 		if slug, ok := p.AssessmentSnapshot["slug"].(string); ok {
 			out.SourceAssessment.Slug = slug
 		}
@@ -128,10 +129,10 @@ func messageToProto(m *domain.Message) *coachingv1.CoachingMessage {
 	return out
 }
 
-// statusToProto memetakan status program.
+// statusToProto maps a program status.
 //
-// UNSPECIFIED untuk nilai yang tidak dikenal, bukan ACTIVE: baris yang rusak
-// tidak boleh terlihat seperti program yang sedang berjalan.
+// UNSPECIFIED for an unknown value, not ACTIVE: a corrupt row must not look
+// like a running program.
 func statusToProto(s domain.Status) coachingv1.ProgramStatus {
 	switch s {
 	case domain.StatusActive:
@@ -158,11 +159,11 @@ func difficultyToProto(d domain.Difficulty) coachingv1.Difficulty {
 	}
 }
 
-// difficultyFromProto memetakan balik.
+// difficultyFromProto maps back.
 //
-// Ia mengembalikan string domain, bukan enum: nilainya adalah bagian dari
-// kontrak REST yang lama - klien mengirim "Standar & Konsisten" apa adanya -
-// dan penerjemahannya hidup di satu tempat.
+// It returns the domain string, not an enum: the values are part of the old
+// REST contract - clients send "Standar & Konsisten" as-is - and the
+// translation lives in one place.
 func difficultyFromProto(d coachingv1.Difficulty) string {
 	switch d {
 	case coachingv1.Difficulty_DIFFICULTY_GENTLE:
@@ -172,8 +173,8 @@ func difficultyFromProto(d coachingv1.Difficulty) string {
 	case coachingv1.Difficulty_DIFFICULTY_INTENSE:
 		return string(domain.DifficultyIntensive)
 	default:
-		// String kosong ditolak NewDifficulty dengan pesan yang menyebutkan
-		// nilai yang sah - jauh lebih menolong daripada memilih bawaan diam-diam.
+		// An empty string is refused by NewDifficulty with a message naming the
+		// valid values - far more helpful than silently picking a default.
 		return ""
 	}
 }

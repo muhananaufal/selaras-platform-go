@@ -14,11 +14,11 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// AssessmentScope adalah ruang lingkup idempotensi konsumen ini.
+// AssessmentScope is the idempotency scope of this consumer.
 const AssessmentScope = "coaching-assessments"
 
-// Assessments membaca assessment.completed dan mencatat rujukan lunaknya
-// (F4-06), supaya StartProgram bisa meresolusi slug tanpa memanggil
+// Assessments reads assessment.completed and records the soft reference
+// (F4-06), so StartProgram can resolve a slug without calling
 // assessment-svc.
 type Assessments struct {
 	client *kgo.Client
@@ -38,12 +38,12 @@ func NewAssessments(client *kgo.Client, svc *app.Service, log *slog.Logger) (*As
 	return &Assessments{client: client, svc: svc, log: log}, nil
 }
 
-// Run membaca sampai ctx selesai.
+// Run reads until ctx is done.
 func (a *Assessments) Run(ctx context.Context) error {
 	return loop(ctx, a.client, a.log, "coaching assessment", a.handle)
 }
 
-// handle mencatat satu event.
+// handle records one event.
 func (a *Assessments) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
@@ -57,8 +57,8 @@ func (a *Assessments) handle(ctx context.Context, rec *kgo.Record) (err error) {
 
 	payload, ok := env.GetPayload().(*eventsv1.Envelope_AssessmentCompleted)
 	if !ok {
-		// Event lain di topic ini bukan urusan konsumen ini; dilewati, bukan
-		// digagalkan.
+		// Other events on this topic are not this consumer's business; skipped,
+		// not failed.
 		return nil
 	}
 	done := payload.AssessmentCompleted
@@ -67,8 +67,8 @@ func (a *Assessments) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		AssessmentID: done.GetAssessmentId(),
 		UserID:       done.GetUserId(),
 		Slug:         done.GetSlug(),
-		// Cuplikan yang dibaca kembali oleh tampilan program
-		// (adapter/grpc/mapping.go): kuncinya dijaga sama di sana.
+		// The snapshot read back by the program view (adapter/grpc/mapping.go):
+		// the keys are kept the same there.
 		Snapshot: map[string]any{
 			"slug":            done.GetSlug(),
 			"risk_percentage": done.GetRiskPercentage(),
@@ -79,8 +79,8 @@ func (a *Assessments) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	})
 	switch {
 	case errors.Is(err, domain.ErrInvalidAssessment):
-		// Event yang cacat tidak akan sembuh dengan diulang; menahan offset
-		// untuknya berarti konsumen ini memundurkan diri selamanya.
+		// A malformed event will not heal by being retried; holding the offset
+		// for it means this consumer rewinds itself forever.
 		a.log.ErrorContext(ctx, "a malformed assessment event was dropped",
 			"event_id", env.GetEventId(), "error", err)
 		return nil

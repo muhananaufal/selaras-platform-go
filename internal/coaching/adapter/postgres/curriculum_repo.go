@@ -12,7 +12,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// CurriculumRepository memenuhi domain.CurriculumRepository.
+// CurriculumRepository implements domain.CurriculumRepository.
 type CurriculumRepository struct {
 	db pg.Querier
 }
@@ -23,11 +23,11 @@ func NewCurriculumRepository(db pg.Querier) *CurriculumRepository {
 
 var _ domain.CurriculumRepository = (*CurriculumRepository)(nil)
 
-// SaveCurriculum menulis SELURUH kurikulum sekaligus.
+// SaveCurriculum writes the WHOLE curriculum at once.
 //
-// Pemanggil WAJIB menjalankannya di dalam transaksi. Tanpa itu, setiap
-// pernyataan commit sendiri dan kegagalan di pekan ketiga meninggalkan program
-// dengan dua pekan - persis kegagalan parsial yang F4-08 melarang.
+// The caller MUST run it inside a transaction. Without one, every statement
+// commits on its own and a failure in the third week leaves a program with two
+// weeks - exactly the partial failure F4-08 forbids.
 func (r *CurriculumRepository) SaveCurriculum(
 	ctx context.Context, programID domain.ID, c *domain.Curriculum,
 ) (bool, error) {
@@ -35,13 +35,13 @@ func (r *CurriculumRepository) SaveCurriculum(
 		return false, err
 	}
 
-	// Klaimnya diambil dari program itu sendiri: hanya kurikulum PERTAMA yang
-	// boleh masuk. Memeriksa "sudah ada pekan?" lebih dulu punya celah - dua
-	// event yang tiba serempak sama-sama melihat kosong lalu sama-sama menulis.
+	// The claim is taken on the program itself: only the FIRST curriculum may
+	// enter. Checking "are there weeks already?" first has a gap - two events
+	// arriving concurrently both see empty and both write.
 	//
-	// end_date dihitung ulang dari jumlah pekan yang benar-benar datang, bukan
-	// dari tebakan saat program dibuat. Ia tetap satu-satunya sumber kebenaran
-	// akhir program (F4-18).
+	// end_date is recomputed from the number of weeks that actually arrived,
+	// not from the guess made when the program was created. It stays the single
+	// source of truth for the end of the program (F4-18).
 	const claim = `
 		UPDATE coaching_programs
 		SET title = $2, description = $3,
@@ -55,8 +55,8 @@ func (r *CurriculumRepository) SaveCurriculum(
 		return false, fmt.Errorf("claiming the curriculum: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		// Sudah ada kurikulumnya. Bukan galat: relay outbox at-least-once, dan
-		// event yang tiba dua kali adalah keadaan yang normal.
+		// It already has a curriculum. Not an error: the outbox relay is
+		// at-least-once, and an event arriving twice is a normal state.
 		return false, nil
 	}
 
@@ -96,11 +96,11 @@ func (r *CurriculumRepository) SaveCurriculum(
 	return true, nil
 }
 
-// LoadCurriculum membaca seluruh pekan beserta tugasnya, terurut.
+// LoadCurriculum reads every week with its tasks, in order.
 //
-// Dua kueri, bukan satu per pekan. Satu kueri per pekan menghasilkan N+1
-// permintaan untuk data yang selalu dibaca bersama - dan program dua belas
-// pekan berarti tiga belas perjalanan ke basis data untuk satu layar.
+// Two queries, not one per week. One query per week yields N+1 requests for
+// data that is always read together - and a twelve-week program means
+// thirteen round trips to the database for one screen.
 func (r *CurriculumRepository) LoadCurriculum(
 	ctx context.Context, programID domain.ID,
 ) ([]*domain.Week, error) {
@@ -142,8 +142,8 @@ func (r *CurriculumRepository) LoadCurriculum(
 			Title:       title,
 			Description: description,
 
-			// Slice kosong, bukan nil: nil berarti "belum dimuat", dan pekan
-			// tanpa tugas adalah keadaan yang berbeda dari itu.
+			// An empty slice, not nil: nil means "not loaded yet", and a week
+			// without tasks is a different state from that.
 			Tasks:     make([]*domain.Task, 0),
 			CreatedAt: createdAt,
 			UpdatedAt: updatedAt,
@@ -179,8 +179,8 @@ func (r *CurriculumRepository) LoadCurriculum(
 		}
 		week, ok := byID[weekID]
 		if !ok {
-			// Tidak mungkin terjadi selama JOIN-nya benar. Mendiamkannya
-			// berarti membuang tugas tanpa jejak.
+			// Cannot happen as long as the JOIN is right. Staying silent about it
+			// would mean discarding tasks without a trace.
 			return nil, fmt.Errorf("task %s belongs to week %s, which is not in this program",
 				task.ID, weekID)
 		}
@@ -192,7 +192,7 @@ func (r *CurriculumRepository) LoadCurriculum(
 	return weeks, nil
 }
 
-// FindTask mencari satu tugas.
+// FindTask looks up one task.
 func (r *CurriculumRepository) FindTask(ctx context.Context, id domain.ID) (*domain.Task, error) {
 	const q = `
 		SELECT id, coaching_week_id, task_date, task_type, title,
@@ -209,7 +209,7 @@ func (r *CurriculumRepository) FindTask(ctx context.Context, id domain.ID) (*dom
 	return task, nil
 }
 
-// ProgramOfTask menyebutkan program pemilik sebuah tugas.
+// ProgramOfTask names the program that owns a task.
 func (r *CurriculumRepository) ProgramOfTask(
 	ctx context.Context, taskID domain.ID,
 ) (*domain.Program, error) {
@@ -222,8 +222,8 @@ func (r *CurriculumRepository) ProgramOfTask(
 
 	p, err := scanProgram(r.db.QueryRow(ctx, q, taskID.String()))
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Tugas yang tidak ada dan tugas milik orang lain menjawab sama di
-		// lapisan atas. Di sini keduanya sama-sama "tidak ketemu".
+		// A task that does not exist and someone else's task answer the same in
+		// the layer above. Here both are simply "not found".
 		return nil, domain.ErrTaskNotFound
 	}
 	if err != nil {
@@ -232,7 +232,7 @@ func (r *CurriculumRepository) ProgramOfTask(
 	return p, nil
 }
 
-// UpdateTask menyimpan perubahan satu tugas.
+// UpdateTask stores changes to one task.
 func (r *CurriculumRepository) UpdateTask(ctx context.Context, t *domain.Task) error {
 	if err := t.Validate(); err != nil {
 		return err
@@ -253,10 +253,10 @@ func (r *CurriculumRepository) UpdateTask(ctx context.Context, t *domain.Task) e
 	return nil
 }
 
-// CountTasks menghitung tugas seluruh program.
+// CountTasks counts the tasks of a whole program.
 //
-// Dihitung basis data, bukan dengan memuat seluruh tugas ke memori lalu
-// menjumlahkannya di Go. Laporan kelulusan hanya butuh dua angka.
+// Counted by the database, not by loading every task into memory and
+// summing in Go. The graduation report only needs two numbers.
 func (r *CurriculumRepository) CountTasks(
 	ctx context.Context, programID domain.ID,
 ) (int, int, error) {
@@ -273,7 +273,7 @@ func (r *CurriculumRepository) CountTasks(
 	return total, completed, nil
 }
 
-// scanTask membaca satu baris tugas, beserta id pekannya.
+// scanTask reads one task row, together with its week id.
 func scanTask(row pgx.Row) (*domain.Task, string, error) {
 	var (
 		id, weekID, taskType, title, description string

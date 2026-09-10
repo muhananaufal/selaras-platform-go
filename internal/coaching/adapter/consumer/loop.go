@@ -10,14 +10,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 )
 
-// loop membaca record sampai ctx selesai dan menyerahkan tiap record ke
-// handle. Record yang gagal menahan offsetnya (Rewinder) supaya datang lagi.
+// loop reads records until ctx is done and hands each record to handle. A
+// failed record holds its offset (Rewinder) so it comes back.
 //
-// Satu putaran untuk kedua konsumen coaching: yang membedakan keduanya hanya
-// topic yang dilanggani dan cara menangani satu record, bukan cara membaca,
-// menahan, dan mengomit offset - dan itulah bagian yang pernah salah satu kali
-// (franz-go tidak mengirim ulang di dalam sesi yang sama) dan tidak boleh
-// salah dua kali.
+// One loop for both coaching consumers: what sets them apart is only the topic
+// subscribed to and how one record is handled, not how offsets are read, held,
+// and committed - and that is the part that went wrong once (franz-go does not
+// redeliver within the same session) and must not go wrong twice.
 func loop(
 	ctx context.Context, client *kgo.Client, log *slog.Logger, name string,
 	handle func(context.Context, *kgo.Record) error,
@@ -27,7 +26,7 @@ func loop(
 	for {
 		if ctx.Err() != nil {
 			log.InfoContext(ctx, name+" consumer stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -39,8 +38,8 @@ func loop(
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(client, errs); len(recovered) > 0 {
 				log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -75,16 +74,16 @@ func loop(
 			continue
 		}
 		if rewinder.Any() {
-			// Offset ditahan supaya pesan yang gagal datang lagi setelah
-			// rebalance atau restart. Pesan lain di batch ikut terkirim ulang;
-			// penyimpanannya idempoten, dan itu harga yang jauh lebih murah
-			// daripada hasil yang hilang.
+			// The offset is held so the failed message comes back after a rebalance
+			// or restart. Other messages in the batch are redelivered too; their
+			// storage is idempotent, and that is a far cheaper price than a lost
+			// result.
 			log.WarnContext(ctx, "holding offsets so failed "+name+" records are redelivered",
 				"handled", handled)
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
-			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			// Not committing alone is NOT enough: franz-go redelivers nothing within
+			// the same session, so the next batch would arrive, succeed, and commit
+			// EVERYTHING consumed so far - including the record that just failed.
+			// The consumer is rewound to it instead.
 			rewinder.Rewind(client)
 
 			select {

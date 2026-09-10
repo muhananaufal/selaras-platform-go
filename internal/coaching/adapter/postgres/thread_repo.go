@@ -15,7 +15,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// ThreadRepository memenuhi domain.ThreadRepository.
+// ThreadRepository implements domain.ThreadRepository.
 type ThreadRepository struct {
 	db pg.Querier
 }
@@ -66,8 +66,8 @@ func (r *ThreadRepository) ListThreads(ctx context.Context, programID domain.ID)
 	}
 	defer rows.Close()
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi daftar akan gagal alih-alih menampilkan daftar kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the list fails instead of showing an empty list.
 	out := make([]*domain.Thread, 0)
 	for rows.Next() {
 		t, err := scanThread(rows)
@@ -96,7 +96,7 @@ func (r *ThreadRepository) UpdateThread(ctx context.Context, t *domain.Thread) e
 }
 
 func (r *ThreadRepository) DeleteThread(ctx context.Context, id domain.ID) error {
-	// Pesannya ikut terhapus lewat ON DELETE CASCADE.
+	// Its messages are deleted along with it through ON DELETE CASCADE.
 	const q = `DELETE FROM coaching_threads WHERE id = $1`
 
 	tag, err := r.db.Exec(ctx, q, id.String())
@@ -115,9 +115,9 @@ func (r *ThreadRepository) CreateMessage(ctx context.Context, m *domain.Message)
 		return fmt.Errorf("encoding the message: %w", err)
 	}
 	if content == nil {
-		// Kolomnya NOT NULL, dan pesan tanpa isi memang tidak boleh ada.
-		// Menyerahkannya ke basis data akan menghasilkan galat constraint yang
-		// tidak menyebutkan apa yang sebenarnya salah.
+		// The column is NOT NULL, and a message without content must indeed not
+		// exist. Leaving it to the database would produce a constraint error that
+		// does not say what was actually wrong.
 		return domain.ErrEmptyMessage
 	}
 
@@ -128,9 +128,9 @@ func (r *ThreadRepository) CreateMessage(ctx context.Context, m *domain.Message)
 	if _, err := r.db.Exec(ctx, q,
 		m.ID.String(), m.ThreadID.String(), string(m.Role), content,
 		m.CreatedAt, m.UpdatedAt); err != nil {
-		// Foreign key yang gagal berarti thread-nya sudah tidak ada. Ia
-		// dinamai, bukan diteruskan sebagai galat SQL: konsumen balasan LLM
-		// hanya bisa membedakan "hilang" dari "rusak" bila galatnya punya nama.
+		// A failed foreign key means the thread no longer exists. It is named,
+		// not passed on as a SQL error: the LLM reply consumer can only tell
+		// "gone" from "broken" if the error has a name.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation {
 			return domain.ErrThreadNotFound
@@ -140,11 +140,12 @@ func (r *ThreadRepository) CreateMessage(ctx context.Context, m *domain.Message)
 	return nil
 }
 
-// ListMessages membaca percakapan, terlama lebih dulu.
+// ListMessages reads a conversation, oldest first.
 //
-// limit membatasi jendela konteks (D8). Pembatasannya diterapkan pada yang
-// TERBARU lalu urutannya dibalik: mengambil dua puluh pesan pertama akan
-// memberi model awal percakapan dan melewatkan yang baru saja dikatakan.
+// limit bounds the context window (D8). The bound is applied to the NEWEST
+// messages and the order is then reversed: taking the first twenty messages
+// would give the model the start of the conversation and skip what was just
+// said.
 func (r *ThreadRepository) ListMessages(
 	ctx context.Context, threadID domain.ID, limit int,
 ) ([]*domain.Message, error) {

@@ -13,32 +13,32 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// UnitOfWork memenuhi app.UnitOfWork dengan transaksi Postgres sungguhan.
+// UnitOfWork implements app.UnitOfWork with a real Postgres transaction.
 type UnitOfWork struct {
 	pool   *pgxpool.Pool
 	events app.EventWriterFor
 }
 
-// NewUnitOfWork merangkai satuan kerja.
+// NewUnitOfWork assembles the unit of work.
 //
-// events adalah PABRIK, bukan penulis yang sudah jadi: penulis yang dibangun di
-// atas kolam koneksi akan commit sendiri, dan eventnya bertahan meski perubahan
-// yang memicunya batal.
+// events is a FACTORY, not a ready-made writer: a writer built on the
+// connection pool would commit on its own, and its event would survive even
+// when the change that triggered it was rolled back.
 func NewUnitOfWork(pool *pgxpool.Pool, events app.EventWriterFor) *UnitOfWork {
 	return &UnitOfWork{pool: pool, events: events}
 }
 
 var _ app.UnitOfWork = (*UnitOfWork)(nil)
 
-// Do menjalankan fn di dalam satu transaksi.
+// Do runs fn inside one transaction.
 func (u *UnitOfWork) Do(ctx context.Context, fn func(app.Repositories) error) error {
 	return pg.InTx(ctx, u.pool, func(q pg.Querier) error {
 		return fn(&transactional{q: q, events: u.events})
 	})
 }
 
-// transactional adalah kumpulan repository yang seluruhnya berbagi satu handle
-// transaksi.
+// transactional is the set of repositories that all share one transaction
+// handle.
 type transactional struct {
 	q      pg.Querier
 	events app.EventWriterFor
@@ -64,19 +64,19 @@ func (t *transactional) Assessments() domain.AssessmentRepository {
 
 func (t *transactional) Events() app.EventWriter {
 	if t.events == nil {
-		// Tanpa penulis event, use case yang menerbitkan sesuatu akan panik.
-		// Penulis yang tidak melakukan apa-apa jauh lebih berbahaya: ia membuat
-		// service berjalan sambil diam-diam tidak menyiarkan apa pun.
+		// Without an event writer, a use case that publishes something would
+		// panic. A writer that does nothing is far more dangerous: it lets the
+		// service run while silently announcing nothing.
 		return refusingWriter{}
 	}
 	return t.events(t.q)
 }
 
-// refusingWriter menolak setiap penulisan event.
+// refusingWriter refuses every event write.
 //
-// Ia dipakai saat service dijalankan tanpa outbox. Menolak jauh lebih baik
-// daripada diam: use case yang eventnya hilang akan meninggalkan program yang
-// menunggu kurikulum selamanya, dan tidak ada yang tahu mengapa.
+// It is used when the service runs without an outbox. Refusing is far better
+// than silence: a use case whose event is lost would leave a program waiting
+// for its curriculum forever, and nobody would know why.
 type refusingWriter struct{}
 
 func (refusingWriter) Write(

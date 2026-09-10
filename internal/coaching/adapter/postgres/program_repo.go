@@ -1,4 +1,4 @@
-// Package postgres menyimpan program coaching di Postgres.
+// Package postgres stores coaching programs in Postgres.
 package postgres
 
 import (
@@ -14,32 +14,32 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Nama indeks unik, dipakai untuk menerjemahkan pelanggarannya menjadi galat
-// domain yang bisa dibaca.
+// Unique index names, used to translate their violations into readable domain
+// errors.
 //
-// String ini HARUS sama dengan yang ada di migrasi. Kalau tidak, pelanggaran
-// yang seharusnya menjadi ErrActiveProgramExists akan lolos sebagai galat
-// internal - dan pemanggil menjawab 500 untuk keadaan yang sepenuhnya normal.
+// These strings MUST match the ones in the migration. Otherwise a violation
+// that should become ErrActiveProgramExists slips through as an internal
+// error - and the caller answers 500 for a perfectly normal state.
 const (
 	indexOneActivePerUser = "coaching_programs_one_active_per_user"
 	indexOnePerAssessment = "coaching_programs_one_per_assessment"
 )
 
-// programColumns SELALU dikualifikasi dengan alias tabel "p".
+// programColumns is ALWAYS qualified with the table alias "p".
 //
-// Tanpa kualifikasi, daftar ini tidak bisa dipakai di kueri yang mengandung
-// JOIN: "id" ada di coaching_programs, coaching_weeks, dan coaching_tasks,
-// dan PostgreSQL menolaknya sebagai ambigu. Ini benar-benar terjadi pada
-// ProgramOfTask, dan test integrasinya yang menemukannya.
+// Without qualification, this list cannot be used in a query containing a
+// JOIN: "id" exists in coaching_programs, coaching_weeks, and coaching_tasks,
+// and PostgreSQL rejects it as ambiguous. This really happened on
+// ProgramOfTask, and its integration test is what found it.
 //
-// Setiap kueri yang memakainya WAJIB memberi alias "p" pada coaching_programs.
+// Every query using it MUST alias coaching_programs as "p".
 const programColumns = `p.id, p.user_id, p.slug, p.risk_assessment_id, p.assessment_snapshot,
 	p.title, p.description, p.status, p.difficulty, p.start_date, p.end_date,
 	p.curriculum_status, coalesce(p.curriculum_error, ''),
 	p.graduation_report, p.graduation_status, coalesce(p.graduation_error, ''),
 	p.created_at, p.updated_at`
 
-// ProgramRepository memenuhi domain.ProgramRepository.
+// ProgramRepository implements domain.ProgramRepository.
 type ProgramRepository struct {
 	db pg.Querier
 }
@@ -50,7 +50,7 @@ func NewProgramRepository(db pg.Querier) *ProgramRepository {
 
 var _ domain.ProgramRepository = (*ProgramRepository)(nil)
 
-// Create menyimpan program baru.
+// Create stores a new program.
 func (r *ProgramRepository) Create(ctx context.Context, p *domain.Program) error {
 	if err := p.Validate(); err != nil {
 		return err
@@ -80,9 +80,9 @@ func (r *ProgramRepository) Create(ctx context.Context, p *domain.Program) error
 	case err == nil:
 		return nil
 
-	// Kedua pelanggaran ini adalah aturan domain yang ditegakkan basis data
-	// (D2 dan D3), bukan kerusakan. Menerjemahkannya di sini membuat pemanggil
-	// bisa menjawab 409 alih-alih 500.
+	// Both of these violations are domain rules enforced by the database (D2
+	// and D3), not breakage. Translating them here lets the caller answer 409
+	// instead of 500.
 	case pg.IsUniqueViolation(err, indexOneActivePerUser):
 		return domain.ErrActiveProgramExists
 	case pg.IsUniqueViolation(err, indexOnePerAssessment):
@@ -93,7 +93,7 @@ func (r *ProgramRepository) Create(ctx context.Context, p *domain.Program) error
 	}
 }
 
-// FindBySlug mencari lewat id publiknya.
+// FindBySlug looks a program up by its public slug.
 func (r *ProgramRepository) FindBySlug(ctx context.Context, slug string) (*domain.Program, error) {
 	const q = `SELECT ` + programColumns + ` FROM coaching_programs p WHERE p.slug = $1`
 
@@ -107,7 +107,7 @@ func (r *ProgramRepository) FindBySlug(ctx context.Context, slug string) (*domai
 	return p, nil
 }
 
-// FindActiveForUser mencari program yang sedang berjalan.
+// FindActiveForUser looks for the program currently running.
 func (r *ProgramRepository) FindActiveForUser(
 	ctx context.Context, userID domain.UserID,
 ) (*domain.Program, bool, error) {
@@ -119,9 +119,9 @@ func (r *ProgramRepository) FindActiveForUser(
 	p, err := scanProgram(r.db.QueryRow(ctx, q, userID.String()))
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		// Bukan galat. Pengguna baru belum punya program, dan memaksa
-		// pemanggil membedakan "tidak ada" dari "gagal" lewat pemeriksaan
-		// galat akan membuat keduanya mudah tertukar.
+		// Not an error. A new user has no program yet, and forcing the caller to
+		// tell "none" from "failed" through error checks would make the two easy
+		// to confuse.
 		return nil, false, nil
 	case err != nil:
 		return nil, false, fmt.Errorf("querying the active program: %w", err)
@@ -129,7 +129,7 @@ func (r *ProgramRepository) FindActiveForUser(
 	return p, true, nil
 }
 
-// Update menyimpan perubahan program.
+// Update stores changes to a program.
 func (r *ProgramRepository) Update(ctx context.Context, p *domain.Program) error {
 	if err := p.Validate(); err != nil {
 		return err
@@ -163,7 +163,7 @@ func (r *ProgramRepository) Update(ctx context.Context, p *domain.Program) error
 
 	switch {
 	case pg.IsUniqueViolation(err, indexOneActivePerUser):
-		// Melanjutkan program yang dijeda saat sudah ada program aktif lain.
+		// Resuming a paused program while another program is already active.
 		return domain.ErrActiveProgramExists
 	case err != nil:
 		return fmt.Errorf("updating the program: %w", err)
@@ -173,11 +173,11 @@ func (r *ProgramRepository) Update(ctx context.Context, p *domain.Program) error
 	return nil
 }
 
-// Delete menghapus program beserta seluruh isinya.
+// Delete removes a program with everything in it.
 func (r *ProgramRepository) Delete(ctx context.Context, id domain.ID) error {
-	// Pekan, tugas, thread, dan pesan ikut terhapus lewat ON DELETE CASCADE.
-	// Satu pernyataan, satu transaksi implisit - tidak ada keadaan di tengah
-	// yang bisa ditinggalkan proses yang mati.
+	// Weeks, tasks, threads, and messages are deleted along with it through ON
+	// DELETE CASCADE. One statement, one implicit transaction - no in-between
+	// state that a dying process could leave behind.
 	const q = `DELETE FROM coaching_programs WHERE id = $1`
 
 	tag, err := r.db.Exec(ctx, q, id.String())
@@ -190,7 +190,7 @@ func (r *ProgramRepository) Delete(ctx context.Context, id domain.ID) error {
 	return nil
 }
 
-// scanProgram membaca satu baris menjadi program.
+// scanProgram reads one row into a program.
 func scanProgram(row pgx.Row) (*domain.Program, error) {
 	var (
 		id, userID, slug             string
@@ -250,11 +250,11 @@ func scanProgram(row pgx.Row) (*domain.Program, error) {
 	return p, nil
 }
 
-// encodeJSON mengubah map menjadi nilai JSONB, atau NULL bila kosong.
+// encodeJSON turns a map into a JSONB value, or NULL if empty.
 //
-// NULL, bukan "{}": keduanya berbeda artinya. Yang pertama berarti "belum ada",
-// yang kedua "ada dan kosong" - dan laporan kelulusan yang kosong akan terlihat
-// sudah dibuat.
+// NULL, not "{}": the two mean different things. The first means "not there
+// yet", the second "there and empty" - and an empty graduation report would
+// look as if it had been produced.
 func encodeJSON(v map[string]any) (any, error) {
 	if len(v) == 0 {
 		return nil, nil
@@ -262,7 +262,7 @@ func encodeJSON(v map[string]any) (any, error) {
 	return json.Marshal(v)
 }
 
-// decodeJSON membaca nilai JSONB menjadi map.
+// decodeJSON reads a JSONB value into a map.
 func decodeJSON(raw []byte) (map[string]any, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -274,7 +274,7 @@ func decodeJSON(raw []byte) (map[string]any, error) {
 	return out, nil
 }
 
-// nullableString mengubah string kosong menjadi NULL.
+// nullableString turns an empty string into NULL.
 func nullableString(s string) any {
 	if s == "" {
 		return nil
@@ -282,7 +282,7 @@ func nullableString(s string) any {
 	return s
 }
 
-// FindByID mencari lewat id internalnya.
+// FindByID looks a program up by its internal id.
 func (r *ProgramRepository) FindByID(ctx context.Context, id domain.ID) (*domain.Program, error) {
 	const q = `SELECT ` + programColumns + ` FROM coaching_programs p WHERE p.id = $1`
 

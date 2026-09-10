@@ -14,7 +14,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// Server melayani coaching.v1.
+// Server serves coaching.v1.
 type Server struct {
 	coachingv1.UnimplementedCoachingServer
 	svc *app.Service
@@ -186,18 +186,18 @@ func (s *Server) SendThreadMessage(
 	}, nil
 }
 
-// toStatus menerjemahkan galat domain menjadi kode gRPC.
+// toStatus translates a domain error into a gRPC code.
 //
-// Yang TIDAK dikenali menjadi Internal dan dicatat lengkap. Menerjemahkannya
-// menjadi InvalidArgument akan menyembunyikan kerusakan sebagai kesalahan
-// pemanggil, dan tidak ada yang menyelidikinya.
+// What is NOT recognised becomes Internal and is logged in full. Translating
+// it into InvalidArgument would hide breakage as a caller's mistake, and
+// nobody would investigate it.
 func toStatus(ctx context.Context, op string, err error) error {
 	switch {
 	case err == nil:
 		return nil
 
-	// Milik orang lain dan tidak ada menjawab SAMA (S9). Membedakannya memberi
-	// tahu penanya bahwa slug itu ada.
+	// Someone else's and non-existent answer the SAME (S9). Telling them apart
+	// tells the asker that the slug exists.
 	case errors.Is(err, domain.ErrProgramNotFound):
 		return status.Error(codes.NotFound, "no such coaching program")
 	case errors.Is(err, domain.ErrThreadNotFound):
@@ -207,7 +207,7 @@ func toStatus(ctx context.Context, op string, err error) error {
 	case errors.Is(err, domain.ErrAssessmentNotFound):
 		return status.Error(codes.NotFound, "no such risk assessment")
 
-	// Konflik keadaan: 409 di sisi HTTP.
+	// A state conflict: 409 on the HTTP side.
 	case errors.Is(err, domain.ErrActiveProgramExists):
 		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, domain.ErrAssessmentUsed):
@@ -238,7 +238,7 @@ func toStatus(ctx context.Context, op string, err error) error {
 	}
 }
 
-// graduationToProto memetakan keadaan laporan kelulusan.
+// graduationToProto maps the state of the graduation report.
 func graduationToProto(s domain.GraduationStatus) coachingv1.GraduationStatus {
 	switch s {
 	case domain.GraduationPending:

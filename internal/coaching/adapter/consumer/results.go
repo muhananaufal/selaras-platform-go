@@ -1,4 +1,4 @@
-// Package consumer membaca hasil pekerjaan LLM milik coaching.
+// Package consumer reads the results of coaching's LLM jobs.
 package consumer
 
 import (
@@ -18,13 +18,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Scope adalah ruang lingkup idempotensi konsumen ini.
+// Scope is the idempotency scope of this consumer.
 //
-// Berbeda dari milik llm-worker dan dari milik assessment: dua konsumen yang
-// memproses event yang sama tidak boleh saling meniadakan.
+// Distinct from llm-worker's and from assessment's: two consumers processing
+// the same event must not cancel each other out.
 const Scope = "coaching-results"
 
-// Results membaca llm.results dan menyimpan hasilnya.
+// Results reads llm.results and stores the results.
 type Results struct {
 	client *kgo.Client
 	svc    *app.Service
@@ -43,16 +43,16 @@ func NewResults(client *kgo.Client, svc *app.Service, log *slog.Logger) (*Result
 	return &Results{client: client, svc: svc, log: log}, nil
 }
 
-// Run membaca sampai ctx selesai.
+// Run reads until ctx is done.
 func (r *Results) Run(ctx context.Context) error {
 	return loop(ctx, r.client, r.log, "coaching result", r.handle)
 }
 
-// aggregateTypeOf membaca jenis agregat dari header pesannya.
+// aggregateTypeOf reads the aggregate kind from the message header.
 //
-// Relay outbox mengisinya dari kolom aggregate_type baris outbox. Ia yang
-// membuat konsumen bisa membedakan miliknya dari milik service lain TANPA
-// membongkar isinya.
+// The outbox relay fills it from the aggregate_type column of the outbox
+// row. It is what lets a consumer tell its own messages from another
+// service's WITHOUT unpacking the content.
 func aggregateTypeOf(rec *kgo.Record) string {
 	for _, h := range rec.Headers {
 		if h.Key == "aggregate_type" {
@@ -62,12 +62,12 @@ func aggregateTypeOf(rec *kgo.Record) string {
 	return ""
 }
 
-// isMine menyatakan pesan ini milik coaching.
+// isMine says this message belongs to coaching.
 //
-// Topic llm.results dan llm.dlq dipakai BERSAMA seluruh service yang memakai
-// llm-worker. Tanpa penyaringan ini, konsumen coaching akan mencoba menandai
-// penilaian sebagai program - gagal, menahan offset, dan menyumbat antrean
-// untuk semua orang. Ini benar-benar terjadi.
+// The llm.results and llm.dlq topics are SHARED by every service that uses
+// llm-worker. Without this filter, the coaching consumer would try to mark
+// an assessment as a program - fail, hold the offset, and clog the queue for
+// everyone. This really happened.
 func isMine(rec *kgo.Record) bool {
 	switch aggregateTypeOf(rec) {
 	case "coaching_program", "coaching_thread":
@@ -77,11 +77,11 @@ func isMine(rec *kgo.Record) bool {
 	}
 }
 
-// handle memproses satu hasil.
+// handle processes one result.
 func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
-	// Disaring lebih dulu, sebelum apa pun dibongkar: pesan milik service lain
-	// bukan kegagalan, dan memperlakukannya sebagai kegagalan akan menahan
-	// offset dan menyumbat antrean untuk semua orang.
+	// Filtered first, before anything is unpacked: another service's message
+	// is not a failure, and treating it as one would hold the offset and clog
+	// the queue for everyone.
 	if !isMine(rec) {
 		return nil
 	}
@@ -93,18 +93,18 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on its span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
 	err = r.dispatch(ctx, &env, rec)
 	if terminal(err) {
-		// Hasil untuk program atau thread yang sudah tidak ada. Mengulanginya
-		// tidak akan pernah berhasil, dan menahan offset untuknya berarti
-		// konsumen ini memundurkan diri setiap detik, selamanya - itu
-		// benar-benar terjadi pada nutrition dan chat setelah akun uji
-		// dihapus, dan trace-lah yang menyingkapkannya.
+		// A result for a program or thread that no longer exists. Retrying it
+		// will never succeed, and holding the offset for it means this consumer
+		// rewinds itself every second, forever - that really happened to
+		// nutrition and chat after a test account was deleted, and the trace is
+		// what exposed it.
 		r.log.WarnContext(ctx, "a result arrived for a program or thread that no longer exists and was dropped",
 			"event_id", env.GetEventId(), "error", err)
 		return nil
@@ -112,16 +112,16 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	return err
 }
 
-// terminal menyatakan galat yang tidak akan sembuh dengan mengulang.
+// terminal says an error will not heal by retrying.
 //
-// Hanya ketiadaan pemiliknya. Galat lain - Postgres tidak terjangkau,
-// transaksi bentrok - tetap dikembalikan supaya offset ditahan dan hasilnya
-// datang lagi.
+// Only a missing owner. Other errors - Postgres unreachable, a transaction
+// conflict - are still returned so the offset is held and the result comes
+// back.
 func terminal(err error) bool {
 	return errors.Is(err, domain.ErrProgramNotFound) || errors.Is(err, domain.ErrThreadNotFound)
 }
 
-// dispatch mengarahkan satu event ke penanganannya.
+// dispatch routes one event to its handling.
 func (r *Results) dispatch(ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record) error {
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_CurriculumCompleted:
@@ -134,18 +134,20 @@ func (r *Results) dispatch(ctx context.Context, env *eventsv1.Envelope, rec *kgo
 		return r.markFailed(ctx, payload.LlmJobFailed, rec)
 
 	default:
-		// Event lain di topic ini bukan urusan konsumen ini. Ia dilewati, bukan
-		// digagalkan - menggagalkannya akan menyumbat antrean dengan pesan yang
-		// memang bukan miliknya.
+		// Other events on this topic are not this consumer's business. They are
+		// skipped, not failed - failing them would clog the queue with messages
+		// that were never its own.
 		return nil
 	}
 }
 
-// storeCurriculumOrReport membedakan kurikulum dari laporan kelulusan.
+// storeCurriculumOrReport tells a curriculum apart from a graduation
+// report.
 //
-// Keduanya datang lewat pesan yang sama; yang membedakannya adalah BENTUK
-// isinya. Kurikulum punya "weeks", laporan tidak - dan menebaknya dari yang
-// lain akan menyimpan laporan sebagai kurikulum kosong.
+// Both arrive through the same message; what tells them apart is the SHAPE
+// of the content. A curriculum has "weeks", a report does not - and
+// guessing it from anything else would store a report as an empty
+// curriculum.
 func (r *Results) storeCurriculumOrReport(
 	ctx context.Context, done *eventsv1.CurriculumCompleted,
 ) error {
@@ -175,13 +177,13 @@ func (r *Results) storeCurriculumOrReport(
 	return r.svc.StoreCurriculum(ctx, done.GetProgramId(), curriculum)
 }
 
-// storeReply menyimpan balasan model ke threadnya.
+// storeReply stores the model's reply into its thread.
 func (r *Results) storeReply(
 	ctx context.Context, env *eventsv1.Envelope,
 	done *eventsv1.ChatReplyCompleted, rec *kgo.Record,
 ) error {
-	// ChatReplyCompleted tidak membawa id thread; yang membawanya adalah kunci
-	// partisi pesannya, yang diisi relay dari aggregate_id baris outbox.
+	// ChatReplyCompleted does not carry the thread id; the message's partition
+	// key does, filled by the relay from the aggregate_id of the outbox row.
 	threadID := string(rec.Key)
 	if threadID == "" {
 		r.log.ErrorContext(ctx, "a chat reply carried no thread key",
@@ -191,8 +193,8 @@ func (r *Results) storeReply(
 
 	var content map[string]any
 	if err := json.Unmarshal([]byte(done.GetReplyJson()), &content); err != nil {
-		// Balasan yang tidak bisa dibaca tidak disimpan sebagai balasan.
-		// Menyimpannya apa adanya akan menampilkan JSON mentah kepada pengguna.
+		// A reply that cannot be read is not stored as a reply. Storing it as-is
+		// would show raw JSON to the user.
 		r.log.ErrorContext(ctx, "a chat reply was not valid JSON",
 			"thread_id", threadID, "error", err)
 		return nil
@@ -201,7 +203,7 @@ func (r *Results) storeReply(
 	return r.svc.StoreReply(ctx, threadID, content)
 }
 
-// markFailed menandai pekerjaan yang sudah menyerah.
+// markFailed marks a job that has given up.
 func (r *Results) markFailed(
 	ctx context.Context, failed *eventsv1.LlmJobFailed, rec *kgo.Record,
 ) error {
@@ -217,12 +219,12 @@ func (r *Results) markFailed(
 	return r.svc.FailCurriculum(ctx, programID, failed.GetReason())
 }
 
-// curriculumFrom membaca kurikulum dari bentuk JSON yang dikembalikan model.
+// curriculumFrom reads a curriculum from the JSON shape the model returns.
 //
-// Bentuknya mengikuti sistem lama PERSIS - main_mission dan bonus_challenges
-// per hari - karena promptnya juga diangkat dari sana. Membaca bentuk lain
-// berarti prompt dan pembacanya harus diubah bersama, dan salah satunya akan
-// tertinggal.
+// The shape follows the legacy system EXACTLY - main_mission and
+// bonus_challenges per day - because the prompt was lifted from there as
+// well. Reading a different shape would mean changing the prompt and its
+// reader together, and one of them would fall behind.
 func curriculumFrom(payload map[string]any) (*domain.Curriculum, error) {
 	c := &domain.Curriculum{
 		Title:       stringOf(payload, "program_title"),
@@ -301,12 +303,12 @@ func taskFrom(raw map[string]any, date time.Time, kind domain.TaskType) (*domain
 	}, nil
 }
 
-// stringOf membaca sebuah string, atau string kosong bila bidangnya tidak ada
-// maupun bukan string.
+// stringOf reads a string, or an empty string if the field is missing or not
+// a string.
 //
-// Nilai yang salah tipe diperlakukan sama dengan yang tidak ada: keduanya
-// sama-sama tidak memberi apa pun, dan validasi kurikulum yang menolak judul
-// kosong akan menangkap keduanya dengan pesan yang sama.
+// A value of the wrong type is treated the same as a missing one: neither
+// gives anything, and the curriculum validation that refuses an empty title
+// will catch both with the same message.
 func stringOf(m map[string]any, key string) string {
 	if s, ok := m[key].(string); ok {
 		return s
@@ -321,10 +323,10 @@ func sliceOf(m map[string]any, key string) []any {
 	return nil
 }
 
-// intOf membaca angka dari JSON.
+// intOf reads a number from JSON.
 //
-// JSON selalu memberikan float64, dan konversi langsung ke int akan memotong
-// nilai seperti 2.9999999 menjadi 2. Pembulatan lebih jujur untuk nomor pekan.
+// JSON always yields float64, and a direct conversion to int would truncate a
+// value like 2.9999999 to 2. Rounding is more honest for a week number.
 func intOf(m map[string]any, key string) int {
 	switch v := m[key].(type) {
 	case float64:

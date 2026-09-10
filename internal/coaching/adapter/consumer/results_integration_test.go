@@ -20,8 +20,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// newResults merakit konsumen di atas service sungguhan dan Postgres uji.
-// Klien Kafka-nya tidak pernah menyambung; handle dipanggil langsung.
+// newResults assembles the consumer on top of the real service and the test
+// Postgres. Its Kafka client never connects; handle is called directly.
 func newResults(t *testing.T) (*Results, context.Context) {
 	t.Helper()
 
@@ -98,9 +98,9 @@ func curriculumFor(t *testing.T, programID string) *kgo.Record {
 	})
 }
 
-// Dua kasus yang sama dengan nutrition dan chat: program atau thread yang
-// dihapus bersama akunnya masih punya hasil LLM yang datang belakangan, dan
-// "not found" bukan alasan menahan offset selamanya.
+// The same two cases as nutrition and chat: a program or thread deleted
+// along with its account still has an LLM result arriving later, and "not
+// found" is no reason to hold the offset forever.
 func TestAReplyForADeletedThreadIsDroppedNotRetried(t *testing.T) {
 	results, ctx := newResults(t)
 
@@ -117,8 +117,8 @@ func TestACurriculumForADeletedProgramIsDroppedNotRetried(t *testing.T) {
 	}
 }
 
-// TestATransientFailureIsStillAnError menjaga perbaikan di atas tidak
-// melebar: galat SEMENTARA tetap galat, supaya offset ditahan.
+// TestATransientFailureIsStillAnError keeps the fix above from spreading: a
+// TRANSIENT error is still an error, so the offset is held.
 func TestATransientFailureIsStillAnError(t *testing.T) {
 	results, ctx := newResults(t)
 	gone, cancel := context.WithCancel(ctx)
