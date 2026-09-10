@@ -16,11 +16,11 @@ import (
 	platformmail "github.com/muhananaufal/selaras-platform-go/internal/platform/mail"
 )
 
-// Test ini mengirim surel SUNGGUHAN ke Mailpit lalu membacanya kembali lewat
-// HTTP. Palsuan tidak bisa membuktikan yang penting di sini: bahwa pesannya
-// benar-benar terkirim, benar-benar sampai ke alamat yang dituju, dan
-// benar-benar membawa tokennya - dan justru itu satu-satunya andaian yang
-// menopang seluruh keamanan alur reset.
+// This test sends a REAL email to Mailpit and reads it back over HTTP. A
+// fake cannot prove what matters here: that the message was really sent,
+// really reached the intended address, and really carried the token - and
+// that is the single assumption the whole security of the reset flow rests
+// on.
 func mailpit(t *testing.T) (smtpHost string, smtpPort int, apiURL string) {
 	t.Helper()
 
@@ -43,8 +43,8 @@ func mailpit(t *testing.T) (smtpHost string, smtpPort int, apiURL string) {
 	return host, port, strings.TrimRight(api, "/")
 }
 
-// clearMailbox mengosongkan Mailpit sebelum dan sesudah test, supaya pesan
-// dari test lain tidak tertukar dengan yang sedang diperiksa.
+// clearMailbox empties Mailpit before and after the test, so messages from
+// other tests are not confused with the one being checked.
 func clearMailbox(t *testing.T, apiURL string) {
 	t.Helper()
 
@@ -163,9 +163,9 @@ func TestTheResetLinkActuallyArrivesCarryingItsToken(t *testing.T) {
 
 	body := messageBody(t, apiURL, message.ID)
 
-	// Yang paling penting: tokennya benar-benar ada di dalamnya. Tautan reset
-	// tanpa token adalah alur yang tampak bekerja dan tidak pernah bisa
-	// diselesaikan siapa pun.
+	// Most important: the token is really inside it. A reset link without a
+	// token is a flow that appears to work and can never be completed by
+	// anyone.
 	if !strings.Contains(body, token.Expose()) {
 		t.Error("the message does not carry the token")
 	}
@@ -173,20 +173,20 @@ func TestTheResetLinkActuallyArrivesCarryingItsToken(t *testing.T) {
 		t.Errorf("the message does not carry a usable link:\n%s", body)
 	}
 
-	// Dan pesannya menjelaskan apa yang terjadi bila ini bukan permintaannya.
+	// And the message explains what happens if this was not their request.
 	if !strings.Contains(strings.ToLower(body), "was not you") {
 		t.Error("the message does not tell the reader what to do if it was not them")
 	}
 }
 
-// Nilai yang mengandung CR atau LF bisa menyisipkan header tambahan ke dalam
-// pesan yang kita kirim atas nama sendiri.
+// A value containing CR or LF could inject additional headers into a message
+// we send under our own name.
 //
-// Yang TIDAK bisa dilakukannya lewat transport ini adalah menambah penerima:
-// smtp.SendMail menetapkan penerima dari amplop SMTP, dan header di badan
-// pesan tidak menyentuhnya. Yang nyata adalah header palsu yang terbaca
-// klien surel - Reply-To yang mengarahkan balasan ke penyerang, atau
-// Content-Type yang mengubah cara pesannya ditampilkan.
+// What it CANNOT do through this transport is add recipients: smtp.SendMail
+// sets the recipients from the SMTP envelope, and headers in the message
+// body do not touch them. What is real is a forged header read by the mail
+// client - a Reply-To steering replies to an attacker, or a Content-Type
+// changing how the message is displayed.
 func TestHeaderInjectionIsRefused(t *testing.T) {
 	host, port, apiURL := mailpit(t)
 	clearMailbox(t, apiURL)
@@ -218,16 +218,16 @@ func TestHeaderInjectionIsRefused(t *testing.T) {
 		}
 	}
 
-	// Nilainya tetap terkirim, hanya digabung menjadi satu baris - menolak
-	// pesannya sama sekali akan mengubah karakter aneh di judul menjadi
-	// kegagalan pengiriman.
+	// The value is still sent, only folded onto one line - refusing the
+	// message altogether would turn an odd character in the subject into a
+	// delivery failure.
 	if !strings.Contains(message.Subject, "attacker@example.test") {
 		t.Errorf("subject = %q; want the value kept, flattened onto one line", message.Subject)
 	}
 }
 
-// rawMessage mengambil sumber mentah pesan, satu-satunya cara memeriksa
-// header apa yang benar-benar terkirim.
+// rawMessage fetches the message's raw source, the only way to check which
+// headers were actually sent.
 func rawMessage(t *testing.T, apiURL, id string) string {
 	t.Helper()
 

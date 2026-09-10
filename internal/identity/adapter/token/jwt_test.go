@@ -80,8 +80,8 @@ func TestEveryClaimSurvivesARoundTrip(t *testing.T) {
 	}
 }
 
-// Profil boleh belum ada saat login (ADR-002 aturan 1, B7). Klaim kosong
-// adalah keadaan yang sah, bukan galat.
+// The profile may not exist yet at login (ADR-002 rule 1, B7). An empty
+// claim is a valid state, not an error.
 func TestATokenCanBeIssuedBeforeAProfileExists(t *testing.T) {
 	iss, ver, _ := newPair(t)
 	c := sampleClaims(t)
@@ -118,8 +118,8 @@ func TestAnExpiredTokenIsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generating key: %v", err)
 	}
-	// Umur negatif menerbitkan token yang sudah lewat saat lahir, sehingga
-	// test ini tidak perlu menunggu waktu berjalan.
+	// A negative lifetime issues a token already expired at birth, so this
+	// test need not wait for time to pass.
 	iss, err := token.NewIssuer(priv, issuer, -time.Minute)
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
@@ -138,9 +138,9 @@ func TestAnExpiredTokenIsRejected(t *testing.T) {
 	}
 }
 
-// Serangan alg=none dan pertukaran algoritma adalah cara klasik memalsukan
-// JWT: penyerang mengganti header menjadi algoritma yang tidak diverifikasi,
-// atau menjadi HMAC dengan kunci publik sebagai rahasianya.
+// The alg=none attack and algorithm confusion are the classic ways to forge
+// a JWT: the attacker swaps the header to an algorithm that is not verified,
+// or to HMAC with the public key as the secret.
 func TestATokenWithASwappedAlgorithmIsRejected(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -218,8 +218,8 @@ func TestConstructorsRefuseKeysOfTheWrongSize(t *testing.T) {
 	}
 }
 
-// Tanpa jti, dua token yang terbit pada detik yang sama untuk pengguna yang
-// sama akan identik byte demi byte, dan log tidak bisa membedakan keduanya.
+// Without jti, two tokens issued in the same second for the same user would
+// be identical byte for byte, and logs could not tell them apart.
 func TestTwoTokensIssuedTogetherAreNotIdentical(t *testing.T) {
 	iss, _, _ := newPair(t)
 	c := sampleClaims(t)
@@ -243,10 +243,10 @@ func TestIssuerSatisfiesTheDomainPorts(t *testing.T) {
 	var _ domain.TokenVerifier = ver
 }
 
-// Ditandatangani kunci yang benar, jadi tanda tangannya sah - yang salah
-// hanya isinya. Tanpa test ini, pemeriksaan generasi bisa dicabut tanpa satu
-// pun test berubah merah, dan token tanpa klaim gen akan selamat dari setiap
-// pencabutan.
+// Signed with the right key, so the signature is valid - only the contents
+// are wrong. Without this test, the generation check could be removed
+// without a single test turning red, and a token with no gen claim would
+// survive every revocation.
 func TestATokenWithoutAGenerationIsRejected(t *testing.T) {
 	_, ver, priv := newPair(t)
 
@@ -271,9 +271,9 @@ func TestATokenWithoutAGenerationIsRejected(t *testing.T) {
 	}
 }
 
-// Peran ikut ditandatangani, jadi ia tidak bisa diubah di perjalanan - tetapi
-// peran yang tidak dikenal tetap harus ditolak, bukan diteruskan sebagai
-// string kosong ke pemeriksaan otorisasi.
+// The role is signed too, so it cannot be changed in transit - but an unknown
+// role still has to be refused, not passed on as an empty string to the
+// authorisation check.
 func TestATokenWithAnUnknownRoleIsRejected(t *testing.T) {
 	_, ver, priv := newPair(t)
 

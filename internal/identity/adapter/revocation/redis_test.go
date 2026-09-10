@@ -11,8 +11,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/redis/redistest"
 )
 
-// stubSource berdiri untuk identity-svc: sumber kebenaran yang ditanya saat
-// cache tidak tahu.
+// stubSource stands in for identity-svc: the source of truth asked when the
+// cache does not know.
 type stubSource struct {
 	generation int64
 	err        error
@@ -85,9 +85,8 @@ func TestAnOlderGenerationIsRefused(t *testing.T) {
 	}
 }
 
-// Generasi yang lebih BARU daripada yang tercatat juga ditolak. Ia hanya bisa
-// muncul dari token yang dipalsukan atau dari cache yang tertinggal, dan
-// keduanya bukan alasan untuk menerima.
+// A generation NEWER than the recorded one is refused too. It can only come
+// from a forged token or a stale cache, and neither is a reason to accept.
 func TestANewerGenerationIsAlsoRefused(t *testing.T) {
 	source := &stubSource{generation: 3}
 	store, id := newChecker(t, source)
@@ -106,7 +105,7 @@ func TestANewerGenerationIsAlsoRefused(t *testing.T) {
 	}
 }
 
-// Cache yang tidak tahu bertanya ke sumbernya, lalu mengingat jawabannya.
+// A cache that does not know asks the source, then remembers the answer.
 func TestAMissAsksTheSourceAndCachesTheAnswer(t *testing.T) {
 	source := &stubSource{generation: 5}
 	store, id := newChecker(t, source)
@@ -131,9 +130,9 @@ func TestAMissAsksTheSourceAndCachesTheAnswer(t *testing.T) {
 	}
 }
 
-// ADR-020 mewajibkan gagal-tertutup. Sumber yang tidak terjangkau berarti
-// pencabutan tidak bisa dibuktikan, dan menerima token dalam keadaan itu
-// mengubah setiap gangguan menjadi jendela di mana logout tidak berlaku.
+// ADR-020 requires fail-closed. An unreachable source means revocation
+// cannot be proven, and accepting a token in that state turns every outage
+// into a window in which logout does not apply.
 func TestAnUnreachableSourceFailsClosed(t *testing.T) {
 	source := &stubSource{err: errors.New("identity-svc is unreachable")}
 	store, id := newChecker(t, source)
@@ -148,7 +147,7 @@ func TestAnUnreachableSourceFailsClosed(t *testing.T) {
 	}
 }
 
-// Pengguna yang tidak dikenal sumbernya juga ditolak, bukan diterima.
+// A user unknown to the source is refused too, not accepted.
 func TestAnUnknownUserIsRefused(t *testing.T) {
 	source := &stubSource{err: domain.ErrUserNotFound}
 	store, id := newChecker(t, source)
@@ -162,7 +161,7 @@ func TestAnUnknownUserIsRefused(t *testing.T) {
 	}
 }
 
-// Generasi di bawah satu tidak pernah sah: penghitungnya mulai dari satu.
+// A generation below one is never valid: the counter starts at one.
 func TestPublishingAnImpossibleGenerationIsRejected(t *testing.T) {
 	store, id := newChecker(t, &stubSource{generation: 1})
 

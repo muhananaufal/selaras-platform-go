@@ -23,8 +23,8 @@ const (
 	keyID    = "test-key-1"
 )
 
-// provider berdiri untuk Google: ia menerbitkan JWKS dan menandatangani
-// token, sehingga seluruh verifikasi diuji tanpa menyentuh jaringan.
+// provider stands in for Google: it publishes a JWKS and signs tokens, so
+// the whole verification is tested without touching the network.
 type provider struct {
 	key      *rsa.PrivateKey
 	server   *httptest.Server
@@ -153,8 +153,8 @@ func TestAValidIDTokenYieldsTheIdentity(t *testing.T) {
 	}
 }
 
-// Kedua bentuk penerbit Google sama-sama sah, dan menerima hanya satu akan
-// menolak setengah token yang benar.
+// Both forms of Google's issuer are equally valid, and accepting only one
+// would refuse half of all correct tokens.
 func TestBothGoogleIssuerFormsAreAccepted(t *testing.T) {
 	p := newProvider(t)
 	v := newVerifier(t, p)
@@ -166,9 +166,9 @@ func TestBothGoogleIssuerFormsAreAccepted(t *testing.T) {
 	}
 }
 
-// Audience adalah pemeriksaan yang paling sering terlewat, dan tanpanya siapa
-// pun yang punya aplikasi Google bisa menukar token penggunanya menjadi sesi
-// di sistem ini.
+// The audience is the check most often missed, and without it anyone with a
+// Google application could exchange their users' tokens for sessions in this
+// system.
 func TestATokenIssuedForAnotherApplicationIsRefused(t *testing.T) {
 	p := newProvider(t)
 	v := newVerifier(t, p)
@@ -224,9 +224,9 @@ func TestATokenNamingAnUnknownKeyIsRefused(t *testing.T) {
 	}
 }
 
-// email_verified adalah tumpuan pengerasan di F1-11. Bentuk yang tidak
-// terduga WAJIB menjadi penolakan, bukan diam-diam menjadi false - dan sama
-// sekali bukan diam-diam menjadi true.
+// email_verified is what the F1-11 hardening rests on. An unexpected shape
+// MUST become a refusal, not silently become false - and certainly not
+// silently become true.
 func TestEmailVerifiedIsReadInBothShapesAndNothingElse(t *testing.T) {
 	p := newProvider(t)
 	v := newVerifier(t, p)
@@ -276,8 +276,8 @@ func TestAnUnsupportedProviderIsRefusedWithoutTouchingTheNetwork(t *testing.T) {
 	}
 }
 
-// Tanpa cache, setiap masuk lewat Google berarti satu permintaan HTTP ke
-// penyedia sebelum apa pun bisa diverifikasi.
+// Without a cache, every Google sign-in means one HTTP request to the
+// provider before anything can be verified.
 func TestTheKeySetIsFetchedOnceAndReused(t *testing.T) {
 	p := newProvider(t)
 	v := newVerifier(t, p)
@@ -292,8 +292,8 @@ func TestTheKeySetIsFetchedOnceAndReused(t *testing.T) {
 	}
 }
 
-// Penyedia merotasi kuncinya, dan kunci baru muncul sebelum salinan lama
-// kedaluwarsa. kid yang tidak dikenal karena itu memicu pengambilan ulang.
+// The provider rotates its keys, and a new key appears before the old copy
+// expires. An unknown kid therefore triggers a refetch.
 func TestAnUnknownKeyIdTriggersARefetch(t *testing.T) {
 	p := newProvider(t)
 	v := newVerifier(t, p)
@@ -333,8 +333,8 @@ func TestNewGoogleVerifierRefusesAnEmptyClientID(t *testing.T) {
 	}
 }
 
-// Verifier yang tidak dikonfigurasi menolak dengan menyebut apa yang kurang,
-// bukan berpura-pura berhasil.
+// An unconfigured verifier refuses by naming what is missing, rather than
+// pretending to succeed.
 func TestTheUnconfiguredVerifierSaysWhatIsMissing(t *testing.T) {
 	_, err := social.Unconfigured{}.Verify(context.Background(), "google", "whatever")
 	if err == nil {

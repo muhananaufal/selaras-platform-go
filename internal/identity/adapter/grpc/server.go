@@ -14,22 +14,22 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// SocialIdentityVerifier mengubah ID token dari penyedia menjadi identitas
-// yang sudah diverifikasi.
+// SocialIdentityVerifier turns an ID token from a provider into a verified
+// identity.
 //
-// Ia ada di sini, bukan di app, karena ia berbicara dengan penyedia -
-// mengambil JWKS dan memeriksa tanda tangan. Yang sampai ke use case hanyalah
-// hasilnya (ADR-021 koreksi 3).
+// It lives here, not in app, because it talks to the provider - fetching the
+// JWKS and checking the signature. Only the result reaches the use case
+// (ADR-021 correction 3).
 type SocialIdentityVerifier interface {
 	Verify(ctx context.Context, provider, idToken string) (app.SocialIdentity, error)
 }
 
-// UseCases mengumpulkan alur yang dilayani server ini.
+// UseCases gathers the flows this server serves.
 //
-// Ia diserahkan sebagai satu struct, bukan sebagai daftar argumen, supaya
-// menambah satu alur tidak mengubah tanda tangan konstruktornya - dan
-// pemanggil yang lupa mengisi salah satunya ditangkap saat penyusunan, bukan
-// saat permintaan pertama yang menyentuhnya.
+// It is handed over as one struct, not as a list of arguments, so adding a
+// flow does not change the constructor's signature - and a caller that
+// forgets to fill one in is caught at construction, not on the first request
+// that touches it.
 type UseCases struct {
 	Register       *app.Register
 	Login          *app.Login
@@ -38,23 +38,24 @@ type UseCases struct {
 	ConfirmReset   *app.ConfirmPasswordReset
 	ExchangeSocial *app.ExchangeSocialToken
 
-	// Deletion boleh nil: lingkungan tanpa outbox tetap melayani autentikasi.
-	// Penghapusan akun menjawab Unimplemented alih-alih menghapus sebagian.
+	// Deletion may be nil: an environment without an outbox still serves
+	// authentication. Account deletion answers Unimplemented instead of
+	// deleting partially.
 	Deletion *app.DeleteAccount
 	Users    domain.UserRepository
 
-	// Tokens dipakai Logout untuk memverifikasi tanda tangan token yang
-	// dikirim balik. Ia BUKAN untuk memverifikasi setiap permintaan - itu
-	// pekerjaan gateway dengan kunci publiknya sendiri (ADR-021 koreksi 1).
+	// Tokens is used by Logout to verify the signature of the token sent back.
+	// It is NOT for verifying every request - that is the gateway's job with
+	// its own public key (ADR-021 correction 1).
 	Tokens domain.TokenVerifier
 	Social SocialIdentityVerifier
 
-	// AccessTokenTTL diumumkan ke klien lewat expires_in_seconds.
+	// AccessTokenTTL is announced to clients through expires_in_seconds.
 	//
-	// Ia ikut di sini, bukan dibaca ulang dari penerbit token, supaya angka
-	// yang diberitahukan ke klien dan angka yang benar-benar dipakai berasal
-	// dari satu sumber. Dua sumber berarti suatu saat keduanya berbeda, dan
-	// klien akan memperbarui token pada waktu yang keliru.
+	// It is carried here rather than read back from the token issuer, so the
+	// number told to clients and the number actually used come from one
+	// source. Two sources means one day they differ, and clients refresh
+	// tokens at the wrong time.
 	AccessTokenTTLSeconds int64
 }
 
@@ -98,9 +99,9 @@ func (s *Server) Register(
 ) (*identityv1.RegisterResponse, error) {
 	result, err := s.uc.Register.Execute(ctx, app.RegisterCommand{
 		Email: req.GetEmail(),
-		// Konfirmasi kata sandi tidak ada di kontrak gRPC dan itu disengaja:
-		// mengetik ulang kata sandi adalah pemeriksaan antarmuka pengguna,
-		// dan tempatnya di edge yang memang menerimanya dari peramban.
+		// Password confirmation is absent from the gRPC contract, and
+		// deliberately so: retyping a password is a user-interface check, and its
+		// place is at the edge that receives it from the browser.
 		Password:             req.GetPassword(),
 		PasswordConfirmation: req.GetPassword(),
 	})
@@ -144,16 +145,16 @@ func (s *Server) Login(
 	}, nil
 }
 
-// Logout menerima access token, bukan user id.
+// Logout takes an access token, not a user id.
 //
-// Tanda tangannya diverifikasi DI SINI, bukan dipercaya dari pemanggil.
-// Gateway memang sudah memverifikasinya, tetapi identity-svc tidak boleh
-// bergantung pada itu: kalau ia menerima user id yang sekadar dikirimkan,
-// siapa pun yang bisa menjangkau service ini bisa mengeluarkan pengguna mana
-// pun dari sesinya hanya dengan menebak id.
+// Its signature is verified HERE, not trusted from the caller. The gateway
+// has indeed verified it already, but identity-svc must not rely on that: if
+// it accepted a user id that was merely sent along, anyone who can reach
+// this service could sign any user out of their session just by guessing an
+// id.
 //
-// identity-svc memegang kunci penandatanganan, jadi ia bisa memverifikasi
-// sendiri tanpa meminta apa pun kepada siapa pun.
+// identity-svc holds the signing key, so it can verify on its own without
+// asking anyone for anything.
 func (s *Server) Logout(
 	ctx context.Context,
 	req *identityv1.LogoutRequest,
@@ -199,9 +200,9 @@ func (s *Server) ExchangeSocialToken(
 	ctx context.Context,
 	req *identityv1.ExchangeSocialTokenRequest,
 ) (*identityv1.ExchangeSocialTokenResponse, error) {
-	// Tanda tangan ID token diperiksa di sini, bukan dipercaya dari
-	// pemanggil. Klaim email_verified adalah tumpuan pengerasan di F1-11,
-	// dan ia hanya berarti selama tanda tangan penyedianya masih utuh.
+	// The ID token's signature is checked here, not trusted from the caller.
+	// The email_verified claim is what the F1-11 hardening rests on, and it
+	// only means anything as long as the provider's signature is intact.
 	identity, err := s.uc.Social.Verify(ctx, req.GetProvider(), req.GetIdToken())
 	if err != nil {
 		return nil, toStatus(ctx, "ExchangeSocialToken", err)
@@ -221,8 +222,8 @@ func (s *Server) ExchangeSocialToken(
 		User:     user,
 		Token:    s.tokenPair(result.AccessToken),
 		Identity: identityOf(result),
-		// Profil yang baru dibuat hanya terjadi pada akun baru, jadi
-		// ketiadaannya menandakan akun yang sudah ada baru saja ditautkan.
+		// A newly created profile only happens for a new account, so its absence
+		// signals that an existing account was just linked.
 		AccountWasLinked: result.UserProfileID == "",
 	}, nil
 }
@@ -232,9 +233,9 @@ func (s *Server) DeleteAccount(
 	req *identityv1.DeleteAccountRequest,
 ) (*identityv1.DeleteAccountResponse, error) {
 	if s.uc.Deletion == nil {
-		// Tanpa outbox, saga tidak bisa diumumkan. Ia menjawab Unimplemented
-		// alih-alih menghapus sebagian: penghapusan yang berhenti di tengah
-		// meninggalkan data di unit yang tidak dituju siapa pun lagi.
+		// Without an outbox, the saga cannot be announced. It answers
+		// Unimplemented instead of deleting partially: a deletion that stops
+		// halfway leaves data in units nobody addresses any more.
 		return nil, status.Error(codes.Unimplemented,
 			"account deletion needs the outbox, which is not configured here")
 	}
@@ -249,10 +250,10 @@ func (s *Server) DeleteAccount(
 	return &identityv1.DeleteAccountResponse{SagaId: saga.ID.String()}, nil
 }
 
-// GetTokenGeneration menjawab generasi token yang sedang berlaku.
+// GetTokenGeneration answers the currently valid token generation.
 //
-// Gateway memanggilnya HANYA saat cache pencabutan tidak tahu, bukan di
-// setiap request (ADR-021 koreksi 1).
+// The gateway calls it ONLY when the revocation cache does not know, not on
+// every request (ADR-021 correction 1).
 func (s *Server) GetTokenGeneration(
 	ctx context.Context,
 	req *identityv1.GetTokenGenerationRequest,
@@ -304,11 +305,11 @@ func identityOf(result app.AuthResult) *commonv1.Identity {
 	}
 }
 
-// roleOf memetakan peran domain ke enum kontrak.
+// roleOf maps the domain role to the contract's enum.
 //
-// Peran yang tidak dikenal menjadi ROLE_UNSPECIFIED, bukan ROLE_USER. Nilai
-// nol enum protobuf memang berarti "tidak dinyatakan", dan memetakannya ke
-// peran nyata akan membuat data yang rusak terlihat seperti pengguna biasa.
+// An unknown role becomes ROLE_UNSPECIFIED, not ROLE_USER. The zero value
+// of a protobuf enum genuinely means "not stated", and mapping it to a real
+// role would make corrupt data look like an ordinary user.
 func roleOf(r domain.Role) identityv1.Role {
 	switch r {
 	case domain.RoleUser:
@@ -320,12 +321,12 @@ func roleOf(r domain.Role) identityv1.Role {
 	}
 }
 
-// deletionStatus menerjemahkan galat penghapusan akun.
+// deletionStatus translates account-deletion errors.
 //
-// Kata sandi yang keliru menjawab PermissionDenied, bukan Unauthenticated:
-// pemanggilnya sudah terautentikasi, dan Unauthenticated akan membuat gateway
-// serta klien mengira tokennya kedaluwarsa lalu memintanya masuk lagi - untuk
-// kesalahan yang sebenarnya hanya salah ketik.
+// A wrong password answers PermissionDenied, not Unauthenticated: the caller
+// is already authenticated, and Unauthenticated would make the gateway and
+// the client think the token expired and ask the user to sign in again - for
+// what is really just a typo.
 func deletionStatus(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, app.ErrWrongPassword):

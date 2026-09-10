@@ -1,4 +1,4 @@
-// Package social memverifikasi identitas dari penyedia masuk sosial.
+// Package social verifies identities from social sign-in providers.
 package social
 
 import (
@@ -10,17 +10,16 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 )
 
-// Unconfigured dipakai saat masuk lewat penyedia sosial memang tidak dipasang
-// di sebuah lingkungan.
+// Unconfigured is used when social sign-in is genuinely not deployed in an
+// environment.
 //
-// Ia BUKAN penopang sementara yang menunggu diganti. Menjalankan sistem ini
-// tanpa masuk lewat Google adalah mode penyebaran yang sah - pendaftaran
-// lewat kata sandi berjalan penuh tanpanya - dan lingkungan yang tidak punya
-// kredensial penyedia lebih baik menyala dengan satu jalur masuk daripada
-// tidak menyala sama sekali.
+// It is NOT a temporary crutch waiting to be replaced. Running this system
+// without Google sign-in is a valid deployment mode - password registration
+// works fully without it - and an environment that lacks provider credentials
+// is better off starting with one sign-in path than not starting at all.
 //
-// Yang DILARANG adalah berpura-pura berhasil. Ia menolak dengan alasan yang
-// menyebut persis apa yang kurang.
+// What is FORBIDDEN is pretending to succeed. It refuses with a reason naming
+// exactly what is missing.
 type Unconfigured struct{}
 
 var _ interface {

@@ -21,38 +21,37 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 )
 
-// GoogleJWKSURL adalah tempat Google menerbitkan kunci publiknya.
+// GoogleJWKSURL is where Google publishes its public keys.
 const GoogleJWKSURL = "https://www.googleapis.com/oauth2/v3/certs"
 
-// googleIssuers adalah dua bentuk yang sah-sama dari penerbit yang sama.
-// Google memakai keduanya, dan menerima hanya satu akan menolak setengah
-// token yang sah.
+// googleIssuers are the two equally valid forms of the same issuer. Google
+// uses both, and accepting only one would refuse half of all valid tokens.
 var googleIssuers = []string{"https://accounts.google.com", "accounts.google.com"}
 
-// providerGoogle adalah satu-satunya penyedia yang dilayani verifier ini.
+// providerGoogle is the only provider this verifier serves.
 const providerGoogle = "google"
 
 var (
 	// ErrUnsupportedProvider ditolak sebelum jaringan disentuh.
 	ErrUnsupportedProvider = errors.New("unsupported social provider")
 
-	// ErrInvalidIDToken menutupi setiap alasan sebuah ID token ditolak.
-	// Pemanggil DILARANG membedakannya: "tanda tangannya benar tetapi
-	// audiencenya salah" memberi tahu penyerang mana bagian yang sudah tepat.
+	// ErrInvalidIDToken covers every reason an ID token is refused. Callers
+	// MUST NOT tell them apart: "the signature is right but the audience is
+	// wrong" tells an attacker which part they already got right.
 	ErrInvalidIDToken = errors.New("invalid id token")
 )
 
-// GoogleVerifier memeriksa ID token OIDC terbitan Google.
+// GoogleVerifier checks OIDC ID tokens issued by Google.
 //
-// Yang diperiksa ada empat, dan keempatnya wajib:
+// Four things are checked, and all four are mandatory:
 //
-//   - tanda tangan, terhadap kunci publik Google yang diambil dari JWKS-nya;
-//   - iss, supaya token dari penerbit lain tidak diterima;
-//   - aud, supaya token yang diterbitkan untuk aplikasi LAIN tidak bisa
-//     dipakai di sini - ini yang paling sering terlewat, dan tanpanya siapa
-//     pun yang punya aplikasi Google bisa menukar token penggunanya menjadi
-//     sesi di sistem ini;
-//   - exp, lewat parser.
+//   - the signature, against Google's public keys fetched from its JWKS;
+//   - iss, so tokens from other issuers are not accepted;
+//   - aud, so a token issued for ANOTHER application cannot be used here -
+//     this is the one most often missed, and without it anyone with a Google
+//     application could exchange their users' tokens for sessions in this
+//     system;
+//   - exp, through the parser.
 type GoogleVerifier struct {
 	clientID string
 	jwksURL  string
@@ -60,10 +59,10 @@ type GoogleVerifier struct {
 	keys     *jwksCache
 }
 
-// NewGoogleVerifier menyusun verifier untuk satu client id.
+// NewGoogleVerifier assembles a verifier for one client id.
 //
-// jwksURL bisa dikosongkan untuk memakai milik Google; ia bisa diisi supaya
-// test bisa menyajikan JWKS-nya sendiri tanpa menyentuh jaringan.
+// jwksURL may be left empty to use Google's; it can be set so tests can
+// serve their own JWKS without touching the network.
 func NewGoogleVerifier(clientID, jwksURL string, client *http.Client, cacheFor time.Duration) (*GoogleVerifier, error) {
 	if strings.TrimSpace(clientID) == "" {
 		return nil, errors.New("empty google client id")
@@ -72,9 +71,9 @@ func NewGoogleVerifier(clientID, jwksURL string, client *http.Client, cacheFor t
 		jwksURL = GoogleJWKSURL
 	}
 	if client == nil {
-		// Batas waktu ditetapkan, bukan diwarisi dari http.DefaultClient yang
-		// tidak punya satu pun. Pengambilan kunci duduk di jalur masuk
-		// pengguna, dan penyedia yang menggantung tidak boleh menahannya.
+		// The timeout is set explicitly, not inherited from http.DefaultClient,
+		// which has none. Fetching the keys sits on the user's sign-in path, and
+		// a hanging provider must not hold it up.
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	if cacheFor <= 0 {
@@ -88,19 +87,19 @@ func NewGoogleVerifier(clientID, jwksURL string, client *http.Client, cacheFor t
 	}, nil
 }
 
-// googleClaims adalah bagian ID token yang dipakai.
+// googleClaims is the part of the ID token that is used.
 type googleClaims struct {
 	jwt.RegisteredClaims
 	Email string `json:"email"`
 
-	// EmailVerified datang sebagai boolean pada ID token, tetapi Google
-	// pernah mengirimnya sebagai string pada endpoint lain. Ia diurai lewat
-	// tipe sendiri supaya bentuk yang tidak terduga menjadi penolakan, bukan
-	// nilai false yang diam-diam melewati pengerasan di F1-11.
+	// EmailVerified arrives as a boolean on the ID token, but Google has sent
+	// it as a string on other endpoints. It is parsed through its own type so
+	// an unexpected shape becomes a refusal, not a false that silently
+	// bypasses the F1-11 hardening.
 	EmailVerified flexibleBool `json:"email_verified"`
 }
 
-// flexibleBool menerima true, false, "true", dan "false".
+// flexibleBool accepts true, false, "true", and "false".
 type flexibleBool bool
 
 func (b *flexibleBool) UnmarshalJSON(data []byte) error {
@@ -132,19 +131,18 @@ func (v *GoogleVerifier) Verify(ctx context.Context, provider, idToken string) (
 
 	var claims googleClaims
 
-	// Penerbit TIDAK diserahkan ke parser, dan itu disengaja.
+	// The issuer is NOT handed to the parser, and deliberately so.
 	//
-	// Google memakai dua bentuk penerbit yang sama-sama sah, dan
-	// WithIssuer hanya menerima satu. Mencoba dua parser berurutan akan
-	// menggandakan pekerjaannya - termasuk pengambilan JWKS - sehingga
-	// token dengan kid acak bisa dipakai memaksa dua permintaan ke
-	// penyedia per request. Sekali parse, lalu penerbitnya diperiksa
-	// sendiri terhadap daftar.
+	// Google uses two equally valid issuer forms, and WithIssuer accepts only
+	// one. Trying two parsers in turn would double the work - including the
+	// JWKS fetch - so a token with a random kid could be used to force two
+	// requests to the provider per request. Parse once, then check the issuer
+	// against the list ourselves.
 	parser := jwt.NewParser(
-		// Pertukaran algoritma hari ini sudah tertutup oleh tipe kunci:
-		// keyfunc mengembalikan *rsa.PublicKey, dan verifikasi HMAC menuntut
-		// []byte sementara alg=none menuntut sentinel tersendiri. Daftar ini
-		// lapis kedua - ia tetap menolak bila kelak keyfunc diubah.
+		// Algorithm confusion is already closed today by the key type: keyfunc
+		// returns an *rsa.PublicKey, and HMAC verification demands []byte while
+		// alg=none demands its own sentinel. This list is the second layer - it
+		// still refuses if keyfunc is changed one day.
 		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
 		jwt.WithAudience(v.clientID),
 		jwt.WithExpirationRequired(),
@@ -170,15 +168,15 @@ func (v *GoogleVerifier) Verify(ctx context.Context, provider, idToken string) (
 	}, nil
 }
 
-// keyFor mencari kunci publik yang cocok dengan kid di header token.
+// keyFor finds the public key matching the kid in the token header.
 func (v *GoogleVerifier) keyFor(ctx context.Context) jwt.Keyfunc {
 	return func(token *jwt.Token) (any, error) {
 		kid, ok := token.Header["kid"].(string)
 		if !ok || kid == "" {
-			// Header tanpa kid, atau kid yang bukan string, sama-sama berarti
-			// tokennya tidak menunjuk kunci mana pun. Membuang hasil type
-			// assertion akan menyamakan "kid: 123" dengan "tidak ada kid",
-			// dan keduanya memang ditolak - tetapi diam-diam.
+			// A header without a kid, or a kid that is not a string, both mean the
+			// token points at no key at all. Discarding the type-assertion result
+			// would equate "kid: 123" with "no kid", and both are indeed refused -
+			// but silently.
 			return nil, errors.New("the token names no key")
 		}
 
@@ -190,11 +188,11 @@ func (v *GoogleVerifier) keyFor(ctx context.Context) jwt.Keyfunc {
 	}
 }
 
-// jwksCache menyimpan kunci publik penyedia untuk sementara.
+// jwksCache keeps the provider's public keys for a while.
 //
-// Tanpa cache, setiap masuk lewat Google berarti satu permintaan HTTP ke
-// penyedia sebelum apa pun bisa diverifikasi - dan penyedianya menjadi
-// dependensi di jalur terpanas alur masuk.
+// Without a cache, every Google sign-in means one HTTP request to the
+// provider before anything can be verified - and the provider becomes a
+// dependency on the hottest path of the sign-in flow.
 type jwksCache struct {
 	mu        sync.Mutex
 	ttl       time.Duration
@@ -210,9 +208,9 @@ func (c *jwksCache) lookup(ctx context.Context, client *http.Client, url, kid st
 		return key, nil
 	}
 
-	// kid yang tidak dikenal juga memicu pengambilan ulang, bukan hanya
-	// cache yang kedaluwarsa: penyedia merotasi kuncinya, dan kunci baru
-	// muncul sebelum salinan lama kedaluwarsa.
+	// An unknown kid also triggers a refetch, not only an expired cache: the
+	// provider rotates its keys, and a new key appears before the old copy
+	// expires.
 	keys, err := fetchJWKS(ctx, client, url)
 	if err != nil {
 		return nil, err
@@ -226,7 +224,7 @@ func (c *jwksCache) lookup(ctx context.Context, client *http.Client, url, kid st
 	return key, nil
 }
 
-// jwk adalah satu kunci di dalam JWKS, dalam bentuk RSA.
+// jwk is one key inside the JWKS, in RSA form.
 type jwk struct {
 	Kid string `json:"kid"`
 	Kty string `json:"kty"`
@@ -254,9 +252,9 @@ func fetchJWKS(ctx context.Context, client *http.Client, url string) (map[string
 		return nil, fmt.Errorf("fetching jwks: the provider answered %s", resp.Status)
 	}
 
-	// Badan dibatasi. Sebuah endpoint yang mengirim gigabita - karena rusak,
-	// atau karena bukan endpoint yang kita kira - tidak boleh menghabiskan
-	// memori service ini.
+	// The body is bounded. An endpoint sending gigabytes - because it is
+	// broken, or because it is not the endpoint we think it is - must not
+	// exhaust this service's memory.
 	const maxJWKSBytes = 1 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJWKSBytes))
 	if err != nil {
@@ -277,9 +275,9 @@ func fetchJWKS(ctx context.Context, client *http.Client, url string) (map[string
 		}
 		key, err := k.publicKey()
 		if err != nil {
-			// Satu kunci yang rusak tidak membatalkan sisanya: penyedia bisa
-			// menerbitkan jenis kunci yang belum kita dukung, dan menolak
-			// seluruh dokumen karenanya akan mematikan alur masuk.
+			// One broken key does not invalidate the rest: the provider may publish
+			// a key type we do not support yet, and refusing the whole document
+			// because of it would kill the sign-in flow.
 			continue
 		}
 		keys[k.Kid] = key
@@ -292,7 +290,7 @@ func fetchJWKS(ctx context.Context, client *http.Client, url string) (map[string
 }
 
 func (k jwk) publicKey() (*rsa.PublicKey, error) {
-	// base64url tanpa padding, seperti yang ditetapkan RFC 7517.
+	// base64url without padding, as RFC 7517 specifies.
 	modulus, err := base64.RawURLEncoding.DecodeString(k.N)
 	if err != nil {
 		return nil, fmt.Errorf("decoding modulus: %w", err)

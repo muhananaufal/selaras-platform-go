@@ -59,7 +59,7 @@ func (r *SagaRepository) Find(ctx context.Context, id domain.SagaID) (*domain.De
 	return saga, nil
 }
 
-// FindOutstandingForUser mencari saga yang sedang berjalan.
+// FindOutstandingForUser finds the saga in progress.
 func (r *SagaRepository) FindOutstandingForUser(
 	ctx context.Context, userID domain.UserID,
 ) (*domain.DeletionSaga, error) {
@@ -82,11 +82,11 @@ func (r *SagaRepository) FindOutstandingForUser(
 	return saga, nil
 }
 
-// Confirm mencatat jawaban satu unit.
+// Confirm records one unit's answer.
 //
-// ON CONFLICT DO NOTHING: relay outbox bersifat at-least-once, dan jawaban yang
-// sama bisa tiba dua kali. Yang kedua tidak boleh membuat saga mengira ada
-// tujuh unit menjawab.
+// ON CONFLICT DO NOTHING: the outbox relay is at-least-once, and the same
+// answer can arrive twice. The second must not make the saga think seven units
+// answered.
 func (r *SagaRepository) Confirm(
 	ctx context.Context, id domain.SagaID, c domain.Confirmation,
 ) error {
@@ -104,12 +104,12 @@ func (r *SagaRepository) Confirm(
 	return nil
 }
 
-// Close menutup saga.
+// Close closes the saga.
 //
-// Syarat status = 'requested' ada di WHERE, bukan diperiksa lebih dulu lalu
-// ditulis: dua konfirmasi terakhir yang tiba bersamaan akan sama-sama membaca
-// "masih berjalan", dan yang kedua menutupnya untuk kedua kalinya - menghapus
-// akun dua kali, atau menimpa 'failed' dengan 'completed'.
+// The status = 'requested' condition sits in the WHERE, not checked first and
+// then written: the last two confirmations arriving together would both read
+// "still running", and the second would close it a second time - deleting the
+// account twice, or overwriting 'failed' with 'completed'.
 func (r *SagaRepository) Close(
 	ctx context.Context, id domain.SagaID, status domain.SagaStatus, at time.Time,
 ) error {
@@ -124,11 +124,10 @@ func (r *SagaRepository) Close(
 	return nil
 }
 
-// Outstanding menyebutkan saga yang belum selesai, TERLAMA lebih dulu.
+// Outstanding names the sagas that have not finished, OLDEST first.
 //
-// Terlama lebih dulu karena yang paling lama menggantung adalah yang paling
-// mungkin benar-benar macet; yang baru saja diminta mungkin hanya sedang
-// berjalan.
+// Oldest first because the one hanging longest is the one most likely to be
+// genuinely stuck; one requested a moment ago may simply be in progress.
 func (r *SagaRepository) Outstanding(ctx context.Context, limit int) ([]*domain.DeletionSaga, error) {
 	if limit < 1 {
 		limit = 50
@@ -159,11 +158,11 @@ func (r *SagaRepository) Outstanding(ctx context.Context, limit int) ([]*domain.
 		return nil, fmt.Errorf("iterating outstanding sagas: %w", err)
 	}
 
-	// Konfirmasinya dibaca SETELAH baris sagalnya selesai dibaca.
+	// The confirmations are read AFTER the saga rows have been fully read.
 	//
-	// Membacanya di dalam loop di atas akan memakai koneksi yang sedang
-	// memegang rows yang belum ditutup - pgx menolaknya, dan penolakannya
-	// muncul sebagai galat yang tidak menyebut sebabnya.
+	// Reading them inside the loop above would use a connection still holding
+	// unclosed rows - pgx refuses that, and the refusal surfaces as an error
+	// that does not name its cause.
 	for _, saga := range out {
 		if saga.Confirmations, err = r.confirmations(ctx, saga.ID); err != nil {
 			return nil, err
@@ -238,11 +237,11 @@ func scanSaga(row pgx.Row) (*domain.DeletionSaga, error) {
 	return &saga, nil
 }
 
-// nullIfBlank menyimpan string kosong sebagai NULL.
+// nullIfBlank stores an empty string as NULL.
 //
-// user_profile_id kosong berarti profilnya tidak bisa ditemukan saat saga
-// dimulai - keadaan yang sah (B7). Menyimpannya sebagai string kosong akan membuat
-// pembacanya harus membedakan dua bentuk untuk satu arti.
+// An empty user_profile_id means the profile could not be found when the saga
+// started - a valid state (B7). Storing it as an empty string would force readers
+// to distinguish two shapes for one meaning.
 func nullIfBlank(s string) *string {
 	if s == "" {
 		return nil

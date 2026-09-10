@@ -1,4 +1,4 @@
-// Package token menerbitkan dan memverifikasi token akses JWT.
+// Package token issues and verifies JWT access tokens.
 package token
 
 import (
@@ -13,23 +13,22 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// algorithm adalah EdDSA (Ed25519), dan itu asimetris dengan sengaja.
+// algorithm is EdDSA (Ed25519), and it is asymmetric on purpose.
 //
-// Dengan HMAC, setiap unit yang perlu memverifikasi token juga memegang
-// kunci untuk menerbitkannya - sembilan unit yang semuanya bisa mencetak
-// token admin. Di sini hanya identity-svc yang memegang kunci privat, dan
-// yang lain hanya bisa memeriksa.
+// With HMAC, every unit that needs to verify tokens also holds the key to
+// issue them - nine units all able to mint an admin token. Here only
+// identity-svc holds the private key, and the others can only check.
 //
-// Ed25519 dipilih di antara yang asimetris karena kuncinya pendek, tanda
-// tangannya cepat diverifikasi, dan tidak ada parameter yang bisa salah
-// dipilih seperti pada RSA.
+// Ed25519 was chosen among the asymmetric options because its keys are
+// short, its signatures verify quickly, and there are no parameters that
+// can be chosen wrongly as with RSA.
 var algorithm = jwt.SigningMethodEdDSA
 
-// claims memetakan domain.Claims ke bentuk JWT.
+// claims maps domain.Claims to the JWT shape.
 //
-// Nama klaim standar dipakai bila ada padanannya - sub, iss, exp, iat, jti -
-// supaya token bisa dibaca perkakas mana pun. Yang tidak punya padanan
-// diberi awalan untuk menghindari tabrakan dengan klaim terdaftar kelak.
+// Standard claim names are used where a counterpart exists - sub, iss, exp,
+// iat, jti - so any tool can read the token. Those without a counterpart get
+// a prefix to avoid colliding with registered claims later.
 type claims struct {
 	jwt.RegisteredClaims
 	UserProfileID string `json:"upid,omitempty"`
@@ -38,8 +37,8 @@ type claims struct {
 	Generation    int64  `json:"gen"`
 }
 
-// Issuer menandatangani klaim. Ia memegang kunci privat, jadi hanya
-// identity-svc yang boleh membangunnya.
+// Issuer signs claims. It holds the private key, so only identity-svc may
+// construct it.
 type Issuer struct {
 	key      ed25519.PrivateKey
 	issuer   string
@@ -48,10 +47,9 @@ type Issuer struct {
 }
 
 func NewIssuer(key ed25519.PrivateKey, issuerName string, lifetime time.Duration) (*Issuer, error) {
-	// Ed25519 menerima slice berukuran apa pun tanpa mengeluh sampai saat
-	// menandatangani, di mana ia panik. Ukurannya diperiksa di sini supaya
-	// konfigurasi yang keliru menggagalkan start-up, bukan permintaan login
-	// pertama.
+	// Ed25519 accepts a slice of any size without complaint until signing
+	// time, where it panics. The size is checked here so a wrong configuration
+	// fails start-up, not the first login request.
 	if len(key) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("private key is %d bytes; want %d", len(key), ed25519.PrivateKeySize)
 	}
@@ -67,8 +65,8 @@ func NewIssuer(key ed25519.PrivateKey, issuerName string, lifetime time.Duration
 var _ domain.TokenIssuer = (*Issuer)(nil)
 
 func (i *Issuer) Issue(c domain.Claims) (string, error) {
-	// jti membuat dua token yang terbit pada detik yang sama untuk pengguna
-	// yang sama tetap berbeda, sehingga log bisa membedakan sesi.
+	// jti keeps two tokens issued in the same second for the same user
+	// distinct, so logs can tell sessions apart.
 	jti, err := uuid.NewV7()
 	if err != nil {
 		return "", fmt.Errorf("generating token id: %w", err)
@@ -96,8 +94,8 @@ func (i *Issuer) Issue(c domain.Claims) (string, error) {
 	return signed, nil
 }
 
-// Verifier memeriksa tanda tangan dan masa berlaku. Ia hanya memegang kunci
-// publik, jadi aman diberikan ke unit mana pun.
+// Verifier checks the signature and validity period. It holds only the
+// public key, so it is safe to hand to any unit.
 type Verifier struct {
 	key    ed25519.PublicKey
 	issuer string
@@ -116,17 +114,16 @@ func NewVerifier(key ed25519.PublicKey, issuerName string) (*Verifier, error) {
 		key:    key,
 		issuer: issuerName,
 		parser: jwt.NewParser(
-			// Pertukaran algoritma hari ini sudah tertutup oleh tipe kunci:
-			// verifikasi HMAC menuntut []byte telanjang, sedangkan keyfunc
-			// mengembalikan ed25519.PublicKey yang bertipe bernama, dan
-			// type assertion-nya gagal. Daftar ini adalah lapis kedua -
-			// ia tetap menolak bila kelak keyfunc diubah mengembalikan
-			// []byte, yang akan membuat kunci publik yang sengaja
-			// disebarkan menjadi rahasia HMAC yang sah.
+			// Algorithm confusion is already closed today by the key type: HMAC
+			// verification demands a bare []byte, while keyfunc returns an
+			// ed25519.PublicKey, which is a named type, and the type assertion
+			// fails. This list is the second layer - it still refuses if keyfunc is
+			// one day changed to return []byte, which would turn the deliberately
+			// distributed public key into a valid HMAC secret.
 			jwt.WithValidMethods([]string{algorithm.Alg()}),
 			jwt.WithIssuer(issuerName),
-			// Token tanpa exp tidak pernah berhenti berlaku. Kadaluwarsa
-			// diwajibkan, bukan sekadar diperiksa bila ada.
+			// A token without exp never stops being valid. Expiry is required, not
+			// merely checked when present.
 			jwt.WithExpirationRequired(),
 			jwt.WithIssuedAt(),
 		),
@@ -138,14 +135,14 @@ var _ domain.TokenVerifier = (*Verifier)(nil)
 func (v *Verifier) Verify(raw string) (domain.Claims, error) {
 	var c claims
 
-	// Setiap kegagalan dibungkus menjadi ErrInvalidToken yang sama, dan
-	// error aslinya ikut dibungkus supaya log server tetap bisa
-	// membedakan tanda tangan keliru dari kedaluwarsa.
+	// Every failure is wrapped into the same ErrInvalidToken, and the original
+	// error is wrapped inside so the server log can still tell a wrong
+	// signature from an expired token.
 	//
-	// Yang DILARANG membedakannya adalah jawaban ke klien: memberi tahu
-	// penyerang bahwa tanda tangannya benar tetapi sudah lewat berarti
-	// memberi tahu bahwa kuncinya bocor. Penyeragaman itu dilakukan di
-	// pemetaan error HTTP, bukan dengan membuang keterangan di sini.
+	// What MUST NOT tell them apart is the answer to the client: telling an
+	// attacker the signature was right but expired is telling them the key has
+	// leaked. That uniformity is applied in the HTTP error mapping, not by
+	// discarding the detail here.
 	_, err := v.parser.ParseWithClaims(raw, &c, func(*jwt.Token) (any, error) {
 		return v.key, nil
 	})
@@ -161,8 +158,8 @@ func (v *Verifier) Verify(raw string) (domain.Claims, error) {
 	if err != nil {
 		return domain.Claims{}, fmt.Errorf("%w: unknown role %q", domain.ErrInvalidToken, c.Role)
 	}
-	// Generasi nol berarti klaimnya hilang. Menerimanya akan membuat token
-	// tanpa generasi selamat dari setiap pencabutan.
+	// A generation of zero means the claim is missing. Accepting it would let
+	// a token without a generation survive every revocation.
 	if c.Generation < 1 {
 		return domain.Claims{}, fmt.Errorf("%w: missing token generation", domain.ErrInvalidToken)
 	}

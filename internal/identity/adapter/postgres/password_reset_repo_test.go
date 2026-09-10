@@ -111,8 +111,8 @@ func TestMarkUsedOnAnUnknownHashIsRejected(t *testing.T) {
 	}
 }
 
-// Setelah kata sandi berganti, setiap permintaan lain yang masih beredar
-// adalah kredensial yang masih berlaku atas akun yang baru saja diamankan.
+// Once the password has changed, every other outstanding request is a
+// still-valid credential for an account that was just secured.
 func TestInvalidateAllForKillsOnlyTheLiveOnesOfThatUser(t *testing.T) {
 	repo, owner, ctx := newResetRepo(t)
 
@@ -142,8 +142,8 @@ func TestInvalidateAllForKillsOnlyTheLiveOnesOfThatUser(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Satu di antaranya sudah dipakai lebih dulu; waktu pemakaiannya tidak
-	// boleh tergeser oleh pembatalan massal.
+	// One of them was used beforehand; its use time must not be moved by the
+	// mass cancellation.
 	usedAt := time.Now().Add(-time.Minute)
 	if err := repo.MarkUsed(ctx, mine[0].TokenHash, usedAt); err != nil {
 		t.Fatalf("MarkUsed: %v", err)
@@ -178,9 +178,9 @@ func TestInvalidateAllForKillsOnlyTheLiveOnesOfThatUser(t *testing.T) {
 	}
 }
 
-// Barisnya menunjuk ke pengguna lewat foreign key. Pengguna yang benar-benar
-// dihapus WAJIB membawa permintaan resetnya ikut hilang - kalau tidak, ada
-// token yang menunjuk ke akun yang tidak ada.
+// The row points at the user through a foreign key. A user who is really
+// deleted MUST take their reset requests with them - otherwise there is a
+// token pointing at an account that does not exist.
 func TestRequestsDisappearWithTheirOwner(t *testing.T) {
 	repo, owner, ctx := newResetRepo(t)
 	pool := pgtest.Open(t, "identity")
@@ -207,10 +207,10 @@ func TestTheResetRepositorySatisfiesTheDomainPort(t *testing.T) {
 	var _ domain.PasswordResetRepository = postgres.NewPasswordResetRepository(pool)
 }
 
-// Penandaan kedua DILARANG berhasil, dan DILARANG menggeser waktu pemakaian
-// yang pertama - itu satu-satunya catatan kapan token benar-benar dipakai.
-// Lapis ini terpisah dari pemeriksaan di domain: keduanya harus menolak,
-// supaya jalur mana pun yang lupa memeriksa tetap berhenti di sini.
+// A second marking MUST NOT succeed, and MUST NOT move the first use time -
+// that is the only record of when the token was actually used. This layer
+// is separate from the check in the domain: both have to refuse, so
+// whichever path forgets to check still stops here.
 func TestMarkUsedRefusesToStampATokenTwice(t *testing.T) {
 	repo, owner, ctx := newResetRepo(t)
 

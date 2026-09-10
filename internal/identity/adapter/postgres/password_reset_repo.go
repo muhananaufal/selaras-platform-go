@@ -40,11 +40,11 @@ func (r *PasswordResetRepository) Create(ctx context.Context, reset domain.Passw
 	return nil
 }
 
-// FindByTokenHash mencari berdasarkan hash.
+// FindByTokenHash looks up by hash.
 //
-// Baris yang tidak ada mengembalikan ErrResetTokenInvalid, bukan galat
-// tersendiri: pemanggil tidak boleh bisa membedakan "token ini tidak pernah
-// ada" dari "token ini tidak sah lagi".
+// A missing row returns ErrResetTokenInvalid, not an error of its own:
+// callers must not be able to tell "this token never existed" from "this
+// token is no longer valid".
 func (r *PasswordResetRepository) FindByTokenHash(
 	ctx context.Context,
 	hash domain.ResetTokenHash,
@@ -72,10 +72,10 @@ func (r *PasswordResetRepository) FindByTokenHash(
 		return domain.PasswordReset{}, fmt.Errorf("stored reset owner is not a user id: %w", err)
 	}
 
-	// Panjangnya diperiksa sebelum disalin. Baris yang panjangnya keliru
-	// hanya bisa datang dari sesuatu yang menulis di luar kode ini, dan
-	// menyalin diam-diam akan menghasilkan hash yang tidak cocok dengan apa
-	// pun - kegagalan yang muncul jauh dari sebabnya.
+	// The length is checked before copying. A row of the wrong length can only
+	// come from something writing outside this code, and copying silently
+	// would produce a hash that matches nothing - a failure surfacing far from
+	// its cause.
 	if len(storedHash) != len(domain.ResetTokenHash{}) {
 		return domain.PasswordReset{}, fmt.Errorf(
 			"stored reset hash is %d bytes; want %d", len(storedHash), len(domain.ResetTokenHash{}))
@@ -96,9 +96,9 @@ func (r *PasswordResetRepository) MarkUsed(
 	hash domain.ResetTokenHash,
 	usedAt time.Time,
 ) error {
-	// used_at hanya ditulis bila masih kosong. Penandaan kedua DILARANG
-	// menggeser waktu pemakaian yang pertama - itulah satu-satunya catatan
-	// kapan token benar-benar dipakai.
+	// used_at is only written while it is still empty. A second marking MUST
+	// NOT move the first use time - that is the only record of when the token
+	// was actually used.
 	const q = `
 		UPDATE password_reset_tokens
 		SET used_at = $2
@@ -109,8 +109,8 @@ func (r *PasswordResetRepository) MarkUsed(
 		return fmt.Errorf("marking password reset request used: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		// Nol baris berarti tokennya tidak ada, atau sudah ditandai. Keduanya
-		// berarti hal yang sama bagi pemanggil: ia tidak sah.
+		// Zero rows means the token does not exist, or was already marked. Both
+		// mean the same thing to the caller: it is invalid.
 		return domain.ErrResetTokenInvalid
 	}
 	return nil
@@ -126,8 +126,8 @@ func (r *PasswordResetRepository) InvalidateAllFor(
 		SET used_at = $2
 		WHERE user_id = $1 AND used_at IS NULL`
 
-	// Nol baris di sini bukan kegagalan: pengguna yang tidak punya permintaan
-	// yang beredar memang tidak perlu dibatalkan apa-apa.
+	// Zero rows here is not a failure: a user with no outstanding requests
+	// simply has nothing to cancel.
 	if _, err := r.db.Exec(ctx, q, userID.String(), at); err != nil {
 		return fmt.Errorf("invalidating outstanding reset requests: %w", err)
 	}

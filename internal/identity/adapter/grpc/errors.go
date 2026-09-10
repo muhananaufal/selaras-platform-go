@@ -1,4 +1,4 @@
-// Package grpc melayani kontrak identity.v1 di atas gRPC.
+// Package grpc serves the identity.v1 contract over gRPC.
 package grpc
 
 import (
@@ -13,24 +13,24 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// toStatus menerjemahkan galat domain menjadi status gRPC.
+// toStatus translates domain errors into gRPC statuses.
 //
-// Pemetaannya terkumpul di satu tempat dengan sengaja. Tersebar di setiap
-// handler, akan selalu ada satu handler yang lupa - dan yang lupa itu
-// mengembalikan galat internal apa adanya ke pemanggil.
+// The mapping is gathered in one place on purpose. Spread across every
+// handler, there would always be one handler that forgets - and the one that
+// forgets returns an internal error as-is to the caller.
 //
-// Galat yang tidak dikenali TIDAK PERNAH dikirim isinya. Ia dicatat lengkap
-// di sisi server dan dijawab dengan satu kalimat tetap: pesan galat internal
-// membawa nama tabel, potongan kueri, dan alamat host, dan semuanya berguna
-// bagi orang yang sedang memetakan sistem ini.
+// An unrecognised error NEVER has its contents sent. It is logged in full on
+// the server side and answered with one fixed sentence: internal error
+// messages carry table names, query fragments, and host addresses, all of
+// which are useful to someone mapping this system.
 func toStatus(ctx context.Context, op string, err error) error {
 	switch {
 	case err == nil:
 		return nil
 
-	// Kredensial salah selalu Unauthenticated, tanpa keterangan tambahan.
-	// Membedakan "email tidak terdaftar" dari "kata sandi keliru" di sini
-	// akan membatalkan penyeragaman yang dikerjakan use case-nya.
+	// Wrong credentials are always Unauthenticated, with no extra detail.
+	// Distinguishing "email not registered" from "wrong password" here would
+	// undo the uniformity the use case worked for.
 	case errors.Is(err, app.ErrInvalidCredentials):
 		return status.Error(codes.Unauthenticated, "invalid credentials")
 
@@ -46,17 +46,17 @@ func toStatus(ctx context.Context, op string, err error) error {
 	case errors.Is(err, app.ErrUnsupportedProvider):
 		return status.Error(codes.InvalidArgument, "unsupported social provider")
 
-	// Token reset yang tidak sah selalu satu jawaban. "Token ini pernah ada
-	// tetapi sudah dipakai" memberi tahu penyerang bahwa tebakannya benar.
+	// An invalid reset token is always one answer. "This token existed but was
+	// already used" tells an attacker their guess was right.
 	case errors.Is(err, domain.ErrResetTokenInvalid):
 		return status.Error(codes.InvalidArgument, "invalid or expired reset token")
 
 	case errors.Is(err, app.ErrPasswordMismatch):
 		return status.Error(codes.InvalidArgument, "password confirmation does not match")
 
-	// Galat validasi boleh disampaikan apa adanya: isinya memang tentang
-	// masukan si pemanggil sendiri, dan menyembunyikannya hanya membuat
-	// klien menebak-nebak apa yang salah.
+	// Validation errors may be passed on as they are: their content is about
+	// the caller's own input, and hiding it only leaves the client guessing
+	// what was wrong.
 	case errors.Is(err, domain.ErrInvalidEmail),
 		errors.Is(err, domain.ErrPasswordTooShort),
 		errors.Is(err, domain.ErrPasswordTooLong),

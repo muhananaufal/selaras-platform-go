@@ -1,5 +1,5 @@
-// Package revocation menjawab apakah sebuah token masih berada di generasi
-// yang berlaku bagi pemiliknya.
+// Package revocation answers whether a token is still in the generation
+// valid for its owner.
 package revocation
 
 import (
@@ -15,37 +15,38 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// GenerationSource adalah sumber kebenaran saat cache tidak tahu.
+// GenerationSource is the source of truth when the cache does not know.
 //
-// Di edge, implementasinya adalah klien gRPC ke identity-svc - satu-satunya
-// yang boleh membaca skema identity. Ia sengaja bukan koneksi basis data:
-// isolasi skema-per-service ditegakkan oleh basis datanya sendiri, dan edge
-// tidak punya hak di sana.
+// At the edge, its implementation is a gRPC client to identity-svc - the
+// only one allowed to read the identity schema. It is deliberately not a
+// database connection: schema-per-service isolation is enforced by the
+// database itself, and the edge has no rights there.
 type GenerationSource interface {
 	CurrentGeneration(ctx context.Context, userID domain.UserID) (int64, error)
 }
 
-// keyPrefix menamai ruang kunci milik alur ini, supaya ia tidak bertabrakan
-// dengan pemakaian Redis lain di service yang sama.
+// keyPrefix names the key space owned by this flow, so it does not collide
+// with other uses of Redis in the same service.
 const keyPrefix = "identity:token-generation:"
 
-// RedisStore memenuhi domain.RevocationChecker dan domain.RevocationPublisher.
+// RedisStore satisfies domain.RevocationChecker and
+// domain.RevocationPublisher.
 //
-// Redis di sini adalah cache, bukan sumber kebenaran. Sumbernya tetap kolom
-// token_generation di basis data identity; yang disimpan di sini hanya
-// salinan, supaya pemeriksaan di setiap request tidak menjadi panggilan ke
-// identity-svc di setiap request (ADR-020 keputusan 3).
+// Redis here is a cache, not a source of truth. The source remains the
+// token_generation column in the identity database; what is kept here is only
+// a copy, so the check on every request does not become a call to identity-svc
+// on every request (ADR-020 decision 3).
 type RedisStore struct {
 	client *goredis.Client
 	source GenerationSource
 
-	// ttl membatasi berapa lama sebuah salinan yang tertinggal bisa hidup.
+	// ttl bounds how long a stale copy can live.
 	//
-	// Ia adalah tawar-menawar yang harus dipilih sadar. Publikasi yang gagal
-	// meninggalkan generasi lama di cache, dan token yang seharusnya sudah
-	// dicabut tetap diterima sampai salinan itu kedaluwarsa - jadi TTL yang
-	// panjang memperpanjang jendela itu. TTL yang pendek mempersempitnya
-	// tetapi mengirim lebih banyak permintaan ke identity-svc.
+	// It is a trade-off that has to be chosen consciously. A failed publish
+	// leaves the old generation in the cache, and a token that should already
+	// be revoked keeps being accepted until that copy expires - so a long TTL
+	// widens that window. A short TTL narrows it but sends more requests to
+	// identity-svc.
 	ttl time.Duration
 }
 
@@ -68,13 +69,13 @@ var (
 
 func key(userID domain.UserID) string { return keyPrefix + userID.String() }
 
-// IsCurrent menjawab apakah generation masih generasi yang berlaku.
+// IsCurrent answers whether generation is still the valid generation.
 //
-// GAGAL-TERTUTUP, dan itu wajib (ADR-020). Setiap jalur yang tidak bisa
-// memastikan generasi yang berlaku mengembalikan galat, bukan true.
-// Menerima token dalam keadaan itu akan mengubah setiap gangguan - Redis
-// mati, identity-svc mati, jaringan putus - menjadi jendela di mana logout
-// dan reset kata sandi tidak berlaku sama sekali.
+// FAIL-CLOSED, and that is mandatory (ADR-020). Every path that cannot
+// establish the valid generation returns an error, not true. Accepting a
+// token in that state would turn every outage - Redis down, identity-svc
+// down, network cut - into a window in which logout and password reset do
+// not apply at all.
 func (s *RedisStore) IsCurrent(ctx context.Context, userID domain.UserID, generation int64) (bool, error) {
 	current, err := s.client.Get(ctx, key(userID)).Int64()
 
@@ -83,14 +84,14 @@ func (s *RedisStore) IsCurrent(ctx context.Context, userID domain.UserID, genera
 		return current == generation, nil
 
 	case errors.Is(err, goredis.Nil):
-		// Cache tidak tahu. Itu keadaan biasa - salinannya kedaluwarsa, atau
-		// pengguna ini belum pernah diperiksa di replica ini.
+		// The cache does not know. That is an ordinary state - the copy expired,
+		// or this user has never been checked on this replica.
 		return s.askSource(ctx, userID, generation)
 
 	default:
-		// Redis bermasalah. Sumbernya masih bisa ditanya, jadi ditanya:
-		// gangguan cache tidak boleh langsung menjadi pemadaman autentikasi.
-		// Kalau sumbernya juga gagal, barulah galat - dan itu penolakan.
+		// Redis is having trouble. The source can still be asked, so it is asked:
+		// a cache outage must not turn straight into an authentication outage.
+		// Only if the source fails too is it an error - and that is a refusal.
 		return s.askSource(ctx, userID, generation)
 	}
 }
@@ -101,11 +102,11 @@ func (s *RedisStore) askSource(ctx context.Context, userID domain.UserID, genera
 		return false, fmt.Errorf("cannot confirm the token generation: %w", err)
 	}
 
-	// Jawabannya diingat, tetapi kegagalan mengingat tidak membatalkan
-	// jawabannya - yang hilang hanya kecepatan permintaan berikutnya, bukan
-	// kebenarannya. Ia tetap dicatat: cache yang diam-diam berhenti bekerja
-	// terlihat sebagai beban yang naik pelan di identity-svc, dan itu jauh
-	// lebih sulit dilacak daripada satu baris log.
+	// The answer is remembered, but a failure to remember does not invalidate
+	// the answer - what is lost is only the speed of the next request, not its
+	// correctness. It is still logged: a cache that quietly stops working
+	// shows up as slowly rising load on identity-svc, and that is far harder
+	// to trace than one log line.
 	if cacheErr := s.write(ctx, userID, current); cacheErr != nil {
 		slog.WarnContext(ctx, "could not cache the token generation",
 			"user_id", userID.String(), "error", cacheErr)
@@ -113,11 +114,11 @@ func (s *RedisStore) askSource(ctx context.Context, userID domain.UserID, genera
 	return current == generation, nil
 }
 
-// PublishGeneration menyimpan generasi yang berlaku.
+// PublishGeneration stores the valid generation.
 func (s *RedisStore) PublishGeneration(ctx context.Context, userID domain.UserID, generation int64) error {
-	// Penghitungnya mulai dari satu, jadi nilai di bawah itu hanya bisa
-	// datang dari kekeliruan pemanggil. Menyimpannya akan menolak setiap
-	// token milik pengguna itu sampai salinannya kedaluwarsa.
+	// The counter starts at one, so a value below that can only come from a
+	// caller's mistake. Storing it would refuse every token of that user until
+	// the copy expires.
 	if generation < 1 {
 		return fmt.Errorf("token generation %d is impossible; the counter starts at 1", generation)
 	}

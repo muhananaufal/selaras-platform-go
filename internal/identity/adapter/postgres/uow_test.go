@@ -33,9 +33,9 @@ func newUser(t *testing.T, email string) *domain.User {
 	return u
 }
 
-// Satuan kerja yang tidak benar-benar transaksional adalah yang paling
-// berbahaya: setiap use case menulis seolah atomicity dijamin, dan
-// jaminannya tidak ada.
+// A unit of work that is not genuinely transactional is the most dangerous
+// kind: every use case writes as if atomicity were guaranteed, and the
+// guarantee is not there.
 func TestAFailureInsideTheUnitOfWorkWritesNothing(t *testing.T) {
 	uow, repo, ctx := newUnitOfWork(t)
 
@@ -69,10 +69,9 @@ func TestASuccessfulUnitOfWorkCommits(t *testing.T) {
 	}
 }
 
-// Dua tulisan ke tabel yang berbeda dalam satu satuan: kalau yang kedua
-// gagal, yang pertama harus ikut hilang. Inilah yang membuat reset kata sandi
-// aman - kata sandi tidak boleh berganti sementara tokennya masih bisa
-// dipakai lagi.
+// Two writes to different tables in one unit: if the second fails, the first
+// has to disappear too. This is what makes password reset safe - the password
+// must not change while the token can still be used again.
 func TestWritesToTwoTablesRollBackTogether(t *testing.T) {
 	uow, repo, ctx := newUnitOfWork(t)
 
@@ -109,7 +108,7 @@ func TestWritesToTwoTablesRollBackTogether(t *testing.T) {
 		t.Error("the soft delete survived the rollback")
 	}
 
-	// Barisnya harus ikut hilang, dibuktikan lewat satuan kerja lain.
+	// The row has to be gone, proven through another unit of work.
 	if err := uow.Do(ctx, func(repos app.Repositories) error {
 		_, err := repos.PasswordResets().FindByTokenHash(ctx, reset.TokenHash)
 		return err

@@ -1,4 +1,4 @@
-// Package profileclient menghubungi profile-svc dari identity-svc.
+// Package profileclient reaches profile-svc from identity-svc.
 package profileclient
 
 import (
@@ -14,25 +14,25 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 )
 
-// callTimeout membatasi setiap panggilan.
+// callTimeout bounds every call.
 //
-// Ia ada karena kedua pemakaian di identity-svc bersifat best-effort: tanpa
-// batas waktu, profile-svc yang menggantung akan menahan pendaftaran atau
-// login selama apa pun, dan "best-effort" berubah menjadi "menunggu
-// selamanya". Batasnya pendek dengan sengaja - jawabannya boleh hilang.
+// It exists because both uses in identity-svc are best-effort: without a
+// timeout, a hanging profile-svc would hold a registration or a login for
+// however long, and "best-effort" would turn into "wait forever". The bound
+// is short on purpose - the answer is allowed to be lost.
 const callTimeout = 3 * time.Second
 
-// Minter menerbitkan token berumur pendek atas nama seorang pengguna.
+// Minter issues short-lived tokens on a user's behalf.
 //
-// Kedua panggilan di sini terjadi SEBELUM pengguna memegang token - saat
-// mendaftar dan saat masuk - sementara profile-svc, sejak ADR-026, menolak
-// RPC berpengguna tanpa token yang sub-nya cocok. identity-svc adalah
-// satu-satunya pemegang kunci privat, jadi ia yang mencetak token sekali
-// pakai itu; profile-svc memverifikasinya dengan cara yang sama persis
-// seperti token pengguna, tanpa jalur khusus yang bisa disalahgunakan.
+// Both calls here happen BEFORE the user holds a token - during
+// registration and during login - while profile-svc, since ADR-026, refuses
+// user-bound RPCs without a token whose sub matches. identity-svc is the
+// only holder of the private key, so it mints that single-use token;
+// profile-svc verifies it exactly the way it verifies a user's token, with
+// no special path that could be abused.
 type Minter func(userID domain.UserID) (string, error)
 
-// Client memenuhi app.ProfileCreator dan app.ProfileFinder.
+// Client satisfies app.ProfileCreator and app.ProfileFinder.
 type Client struct {
 	profiles profilev1.ProfileClient
 	mint     Minter
@@ -48,7 +48,7 @@ func New(conn grpc.ClientConnInterface, mint Minter) (*Client, error) {
 	return &Client{profiles: profilev1.NewProfileClient(conn), mint: mint}, nil
 }
 
-// asUser membatasi waktu panggilan dan menempelkan token atas nama pengguna.
+// asUser bounds the call's time and attaches a token on the user's behalf.
 func (c *Client) asUser(ctx context.Context, userID domain.UserID) (context.Context, context.CancelFunc, error) {
 	raw, err := c.mint(userID)
 	if err != nil {
@@ -58,7 +58,7 @@ func (c *Client) asUser(ctx context.Context, userID domain.UserID) (context.Cont
 	return ctx, cancel, nil
 }
 
-// CreateEmptyProfile meminta profil kosong untuk pengguna baru.
+// CreateEmptyProfile requests an empty profile for a new user.
 func (c *Client) CreateEmptyProfile(ctx context.Context, userID domain.UserID) (string, error) {
 	ctx, cancel, err := c.asUser(ctx, userID)
 	if err != nil {
@@ -75,12 +75,12 @@ func (c *Client) CreateEmptyProfile(ctx context.Context, userID domain.UserID) (
 	return resp.GetProfile().GetId(), nil
 }
 
-// FindProfileID mengambil id profil seorang pengguna.
+// FindProfileID fetches a user's profile id.
 //
-// Profil yang belum ada mengembalikan string kosong TANPA galat, karena itulah
-// yang dijanjikan kontraknya dan itu keadaan yang sah (ADR-002 aturan 2, B7).
-// Memperlakukannya sebagai galat akan membuat setiap pengguna yang profilnya
-// belum dibuat gagal masuk.
+// A profile that does not exist yet returns an empty string WITHOUT an error,
+// because that is what the contract promises and it is a valid state (ADR-002
+// rule 2, B7). Treating it as an error would make every user whose profile has
+// not been created fail to sign in.
 func (c *Client) FindProfileID(ctx context.Context, userID domain.UserID) (string, error) {
 	ctx, cancel, err := c.asUser(ctx, userID)
 	if err != nil {

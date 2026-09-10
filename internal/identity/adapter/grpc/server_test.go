@@ -26,9 +26,9 @@ import (
 
 const accessTokenTTL = time.Hour
 
-// stubProfiles berdiri untuk profile-svc. Ia satu-satunya bagian yang dipalsu
-// di sini; sisanya - Postgres, argon2id, penandatanganan EdDSA - berjalan
-// sungguhan, karena yang diuji adalah apakah service-nya benar-benar bekerja.
+// stubProfiles stands in for profile-svc. It is the only part faked here; the
+// rest - Postgres, argon2id, EdDSA signing - runs for real, because what is
+// tested is whether the service actually works.
 type stubProfiles struct {
 	id  string
 	err error
@@ -148,8 +148,8 @@ func newHarness(t *testing.T) *harness {
 	return &harness{client: serve(t, server), links: links, profiles: profiles, verifier: verifier}
 }
 
-// serve menyalakan server di atas listener dalam proses. Tidak ada port yang
-// dibuka, jadi test bisa berjalan paralel tanpa saling merebut alamat.
+// serve starts the server on an in-process listener. No port is opened, so
+// tests can run in parallel without fighting over addresses.
 func serve(t *testing.T, server identityv1.IdentityServer) identityv1.IdentityClient {
 	t.Helper()
 
@@ -208,8 +208,8 @@ func TestRegisterOverGrpcReturnsAUsableToken(t *testing.T) {
 			got.GetToken().GetExpiresInSeconds(), int64(accessTokenTTL.Seconds()))
 	}
 
-	// Tokennya harus benar-benar bisa diverifikasi, bukan sekadar tidak
-	// kosong. Klaimnya diperiksa terhadap identitas yang dikembalikan.
+	// The token has to be genuinely verifiable, not merely non-empty. Its
+	// claims are checked against the identity returned.
 	claims, err := h.verifier.Verify(got.GetToken().GetAccessToken())
 	if err != nil {
 		t.Fatalf("the returned token does not verify: %v", err)
@@ -257,8 +257,8 @@ func TestInvalidInputIsInvalidArgument(t *testing.T) {
 	}
 }
 
-// Login yang berhasil menaikkan generasi, sehingga token dari registrasi
-// sebelumnya tertinggal satu generasi (D1).
+// A successful login bumps the generation, so the token from the earlier
+// registration is one generation behind (D1).
 func TestLoginOverGrpcAdvancesTheGeneration(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -290,7 +290,7 @@ func TestLoginOverGrpcAdvancesTheGeneration(t *testing.T) {
 			before.Generation, after.Generation)
 	}
 
-	// Dan sumbernya setuju.
+	// And the source agrees.
 	gen, err := h.client.GetTokenGeneration(ctx, &identityv1.GetTokenGenerationRequest{
 		UserId: loggedIn.GetIdentity().GetUserId(),
 	})
@@ -302,7 +302,8 @@ func TestLoginOverGrpcAdvancesTheGeneration(t *testing.T) {
 	}
 }
 
-// Setiap kegagalan masuk menjawab Unauthenticated, dan pesannya sama.
+// Every sign-in failure answers Unauthenticated, and the message is the
+// same.
 func TestEveryLoginFailureLooksTheSameOverGrpc(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -334,8 +335,9 @@ func TestEveryLoginFailureLooksTheSameOverGrpc(t *testing.T) {
 	}
 }
 
-// Alur reset lengkap lewat kabel, dan tokennya diambil dari yang benar-benar
-// dikirim - bukan dibaca dari basis data, karena yang disimpan adalah hash.
+// The complete reset flow over the wire, with the token taken from what was
+// actually sent - not read from the database, because what is stored is the
+// hash.
 func TestThePasswordResetFlowWorksEndToEnd(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -374,7 +376,7 @@ func TestThePasswordResetFlowWorksEndToEnd(t *testing.T) {
 	}
 }
 
-// Endpoint permintaan reset menjawab sama untuk alamat yang tidak terdaftar.
+// The reset-request endpoint answers the same for an unregistered address.
 func TestRequestingAResetForAnUnknownAddressStillSucceeds(t *testing.T) {
 	h := newHarness(t)
 
@@ -403,7 +405,8 @@ func TestAnUnknownUserIdIsNotFound(t *testing.T) {
 	}
 }
 
-// Yang belum ada menjawab Unimplemented, bukan berpura-pura berhasil.
+// What does not exist yet answers Unimplemented, rather than pretending to
+// succeed.
 func TestUnbuiltOperationsSaySoPlainly(t *testing.T) {
 	h := newHarness(t)
 
@@ -414,10 +417,10 @@ func TestUnbuiltOperationsSaySoPlainly(t *testing.T) {
 	}
 }
 
-// Logout memverifikasi tanda tangan tokennya SENDIRI, bukan mempercayai
-// pemanggilnya. Token yang tidak sah ditolak sebelum apa pun dicabut -
-// kalau tidak, siapa pun yang bisa menjangkau service ini bisa mengeluarkan
-// pengguna mana pun dari sesinya.
+// Logout verifies the token's signature ITSELF, rather than trusting the
+// caller. An invalid token is refused before anything is revoked -
+// otherwise anyone who can reach this service could sign any user out of
+// their session.
 func TestLogoutRefusesATokenItDidNotIssue(t *testing.T) {
 	h := newHarness(t)
 
@@ -435,7 +438,8 @@ func TestLogoutRefusesATokenItDidNotIssue(t *testing.T) {
 	}
 }
 
-// Dan token yang sah benar-benar mencabut sesinya: generasi setelahnya naik.
+// And a valid token really revokes the session: the generation afterwards is
+// higher.
 func TestLogoutAdvancesTheGenerationOverGrpc(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()

@@ -9,13 +9,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// TestHashingIsBoundedInConcurrency menjaga plafon memori identity-svc.
+// TestHashingIsBoundedInConcurrency guards identity-svc's memory ceiling.
 //
-// Setiap argon2id memakai 64 MiB; tanpa batas, sepuluh pendaftaran serentak
-// berarti 640 MiB - dan container-nya dibatasi 192 MiB. Ini benar-benar
-// terlihat saat k6 (F9-10): RSS identity-svc menempel di plafonnya sepanjang
-// skenario tulis. Yang dijaga di sini: tidak pernah lebih dari MaxConcurrent
-// derivasi berjalan bersamaan, apa pun jumlah pemanggilnya.
+// Every argon2id uses 64 MiB; without a cap, ten concurrent registrations
+// mean 640 MiB - and the container is capped at 192 MiB. This really showed
+// up under k6 (F9-10): identity-svc's RSS sat pinned at its ceiling for the
+// whole write scenario. What is guarded here: never more than MaxConcurrent
+// derivations run at once, whatever the number of callers.
 func TestHashingIsBoundedInConcurrency(t *testing.T) {
 	const limit = 2
 
@@ -56,7 +56,7 @@ func TestHashingIsBoundedInConcurrency(t *testing.T) {
 	}
 }
 
-// Verify ikut dibatasi: login serentak sama beratnya dengan pendaftaran.
+// Verify is capped too: concurrent logins are as heavy as registrations.
 func TestVerifyingIsBoundedToo(t *testing.T) {
 	var inFlight, peak atomic.Int32
 	hasher := NewBoundedArgon2idHasher(FastParamsForTests(), 1)

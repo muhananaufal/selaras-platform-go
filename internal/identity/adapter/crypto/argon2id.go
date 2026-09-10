@@ -14,17 +14,17 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// ErrMalformedHash menandai hash yang tidak bisa diurai. Ia dibedakan dari
-// "kata sandi salah" karena penyebabnya berbeda: yang satu masukan
-// pengguna, yang satu data rusak di penyimpanan.
+// ErrMalformedHash marks a hash that cannot be parsed. It is distinct from
+// "wrong password" because the cause differs: one is user input, the other
+// is corrupt data in storage.
 var ErrMalformedHash = errors.New("malformed password hash")
 
-// Params adalah biaya argon2id.
+// Params are the argon2id costs.
 //
-// argon2id dipilih, bukan bcrypt, karena inilah yang dipakai untuk sistem
-// baru: ia melawan serangan GPU lewat kebutuhan memori, yang tidak dimiliki
-// bcrypt. Alasannya bukan ketiadaan hash lama - itu kebetulan, bukan
-// argumen (ADR-016).
+// argon2id was chosen over bcrypt because it is what a new system should
+// use: it resists GPU attacks through its memory requirement, which bcrypt
+// lacks. The reason is not the absence of legacy hashes - that is a
+// coincidence, not an argument (ADR-016).
 type Params struct {
 	Memory      uint32 // KiB
 	Iterations  uint32
@@ -33,13 +33,12 @@ type Params struct {
 	KeyLength   uint32
 }
 
-// DefaultParams mengikuti profil yang direkomendasikan RFC 9106 untuk
-// penggunaan umum: 64 MiB memori, tiga iterasi.
+// DefaultParams follow the profile RFC 9106 recommends for general use: 64
+// MiB of memory, three iterations.
 //
-// Angka ini WAJIB ditinjau ulang terhadap perangkat keras nyata sebelum
-// dipakai melayani trafik: parameter yang terlalu ringan tidak melindungi
-// apa pun, dan yang terlalu berat mengubah login menjadi vektor
-// denial-of-service terhadap diri sendiri.
+// These numbers MUST be reviewed against real hardware before serving
+// traffic: parameters that are too light protect nothing, and ones that are
+// too heavy turn login into a denial-of-service vector against ourselves.
 func DefaultParams() Params {
 	return Params{
 		Memory:      64 * 1024,
@@ -50,25 +49,26 @@ func DefaultParams() Params {
 	}
 }
 
-// FastParamsForTests memangkas biaya supaya suite test tidak menghabiskan
-// menit hanya untuk menunggu fungsi yang memang sengaja dibuat lambat.
-// DILARANG dipakai di luar test.
+// FastParamsForTests trims the cost so the test suite does not spend
+// minutes just waiting on a function that is slow by design. MUST NOT be
+// used outside tests.
 func FastParamsForTests() Params {
 	return Params{Memory: 8 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 }
 
-// DefaultMaxConcurrent membatasi berapa derivasi argon2id yang boleh berjalan
-// bersamaan dalam satu proses.
+// DefaultMaxConcurrent caps how many argon2id derivations may run at once in
+// one process.
 //
-// Setiap derivasi dengan DefaultParams memegang 64 MiB. Tanpa batas, sepuluh
-// pendaftaran serentak berarti 640 MiB - dan container identity-svc dibatasi
-// jauh di bawah itu. Ini terlihat saat k6 (F9-10): RSS identity-svc menempel
-// di plafonnya sepanjang skenario tulis. Dua berarti puncak ~128 MiB untuk
-// hashing, dan pemanggil ketiga menunggu ratusan milidetik - jauh lebih
-// baik daripada proses yang di-OOM-kill di tengah pendaftaran orang lain.
+// Every derivation with DefaultParams holds 64 MiB. Without a cap, ten
+// concurrent registrations mean 640 MiB - and the identity-svc container is
+// capped far below that. This showed up under k6 (F9-10): identity-svc's RSS
+// sat pinned at its ceiling for the whole write scenario. Two means a peak of
+// ~128 MiB for hashing, and a third caller waits a few hundred milliseconds -
+// far better than a process OOM-killed in the middle of someone else's
+// registration.
 const DefaultMaxConcurrent = 2
 
-// deriveFunc adalah bentuk argon2.IDKey; ditukar hanya oleh test.
+// deriveFunc is the shape of argon2.IDKey; swapped only by tests.
 type deriveFunc func(password, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte
 
 // Argon2idHasher memasang domain.PasswordHasher.
@@ -78,14 +78,14 @@ type Argon2idHasher struct {
 	derive deriveFunc
 }
 
-// NewArgon2idHasher membatasi derivasi serentak ke DefaultMaxConcurrent.
+// NewArgon2idHasher caps concurrent derivations at DefaultMaxConcurrent.
 func NewArgon2idHasher(p Params) *Argon2idHasher {
 	return NewBoundedArgon2idHasher(p, DefaultMaxConcurrent)
 }
 
-// NewBoundedArgon2idHasher membatasi derivasi serentak ke maxConcurrent.
-// Nilai di bawah satu diperlakukan sebagai satu: hasher yang tidak pernah
-// bisa menghitung bukan hasher.
+// NewBoundedArgon2idHasher caps concurrent derivations at maxConcurrent. A
+// value below one is treated as one: a hasher that can never compute is not
+// a hasher.
 func NewBoundedArgon2idHasher(p Params, maxConcurrent int) *Argon2idHasher {
 	if maxConcurrent < 1 {
 		maxConcurrent = 1
@@ -97,7 +97,7 @@ func NewBoundedArgon2idHasher(p Params, maxConcurrent int) *Argon2idHasher {
 	}
 }
 
-// bounded menjalankan satu derivasi di dalam batas serentak.
+// bounded runs one derivation inside the concurrency cap.
 func (h *Argon2idHasher) bounded(password, salt []byte, p Params, keyLen uint32) []byte {
 	h.slots <- struct{}{}
 	defer func() { <-h.slots }()
@@ -106,8 +106,8 @@ func (h *Argon2idHasher) bounded(password, salt []byte, p Params, keyLen uint32)
 
 var _ domain.PasswordHasher = (*Argon2idHasher)(nil)
 
-// Hash menghasilkan string PHC yang membawa parameternya sendiri, sehingga
-// biaya bisa dinaikkan kelak tanpa membatalkan hash yang sudah tersimpan.
+// Hash produces a PHC string that carries its own parameters, so the cost
+// can be raised later without invalidating stored hashes.
 func (h *Argon2idHasher) Hash(pw domain.Password) (domain.PasswordHash, error) {
 	salt := make([]byte, h.params.SaltLength)
 	if _, err := rand.Read(salt); err != nil {
@@ -124,11 +124,11 @@ func (h *Argon2idHasher) Hash(pw domain.Password) (domain.PasswordHash, error) {
 	)), nil
 }
 
-// Verify membandingkan kandidat terhadap hash tersimpan.
+// Verify compares a candidate against the stored hash.
 //
-// Perbandingannya waktu-tetap. Perbandingan biasa berhenti pada byte
-// pertama yang berbeda, dan selisih waktunya cukup untuk menebak hash
-// byte demi byte.
+// The comparison is constant-time. An ordinary comparison stops at the
+// first differing byte, and that timing difference is enough to guess the
+// hash byte by byte.
 func (h *Argon2idHasher) Verify(stored domain.PasswordHash, candidate domain.Password) (bool, bool, error) {
 	p, salt, want, err := decode(string(stored))
 	if err != nil {
@@ -143,9 +143,9 @@ func (h *Argon2idHasher) Verify(stored domain.PasswordHash, candidate domain.Pas
 	return true, h.outdated(p), nil
 }
 
-// outdated benar bila hash dibuat dengan biaya lebih rendah daripada yang
-// dipakai sekarang. Pemanggil memakai ini untuk menaikkan hash secara
-// diam-diam saat pengguna berikutnya berhasil masuk.
+// outdated is true when the hash was made with a lower cost than the one in
+// use now. Callers use it to upgrade the hash quietly the next time the
+// user signs in successfully.
 func (h *Argon2idHasher) outdated(p Params) bool {
 	return p.Memory < h.params.Memory ||
 		p.Iterations < h.params.Iterations ||

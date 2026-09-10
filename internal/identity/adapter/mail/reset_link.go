@@ -1,4 +1,4 @@
-// Package mail menyusun dan mengirim surel milik identity.
+// Package mail composes and sends identity's emails.
 package mail
 
 import (
@@ -12,19 +12,19 @@ import (
 	platformmail "github.com/muhananaufal/selaras-platform-go/internal/platform/mail"
 )
 
-// ResetLinkSender mengirim tautan reset kata sandi.
+// ResetLinkSender sends the password-reset link.
 //
-// Ia menutup F1-33, dan dengan itu S1 barulah benar-benar tertutup: seluruh
-// keamanan alur reset bertumpu pada andaian bahwa tokennya hanya sampai ke
-// orang yang menguasai kotak masuk itu. Tanpa pengiriman yang bekerja,
-// sisanya hanya upacara.
+// It closes F1-33, and only with it is S1 truly closed: the whole security
+// of the reset flow rests on the assumption that the token reaches only the
+// person who controls that inbox. Without delivery that works, the rest is
+// ceremony.
 type ResetLinkSender struct {
 	sender platformmail.Sender
 
-	// frontendURL adalah tempat tautannya menunjuk. Ia dikonfigurasi, bukan
-	// diturunkan dari permintaan: alamat yang datang dari permintaan bisa
-	// dipalsukan, dan tautan reset yang menunjuk ke host penyerang adalah
-	// cara termudah memanen token yang baru saja kita terbitkan.
+	// frontendURL is where the link points. It is configured, not derived from
+	// the request: an address that comes from the request can be forged, and a
+	// reset link pointing at an attacker's host is the easiest way to harvest
+	// the tokens we just issued.
 	frontendURL string
 }
 
@@ -43,11 +43,11 @@ func NewResetLinkSender(sender platformmail.Sender, frontendURL string) (*ResetL
 
 const resetSubject = "Reset your Selaras password"
 
-// bodyTemplate sengaja polos dan pendek.
+// bodyTemplate is deliberately plain and short.
 //
-// Surel reset adalah surel yang paling sering ditiru penipu, dan yang
-// membuatnya dipercaya bukan hiasannya melainkan isinya: apa yang terjadi,
-// apa yang harus dilakukan, dan apa yang terjadi bila diabaikan.
+// Reset emails are the emails most often imitated by scammers, and what
+// makes one trustworthy is not decoration but content: what happened, what
+// to do, and what happens if it is ignored.
 const bodyTemplate = `Someone asked to reset the password for this address.
 
 Open this link to choose a new password:
@@ -65,13 +65,13 @@ func (s *ResetLinkSender) SendResetLink(
 	to domain.Email,
 	token domain.ResetToken,
 ) error {
-	// Token ditempelkan sebagai query parameter, bukan fragment. Berbeda dari
-	// penyerahan token OAuth, tautan ini dibuka LANGSUNG oleh pengguna dari
-	// kotak masuknya, dan fragment tidak akan pernah sampai ke halaman yang
-	// perlu membacanya kecuali frontend menjalankan JavaScript lebih dulu.
+	// The token is appended as a query parameter, not a fragment. Unlike an
+	// OAuth token hand-off, this link is opened DIRECTLY by the user from
+	// their inbox, and a fragment would never reach the page that needs to
+	// read it unless the frontend ran JavaScript first.
 	//
-	// Yang menjaga jendelanya tetap sempit adalah sifat tokennya sendiri:
-	// sekali pakai, berumur satu jam, dan hanya hash-nya yang tersimpan.
+	// What keeps the window narrow is the nature of the token itself:
+	// single-use, one hour to live, and only its hash is stored.
 	link := fmt.Sprintf("%s/reset-password?token=%s",
 		s.frontendURL, url.QueryEscape(token.Expose()))
 

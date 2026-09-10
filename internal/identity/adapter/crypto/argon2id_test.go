@@ -58,9 +58,9 @@ func TestVerifyRejectsWrongPassword(t *testing.T) {
 	}
 }
 
-// Salt acak berarti dua pengguna dengan kata sandi sama tidak berbagi
-// hash. Tanpa itu, satu tabel bocor langsung memberi tahu penyerang siapa
-// saja yang memakai kata sandi yang sama.
+// A random salt means two users with the same password do not share a hash.
+// Without it, one leaked table directly tells an attacker who uses the same
+// password.
 func TestSameInputProducesDifferentHashes(t *testing.T) {
 	t.Parallel()
 
@@ -81,8 +81,8 @@ func TestSameInputProducesDifferentHashes(t *testing.T) {
 	}
 }
 
-// Hash memakai format PHC, yang membawa parameternya sendiri. Itu yang
-// membuat parameter bisa dinaikkan tanpa membatalkan hash lama.
+// The hash uses the PHC format, which carries its own parameters. That is
+// what lets the parameters be raised without invalidating old hashes.
 func TestHashUsesPHCFormat(t *testing.T) {
 	t.Parallel()
 
@@ -100,8 +100,8 @@ func TestHashUsesPHCFormat(t *testing.T) {
 	}
 }
 
-// Hash yang dibuat dengan parameter lebih lemah harus ditandai untuk
-// dinaikkan saat pengguna berikutnya berhasil masuk.
+// A hash made with weaker parameters must be flagged for upgrading the next
+// time the user signs in successfully.
 func TestVerifyFlagsOutdatedParameters(t *testing.T) {
 	t.Parallel()
 

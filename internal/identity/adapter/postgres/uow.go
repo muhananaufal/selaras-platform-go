@@ -11,7 +11,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// UnitOfWork memenuhi app.UnitOfWork dengan transaksi Postgres sungguhan.
+// UnitOfWork satisfies app.UnitOfWork with a real Postgres transaction.
 type UnitOfWork struct {
 	pool *pgxpool.Pool
 }
@@ -20,21 +20,21 @@ func NewUnitOfWork(pool *pgxpool.Pool) *UnitOfWork { return &UnitOfWork{pool: po
 
 var _ app.UnitOfWork = (*UnitOfWork)(nil)
 
-// Do menjalankan fn di dalam satu transaksi.
+// Do runs fn inside one transaction.
 //
-// Repository yang diserahkan ke fn dibangun DI ATAS transaksi itu, bukan di
-// atas kolam koneksi. Kalau ia dibangun di atas kolam, setiap tulisan akan
-// mengambil koneksinya sendiri dan commit sendiri - satuan kerjanya terlihat
-// benar, transaksinya kosong, dan tidak ada satu pun test yang menyadarinya
-// sampai ada kegagalan yang seharusnya membatalkan sesuatu.
+// The repositories handed to fn are built ON that transaction, not on the
+// connection pool. Built on the pool, every write would take its own
+// connection and commit on its own - the unit of work would look right, the
+// transaction would be empty, and not a single test would notice until a
+// failure that should have rolled something back.
 func (u *UnitOfWork) Do(ctx context.Context, fn func(app.Repositories) error) error {
 	return pg.InTx(ctx, u.pool, func(q pg.Querier) error {
 		return fn(&transactional{q: q})
 	})
 }
 
-// transactional adalah kumpulan repository yang seluruhnya berbagi satu
-// handle transaksi.
+// transactional is the set of repositories that all share one transaction
+// handle.
 type transactional struct {
 	q pg.Querier
 }
@@ -53,11 +53,11 @@ func (t *transactional) Sagas() app.SagaRepository {
 	return NewSagaRepository(t.q)
 }
 
-// Events menulis ke outbox DI DALAM transaksi yang sama.
+// Events writes to the outbox INSIDE the same transaction.
 //
-// Penulis yang dibangun di atas kolam koneksi akan commit sendiri, dan eventnya
-// bertahan meski sagalnya batal - menghapus data seseorang tanpa satu pun
-// catatan bahwa itu diminta.
+// A writer built on the connection pool would commit on its own, and its event
+// would survive even when the saga was rolled back - deleting someone's data
+// without a single record that it was requested.
 func (t *transactional) Events() app.EventWriter {
 	return outbox.NewWriter(t.q)
 }

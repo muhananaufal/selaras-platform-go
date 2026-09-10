@@ -69,9 +69,8 @@ func TestCreateThenFindRoundTripsEveryField(t *testing.T) {
 	}
 }
 
-// Menutup B6 di sisi identity: nilai yang tidak ada disimpan sebagai NULL dan
-// dibaca kembali sebagai tidak ada - bukan sebagai string kosong yang
-// berpura-pura menjadi kredensial.
+// Closes B6 on the identity side: a missing value is stored as NULL and read
+// back as missing - not as an empty string pretending to be a credential.
 func TestGoogleOnlyUserRoundTripsWithoutAPassword(t *testing.T) {
 	repo, ctx := newRepo(t)
 
@@ -187,8 +186,9 @@ func TestUpdatePersistsChanges(t *testing.T) {
 	}
 }
 
-// Akun yang dihapus lunak tidak boleh bisa masuk, dan alamatnya harus bebas
-// dipakai lagi. Keduanya bergantung pada indeks unik parsial di migrasi.
+// A soft-deleted account must not be able to sign in, and its address must
+// be free to use again. Both depend on the partial unique index in the
+// migration.
 func TestSoftDeletedUsersDisappearAndFreeTheirEmail(t *testing.T) {
 	repo, ctx := newRepo(t)
 
@@ -234,11 +234,11 @@ func TestEmailLookupIgnoresCase(t *testing.T) {
 	}
 }
 
-// Tidak ada test lain yang membuat dua akun hidup yang sama-sama tanpa
-// google id, dan justru itu satu-satunya keadaan yang bisa membuktikan
-// ketiadaan disimpan sebagai NULL. Kalau ia disimpan sebagai string kosong,
-// indeks unik parsial akan memperlakukan setiap pengguna non-Google sebagai
-// pemegang google id yang sama dan menolak pendaftaran kedua.
+// No other test creates two live accounts that both lack a google id, and
+// that is precisely the only state that can prove absence is stored as
+// NULL. Stored as an empty string, the partial unique index would treat
+// every non-Google user as holding the same google id and refuse the second
+// registration.
 func TestTwoUsersWithoutGoogleCanBothExist(t *testing.T) {
 	repo, ctx := newRepo(t)
 
@@ -253,9 +253,9 @@ func TestTwoUsersWithoutGoogleCanBothExist(t *testing.T) {
 	}
 }
 
-// Generasi token adalah satu-satunya hal yang membuat pencabutan bekerja,
-// dan ia hanya berguna kalau ia bertahan di penyimpanan. Generasi yang tidak
-// tersimpan berarti setiap logout dibatalkan oleh pembacaan berikutnya.
+// The token generation is the one thing that makes revocation work, and it
+// is only useful if it survives in storage. A generation that is not stored
+// means every logout is undone by the next read.
 func TestTokenGenerationSurvivesAndAdvances(t *testing.T) {
 	repo, ctx := newRepo(t)
 

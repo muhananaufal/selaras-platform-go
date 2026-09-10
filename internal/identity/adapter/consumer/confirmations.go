@@ -1,4 +1,4 @@
-// Package consumer membaca konfirmasi penghapusan dari keenam unit.
+// Package consumer reads deletion confirmations from the six units.
 package consumer
 
 import (
@@ -17,7 +17,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Confirmations membaca user.deletion dan menutup saga yang sudah lengkap.
+// Confirmations reads user.deletion and closes sagas that are complete.
 type Confirmations struct {
 	client *kgo.Client
 	uc     *app.DeleteAccount
@@ -45,7 +45,7 @@ func (c *Confirmations) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			c.log.InfoContext(ctx, "deletion confirmation consumer stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -57,8 +57,8 @@ func (c *Confirmations) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(c.client, errs); len(recovered) > 0 {
 				c.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -93,15 +93,15 @@ func (c *Confirmations) Run(ctx context.Context) error {
 			continue
 		}
 		if rewinder.Any() {
-			// Offset DITAHAN. Konfirmasi yang hilang berarti saga menggantung
-			// selamanya, dan akun yang seharusnya terhapus tidak pernah
-			// terhapus - tanpa siapa pun tahu unit mana yang jawabannya hilang.
+			// The offset is HELD. A lost confirmation means the saga hangs forever,
+			// and an account that should have been deleted never is - with nobody
+			// knowing which unit's answer went missing.
 			c.log.WarnContext(ctx, "holding offsets so failed confirmations are redelivered",
 				"handled", handled)
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
-			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			// Not committing alone is NOT enough: franz-go does not resend anything
+			// within the same session, so the next batch would arrive, succeed, and
+			// commit EVERYTHING consumed so far - including the record that failed.
+			// The consumer is rewound to it.
 			rewinder.Rewind(c.client)
 
 			select {
@@ -126,15 +126,15 @@ func (c *Confirmations) handle(ctx context.Context, rec *kgo.Record) (err error)
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on the span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
 	confirmed := env.GetUserDeletionConfirmed()
 	if confirmed == nil {
-		// Permintaan penghapusan lewat di topic yang sama - identity-svc
-		// menerbitkannya sendiri. Ia bukan urusan konsumen ini.
+		// Deletion requests pass on the same topic - identity-svc publishes them
+		// itself. They are none of this consumer's business.
 		return nil
 	}
 
@@ -149,9 +149,9 @@ func (c *Confirmations) handle(ctx context.Context, rec *kgo.Record) (err error)
 		Succeeded:     confirmed.GetSucceeded(),
 		FailureReason: confirmed.GetFailureReason(),
 
-		// Waktu PERISTIWANYA, bukan waktu pemrosesannya. Yang kedua membuat
-		// urutan konfirmasi bergantung pada kapan konsumen ini kebetulan
-		// membacanya.
+		// The EVENT's time, not the processing time. The latter would make the
+		// order of confirmations depend on when this consumer happened to read
+		// them.
 		ConfirmedAt: env.GetOccurredAt().AsTime(),
 	})
 }
