@@ -33,50 +33,49 @@ func Topics() []Topic {
 		{
 			Name:       "profile.updated",
 			Partitions: 3,
-			Why: "Konsumennya penulis cache (F2-16) - pekerjaan pendek, terikat basis data. " +
-				"Tiga cukup untuk memisahkan pengguna yang sibuk dari yang lain tanpa " +
-				"menyebar beban yang belum ada.",
+			Why: "Its consumer is a cache writer (F2-16) - short, database-bound work. " +
+				"Three is enough to separate a busy user from the rest without " +
+				"spreading load that does not exist yet.",
 		},
 		{
 			Name:       "assessment.completed",
 			Partitions: 3,
-			Why: "Pemicu personalisasi. Lajunya terikat pada berapa banyak penilaian yang " +
-				"diselesaikan orang, bukan pada kecepatan mesin - dan itu angka yang kecil.",
+			Why: "The personalisation trigger. Its rate is bound by how many assessments " +
+				"people complete, not by machine speed - and that is a small number.",
 		},
 		{
 			Name:       "coaching.program.updated",
 			Partitions: 3,
-			Why: "Perubahan program coaching. Selajur dengan profile.updated - dibaca " +
-				"pembaca yang sama dan lajunya ditentukan orang, bukan mesin.",
+			Why: "Coaching program changes. In line with profile.updated - read by the " +
+				"same reader, and its rate is set by people, not machines.",
 		},
 		{
 			Name:       "llm.jobs",
 			Partitions: 12,
-			Why: "Satu-satunya topic yang butuh paralelisme sungguhan. Pekerjaannya menunggu " +
-				"jaringan selama puluhan detik, jadi jumlah partisi menentukan berapa banyak " +
-				"pekerjaan yang boleh menunggu bersamaan. Dua belas adalah plafon " +
-				"maxReplicaCount llm-worker di F9-22; menaikkannya nanti mudah, " +
-				"menurunkannya tidak.",
+			Why: "The only topic that needs real parallelism. Its jobs wait on the " +
+				"network for tens of seconds, so the partition count decides how many " +
+				"jobs may wait at once. Twelve is the maxReplicaCount ceiling of " +
+				"llm-worker in F9-22; raising it later is easy, lowering it is not.",
 		},
 		{
 			Name:       "llm.results",
 			Partitions: 12,
-			Why: "Dipasangkan dengan llm.jobs supaya satu worker bisa memegang partisi yang " +
-				"bersesuaian di keduanya. Jumlah yang berbeda akan membuat hasil sebuah job " +
-				"mendarat di partisi yang dipegang worker lain.",
+			Why: "Paired with llm.jobs so one worker can hold the corresponding partition " +
+				"in both. A different count would make a job's result land on a partition " +
+				"held by another worker.",
 		},
 		{
 			Name:       "llm.dlq",
 			Partitions: 1,
-			Why: "Antrean surat mati (F3-13). Ia dibaca manusia saat menyelidiki, bukan oleh " +
-				"armada konsumen. Satu partisi menjaga urutannya utuh - dan kalau ia sampai " +
-				"butuh lebih, yang salah bukan jumlah partisinya.",
+			Why: "The dead-letter queue (F3-13). It is read by a human while investigating, " +
+				"not by a fleet of consumers. One partition keeps its order intact - and if " +
+				"it ever needs more, the partition count is not what is wrong.",
 		},
 		{
 			Name:       "user.deletion",
 			Partitions: 1,
-			Why: "Penghapusan akun harus berurutan terhadap dirinya sendiri dan jarang terjadi. " +
-				"Paralelisme di sini hanya menambah cara untuk salah.",
+			Why: "Account deletion has to be ordered with respect to itself and is rare. " +
+				"Parallelism here only adds ways to go wrong.",
 		},
 	}
 }
