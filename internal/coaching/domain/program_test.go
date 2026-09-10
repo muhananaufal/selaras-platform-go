@@ -37,13 +37,13 @@ func newProgram(t *testing.T, weeks int) *domain.Program {
 	return p
 }
 
-// TestTheEndDateIsTheOnlySourceOfTruth adalah F4-18, temuan B5.
+// TestTheEndDateIsTheOnlySourceOfTruth is F4-18, finding B5.
 //
-// Sistem lama menyimpan end_date lalu mengabaikannya: penyelesainya memakai
-// created_at + 28 hari. Dua sumber kebenaran untuk satu fakta berarti salah
-// satunya salah, dan yang salah adalah yang tidak dilihat siapa pun - program
-// enam pekan berakhir di hari ke-28 menurut penyelesainya, dan di hari ke-42
-// menurut layarnya.
+// The legacy system stored end_date and then ignored it: its completer used
+// created_at + 28 days. Two sources of truth for one fact means one of them
+// is wrong, and the wrong one is the one nobody looks at - a six-week program
+// ended on day 28 according to its completer, and on day 42 according to its
+// screen.
 func TestTheEndDateIsTheOnlySourceOfTruth(t *testing.T) {
 	cases := []struct {
 		weeks int
@@ -65,7 +65,7 @@ func TestTheEndDateIsTheOnlySourceOfTruth(t *testing.T) {
 		}
 	}
 
-	// Dan program enam pekan TIDAK berakhir di hari ke-28.
+	// And a six-week program does NOT end on day 28.
 	six := newProgram(t, 6)
 	if six.HasEnded(day("2026-02-02")) {
 		t.Fatal("a six-week program reported itself finished on day 28; that is B5 exactly")
@@ -75,8 +75,8 @@ func TestTheEndDateIsTheOnlySourceOfTruth(t *testing.T) {
 	}
 }
 
-// TestAProgramCannotEndBeforeItStarts menjaga invarian yang membuat setiap
-// perhitungan sisa hari masuk akal.
+// TestAProgramCannotEndBeforeItStarts guards the invariant that makes every
+// remaining-days computation make sense.
 func TestAProgramCannotEndBeforeItStarts(t *testing.T) {
 	if _, err := domain.NewProgram(mustUserID(t), domain.DifficultyStandard,
 		day("2026-01-05"), 0, day("2026-01-05")); err == nil {
@@ -90,7 +90,7 @@ func TestAProgramCannotEndBeforeItStarts(t *testing.T) {
 	}
 }
 
-// TestTogglingFollowsD4 menjaga transisi status.
+// TestTogglingFollowsD4 guards the status transitions.
 func TestTogglingFollowsD4(t *testing.T) {
 	p := newProgram(t, 4)
 	now := day("2026-01-10")
@@ -111,9 +111,9 @@ func TestTogglingFollowsD4(t *testing.T) {
 		t.Fatalf("after two toggles the status is %q, want active", p.Status)
 	}
 
-	// Program yang selesai tidak bisa diubah. Membiarkannya berarti program
-	// yang laporan kelulusannya sudah dibuat bisa dijalankan lagi, dan laporan
-	// itu menjadi laporan tentang sesuatu yang belum selesai.
+	// A completed program cannot be changed. Allowing it would mean a program
+	// whose graduation report has already been produced could be run again,
+	// and that report would become a report about something not yet finished.
 	p.Status = domain.StatusCompleted
 	if err := p.Toggle(now); !errors.Is(err, domain.ErrProgramCompleted) {
 		t.Fatalf("Toggle on a completed program returned %v, want ErrProgramCompleted", err)
@@ -123,7 +123,7 @@ func TestTogglingFollowsD4(t *testing.T) {
 	}
 }
 
-// TestANonActiveProgramFreezesInteraction adalah D5.
+// TestANonActiveProgramFreezesInteraction is D5.
 func TestANonActiveProgramFreezesInteraction(t *testing.T) {
 	p := newProgram(t, 4)
 
@@ -139,11 +139,11 @@ func TestANonActiveProgramFreezesInteraction(t *testing.T) {
 	}
 }
 
-// TestOwnershipIsCheckedAgainstTheUser menjaga S9.
+// TestOwnershipIsCheckedAgainstTheUser guards S9.
 //
-// Kepemilikan dibandingkan dengan user_id, bukan dengan id profil seperti
-// sistem lama. Dua pola identitas untuk satu pertanyaan berarti dua tempat
-// untuk keliru.
+// Ownership is compared against user_id, not against the profile id as in
+// the legacy system. Two identity patterns for one question means two
+// places to get it wrong.
 func TestOwnershipIsCheckedAgainstTheUser(t *testing.T) {
 	p := newProgram(t, 4)
 
@@ -154,8 +154,7 @@ func TestOwnershipIsCheckedAgainstTheUser(t *testing.T) {
 		t.Fatal("a program belongs to a stranger")
 	}
 
-	// Pemilik kosong tidak boleh cocok dengan apa pun, termasuk dengan pemilik
-	// kosong yang lain.
+	// An empty owner must not match anything, including another empty owner.
 	var zero domain.UserID
 	p.UserID = zero
 	if p.BelongsTo(zero) {
@@ -163,7 +162,7 @@ func TestOwnershipIsCheckedAgainstTheUser(t *testing.T) {
 	}
 }
 
-// TestDifficultyValuesArePreservedExactly menjaga kontrak klien.
+// TestDifficultyValuesArePreservedExactly guards the client contract.
 func TestDifficultyValuesArePreservedExactly(t *testing.T) {
 	for _, raw := range []string{"Santai & Bertahap", "Standar & Konsisten", "Intensif & Menantang"} {
 		got, err := domain.NewDifficulty(raw)
@@ -183,8 +182,8 @@ func TestDifficultyValuesArePreservedExactly(t *testing.T) {
 	}
 }
 
-// TestTheStartDateIsADateNotAMoment menjaga perbandingan akhir program tetap
-// bisa diramalkan.
+// TestTheStartDateIsADateNotAMoment keeps the end-of-program comparison
+// predictable.
 func TestTheStartDateIsADateNotAMoment(t *testing.T) {
 	at := time.Date(2026, 1, 5, 23, 47, 12, 0, time.UTC)
 
@@ -201,7 +200,7 @@ func TestTheStartDateIsADateNotAMoment(t *testing.T) {
 	}
 }
 
-// TestSlugsAreNotGuessable menjaga id publik.
+// TestSlugsAreNotGuessable guards the public id.
 func TestSlugsAreNotGuessable(t *testing.T) {
 	seen := make(map[string]bool, 500)
 	for range 500 {

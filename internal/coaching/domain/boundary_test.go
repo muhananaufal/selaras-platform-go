@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// TestTheDomainKnowsNothingAboutAdapters menjaga arah ketergantungan.
+// TestTheDomainKnowsNothingAboutAdapters guards the direction of dependencies.
 //
-// Aturan yang tahu bentuk basis datanya akan berubah setiap kali basis datanya
-// berubah, dan aturan yang berubah karena alasan teknis berhenti bisa dibaca
-// sebagai aturan. Ini diperiksa dari pohon dependensi sungguhan, bukan dari
-// niat baik.
+// A rule that knows the shape of its database changes every time the database
+// does, and a rule that changes for technical reasons stops being readable as
+// a rule. This is checked against the real dependency tree, not against good
+// intentions.
 func TestTheDomainKnowsNothingAboutAdapters(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps",
 		"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain").Output()

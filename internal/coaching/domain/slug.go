@@ -7,20 +7,20 @@ import (
 	"strings"
 )
 
-// slugBytes adalah 10 byte, 80 bit.
+// slugBytes is 10 bytes, 80 bits.
 //
-// Slug adalah id publik dan satu-satunya yang melindunginya dari ditebak. Id
-// berurutan - seperti bigint auto-increment di sistem lama - akan membiarkan
-// siapa pun menelusuri program orang lain hanya dengan menghitung, dan
-// otorisasi yang benar pun tidak menghapus fakta bahwa jumlahnya jadi bisa
-// dihitung.
+// The slug is a public id and the only thing protecting it from being
+// guessed. Sequential ids - like the auto-increment bigint of the legacy
+// system - would let anyone walk through other people's programs just by
+// counting, and even correct authorisation would not remove the fact that
+// the count becomes knowable.
 const slugBytes = 10
 
-// slugEncoding memakai base32 huruf kecil tanpa padding: aman di URL, dan tidak
-// punya pasangan karakter yang mudah tertukar saat dibacakan.
+// slugEncoding uses lowercase base32 without padding: URL-safe, and without
+// pairs of characters that are easily confused when read aloud.
 var slugEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
-// NewSlug menghasilkan id publik baru.
+// NewSlug generates a new public id.
 func NewSlug() (string, error) {
 	raw := make([]byte, slugBytes)
 	if _, err := rand.Read(raw); err != nil {
@@ -29,10 +29,10 @@ func NewSlug() (string, error) {
 	return slugEncoding.EncodeToString(raw), nil
 }
 
-// NormaliseSlug membersihkan slug yang datang dari URL.
+// NormaliseSlug cleans a slug that arrived from a URL.
 //
-// Huruf besar dan spasi di ujung datang dari salin-tempel, bukan dari niat
-// mencari sesuatu yang lain.
+// Uppercase and surrounding spaces come from copy-paste, not from an intent
+// to look for something else.
 func NormaliseSlug(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }

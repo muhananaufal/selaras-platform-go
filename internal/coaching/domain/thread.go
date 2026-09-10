@@ -8,7 +8,7 @@ import (
 	"unicode"
 )
 
-// Galat thread dan pesan.
+// Thread and message errors.
 var (
 	ErrThreadNotFound  = errors.New("coaching thread not found")
 	ErrInvalidRole     = errors.New("invalid message role")
@@ -19,38 +19,38 @@ var (
 	ErrThreadNotInProg = errors.New("this thread belongs to another program")
 )
 
-// DefaultThreadTitle mengikuti nilai bawaan sistem lama.
+// DefaultThreadTitle follows the default of the legacy system.
 const DefaultThreadTitle = "Diskusi Program"
 
-// derivedTitleRunes adalah panjang judul yang diturunkan dari pesan pertama.
+// derivedTitleRunes is the length of a title derived from the first message.
 //
-// 45, sama dengan `Str::limit($userMessage, 45)` di sistem lama
-// [CoachingController.php:239] (D12). Angkanya dipertahankan bukan karena ia
-// ideal, melainkan karena judul yang berubah panjang akan terlihat sebagai
-// perubahan data bagi pengguna yang sudah punya thread.
+// 45, the same as `Str::limit($userMessage, 45)` in the legacy system
+// [CoachingController.php:239] (D12). The number is kept not because it is
+// ideal, but because a title that changes length would look like a data
+// change to users who already have threads.
 const derivedTitleRunes = 45
 
-// truncationSuffix mengikuti nilai bawaan Str::limit.
+// truncationSuffix follows the default of Str::limit.
 //
-// Ia ikut dipertahankan: judul yang terpotong tanpa penanda terbaca seperti
-// judul yang memang berakhir di situ.
+// It is kept as well: a title cut off without a marker reads like a title
+// that simply ends there.
 const truncationSuffix = "..."
 
-// maxThreadTitle membatasi judul yang dikirim pengguna.
+// maxThreadTitle bounds a title sent by the user.
 //
-// Seratus, sama dengan `max:100` di sistem lama
-// [CoachingController.php:230]. Kolomnya TEXT dan tidak membatasi apa pun,
-// jadi batasnya harus di sini - tanpa itu, satu judul sepanjang megabyte akan
-// masuk ke setiap daftar thread yang pernah dibaca.
+// One hundred, the same as `max:100` in the legacy system
+// [CoachingController.php:230]. The column is TEXT and bounds nothing, so the
+// bound has to be here - without it, one megabyte-long title would end up in
+// every thread list ever read.
 const maxThreadTitle = 100
 
-// maxMessageBytes membatasi satu pesan.
+// maxMessageBytes bounds a single message.
 //
-// Ia juga batas biaya: pesan yang panjang menjadi prompt yang panjang, dan
-// prompt yang panjang dibayar per token.
+// It is also a cost bound: a long message becomes a long prompt, and a long
+// prompt is paid for per token.
 const maxMessageBytes = 16 * 1024
 
-// Thread adalah satu utas diskusi dalam program.
+// Thread is one discussion thread within a program.
 type Thread struct {
 	ID        ID
 	ProgramID ID
@@ -61,12 +61,11 @@ type Thread struct {
 	UpdatedAt time.Time
 }
 
-// NewThread membuat utas baru.
+// NewThread creates a new thread.
 //
-// Judulnya diturunkan dari pesan pertama bila tidak diberikan (D12). Itu
-// perilaku sistem lama, dan ia layak dipertahankan: daftar thread yang seluruh
-// judulnya "Diskusi Program" tidak menolong siapa pun menemukan percakapannya
-// kembali.
+// Its title is derived from the first message when none is given (D12). That
+// is the legacy behaviour, and it is worth keeping: a thread list where every
+// title reads "Diskusi Program" helps nobody find their conversation again.
 func NewThread(programID ID, title, firstMessage string, now time.Time) (*Thread, error) {
 	if programID.IsZero() {
 		return nil, fmt.Errorf("%w: a thread needs a program", ErrInvalidID)
@@ -100,25 +99,25 @@ func NewThread(programID ID, title, firstMessage string, now time.Time) (*Thread
 	}, nil
 }
 
-// DeriveTitle membuat judul dari pesan pertama (D12).
+// DeriveTitle builds a title from the first message (D12).
 //
-// Ia memotong per RUNE, bukan per byte. Memotong per byte akan memutus karakter
-// multi-byte di tengah dan menghasilkan judul yang berakhir dengan byte rusak -
-// yang tampil sebagai kotak kosong, dan bisa membuat JSON-nya tidak sah.
+// It cuts by RUNE, not by byte. Cutting by byte would split a multi-byte
+// character in the middle and produce a title ending in a broken byte - which
+// renders as an empty box, and can make its JSON invalid.
 //
-// Sistem lama memotong per LEBAR tampilan (Str::limit memakai mb_strimwidth),
-// bukan per rune. Bedanya hanya muncul pada karakter lebar - CJK dan emoji
-// dihitung dua - sehingga judul yang memuatnya akan sedikit lebih panjang di
-// sini. Penyimpangan itu disengaja: lebar tampilan bergantung pada font
-// pembacanya, dan memotong per rune tidak pernah memutus karakter.
+// The legacy system cut by display WIDTH (Str::limit uses mb_strimwidth), not
+// by rune. The difference only shows on wide characters - CJK and emoji count
+// as two - so a title containing them will be slightly longer here. That
+// deviation is deliberate: display width depends on the reader's font, and
+// cutting by rune never splits a character.
 func DeriveTitle(message string) string {
 	trimmed := strings.TrimSpace(message)
 	if trimmed == "" {
 		return DefaultThreadTitle
 	}
 
-	// Baris baru diganti spasi: judul adalah satu baris, dan pesan yang
-	// berparagraf akan menghasilkan judul yang merusak tata letak.
+	// Newlines become spaces: a title is a single line, and a message with
+	// paragraphs would produce a title that breaks the layout.
 	trimmed = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
@@ -134,7 +133,7 @@ func DeriveTitle(message string) string {
 	return strings.TrimSpace(string(runes[:derivedTitleRunes])) + truncationSuffix
 }
 
-// Rename mengubah judul thread.
+// Rename changes the title of a thread.
 func (t *Thread) Rename(title string, now time.Time) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
@@ -149,16 +148,16 @@ func (t *Thread) Rename(title string, now time.Time) error {
 	return nil
 }
 
-// BelongsToProgram menyatakan thread ini bagian dari program tersebut.
+// BelongsToProgram says this thread is part of that program.
 //
-// Ia diperiksa terpisah dari kepemilikan pengguna: thread milik program lain
-// yang kebetulan milik pengguna yang sama tetap tidak boleh diakses lewat slug
-// program ini.
+// It is checked separately from user ownership: a thread of another program
+// that happens to belong to the same user must still not be reachable through
+// this program's slug.
 func (t *Thread) BelongsToProgram(programID ID) bool {
 	return !t.ProgramID.IsZero() && t.ProgramID == programID
 }
 
-// Role adalah peran pengirim pesan.
+// Role is the role of a message's sender.
 type Role string
 
 const (
@@ -166,10 +165,10 @@ const (
 	RoleModel Role = "model"
 )
 
-// NewRole memeriksa nilai yang datang dari luar.
+// NewRole checks a value that comes from outside.
 //
-// Hanya dua, dan itu ditegakkan basis data juga. Peran ketiga yang menyelinap
-// masuk akan dikirim ke penyedia LLM sebagai peran yang tidak dikenalnya.
+// Only two, and the database enforces that as well. A third role that slipped
+// in would be sent to the LLM provider as a role it does not recognise.
 func NewRole(raw string) (Role, error) {
 	switch Role(raw) {
 	case RoleUser, RoleModel:
@@ -179,23 +178,24 @@ func NewRole(raw string) (Role, error) {
 	}
 }
 
-// Message adalah satu pesan dalam thread.
+// Message is one message in a thread.
 type Message struct {
 	ID       ID
 	ThreadID ID
 	Role     Role
 
-	// Content adalah bentuk JSON, mengikuti sistem lama.
+	// Content is a JSON shape, following the legacy system.
 	//
-	// Ia bukan string biasa karena balasan model membawa struktur - saran,
-	// rujukan, dan penanda - yang akan hilang kalau dipadatkan menjadi teks.
+	// It is not a plain string because the model's reply carries structure -
+	// suggestions, references, and markers - that would be lost if flattened
+	// into text.
 	Content map[string]any
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-// NewMessage membuat pesan baru.
+// NewMessage creates a new message.
 func NewMessage(threadID ID, role Role, content map[string]any, now time.Time) (*Message, error) {
 	if threadID.IsZero() {
 		return nil, fmt.Errorf("%w: a message needs a thread", ErrInvalidID)
@@ -219,10 +219,10 @@ func NewMessage(threadID ID, role Role, content map[string]any, now time.Time) (
 	}, nil
 }
 
-// NewUserMessage membuat pesan teks dari pengguna.
+// NewUserMessage creates a text message from the user.
 //
-// Ia memeriksa panjangnya di sini, bukan di handler: batas yang hidup di
-// handler akan hilang begitu ada jalur kedua yang menulis pesan.
+// It checks the length here, not in the handler: a bound that lives in the
+// handler is lost as soon as a second path writes messages.
 func NewUserMessage(threadID ID, text string, now time.Time) (*Message, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -235,7 +235,7 @@ func NewUserMessage(threadID ID, text string, now time.Time) (*Message, error) {
 	return NewMessage(threadID, RoleUser, map[string]any{"text": text}, now)
 }
 
-// Text mengambil isi teks sebuah pesan, bila ada.
+// Text returns the text content of a message, if any.
 func (m *Message) Text() (string, bool) {
 	text, ok := m.Content["text"].(string)
 	return text, ok

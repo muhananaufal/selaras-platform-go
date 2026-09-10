@@ -13,12 +13,14 @@ var (
 	ErrInvalidAssessment  = errors.New("an assessment reference needs an id, an owner, a slug, and a completion time")
 )
 
-// AssessmentRef adalah rujukan lunak ke hasil analisis milik assessment-svc.
+// AssessmentRef is a soft reference to an analysis result owned by
+// assessment-svc.
 //
-// Ia diisi dari event assessment.completed, bukan dari panggilan sinkron:
-// coaching hanya tahu tentang analisis yang sudah selesai dan sudah
-// disiarkan. Snapshot-nya yang disalin ke program saat program dimulai, supaya
-// program tetap bisa dijelaskan meski analisisnya kelak berubah atau hilang.
+// It is filled from the assessment.completed event, not from a synchronous
+// call: coaching only knows about analyses that have finished and have been
+// announced. Its snapshot is copied into the program when the program starts,
+// so the program stays explainable even if the analysis later changes or
+// disappears.
 type AssessmentRef struct {
 	ID          string
 	UserID      UserID
@@ -27,7 +29,7 @@ type AssessmentRef struct {
 	CompletedAt time.Time
 }
 
-// NewAssessmentRef memvalidasi rujukan yang dibaca dari sebuah event.
+// NewAssessmentRef validates a reference read from an event.
 func NewAssessmentRef(
 	id, userID, slug string, snapshot map[string]any, completedAt time.Time,
 ) (*AssessmentRef, error) {
@@ -49,25 +51,25 @@ func NewAssessmentRef(
 	}, nil
 }
 
-// BelongsTo menyatakan analisis ini milik pengguna itu.
+// BelongsTo says this analysis belongs to that user.
 //
-// Analisis milik orang lain diperlakukan seperti yang tidak ada (S9): slug
-// adalah id publik, dan membedakan "bukan milikmu" dari "tidak ada" memberi
-// tahu penanya bahwa slug itu ada.
+// Someone else's analysis is treated as one that does not exist (S9): the
+// slug is a public id, and telling "not yours" apart from "does not exist"
+// tells the asker that the slug exists.
 func (a *AssessmentRef) BelongsTo(userID UserID) bool {
 	return !a.UserID.IsZero() && a.UserID == userID
 }
 
-// AssessmentRepository menyimpan rujukan analisis.
+// AssessmentRepository stores analysis references.
 type AssessmentRepository interface {
-	// Record menyimpan rujukan baru.
+	// Record stores a new reference.
 	//
-	// recorded bernilai false bila id itu sudah tersimpan. Itu bukan galat:
-	// relay outbox at-least-once, dan event yang tiba dua kali adalah
-	// keadaan yang normal.
+	// recorded is false if that id is already stored. That is not an error:
+	// the outbox relay is at-least-once, and an event arriving twice is a
+	// normal state.
 	Record(ctx context.Context, ref *AssessmentRef) (recorded bool, err error)
 
-	// FindBySlug mencari lewat slug publiknya; ErrAssessmentNotFound bila
-	// tidak ada.
+	// FindBySlug looks a reference up by its public slug;
+	// ErrAssessmentNotFound if there is none.
 	FindBySlug(ctx context.Context, slug string) (*AssessmentRef, error)
 }

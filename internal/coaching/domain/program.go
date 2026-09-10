@@ -1,9 +1,9 @@
-// Package domain memuat aturan program coaching.
+// Package domain holds the rules of a coaching program.
 //
-// Ia tidak mengimpor apa pun dari adapter, dan itu dijaga test batas: aturan
-// yang tahu bentuk basis datanya akan berubah setiap kali basis datanya
-// berubah, dan aturan yang berubah karena alasan teknis berhenti bisa dibaca
-// sebagai aturan.
+// It imports nothing from the adapters, and a boundary test guards that: a
+// rule that knows the shape of its database changes every time the database
+// does, and a rule that changes for technical reasons stops being readable
+// as a rule.
 package domain
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Galat yang dikenali pemanggil.
+// Errors that callers recognise.
 var (
 	ErrProgramNotFound     = errors.New("coaching program not found")
 	ErrInvalidID           = errors.New("invalid id")
@@ -28,8 +28,8 @@ var (
 	ErrActiveProgramExists = errors.New("this user already has an active program")
 )
 
-// ID adalah kunci internal. Ia tidak pernah muncul di API publik - slug yang
-// muncul.
+// ID is the internal key. It never appears in the public API - the slug
+// does.
 type ID struct{ v uuid.UUID }
 
 func NewID() (ID, error) {
@@ -51,11 +51,11 @@ func ParseID(raw string) (ID, error) {
 func (id ID) String() string { return id.v.String() }
 func (id ID) IsZero() bool   { return id.v == uuid.Nil }
 
-// UserID menunjuk ke identity.users.
+// UserID points at identity.users.
 //
-// Pemilik program adalah PENGGUNA, bukan profilnya. Sistem lama memakai
-// user_profile_id di sini dan user_id di chat - dua pola identitas untuk satu
-// pertanyaan, dan itu separuh dari temuan S9.
+// The owner of a program is the USER, not their profile. The legacy system
+// used user_profile_id here and user_id in chat - two identity patterns for
+// one question, and that is half of finding S9.
 type UserID struct{ v uuid.UUID }
 
 func ParseUserID(raw string) (UserID, error) {
@@ -69,7 +69,7 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// Status program.
+// Program status.
 type Status string
 
 const (
@@ -78,7 +78,7 @@ const (
 	StatusCompleted Status = "completed"
 )
 
-// NewStatus memeriksa nilai yang datang dari luar.
+// NewStatus checks a value that comes from outside.
 func NewStatus(raw string) (Status, error) {
 	switch Status(raw) {
 	case StatusActive, StatusPaused, StatusCompleted:
@@ -88,11 +88,11 @@ func NewStatus(raw string) (Status, error) {
 	}
 }
 
-// Difficulty adalah tingkat kesulitan program.
+// Difficulty is the difficulty level of a program.
 //
-// Nilainya Bahasa Indonesia dan dipertahankan PERSIS. Ia bukan istilah
-// internal: klien mengirimkannya apa adanya dan menampilkannya apa adanya, dan
-// menerjemahkannya akan memecahkan klien yang ada tanpa memperbaiki apa pun.
+// Its values are Indonesian and are kept EXACTLY as they are. They are not an
+// internal term: clients send them as-is and display them as-is, and
+// translating them would break existing clients without fixing anything.
 type Difficulty string
 
 const (
@@ -101,7 +101,7 @@ const (
 	DifficultyIntensive Difficulty = "Intensif & Menantang"
 )
 
-// NewDifficulty memeriksa nilai yang datang dari luar.
+// NewDifficulty checks a value that comes from outside.
 func NewDifficulty(raw string) (Difficulty, error) {
 	switch Difficulty(raw) {
 	case DifficultyGentle, DifficultyStandard, DifficultyIntensive:
@@ -111,11 +111,11 @@ func NewDifficulty(raw string) (Difficulty, error) {
 	}
 }
 
-// CurriculumStatus menyatakan apakah kurikulumnya sudah tiba.
+// CurriculumStatus says whether the curriculum has arrived.
 //
-// Program yang baru dibuat belum punya pekan maupun tugas: keduanya datang
-// dari llm-worker. Tanpa keadaan ini, program tanpa isi tidak bisa dibedakan
-// dari program yang kurikulumnya gagal dibuat.
+// A freshly created program has neither weeks nor tasks: both come from
+// llm-worker. Without this state, a program without content cannot be told
+// apart from a program whose curriculum failed to be produced.
 type CurriculumStatus string
 
 const (
@@ -124,7 +124,7 @@ const (
 	CurriculumFailed    CurriculumStatus = "failed"
 )
 
-// GraduationStatus menyatakan keadaan laporan kelulusan.
+// GraduationStatus states the state of the graduation report.
 type GraduationStatus string
 
 const (
@@ -134,20 +134,22 @@ const (
 	GraduationFailed       GraduationStatus = "failed"
 )
 
-// Program adalah satu program coaching.
+// Program is one coaching program.
 type Program struct {
 	ID     ID
 	UserID UserID
 	Slug   string
 
-	// RiskAssessmentID kosong bila program dimulai tanpa penilaian.
+	// RiskAssessmentID is empty when the program was started without an
+	// assessment.
 	RiskAssessmentID string
 
-	// AssessmentSnapshot adalah salinan penilaian saat program dimulai.
+	// AssessmentSnapshot is a copy of the assessment at the time the program
+	// started.
 	//
-	// Disalin, bukan dirujuk: penilaian bisa berubah atau dihapus, dan program
-	// yang menjelaskan dirinya dengan angka yang sudah berubah akan
-	// membingungkan orang yang membacanya setahun kemudian.
+	// Copied, not referenced: the assessment can change or be deleted, and a
+	// program that explains itself with numbers that have since changed would
+	// confuse whoever reads it a year later.
 	AssessmentSnapshot map[string]any
 
 	Title       string
@@ -170,13 +172,13 @@ type Program struct {
 	UpdatedAt time.Time
 }
 
-// NewProgram membuat program yang kurikulumnya belum tiba.
+// NewProgram creates a program whose curriculum has not arrived yet.
 //
-// Ia dibuat dalam keadaan pending dengan sengaja: kurikulum datang dari
-// llm-worker, dan menunggu kurikulum sebelum menyimpan programnya berarti
-// menahan permintaan HTTP selama model berpikir - persis cacat T7 di sistem
-// lama, di mana Gemini dipanggil di luar transaksi lalu penulisannya bisa
-// gagal setelah kuotanya terpakai.
+// It is deliberately created in the pending state: the curriculum comes
+// from llm-worker, and waiting for the curriculum before storing the
+// program means holding the HTTP request while the model thinks - exactly
+// flaw T7 of the legacy system, where Gemini was called outside the
+// transaction and the write could then fail after the quota had been spent.
 func NewProgram(
 	userID UserID,
 	difficulty Difficulty,
@@ -207,9 +209,9 @@ func NewProgram(
 		UserID: userID,
 		Slug:   slug,
 
-		// Judul dan deskripsi sementara. Keduanya diganti saat kurikulumnya
-		// tiba; nilai bawaannya mengikuti sistem lama supaya program yang
-		// kurikulumnya gagal tetap punya sesuatu untuk ditampilkan.
+		// Provisional title and description. Both are replaced when the
+		// curriculum arrives; the defaults follow the legacy system so a program
+		// whose curriculum failed still has something to display.
 		Title:       "Program Kesehatan Personal",
 		Description: "Program personal untuk Anda.",
 
@@ -218,10 +220,10 @@ func NewProgram(
 
 		StartDate: start,
 
-		// end_date dihitung SEKALI, di sini, dan menjadi satu-satunya sumber
-		// kebenaran akhir program (F4-18, temuan B5). Sistem lama menyimpannya
-		// lalu mengabaikannya, memakai created_at + 28 hari di penyelesainya -
-		// dua sumber kebenaran untuk satu fakta.
+		// end_date is computed ONCE, here, and becomes the single source of truth
+		// for the end of the program (F4-18, finding B5). The legacy system
+		// stored it and then ignored it, using created_at + 28 days in its
+		// completer - two sources of truth for one fact.
 		EndDate: start.AddDate(0, 0, weeks*7),
 
 		CurriculumStatus: CurriculumPending,
@@ -232,19 +234,19 @@ func NewProgram(
 	}, nil
 }
 
-// BelongsTo menyatakan kepemilikan.
+// BelongsTo states ownership.
 //
-// Ia dipakai untuk menjawab 404, BUKAN 403. Membedakan "tidak ada" dari "milik
-// orang lain" memberi tahu penanya bahwa slug itu ada - temuan S9.
+// It is used to answer 404, NOT 403. Telling "does not exist" apart from
+// "someone else's" tells the asker that the slug exists - finding S9.
 func (p *Program) BelongsTo(userID UserID) bool {
 	return !p.UserID.IsZero() && p.UserID == userID
 }
 
-// Toggle memindahkan program antara active dan paused (D4).
+// Toggle moves a program between active and paused (D4).
 //
-// Program yang sudah selesai TIDAK bisa diubah. Membiarkannya berarti program
-// yang laporan kelulusannya sudah dibuat bisa dijalankan lagi, dan laporan itu
-// menjadi laporan tentang sesuatu yang belum selesai.
+// A completed program CANNOT be changed. Allowing it would mean a program
+// whose graduation report has already been produced could be run again, and
+// that report would become a report about something not yet finished.
 func (p *Program) Toggle(now time.Time) error {
 	switch p.Status {
 	case StatusActive:
@@ -260,11 +262,12 @@ func (p *Program) Toggle(now time.Time) error {
 	return nil
 }
 
-// EnsureInteractive menolak interaksi pada program yang tidak aktif (D5).
+// EnsureInteractive refuses interaction on a program that is not active
+// (D5).
 //
-// Menyelesaikan tugas, membuka thread, mengirim pesan, mengubah judul, dan
-// menghapus thread semuanya melewati sini. Satu tempat, bukan lima belas
-// pemeriksaan tersalin seperti di sistem lama.
+// Completing a task, opening a thread, sending a message, renaming, and
+// deleting a thread all go through here. One place, not fifteen copied
+// checks as in the legacy system.
 func (p *Program) EnsureInteractive() error {
 	if p.Status != StatusActive {
 		return ErrProgramNotActive
@@ -272,22 +275,21 @@ func (p *Program) EnsureInteractive() error {
 	return nil
 }
 
-// HasEnded menyatakan program sudah melewati tanggal akhirnya.
+// HasEnded says the program is past its end date.
 //
-// Ia membaca EndDate, dan hanya EndDate (F4-18). Menghitung ulang dari
-// created_at akan menghidupkan kembali dua sumber kebenaran yang baru saja
-// dihilangkan.
+// It reads EndDate, and only EndDate (F4-18). Recomputing from created_at
+// would bring back the two sources of truth that were just removed.
 func (p *Program) HasEnded(on time.Time) bool {
 	return !truncateToDay(on).Before(p.EndDate)
 }
 
-// DurationDays adalah panjang program dalam hari.
+// DurationDays is the length of the program in days.
 func (p *Program) DurationDays() int {
 	return int(p.EndDate.Sub(p.StartDate).Hours() / 24)
 }
 
-// Validate memeriksa invarian yang tidak bisa dijamin konstruktornya sendiri,
-// misalnya saat program dibaca kembali dari basis data.
+// Validate checks the invariants the constructor alone cannot guarantee, for
+// instance when a program is read back from the database.
 func (p *Program) Validate() error {
 	if p.ID.IsZero() {
 		return fmt.Errorf("%w: program has no id", ErrInvalidID)
@@ -305,25 +307,24 @@ func (p *Program) Validate() error {
 	return nil
 }
 
-// truncateToDay membuang komponen jam.
+// truncateToDay drops the time-of-day component.
 //
-// Tanggal program adalah tanggal, bukan saat. Menyimpan jamnya akan membuat
-// perbandingan "sudah berakhir?" bergantung pada jam berapa program itu dibuat.
+// Program dates are dates, not moments. Keeping the time would make the "has it
+// ended?" comparison depend on what time of day the program was created.
 func truncateToDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-// DayOn adalah hari keberapa program ini berjalan pada tanggal tertentu.
+// DayOn is which day of the program a given date falls on.
 //
-// Nol berarti belum dimulai; DurationDays berarti sudah usai. Angka di antara
-// keduanya adalah hari ke-N, dihitung mulai dari satu - hari pertama program
-// adalah "hari ke-1", bukan "hari ke-0", karena itu yang dibaca manusia.
+// Zero means not started yet; DurationDays means already over. A number in
+// between is day N, counted from one - the first day of a program is "day 1",
+// not "day 0", because that is what a human reads.
 //
-// Perhitungannya ada DI SINI, bukan di lapisan tampilan. Sistem lama
-// menghitungnya di dalam DashboardResource, sehingga satu-satunya tempat aturan
-// ini hidup adalah kelas yang tugasnya menyusun JSON - dan siapa pun yang butuh
-// angka yang sama di tempat lain harus menyalinnya. Salinan aturan adalah
-// aturan yang akan menyimpang.
+// The computation lives HERE, not in the presentation layer. The legacy system
+// computed it inside DashboardResource, so the only place this rule lived was a
+// class whose job is to assemble JSON - and anyone who needed the same number
+// elsewhere had to copy it. A copied rule is a rule that will drift.
 func (p *Program) DayOn(on time.Time) int {
 	day := truncateToDay(on)
 	total := p.DurationDays()
@@ -332,8 +333,8 @@ func (p *Program) DayOn(on time.Time) int {
 	case day.Before(p.StartDate):
 		return 0
 	case !day.Before(p.EndDate):
-		// Sudah usai. Ia dijepit ke total, bukan dibiarkan tumbuh: program yang
-		// berakhir bulan lalu tidak berada di "hari ke-90" dari program 30 hari.
+		// Already over. It is clamped to the total, not left to grow: a program
+		// that ended last month is not on "day 90" of a 30-day program.
 		return total
 	default:
 		elapsed := int(day.Sub(p.StartDate).Hours() / 24)

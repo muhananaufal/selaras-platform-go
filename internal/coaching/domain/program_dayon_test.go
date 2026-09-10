@@ -9,19 +9,19 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// TestTheProgramDayIsCountedFromOne memindahkan aturan yang dulu hidup di
-// DashboardResource, dan mengujinya di kedua sisi setiap batas.
+// TestTheProgramDayIsCountedFromOne moves the rule that used to live in
+// DashboardResource, and tests it on both sides of every boundary.
 //
-// Sistem lama menghitungnya di dalam kelas penyusun JSON: satu-satunya tempat
-// aturan ini hidup adalah lapisan tampilan, sehingga siapa pun yang butuh angka
-// yang sama harus menyalinnya.
+// The legacy system computed it inside the JSON-assembling class: the only
+// place this rule lived was the presentation layer, so anyone who needed the
+// same number had to copy it.
 func TestTheProgramDayIsCountedFromOne(t *testing.T) {
 	owner, err := domain.ParseUserID(uuid.NewString())
 	if err != nil {
 		t.Fatalf("ParseUserID: %v", err)
 	}
 
-	// Program empat pekan yang dimulai 5 Januari 2026.
+	// A four-week program starting on 5 January 2026.
 	start := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
 	program, err := domain.NewProgram(owner, domain.DifficultyStandard, start, 4, start)
 	if err != nil {
@@ -44,8 +44,8 @@ func TestTheProgramDayIsCountedFromOne(t *testing.T) {
 		{"the last day inside the program", start.AddDate(0, 0, 27), 28},
 		{"the end date itself is over", start.AddDate(0, 0, 28), total},
 		{"long after it ended it does not keep growing", start.AddDate(0, 0, 200), total},
-		// Jam tidak boleh menggeser jawabannya: yang ditanyakan hari, bukan
-		// selisih waktu.
+		// The time of day must not shift the answer: the question is about days,
+		// not about elapsed time.
 		{"late in the day is still that day", start.Add(23 * time.Hour), 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -17,7 +17,7 @@ func programID(t *testing.T) domain.ID {
 	return id
 }
 
-// TestAThreadTitleIsDerivedFromTheFirstMessage adalah D12.
+// TestAThreadTitleIsDerivedFromTheFirstMessage is D12.
 func TestAThreadTitleIsDerivedFromTheFirstMessage(t *testing.T) {
 	now := day("2026-01-10")
 
@@ -30,7 +30,7 @@ func TestAThreadTitleIsDerivedFromTheFirstMessage(t *testing.T) {
 		t.Fatalf("the derived title is %q", thread.Title)
 	}
 
-	// Judul yang diberikan menang.
+	// A given title wins.
 	named, err := domain.NewThread(programID(t), "Soal tidur", "apa pun", now)
 	if err != nil {
 		t.Fatalf("NewThread: %v", err)
@@ -40,19 +40,19 @@ func TestAThreadTitleIsDerivedFromTheFirstMessage(t *testing.T) {
 	}
 }
 
-// TestADerivedTitleIsCutByRunesNotBytes menjaga karakter tidak terpotong di
-// tengah.
+// TestADerivedTitleIsCutByRunesNotBytes keeps characters from being split
+// in the middle.
 //
-// Memotong per byte akan memutus karakter multi-byte dan menghasilkan judul
-// yang berakhir dengan byte rusak - tampil sebagai kotak kosong, dan bisa
-// membuat JSON-nya tidak sah.
+// Cutting by byte would split a multi-byte character and produce a title
+// ending in a broken byte - rendered as an empty box, and possibly making
+// its JSON invalid.
 func TestADerivedTitleIsCutByRunesNotBytes(t *testing.T) {
-	// Lima puluh emoji: 50 rune, 200 byte.
+	// Fifty emoji: 50 runes, 200 bytes.
 	long := strings.Repeat("🏃", 50)
 
 	title := domain.DeriveTitle(long)
 
-	// 45 rune isi, ditambah tiga titik penanda pemotongan.
+	// 45 runes of content, plus the three-dot truncation marker.
 	if runes := len([]rune(title)); runes != 48 {
 		t.Fatalf("the title is %d runes, want 48", runes)
 	}
@@ -73,7 +73,7 @@ func isValidUTF8(s string) bool {
 	return true
 }
 
-// TestADerivedTitleIsOneLine menjaga tata letak daftar thread.
+// TestADerivedTitleIsOneLine guards the layout of the thread list.
 func TestADerivedTitleIsOneLine(t *testing.T) {
 	title := domain.DeriveTitle("Baris pertama\nBaris kedua\t\tdengan   tab")
 
@@ -85,7 +85,7 @@ func TestADerivedTitleIsOneLine(t *testing.T) {
 	}
 }
 
-// TestAnEmptyFirstMessageFallsBackToTheDefaultTitle menjaga judul tetap ada.
+// TestAnEmptyFirstMessageFallsBackToTheDefaultTitle keeps a title present.
 func TestAnEmptyFirstMessageFallsBackToTheDefaultTitle(t *testing.T) {
 	for _, message := range []string{"", "   ", "\n\t "} {
 		if got := domain.DeriveTitle(message); got != domain.DefaultThreadTitle {
@@ -94,10 +94,10 @@ func TestAnEmptyFirstMessageFallsBackToTheDefaultTitle(t *testing.T) {
 	}
 }
 
-// TestAThreadBelongsToExactlyOneProgram menjaga akses lintas program.
+// TestAThreadBelongsToExactlyOneProgram guards cross-program access.
 //
-// Thread milik program lain yang kebetulan milik pengguna yang sama tetap tidak
-// boleh diakses lewat slug program ini.
+// A thread of another program that happens to belong to the same user must
+// still not be reachable through this program's slug.
 func TestAThreadBelongsToExactlyOneProgram(t *testing.T) {
 	mine := programID(t)
 	theirs := programID(t)
@@ -121,7 +121,7 @@ func TestAThreadBelongsToExactlyOneProgram(t *testing.T) {
 	}
 }
 
-// TestOnlyTwoRolesExist menjaga peran yang dikirim ke penyedia LLM.
+// TestOnlyTwoRolesExist guards the roles sent to the LLM provider.
 func TestOnlyTwoRolesExist(t *testing.T) {
 	for _, raw := range []string{"user", "model"} {
 		if _, err := domain.NewRole(raw); err != nil {
@@ -135,7 +135,7 @@ func TestOnlyTwoRolesExist(t *testing.T) {
 	}
 }
 
-// TestAnEmptyMessageIsRefused menjaga pesan yang tidak mengatakan apa pun.
+// TestAnEmptyMessageIsRefused guards against a message that says nothing.
 func TestAnEmptyMessageIsRefused(t *testing.T) {
 	tid := programID(t)
 	now := day("2026-01-10")
@@ -151,7 +151,7 @@ func TestAnEmptyMessageIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnOversizedMessageIsRefused menjaga biaya prompt.
+// TestAnOversizedMessageIsRefused guards the prompt cost.
 func TestAnOversizedMessageIsRefused(t *testing.T) {
 	huge := strings.Repeat("a", 17*1024)
 
@@ -161,7 +161,7 @@ func TestAnOversizedMessageIsRefused(t *testing.T) {
 	}
 }
 
-// TestAMessageRoundTripsItsText menjaga bentuk isinya.
+// TestAMessageRoundTripsItsText guards the shape of its content.
 func TestAMessageRoundTripsItsText(t *testing.T) {
 	msg, err := domain.NewUserMessage(programID(t), "  halo pelatih  ", day("2026-01-10"))
 	if err != nil {
@@ -180,7 +180,7 @@ func TestAMessageRoundTripsItsText(t *testing.T) {
 	}
 }
 
-// TestRenamingRefusesABlankTitle menjaga thread tetap bisa dikenali.
+// TestRenamingRefusesABlankTitle keeps a thread recognisable.
 func TestRenamingRefusesABlankTitle(t *testing.T) {
 	thread, err := domain.NewThread(programID(t), "Awal", "x", day("2026-01-10"))
 	if err != nil {
@@ -202,7 +202,7 @@ func TestRenamingRefusesABlankTitle(t *testing.T) {
 	}
 }
 
-// TestAnOversizedTitleIsRefused menjaga daftar thread.
+// TestAnOversizedTitleIsRefused guards the thread list.
 func TestAnOversizedTitleIsRefused(t *testing.T) {
 	long := strings.Repeat("x", 101)
 

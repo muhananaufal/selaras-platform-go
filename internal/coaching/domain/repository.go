@@ -2,87 +2,87 @@ package domain
 
 import "context"
 
-// ProgramRepository menyimpan program.
+// ProgramRepository stores programs.
 //
-// Ia port, dan yang di baliknya boleh apa saja. Yang TIDAK boleh adalah
-// membocorkan bentuk penyimpanannya ke sini: tipe pgx, nama constraint, atau
-// dialek SQL di tanda tangan ini akan membuat aturan domain ikut berubah setiap
-// kali basis datanya berubah.
+// It is a port, and whatever sits behind it may be anything. What it must NOT
+// do is leak the shape of its storage in here: pgx types, constraint names, or
+// SQL dialect in these signatures would make the domain rules change every time
+// the database does.
 type ProgramRepository interface {
-	// Create menyimpan program baru.
+	// Create stores a new program.
 	//
-	// Program aktif kedua untuk pengguna yang sama menghasilkan
-	// ErrActiveProgramExists, dan penilaian yang sudah punya program
-	// menghasilkan ErrAssessmentUsed. Keduanya datang dari indeks unik - bukan
-	// dari pemeriksaan pendahuluan yang bisa dilewati dua permintaan serempak.
+	// A second active program for the same user yields ErrActiveProgramExists,
+	// and an assessment that already has a program yields ErrAssessmentUsed.
+	// Both come from unique indexes - not from a pre-check that two concurrent
+	// requests could both slip past.
 	Create(ctx context.Context, p *Program) error
 
-	// FindBySlug mencari lewat id publiknya.
+	// FindBySlug looks a program up by its public slug.
 	FindBySlug(ctx context.Context, slug string) (*Program, error)
 
-	// FindByID mencari lewat id internalnya.
+	// FindByID looks a program up by its internal id.
 	//
-	// Ia dipakai jalur yang berangkat dari thread atau tugas: keduanya
-	// menyimpan id program, bukan slug-nya. Slug adalah id PUBLIK, dan
-	// menyimpannya sebagai rujukan internal berarti mengubah slug akan
-	// memutus setiap rujukan itu.
+	// It is used by the paths that start from a thread or a task: both store
+	// the program id, not its slug. The slug is a PUBLIC id, and storing it as
+	// an internal reference would mean changing a slug breaks every one of
+	// those references.
 	FindByID(ctx context.Context, id ID) (*Program, error)
 
-	// FindActiveForUser mencari program yang sedang berjalan.
+	// FindActiveForUser looks for the program currently running.
 	//
-	// found bernilai false bila tidak ada, dan itu keadaan yang sah - bukan
-	// galat. Pengguna baru belum punya program.
+	// found is false if there is none, and that is a valid state - not an
+	// error. A new user has no program yet.
 	FindActiveForUser(ctx context.Context, userID UserID) (p *Program, found bool, err error)
 
-	// Update menyimpan perubahan program.
+	// Update stores changes to a program.
 	Update(ctx context.Context, p *Program) error
 
-	// Delete menghapus program beserta seluruh isinya.
+	// Delete removes a program with everything in it.
 	//
-	// Penghapusan berantai ditegakkan ON DELETE CASCADE di basis data, bukan
-	// dengan menghapus satu per satu di Go: yang kedua meninggalkan sisa saat
-	// prosesnya mati di tengah, dan sisa itu tidak akan pernah ditemukan
-	// siapa pun.
+	// The cascade is enforced by ON DELETE CASCADE in the database, not by
+	// deleting one by one in Go: the latter leaves remnants when the process
+	// dies halfway, and nobody will ever find those remnants.
 	Delete(ctx context.Context, id ID) error
 }
 
-// CurriculumRepository menyimpan pekan dan tugas.
+// CurriculumRepository stores weeks and tasks.
 type CurriculumRepository interface {
-	// SaveCurriculum menulis SELURUH kurikulum sekaligus.
+	// SaveCurriculum writes the WHOLE curriculum at once.
 	//
-	// Sekaligus, bukan per pekan: kurikulum yang separuhnya tersimpan akan
-	// meninggalkan program dengan tiga pekan dari empat, dan tidak ada yang
-	// tahu pekan keempatnya pernah ada (F4-08).
+	// At once, not week by week: a half-stored curriculum would leave a
+	// program with three weeks out of four, and nobody would know the fourth
+	// week ever existed (F4-08).
 	//
-	// stored bernilai false bila program itu SUDAH punya kurikulum. Itu bukan
-	// galat: relay outbox at-least-once, dan event yang tiba dua kali adalah
-	// keadaan yang normal.
+	// stored is false if the program ALREADY has a curriculum. That is not an
+	// error: the outbox relay is at-least-once, and an event arriving twice is
+	// a normal state.
 	SaveCurriculum(ctx context.Context, programID ID, c *Curriculum) (stored bool, err error)
 
-	// LoadCurriculum membaca seluruh pekan beserta tugasnya, terurut.
+	// LoadCurriculum reads every week with its tasks, in order.
 	LoadCurriculum(ctx context.Context, programID ID) ([]*Week, error)
 
-	// FindTask mencari satu tugas.
+	// FindTask looks up one task.
 	FindTask(ctx context.Context, id ID) (*Task, error)
 
-	// ProgramOfTask menyebutkan program pemilik sebuah tugas.
+	// ProgramOfTask names the program that owns a task.
 	//
-	// Ia ada karena tugas dialamatkan langsung lewat id-nya di API, sementara
-	// kepemilikan dan keaktifan diperiksa di tingkat program. Tanpa ini, jalur
-	// itu harus memuat pekan lalu program - dua kueri untuk satu pertanyaan.
+	// It exists because tasks are addressed directly by id in the API, while
+	// ownership and activity are checked at the program level. Without it,
+	// that path would have to load the week and then the program - two queries
+	// for one question.
 	ProgramOfTask(ctx context.Context, taskID ID) (*Program, error)
 
-	// UpdateTask menyimpan perubahan satu tugas.
+	// UpdateTask stores changes to one task.
 	UpdateTask(ctx context.Context, t *Task) error
 
-	// CountTasks menghitung tugas seluruh program, dan berapa yang selesai.
+	// CountTasks counts the tasks of a whole program, and how many are done.
 	//
-	// Dihitung basis data, bukan dengan memuat seluruh tugas ke memori lalu
-	// menjumlahkannya di Go. Laporan kelulusan hanya butuh dua angka.
+	// Counted by the database, not by loading every task into memory and
+	// summing in Go. The graduation report only needs two numbers.
 	CountTasks(ctx context.Context, programID ID) (total, completed int, err error)
 }
 
-// ThreadRepository menyimpan thread dan pesannya.
+// ThreadRepository stores threads and their messages.
 type ThreadRepository interface {
 	CreateThread(ctx context.Context, t *Thread) error
 	FindThreadBySlug(ctx context.Context, slug string) (*Thread, error)
@@ -92,10 +92,10 @@ type ThreadRepository interface {
 
 	CreateMessage(ctx context.Context, m *Message) error
 
-	// ListMessages membaca percakapan, terlama lebih dulu.
+	// ListMessages reads a conversation, oldest first.
 	//
-	// limit membatasi jendela konteks. Nol berarti seluruhnya - dipakai saat
-	// menampilkan thread; yang dibatasi adalah jalur yang menyusun prompt,
-	// karena setiap pesan yang ikut dibayar per token (D8).
+	// limit bounds the context window. Zero means everything - used when
+	// displaying a thread; what is bounded is the path that builds the prompt,
+	// because every message included is paid for per token (D8).
 	ListMessages(ctx context.Context, threadID ID, limit int) ([]*Message, error)
 }
