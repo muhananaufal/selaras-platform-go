@@ -7,7 +7,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// RecordAssessmentCommand adalah satu event assessment.completed, sudah dibaca.
+// RecordAssessmentCommand is one assessment.completed event, already decoded.
 type RecordAssessmentCommand struct {
 	AssessmentID string
 	UserID       string
@@ -16,12 +16,13 @@ type RecordAssessmentCommand struct {
 	CompletedAt  time.Time
 }
 
-// RecordAssessment mencatat hasil analisis yang disiarkan assessment-svc
-// (F4-06). Inilah satu-satunya cara coaching mengenal sebuah analisis:
-// StartProgram meresolusi slug dari catatan ini, bukan dari panggilan sinkron.
+// RecordAssessment records an analysis result announced by assessment-svc
+// (F4-06). This is the only way coaching gets to know an analysis:
+// StartProgram resolves the slug from this record, not from a synchronous
+// call.
 //
-// recorded bernilai false bila analisis itu sudah tercatat; relay outbox
-// at-least-once, jadi itu keadaan yang normal, bukan galat.
+// recorded is false if that analysis was already recorded; the outbox relay is
+// at-least-once, so that is a normal state, not an error.
 func (s *Service) RecordAssessment(
 	ctx context.Context, cmd RecordAssessmentCommand,
 ) (recorded bool, err error) {

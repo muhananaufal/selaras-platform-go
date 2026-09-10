@@ -11,8 +11,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// assessment mencatat sebuah hasil analisis milik userID, seperti yang
-// dilakukan konsumen assessment.completed, dan mengembalikan slug-nya.
+// assessment records an analysis result owned by userID, the way the
+// assessment.completed consumer does, and returns its slug.
 func (h *harness) assessment(t *testing.T, userID string) (id, slug string) {
 	t.Helper()
 	id, slug = uuid.NewString(), "ra-"+uuid.NewString()[:8]
@@ -33,7 +33,7 @@ func (h *harness) startFrom(userID, slug string) (*app.StartProgramResult, error
 	})
 }
 
-// F4-06: program yang dimulai dari sebuah analisis menyalin cuplikannya.
+// F4-06: a program started from an analysis copies its snapshot.
 func TestStartingAProgramFromAnAssessmentCopiesItsSnapshot(t *testing.T) {
 	h := setup(t)
 	user := h.user()
@@ -68,9 +68,9 @@ func TestStartingAProgramFromAnAssessmentCopiesItsSnapshot(t *testing.T) {
 	}
 }
 
-// D3: satu program per hasil analisis. Karena D2 menjeda program aktif
-// sebelumnya di transaksi yang sama, penolakan ini juga harus membatalkan
-// penjedaan itu - program pertama tetap aktif.
+// D3: one program per analysis result. Because D2 pauses the previously
+// active program in the same transaction, this refusal also has to undo
+// that pause - the first program stays active.
 func TestAnAssessmentCanOnlyBeUsedByOneProgram(t *testing.T) {
 	h := setup(t)
 	user := h.user()
@@ -96,7 +96,7 @@ func TestAnAssessmentCanOnlyBeUsedByOneProgram(t *testing.T) {
 	}
 }
 
-// Analisis yang tidak dikenal, atau milik orang lain, tidak ada (S9).
+// An unknown analysis, or someone else's, does not exist (S9).
 func TestAnUnknownOrForeignAssessmentIsNotFound(t *testing.T) {
 	h := setup(t)
 	owner, stranger := h.user(), h.user()
@@ -113,7 +113,8 @@ func TestAnUnknownOrForeignAssessmentIsNotFound(t *testing.T) {
 	}
 }
 
-// Relay outbox at-least-once: event yang tiba dua kali dicatat sekali.
+// The outbox relay is at-least-once: an event arriving twice is recorded
+// once.
 func TestRecordingAnAssessmentTwiceIsQuiet(t *testing.T) {
 	h := setup(t)
 	user := h.user()
@@ -131,7 +132,7 @@ func TestRecordingAnAssessmentTwiceIsQuiet(t *testing.T) {
 	}
 }
 
-// Event yang cacat ditolak di depan, bukan disimpan setengah.
+// A malformed event is refused up front, not half stored.
 func TestAMalformedAssessmentIsRejected(t *testing.T) {
 	h := setup(t)
 	_, err := h.svc.RecordAssessment(h.ctx, app.RecordAssessmentCommand{

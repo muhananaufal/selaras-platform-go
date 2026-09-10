@@ -19,11 +19,11 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// harness menjalankan use case terhadap Postgres sungguhan.
+// harness runs the use cases against a real Postgres.
 //
-// Bukan mock: yang diuji di sini adalah keatomikan dan aturan yang ditegakkan
-// basis data - indeks unik parsial, cascade, dan transaksi. Mock hanya
-// membuktikan mock-nya berperilaku seperti yang ditulis.
+// Not a mock: what is tested here is atomicity and the rules the database
+// enforces - partial unique indexes, cascades, and transactions. A mock only
+// proves that the mock behaves as written.
 type harness struct {
 	pool *pgxpool.Pool
 	svc  *app.Service
@@ -61,7 +61,7 @@ func setup(t *testing.T) *harness {
 
 func (h *harness) user() string { return uuid.NewString() }
 
-// events membaca event yang tertulis di outbox, terurut.
+// events reads the events written to the outbox, in order.
 func (h *harness) events(t *testing.T) []*eventsv1.Envelope {
 	t.Helper()
 
@@ -100,11 +100,11 @@ func (h *harness) start(t *testing.T, userID string) *app.StartProgramResult {
 	return result
 }
 
-// TestStartingAProgramQueuesTheCurriculumInsteadOfCallingGemini adalah F4-07.
+// TestStartingAProgramQueuesTheCurriculumInsteadOfCallingGemini is F4-07.
 //
-// Sistem lama memanggil Gemini LEBIH DULU lalu membuka transaksi untuk
-// menyimpannya (temuan T7): bila penulisan gagal, kurikulum dan kuotanya sudah
-// terpakai dan tidak ada yang bisa memulihkannya.
+// The legacy system called Gemini FIRST and then opened a transaction to store
+// the result (finding T7): if the write failed, the curriculum and its quota
+// were already spent and nothing could recover them.
 func TestStartingAProgramQueuesTheCurriculumInsteadOfCallingGemini(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -119,7 +119,7 @@ func TestStartingAProgramQueuesTheCurriculumInsteadOfCallingGemini(t *testing.T)
 		t.Fatalf("a first program reported pausing %q", result.PausedPrevious)
 	}
 
-	// Program TERSIMPAN dan eventnya ADA. Keduanya di satu transaksi.
+	// The program is STORED and its event EXISTS. Both in one transaction.
 	events := h.events(t)
 	if len(events) != 1 {
 		t.Fatalf("%d events were written, want 1", len(events))
@@ -136,14 +136,14 @@ func TestStartingAProgramQueuesTheCurriculumInsteadOfCallingGemini(t *testing.T)
 		t.Fatalf("the event carries difficulty %q", req.GetDifficulty())
 	}
 
-	// Kunci idempotensinya diturunkan dari programnya, bukan diacak: tombol
-	// yang ditekan dua kali tidak boleh membayar dua kurikulum.
+	// The idempotency key is derived from the program, not randomised: a
+	// button pressed twice must not pay for two curricula.
 	if key := events[0].GetIdempotencyKey().GetValue(); key != "curriculum:"+result.Program.ID.String() {
 		t.Fatalf("the idempotency key is %q", key)
 	}
 }
 
-// TestStartingASecondProgramPausesTheFirst adalah D2.
+// TestStartingASecondProgramPausesTheFirst is D2.
 func TestStartingASecondProgramPausesTheFirst(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -156,8 +156,8 @@ func TestStartingASecondProgramPausesTheFirst(t *testing.T) {
 			second.PausedPrevious, first.Program.Slug)
 	}
 
-	// Yang lama DIJEDA, bukan dihapus. Perilaku sistem lama dipertahankan -
-	// meski fungsinya di sana bernama cancelProgram.
+	// The old one is PAUSED, not deleted. The legacy behaviour is kept - even
+	// though the function there was named cancelProgram.
 	view, err := h.svc.ShowProgram(h.ctx, first.Program.Slug, owner)
 	if err != nil {
 		t.Fatalf("the first program disappeared: %v", err)
@@ -167,18 +167,19 @@ func TestStartingASecondProgramPausesTheFirst(t *testing.T) {
 	}
 }
 
-// TestAFailedStartLeavesNoHalfProgram adalah alasan keduanya satu transaksi.
+// TestAFailedStartLeavesNoHalfProgram is the reason both happen in one
+// transaction.
 //
-// Menjeda program lama lebih dulu lalu gagal membuat yang baru akan
-// meninggalkan pengguna tanpa program aktif sama sekali.
+// Pausing the old program first and then failing to create the new one would
+// leave the user with no active program at all.
 func TestAFailedStartLeavesNoHalfProgram(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
 
 	first := h.start(t, owner)
 
-	// Kesulitan yang tidak sah menggagalkan permintaannya SEBELUM transaksi
-	// dibuka, jadi keadaan sebelumnya harus utuh.
+	// An invalid difficulty fails the request BEFORE the transaction is
+	// opened, so the previous state has to be intact.
 	_, err := h.svc.StartProgram(h.ctx, app.StartProgramCommand{
 		UserID: owner, Difficulty: "Sangat Santai",
 	})
@@ -198,7 +199,7 @@ func TestAFailedStartLeavesNoHalfProgram(t *testing.T) {
 	}
 }
 
-// TestSomeoneElsesProgramIsNotFound adalah S9.
+// TestSomeoneElsesProgramIsNotFound is S9.
 func TestSomeoneElsesProgramIsNotFound(t *testing.T) {
 	h := setup(t)
 	mine := h.start(t, h.user())
@@ -214,14 +215,14 @@ func TestSomeoneElsesProgramIsNotFound(t *testing.T) {
 		t.Errorf("DestroyProgram returned %v, want ErrProgramNotFound", err)
 	}
 
-	// Dan program yang tidak ada menjawab SAMA. Membedakannya memberi tahu
-	// penanya bahwa slug itu ada.
+	// And a program that does not exist answers the SAME. Telling them apart
+	// tells the asker that the slug exists.
 	if _, err := h.svc.ShowProgram(h.ctx, "tidakadaslugini", stranger); !errors.Is(err, domain.ErrProgramNotFound) {
 		t.Errorf("a missing program returned %v, want ErrProgramNotFound", err)
 	}
 }
 
-// TestANonActiveProgramFreezesEverything adalah D5.
+// TestANonActiveProgramFreezesEverything is D5.
 func TestANonActiveProgramFreezesEverything(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -231,7 +232,7 @@ func TestANonActiveProgramFreezesEverything(t *testing.T) {
 		t.Fatalf("ToggleProgramStatus: %v", err)
 	}
 
-	// Membuka thread ditolak.
+	// Opening a thread is refused.
 	_, err := h.svc.StartNewThread(h.ctx, app.StartThreadCommand{
 		ProgramSlug: program.Slug, UserID: owner, FirstMessage: "halo",
 	})
@@ -240,7 +241,7 @@ func TestANonActiveProgramFreezesEverything(t *testing.T) {
 	}
 }
 
-// TestThreadsAndMessagesQueueTheirReply adalah F4-12 dan F4-13.
+// TestThreadsAndMessagesQueueTheirReply is F4-12 and F4-13.
 func TestThreadsAndMessagesQueueTheirReply(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -255,7 +256,7 @@ func TestThreadsAndMessagesQueueTheirReply(t *testing.T) {
 		t.Fatalf("StartNewThread: %v", err)
 	}
 
-	// D12: judulnya diturunkan dari pesan pertama.
+	// D12: the title is derived from the first message.
 	if view.Thread.Title != "Saya kesulitan bangun pagi untuk jalan kaki,..." {
 		t.Fatalf("the derived title is %q", view.Thread.Title)
 	}
@@ -270,14 +271,16 @@ func TestThreadsAndMessagesQueueTheirReply(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
-	// Tiga event: kurikulum, balasan pesan pertama, balasan pesan kedua.
+	// Three events: the curriculum, the reply to the first message, the reply
+	// to the second.
 	events := h.events(t)
 	if len(events) != 3 {
 		t.Fatalf("%d events were written, want 3", len(events))
 	}
 
-	// Kunci idempotensi balasan diturunkan dari PESANNYA, bukan dari threadnya:
-	// kunci per thread akan membuat pesan kedua dilewati sebagai duplikat.
+	// The reply's idempotency key is derived from the MESSAGE, not from the
+	// thread: a per-thread key would make the second message be skipped as a
+	// duplicate.
 	first := events[1].GetIdempotencyKey().GetValue()
 	second := events[2].GetIdempotencyKey().GetValue()
 	if first == second {
@@ -287,7 +290,7 @@ func TestThreadsAndMessagesQueueTheirReply(t *testing.T) {
 		t.Fatalf("the second key is %q", second)
 	}
 
-	// Balasan model masuk sebagai pesan berperan "model".
+	// The model's reply enters as a message with the "model" role.
 	if err := h.svc.StoreReply(h.ctx, view.Thread.ID.String(),
 		map[string]any{"text": "Mulai dari sepuluh menit saja."}); err != nil {
 		t.Fatalf("StoreReply: %v", err)
@@ -305,7 +308,7 @@ func TestThreadsAndMessagesQueueTheirReply(t *testing.T) {
 	}
 }
 
-// TestSomeoneElsesThreadIsNotFound menjaga otorisasi thread.
+// TestSomeoneElsesThreadIsNotFound guards thread authorisation.
 func TestSomeoneElsesThreadIsNotFound(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -327,13 +330,13 @@ func TestSomeoneElsesThreadIsNotFound(t *testing.T) {
 	}
 }
 
-// TestTogglingATaskIsIdempotentPerState adalah F4-14.
+// TestTogglingATaskIsIdempotentPerState is F4-14.
 func TestTogglingATaskIsIdempotentPerState(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
 	program := h.start(t, owner).Program
 
-	// Kurikulum tiba.
+	// The curriculum arrives.
 	if err := h.svc.StoreCurriculum(h.ctx, program.ID.String(), sampleCurriculum()); err != nil {
 		t.Fatalf("StoreCurriculum: %v", err)
 	}
@@ -355,7 +358,7 @@ func TestTogglingATaskIsIdempotentPerState(t *testing.T) {
 		t.Fatalf("after one toggle: completed=%v count=%d", done.Task.IsCompleted, done.TasksCompleted)
 	}
 
-	// Dibalik lagi: kembali terbuka, dan tanggal penyelesaiannya HILANG.
+	// Flipped again: open again, and the completion date is GONE.
 	again, err := h.svc.ToggleTaskStatus(h.ctx, task.ID.String(), owner)
 	if err != nil {
 		t.Fatalf("second ToggleTaskStatus: %v", err)
@@ -367,9 +370,9 @@ func TestTogglingATaskIsIdempotentPerState(t *testing.T) {
 		t.Fatalf("after two toggles %d tasks are complete, want 0", again.TasksCompleted)
 	}
 
-	// Kunci idempotensi kedua event BERBEDA: menyelesaikan dan membuka kembali
-	// adalah dua peristiwa, dan kunci yang sama akan membuat yang kedua
-	// dilewati.
+	// The idempotency keys of the two events DIFFER: completing and reopening
+	// are two occurrences, and the same key would make the second one be
+	// skipped.
 	events := h.events(t)
 	completeKey := events[len(events)-2].GetIdempotencyKey().GetValue()
 	reopenKey := events[len(events)-1].GetIdempotencyKey().GetValue()
@@ -378,7 +381,7 @@ func TestTogglingATaskIsIdempotentPerState(t *testing.T) {
 	}
 }
 
-// TestATaskInSomeoneElsesProgramIsNotFound menjaga otorisasi tugas.
+// TestATaskInSomeoneElsesProgramIsNotFound guards task authorisation.
 func TestATaskInSomeoneElsesProgramIsNotFound(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -394,14 +397,14 @@ func TestATaskInSomeoneElsesProgramIsNotFound(t *testing.T) {
 		t.Fatalf("a stranger toggling a task returned %v, want ErrTaskNotFound", err)
 	}
 
-	// Id yang bukan UUID menjawab sama, bukan "tidak sah": membedakannya
-	// memberi tahu penanya bentuk id yang benar.
+	// An id that is not a UUID answers the same, not "invalid": telling them
+	// apart tells the asker the correct shape of an id.
 	if _, err := h.svc.ToggleTaskStatus(h.ctx, "bukan-uuid", owner); !errors.Is(err, domain.ErrTaskNotFound) {
 		t.Fatalf("a malformed task id returned %v, want ErrTaskNotFound", err)
 	}
 }
 
-// TestTheGraduationReportIsAsynchronous adalah F4-15.
+// TestTheGraduationReportIsAsynchronous is F4-15.
 func TestTheGraduationReportIsAsynchronous(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -422,7 +425,7 @@ func TestTheGraduationReportIsAsynchronous(t *testing.T) {
 		t.Fatalf("the graduation status is %q, want pending", view.Program.GraduationStatus)
 	}
 
-	// Meminta lagi TIDAK mengantre pekerjaan kedua.
+	// Asking again does NOT queue a second job.
 	before := len(h.events(t))
 	if _, err := h.svc.RequestGraduationReport(h.ctx, program.Slug, owner); err != nil {
 		t.Fatalf("second RequestGraduationReport: %v", err)
@@ -431,7 +434,7 @@ func TestTheGraduationReportIsAsynchronous(t *testing.T) {
 		t.Fatalf("a second request queued %d more events", after-before)
 	}
 
-	// Laporannya tiba.
+	// The report arrives.
 	report := map[string]any{"summary": "Anda menyelesaikan 1 dari 4 tugas"}
 	if err := h.svc.StoreGraduationReport(h.ctx, program.ID.String(), report); err != nil {
 		t.Fatalf("StoreGraduationReport: %v", err)
@@ -448,14 +451,14 @@ func TestTheGraduationReportIsAsynchronous(t *testing.T) {
 		t.Fatalf("a graduated program is %q, want completed", final.Program.Status)
 	}
 
-	// Dan program yang selesai tidak bisa dijalankan lagi (D4): laporan tentang
-	// program yang dilanjutkan menjadi laporan tentang sesuatu yang belum
-	// selesai.
+	// And a completed program cannot be run again (D4): a report about a
+	// program that was resumed becomes a report about something not yet
+	// finished.
 	if _, err := h.svc.ToggleProgramStatus(h.ctx, program.Slug, owner); !errors.Is(err, domain.ErrProgramCompleted) {
 		t.Fatalf("toggling a graduated program returned %v, want ErrProgramCompleted", err)
 	}
 
-	// Laporan kedua TIDAK menimpa yang pertama.
+	// A second report does NOT overwrite the first.
 	if err := h.svc.StoreGraduationReport(h.ctx, program.ID.String(),
 		map[string]any{"summary": "berbeda"}); err != nil {
 		t.Fatalf("a second report was reported as a failure: %v", err)
@@ -466,7 +469,8 @@ func TestTheGraduationReportIsAsynchronous(t *testing.T) {
 	}
 }
 
-// TestDestroyingAProgramPublishesBeforeItDisappears menjaga urutan di F4-11.
+// TestDestroyingAProgramPublishesBeforeItDisappears guards the ordering in
+// F4-11.
 func TestDestroyingAProgramPublishesBeforeItDisappears(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -489,7 +493,7 @@ func TestDestroyingAProgramPublishesBeforeItDisappears(t *testing.T) {
 	}
 }
 
-// TestAFailedCurriculumIsVisible menjaga program tidak menunggu selamanya.
+// TestAFailedCurriculumIsVisible keeps a program from waiting forever.
 func TestAFailedCurriculumIsVisible(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -510,8 +514,8 @@ func TestAFailedCurriculumIsVisible(t *testing.T) {
 		t.Fatal("the failure was recorded without a reason")
 	}
 
-	// Kurikulum yang sudah tiba TIDAK boleh berubah menjadi gagal karena event
-	// lama yang menyusul.
+	// A curriculum that has already arrived must NOT turn into a failure
+	// because of an old event arriving late.
 	if err := h.svc.StoreCurriculum(h.ctx, program.ID.String(), sampleCurriculum()); err != nil {
 		t.Fatalf("StoreCurriculum: %v", err)
 	}

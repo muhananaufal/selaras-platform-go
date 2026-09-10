@@ -12,36 +12,36 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// ContextWindow adalah jumlah pesan yang ikut ke prompt (D8).
+// ContextWindow is the number of messages that go into the prompt (D8).
 //
-// Dua puluh, sama dengan sistem lama. Setiap pesan yang ikut dibayar per token,
-// dan percakapan yang panjang tanpa batas akan membuat satu balasan berbiaya
-// berkali lipat balasan pertama.
+// Twenty, the same as the legacy system. Every message included is paid for per
+// token, and an unbounded conversation would make one reply cost many times the
+// first.
 const ContextWindow = 20
 
-// StartThreadCommand adalah permintaan membuka utas baru.
+// StartThreadCommand is a request to open a new thread.
 type StartThreadCommand struct {
 	ProgramSlug string
 	UserID      string
 
-	// Title boleh kosong: judulnya diturunkan dari FirstMessage (D12).
+	// Title may be empty: the title is derived from FirstMessage (D12).
 	Title string
 
-	// FirstMessage wajib. Thread tanpa pesan pertama tidak punya apa pun untuk
-	// ditampilkan, dan judul turunannya tidak punya sumber.
+	// FirstMessage is required. A thread without a first message has nothing
+	// to display, and its derived title has no source.
 	FirstMessage string
 
 	IdempotencyKey string
 }
 
-// ThreadView adalah thread beserta percakapannya.
+// ThreadView is a thread together with its conversation.
 type ThreadView struct {
 	Thread   *domain.Thread
 	Program  *domain.Program
 	Messages []*domain.Message
 }
 
-// StartNewThread membuka utas baru dan mengirim pesan pertamanya (F4-12).
+// StartNewThread opens a new thread and sends its first message (F4-12).
 func (s *Service) StartNewThread(
 	ctx context.Context, cmd StartThreadCommand,
 ) (*ThreadView, error) {
@@ -58,8 +58,8 @@ func (s *Service) StartNewThread(
 			return err
 		}
 
-		// D5: program non-aktif membekukan interaksi. Satu pemeriksaan, di
-		// domain, dipakai seluruh jalur - bukan lima belas salinan.
+		// D5: a non-active program freezes interaction. One check, in the domain,
+		// used by every path - not fifteen copies.
 		if err := program.EnsureInteractive(); err != nil {
 			return err
 		}
@@ -84,8 +84,8 @@ func (s *Service) StartNewThread(
 		view.Program = program
 		view.Messages = []*domain.Message{message}
 
-		// Permintaan balasan ditulis di transaksi yang sama. Thread yang
-		// tersimpan tanpa permintaannya akan menunggu balasan selamanya.
+		// The reply request is written in the same transaction. A thread stored
+		// without its request would wait for a reply forever.
 		return r.Events().Write(ctx, "coaching_thread", thread.ID.String(),
 			chatReplyRequest(thread, message, cmd.IdempotencyKey, now))
 	})
@@ -95,7 +95,7 @@ func (s *Service) StartNewThread(
 	return view, nil
 }
 
-// SendMessageCommand adalah permintaan mengirim pesan ke utas yang ada.
+// SendMessageCommand is a request to send a message to an existing thread.
 type SendMessageCommand struct {
 	ThreadSlug     string
 	UserID         string
@@ -103,12 +103,12 @@ type SendMessageCommand struct {
 	IdempotencyKey string
 }
 
-// SendMessage menulis pesan pengguna dan meminta balasannya (F4-13).
+// SendMessage writes the user's message and requests its reply (F4-13).
 //
-// Ia menjawab SEGERA. Balasan model datang belakangan lewat llm.results dan
-// masuk ke thread sebagai pesan berperan "model". Sistem lama menunggu Gemini
-// di dalam permintaan HTTP, dan satu penyedia yang lambat menahan permintaannya
-// selama itu.
+// It answers IMMEDIATELY. The model's reply comes later through llm.results and
+// enters the thread as a message with the "model" role. The legacy system
+// waited for Gemini inside the HTTP request, and one slow provider held the
+// request for that long.
 func (s *Service) SendMessage(
 	ctx context.Context, cmd SendMessageCommand,
 ) (*domain.Message, error) {
@@ -142,11 +142,11 @@ func (s *Service) SendMessage(
 	return written, nil
 }
 
-// ShowThread memuat utas beserta seluruh percakapannya (F4-12).
+// ShowThread loads a thread together with its whole conversation (F4-12).
 //
-// Seluruhnya, bukan jendela konteks: yang dibatasi adalah jalur yang menyusun
-// prompt, karena di sanalah setiap pesan berbiaya. Pengguna yang membuka
-// percakapannya berhak melihat semuanya.
+// The whole of it, not the context window: what is bounded is the path that
+// builds the prompt, because that is where every message costs. A user
+// opening their conversation is entitled to see all of it.
 func (s *Service) ShowThread(ctx context.Context, slug, userID string) (*ThreadView, error) {
 	var view *ThreadView
 
@@ -168,7 +168,7 @@ func (s *Service) ShowThread(ctx context.Context, slug, userID string) (*ThreadV
 	return view, nil
 }
 
-// RenameThread mengubah judul utas (F4-12).
+// RenameThread changes the title of a thread (F4-12).
 func (s *Service) RenameThread(
 	ctx context.Context, slug, userID, title string,
 ) (*domain.Thread, error) {
@@ -195,7 +195,7 @@ func (s *Service) RenameThread(
 	return renamed, nil
 }
 
-// DestroyThread menghapus utas beserta pesannya (F4-12).
+// DestroyThread deletes a thread together with its messages (F4-12).
 func (s *Service) DestroyThread(ctx context.Context, slug, userID string) error {
 	return s.uow.Do(ctx, func(r Repositories) error {
 		thread, program, err := s.ownedThread(ctx, r, slug, userID)
@@ -209,10 +209,10 @@ func (s *Service) DestroyThread(ctx context.Context, slug, userID string) error 
 	})
 }
 
-// StoreReply menyimpan balasan model yang datang dari llm-worker.
+// StoreReply stores a model reply that comes from llm-worker.
 //
-// Idempoten lewat kunci pemanggil: relay outbox at-least-once, dan balasan yang
-// tersimpan dua kali akan muncul dua kali di layar percakapan.
+// Idempotent through the caller's key: the outbox relay is at-least-once, and a
+// reply stored twice would show up twice on the conversation screen.
 func (s *Service) StoreReply(
 	ctx context.Context, threadID string, content map[string]any,
 ) error {
@@ -234,21 +234,21 @@ func (s *Service) StoreReply(
 	})
 }
 
-// ConversationContext membaca jendela konteks untuk menyusun prompt (D8).
+// ConversationContext reads the context window for building a prompt (D8).
 func (s *Service) ConversationContext(
 	ctx context.Context, threadID domain.ID,
 ) ([]*domain.Message, error) {
 	return s.threads.ListMessages(ctx, threadID, ContextWindow)
 }
 
-// chatReplyRequest menyusun event permintaan balasan.
+// chatReplyRequest composes the reply request event.
 func chatReplyRequest(
 	thread *domain.Thread, message *domain.Message, key string, now time.Time,
 ) *eventsv1.Envelope {
 	if key == "" {
-		// Diturunkan dari PESANNYA, bukan dari threadnya: satu thread menerima
-		// banyak pesan, dan kunci per thread akan membuat pesan kedua dan
-		// seterusnya dilewati sebagai duplikat.
+		// Derived from the MESSAGE, not from the thread: one thread receives many
+		// messages, and a per-thread key would make the second and later messages
+		// be skipped as duplicates.
 		key = "chat-reply:" + message.ID.String()
 	}
 

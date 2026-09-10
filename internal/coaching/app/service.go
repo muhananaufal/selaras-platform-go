@@ -1,11 +1,11 @@
-// Package app merangkai aturan coaching menjadi use case.
+// Package app composes the coaching rules into use cases.
 //
-// Ia berdiri di antara handler dan repository, dan itu bukan lapisan yang
-// ditambahkan demi kerapian: use case coaching menulis ke beberapa tabel
-// sekaligus dan menerbitkan event, dan tanpa tempat yang jelas untuk itu,
-// urutan serta keatomikannya akan tersebar di handler - persis yang membuat
-// CoachingRepository di sistem lama tumbuh menjadi 474 baris yang memuat
-// perhitungan, cache, dan event sekaligus (temuan T6).
+// It sits between the handlers and the repositories, and it is not a layer
+// added for tidiness: coaching use cases write to several tables at once
+// and publish events, and without a clear place for that, the ordering and
+// atomicity would be scattered across handlers - exactly what made
+// CoachingRepository in the legacy system grow into 474 lines holding
+// computation, caching, and events at once (finding T6).
 package app
 
 import (
@@ -18,20 +18,20 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// EventWriter menulis event ke outbox.
+// EventWriter writes events to the outbox.
 type EventWriter interface {
 	Write(ctx context.Context, aggregateType, aggregateID string, envelope *eventsv1.Envelope) error
 }
 
-// EventWriterFor membuat penulis event DI ATAS satu transaksi.
+// EventWriterFor creates an event writer ON a single transaction.
 //
-// Pabrik, bukan penulis yang sudah jadi: penulis yang dibangun di atas kolam
-// koneksi akan commit sendiri, dan eventnya bertahan meski perubahan yang
-// memicunya batal - menyiarkan sesuatu yang tidak pernah terjadi.
+// A factory, not a ready-made writer: a writer built on the connection pool
+// would commit on its own, and its event would survive even when the change
+// that triggered it was rolled back - announcing something that never
+// happened.
 type EventWriterFor func(pg.Querier) EventWriter
 
-// Repositories adalah kumpulan repository yang seluruhnya berbagi satu
-// transaksi.
+// Repositories is the set of repositories that all share one transaction.
 type Repositories interface {
 	Programs() domain.ProgramRepository
 	Curricula() domain.CurriculumRepository
@@ -40,18 +40,18 @@ type Repositories interface {
 	Events() EventWriter
 }
 
-// UnitOfWork menjalankan sebuah fungsi di dalam satu transaksi.
+// UnitOfWork runs a function inside one transaction.
 //
-// Repository yang diserahkan ke fn dibangun DI ATAS transaksi itu. Kalau ia
-// dibangun di atas kolam, setiap tulisan mengambil koneksinya sendiri dan
-// commit sendiri - satuan kerjanya terlihat benar, transaksinya kosong, dan
-// tidak ada test yang menyadarinya sampai ada kegagalan yang seharusnya
-// membatalkan sesuatu.
+// The repositories handed to fn are built ON that transaction. If they were
+// built on the pool, every write would take its own connection and commit
+// on its own - the unit of work would look right, the transaction would be
+// empty, and no test would notice until a failure that should have rolled
+// something back.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(Repositories) error) error
 }
 
-// Service adalah seluruh use case coaching.
+// Service is the whole set of coaching use cases.
 type Service struct {
 	programs  domain.ProgramRepository
 	curricula domain.CurriculumRepository
@@ -85,12 +85,12 @@ func NewService(
 	}, nil
 }
 
-// ownedProgram memuat program dan memeriksa kepemilikannya.
+// ownedProgram loads a program and checks its ownership.
 //
-// SATU tempat, bukan lima belas pemeriksaan tersalin seperti di sistem lama
-// (temuan S9, dan F8-10 yang memperbaikinya). Ia selalu menjawab
-// ErrProgramNotFound untuk milik orang lain - membedakannya dari "tidak ada"
-// memberi tahu penanya bahwa slug itu ada.
+// ONE place, not fifteen copied checks as in the legacy system (finding S9,
+// and F8-10 which fixed it). It always answers ErrProgramNotFound for
+// someone else's program - telling it apart from "does not exist" tells the
+// asker that the slug exists.
 func (s *Service) ownedProgram(
 	ctx context.Context, programs domain.ProgramRepository, slug, userID string,
 ) (*domain.Program, error) {
@@ -109,11 +109,11 @@ func (s *Service) ownedProgram(
 	return program, nil
 }
 
-// ownedThread memuat thread beserta programnya, dan memeriksa keduanya.
+// ownedThread loads a thread together with its program, and checks both.
 //
-// Kepemilikan diperiksa di tingkat PROGRAM, bukan thread: thread tidak punya
-// pemilik sendiri, dan memeriksanya sendiri berarti menyalin aturan yang sudah
-// ada di tempat lain.
+// Ownership is checked at the PROGRAM level, not the thread: a thread has no
+// owner of its own, and checking it on its own would mean copying a rule that
+// already exists elsewhere.
 func (s *Service) ownedThread(
 	ctx context.Context, r Repositories, threadSlug, userID string,
 ) (*domain.Thread, *domain.Program, error) {
@@ -132,8 +132,8 @@ func (s *Service) ownedThread(
 		return nil, nil, err
 	}
 	if !program.BelongsTo(owner) {
-		// Thread milik orang lain menjawab "thread tidak ada", bukan "program
-		// tidak ada": yang ditanyakan penanya adalah threadnya.
+		// Someone else's thread answers "thread not found", not "program not
+		// found": what the asker asked about is the thread.
 		return nil, nil, domain.ErrThreadNotFound
 	}
 	return thread, program, nil

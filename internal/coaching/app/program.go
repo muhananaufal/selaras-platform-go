@@ -13,53 +13,54 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// defaultWeeks adalah panjang program sebelum kurikulumnya tiba.
+// defaultWeeks is the length of a program before its curriculum arrives.
 //
-// Empat pekan, sama dengan yang diandaikan penyelesai di sistem lama. Ia
-// SEMENTARA: tanggal akhirnya dihitung ulang dari jumlah pekan yang
-// benar-benar datang saat kurikulumnya masuk (F4-18). Yang penting bukan
-// angkanya, melainkan bahwa program punya tanggal akhir sejak detik pertama -
-// program tanpa tanggal akhir tidak bisa dijawab pertanyaan "kapan selesai?".
+// Four weeks, the same as the completer of the legacy system assumed. It is
+// PROVISIONAL: the end date is recomputed from the number of weeks that
+// actually arrive when the curriculum comes in (F4-18). What matters is not
+// the number but that a program has an end date from the first second - a
+// program without an end date cannot answer "when does it finish?".
 const defaultWeeks = 4
 
-// StartProgramCommand adalah permintaan memulai program.
+// StartProgramCommand is a request to start a program.
 type StartProgramCommand struct {
 	UserID string
 
-	// AssessmentSlug boleh kosong: program bisa dimulai tanpa penilaian.
+	// AssessmentSlug may be empty: a program can be started without an
+	// assessment.
 	//
-	// Bila diisi, ia diresolusi dari catatan lokal coaching_assessments yang
-	// diisi konsumen assessment.completed (F4-06) - BUKAN dengan memanggil
-	// assessment-svc: itu akan mengembalikan kopling sinkron yang justru
-	// dihilangkan pemisahan service. Slug yang belum tercatat, atau milik
-	// pengguna lain, menghasilkan ErrAssessmentNotFound.
+	// When set, it is resolved from the local coaching_assessments record
+	// filled by the assessment.completed consumer (F4-06) - NOT by calling
+	// assessment-svc: that would bring back the synchronous coupling the
+	// service split removed. A slug not yet recorded, or owned by another
+	// user, yields ErrAssessmentNotFound.
 	AssessmentSlug string
 
 	Difficulty string
 
-	// IdempotencyKey dari pemanggil. Kosong berarti kunci diturunkan.
+	// IdempotencyKey from the caller. Empty means the key is derived.
 	IdempotencyKey string
 }
 
-// StartProgramResult adalah jawaban yang dikembalikan segera.
+// StartProgramResult is the answer returned immediately.
 type StartProgramResult struct {
 	Program *domain.Program
 
-	// PausedPrevious menyebutkan slug program yang dijeda demi program ini,
-	// bila ada.
+	// PausedPrevious names the slug of the program paused in favour of this
+	// one, if any.
 	//
-	// Ia dikembalikan supaya pemanggil bisa memberi tahu penggunanya. Sistem
-	// lama melakukan hal yang sama diam-diam, dan pengguna yang kehilangan
-	// programnya tidak pernah diberi tahu mengapa.
+	// It is returned so the caller can tell the user. The legacy system did
+	// the same silently, and a user who lost their program was never told why.
 	PausedPrevious string
 }
 
-// StartProgram memulai program baru (F4-07).
+// StartProgram starts a new program (F4-07).
 //
-// Ia TIDAK memanggil penyedia LLM. Kurikulumnya diminta lewat outbox dan
-// dikerjakan llm-worker. Sistem lama memanggil Gemini LEBIH DULU lalu membuka
-// transaksi untuk menyimpannya (temuan T7): bila penulisan gagal, kurikulum dan
-// kuotanya sudah terpakai dan tidak ada yang bisa memulihkannya.
+// It does NOT call the LLM provider. The curriculum is requested through the
+// outbox and produced by llm-worker. The legacy system called Gemini FIRST and
+// then opened a transaction to store the result (finding T7): if the write
+// failed, the curriculum and its quota were already spent and nothing could
+// recover them.
 func (s *Service) StartProgram(
 	ctx context.Context, cmd StartProgramCommand,
 ) (*StartProgramResult, error) {
@@ -76,21 +77,20 @@ func (s *Service) StartProgram(
 	result := &StartProgramResult{}
 
 	err = s.uow.Do(ctx, func(r Repositories) error {
-		// Sumber analisisnya diresolusi LEBIH DULU: slug yang tidak dikenal
-		// harus menolak permintaan sebelum apa pun disentuh.
+		// The analysis source is resolved FIRST: an unknown slug has to refuse
+		// the request before anything is touched.
 		source, err := s.assessmentFor(ctx, r, owner, cmd.AssessmentSlug)
 		if err != nil {
 			return err
 		}
 
-		// D2: program aktif sebelumnya DIJEDA, bukan dihapus dan bukan
-		// ditolak. Perilaku sistem lama dipertahankan - meski fungsinya di
-		// sana bernama cancelProgram, yang dilakukannya adalah mengubah status
-		// menjadi paused.
+		// D2: the previously active program is PAUSED, not deleted and not
+		// refused. The legacy behaviour is kept - even though the function there
+		// was named cancelProgram, what it did was set the status to paused.
 		//
-		// Dijeda di dalam transaksi yang sama dengan pembuatan yang baru:
-		// menjedanya lebih dulu lalu gagal membuat yang baru akan meninggalkan
-		// pengguna tanpa program aktif sama sekali.
+		// Paused inside the same transaction as the creation of the new one:
+		// pausing it first and then failing to create the new one would leave the
+		// user with no active program at all.
 		previous, found, err := r.Programs().FindActiveForUser(ctx, owner)
 		if err != nil {
 			return err
@@ -119,10 +119,10 @@ func (s *Service) StartProgram(
 		}
 		result.Program = program
 
-		// Permintaan kurikulum ditulis ke outbox DI TRANSAKSI YANG SAMA.
-		// Program yang tersimpan tanpa permintaannya akan menunggu selamanya;
-		// permintaan tanpa programnya akan dikerjakan untuk sesuatu yang tidak
-		// ada.
+		// The curriculum request is written to the outbox IN THE SAME
+		// TRANSACTION. A program stored without its request would wait forever; a
+		// request without its program would be worked on for something that does
+		// not exist.
 		return r.Events().Write(ctx, "coaching_program", program.ID.String(),
 			curriculumRequest(program, cmd, now))
 	})
@@ -132,14 +132,14 @@ func (s *Service) StartProgram(
 	return result, nil
 }
 
-// curriculumRequest menyusun event permintaan kurikulum.
+// curriculumRequest composes the curriculum request event.
 func curriculumRequest(
 	p *domain.Program, cmd StartProgramCommand, now time.Time,
 ) *eventsv1.Envelope {
 	key := cmd.IdempotencyKey
 	if key == "" {
-		// Diturunkan dari programnya, bukan diacak: pengguna yang menekan
-		// tombolnya dua kali tidak boleh membayar dua kurikulum.
+		// Derived from the program, not randomised: a user who presses the button
+		// twice must not pay for two curricula.
 		key = "curriculum:" + p.ID.String()
 	}
 
@@ -159,20 +159,19 @@ func curriculumRequest(
 	}
 }
 
-// ProgramView adalah program beserta kurikulumnya.
+// ProgramView is a program together with its curriculum.
 type ProgramView struct {
 	Program *domain.Program
 	Weeks   []*domain.Week
 	Threads []*domain.Thread
 
-	// TasksTotal dan TasksCompleted dihitung basis data, bukan dengan
-	// menjumlahkan Weeks di Go: keduanya dipakai bahkan saat kurikulumnya tidak
-	// ikut dimuat.
+	// TasksTotal and TasksCompleted are counted by the database, not by summing
+	// Weeks in Go: both are used even when the curriculum is not loaded.
 	TasksTotal     int
 	TasksCompleted int
 }
 
-// ShowProgram memuat program lengkap (F4-09).
+// ShowProgram loads the complete program (F4-09).
 func (s *Service) ShowProgram(ctx context.Context, slug, userID string) (*ProgramView, error) {
 	program, err := s.ownedProgram(ctx, s.programs, slug, userID)
 	if err != nil {
@@ -198,7 +197,7 @@ func (s *Service) ShowProgram(ctx context.Context, slug, userID string) (*Progra
 	}, nil
 }
 
-// ToggleProgramStatus memindahkan program antara active dan paused (F4-10, D4).
+// ToggleProgramStatus moves a program between active and paused (F4-10, D4).
 func (s *Service) ToggleProgramStatus(
 	ctx context.Context, slug, userID string,
 ) (*domain.Program, error) {
@@ -227,7 +226,7 @@ func (s *Service) ToggleProgramStatus(
 	return toggled, nil
 }
 
-// DestroyProgram menghapus program beserta seluruh isinya (F4-11).
+// DestroyProgram deletes a program with everything in it (F4-11).
 func (s *Service) DestroyProgram(ctx context.Context, slug, userID string) error {
 	now := s.now()
 
@@ -237,21 +236,21 @@ func (s *Service) DestroyProgram(ctx context.Context, slug, userID string) error
 			return err
 		}
 
-		// Eventnya ditulis SEBELUM penghapusan, di transaksi yang sama.
-		// Menulisnya sesudah berarti membaca program yang sudah tidak ada
-		// untuk menyusun eventnya.
+		// The event is written BEFORE the deletion, in the same transaction.
+		// Writing it afterwards would mean reading a program that no longer
+		// exists to compose the event.
 		if err := r.Events().Write(ctx, "coaching_program", program.ID.String(),
 			programUpdated(program, now)); err != nil {
 			return err
 		}
 
-		// Pekan, tugas, thread, dan pesan ikut lewat ON DELETE CASCADE - satu
-		// pernyataan, bukan lima yang bisa terputus di tengah.
+		// Weeks, tasks, threads, and messages follow through ON DELETE CASCADE -
+		// one statement, not five that can break off halfway.
 		return r.Programs().Delete(ctx, program.ID)
 	})
 }
 
-// programUpdated menyusun event perubahan program.
+// programUpdated composes the program change event.
 func programUpdated(p *domain.Program, now time.Time) *eventsv1.Envelope {
 	return &eventsv1.Envelope{
 		EventId:       uuid.NewString(),
@@ -267,23 +266,23 @@ func programUpdated(p *domain.Program, now time.Time) *eventsv1.Envelope {
 				CurrentDay: int32(p.DayOn(now)),
 				TotalDays:  int32(p.DurationDays()),
 
-				// completion_percentage sengaja TIDAK diisi di sini.
+				// completion_percentage is deliberately NOT filled here.
 				//
-				// Event ini terbit saat program dibuat, dihidupkan, atau
-				// dijeda - saat itu tugasnya belum dihitung, dan mengisi nol
-				// berarti mengatakan "nol persen selesai" kepada dasbor,
-				// menimpa angka yang sudah benar. Yang menghitungnya adalah
-				// event dari task.go.
+				// This event is published when a program is created, resumed, or paused
+				// - at that point the tasks have not been counted, and filling in zero
+				// would tell the dashboard "zero percent done", overwriting a number
+				// that was already correct. The one that counts it is the event from
+				// task.go.
 			},
 		},
 	}
 }
 
-// StoreCurriculum menyimpan kurikulum yang datang dari llm-worker (F4-08).
+// StoreCurriculum stores a curriculum that comes from llm-worker (F4-08).
 //
-// Ia idempoten: kurikulum kedua untuk program yang sama ditolak tanpa galat.
-// Relay outbox at-least-once, dan event yang tiba dua kali adalah keadaan yang
-// normal.
+// It is idempotent: a second curriculum for the same program is refused
+// without an error. The outbox relay is at-least-once, and an event arriving
+// twice is a normal state.
 func (s *Service) StoreCurriculum(
 	ctx context.Context, programID string, c *domain.Curriculum,
 ) error {
@@ -301,10 +300,10 @@ func (s *Service) StoreCurriculum(
 	})
 }
 
-// FailCurriculum menandai kurikulum yang gagal dibuat.
+// FailCurriculum marks a curriculum that failed to be produced.
 //
-// Tanpa ini, program yang kurikulumnya gagal akan berstatus pending selamanya
-// dan penggunanya menunggu sesuatu yang tidak akan datang.
+// Without it, a program whose curriculum failed would stay pending forever,
+// and its user would wait for something that will never come.
 func (s *Service) FailCurriculum(ctx context.Context, programID, reason string) error {
 	id, err := domain.ParseID(programID)
 	if err != nil {
@@ -318,8 +317,8 @@ func (s *Service) FailCurriculum(ctx context.Context, programID, reason string) 
 			return err
 		}
 
-		// Hanya dari pending. Kurikulum yang sudah tiba tidak boleh berubah
-		// menjadi gagal karena event lama yang menyusul.
+		// Only from pending. A curriculum that has already arrived must not turn
+		// into a failure because of an old event arriving late.
 		if program.CurriculumStatus != domain.CurriculumPending {
 			return nil
 		}
@@ -331,7 +330,7 @@ func (s *Service) FailCurriculum(ctx context.Context, programID, reason string) 
 	})
 }
 
-// truncate menjaga pesan galat tetap masuk akal ukurannya.
+// truncate keeps an error message at a sensible size.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
@@ -339,10 +338,10 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
-// assessmentFor meresolusi slug analisis menjadi rujukannya.
+// assessmentFor resolves an analysis slug into its reference.
 //
-// nil tanpa galat berarti program dimulai tanpa analisis. Analisis milik
-// pengguna lain diperlakukan seperti yang tidak ada (S9).
+// nil without an error means the program starts without an analysis.
+// Someone else's analysis is treated as one that does not exist (S9).
 func (s *Service) assessmentFor(
 	ctx context.Context, r Repositories, owner domain.UserID, slug string,
 ) (*domain.AssessmentRef, error) {

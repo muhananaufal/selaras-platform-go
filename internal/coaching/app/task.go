@@ -12,35 +12,35 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 )
 
-// ToggleTaskResult adalah hasil pembalikan status tugas.
+// ToggleTaskResult is the result of flipping a task's status.
 type ToggleTaskResult struct {
 	Task *domain.Task
 
-	// Changed bernilai false bila tugasnya sudah dalam keadaan yang diminta.
+	// Changed is false if the task was already in the requested state.
 	//
-	// Ia yang membuat F4-14 terpenuhi: toggle ganda tidak menghasilkan dua
-	// event. Tanpa nilai ini, pemanggil harus membandingkan keadaan sebelum
-	// dan sesudah sendiri - dan setiap pemanggil bisa lupa.
+	// It is what makes F4-14 hold: a double toggle does not produce two
+	// events. Without this value, callers would have to compare the state
+	// before and after themselves - and every caller could forget.
 	Changed bool
 
 	TasksTotal     int
 	TasksCompleted int
 }
 
-// ToggleTaskStatus membalik status satu tugas (F4-14).
+// ToggleTaskStatus flips the status of one task (F4-14).
 //
-// Tugas dialamatkan lewat id-nya - itu satu-satunya tabel yang id-nya memang
-// UUID di sistem lama, dan bentuk URL-nya dipertahankan. Kepemilikan dan
-// keaktifan diperiksa lewat PROGRAM-nya, bukan lewat tugasnya: tugas tidak
-// punya pemilik sendiri.
+// Tasks are addressed by id - it is the only table whose id was already a
+// UUID in the legacy system, and the URL shape is kept. Ownership and
+// activity are checked through the PROGRAM, not the task: a task has no
+// owner of its own.
 func (s *Service) ToggleTaskStatus(
 	ctx context.Context, taskID, userID string,
 ) (*ToggleTaskResult, error) {
 	id, err := domain.ParseID(taskID)
 	if err != nil {
-		// Id yang bukan UUID menjawab "tidak ada", bukan "tidak sah": keduanya
-		// sama-sama tidak menemukan apa pun, dan membedakannya memberi tahu
-		// penanya bentuk id yang benar.
+		// An id that is not a UUID answers "not found", not "invalid": neither
+		// finds anything, and telling them apart tells the asker the correct
+		// shape of an id.
 		return nil, domain.ErrTaskNotFound
 	}
 
@@ -61,11 +61,11 @@ func (s *Service) ToggleTaskStatus(
 			return domain.ErrTaskNotFound
 		}
 
-		// D5: program non-aktif membekukan penyelesaian tugas.
+		// D5: a non-active program freezes task completion.
 		//
-		// Pesan galatnya menyebut PROGRAM, bukan thread - temuan B9 di sistem
-		// lama adalah kebalikannya: operasi thread menjawab "Tugas ini adalah
-		// bagian dari program yang sedang tidak aktif".
+		// The error message names the PROGRAM, not a thread - finding B9 in the
+		// legacy system was the reverse: thread operations answered "This task is
+		// part of a program that is not active".
 		if err := program.EnsureInteractive(); err != nil {
 			return err
 		}
@@ -90,10 +90,10 @@ func (s *Service) ToggleTaskStatus(
 		result.TasksTotal = total
 		result.TasksCompleted = done
 
-		// Event diterbitkan hanya saat keadaannya BERUBAH. Toggle mengubah
-		// keadaan setiap kali dipanggil, jadi di sini ia selalu berubah - yang
-		// dijaga F4-14 adalah pemanggil yang mengirim permintaan yang sama dua
-		// kali, dan itu ditahan kunci idempotensinya.
+		// The event is published only when the state CHANGES. Toggle changes the
+		// state every time it is called, so here it always changes - what F4-14
+		// guards is a caller sending the same request twice, and that is held
+		// back by the idempotency key.
 		return r.Events().Write(ctx, "coaching_program", program.ID.String(),
 			taskToggled(program, task, completed, total, done, now))
 	})
@@ -103,11 +103,11 @@ func (s *Service) ToggleTaskStatus(
 	return result, nil
 }
 
-// taskToggled menyusun event perubahan program setelah satu tugas berubah.
+// taskToggled composes the program change event after one task changed.
 //
-// Yang diterbitkan adalah CoachingProgramUpdated, bukan event khusus tugas:
-// yang dipedulikan pembacanya - dasbor - adalah kemajuan programnya, bukan
-// tugas mana yang berubah.
+// What is published is CoachingProgramUpdated, not a task-specific event:
+// what its reader - the dashboard - cares about is the program's progress,
+// not which task changed.
 func taskToggled(
 	p *domain.Program, task *domain.Task, completed bool,
 	total, done int, now time.Time,
@@ -117,9 +117,9 @@ func taskToggled(
 		percentage = float64(done) / float64(total) * 100
 	}
 
-	// Kunci idempotensinya memuat keadaan yang dituju, bukan hanya id tugasnya.
-	// Dengan kunci per tugas saja, membuka kembali tugas yang sudah selesai
-	// akan dilewati sebagai duplikat dari penyelesaiannya.
+	// The idempotency key carries the target state, not just the task id. With
+	// a per-task key alone, reopening a completed task would be skipped as a
+	// duplicate of its completion.
 	state := "reopened"
 	if completed {
 		state = "completed"
@@ -145,24 +145,24 @@ func taskToggled(
 	}
 }
 
-// GraduationView adalah laporan kelulusan beserta keadaannya.
+// GraduationView is the graduation report together with its state.
 type GraduationView struct {
 	Program *domain.Program
 
-	// Report nil selama laporannya belum ada. Statusnya yang membedakan
-	// "belum diminta" dari "sedang dibuat" dan dari "gagal" - tanpa itu,
-	// ketiganya terlihat sama bagi klien.
+	// Report is nil while the report does not exist yet. The status is what
+	// tells "not requested" apart from "being produced" and from "failed" -
+	// without it, all three look the same to a client.
 	Report map[string]any
 
 	TasksTotal     int
 	TasksCompleted int
 }
 
-// RequestGraduationReport meminta laporan kelulusan dibuat (F4-15).
+// RequestGraduationReport asks for a graduation report to be produced (F4-15).
 //
-// Padanan CompleteCoachingProgram yang di sistem lama justru dikomentari mati.
-// Ia kini benar-benar asinkron: permintaannya ditulis ke outbox dan
-// dikerjakan llm-worker, bukan ditunggu di dalam permintaan HTTP.
+// The counterpart of CompleteCoachingProgram, which in the legacy system was
+// commented out. It is now truly asynchronous: the request is written to the
+// outbox and worked on by llm-worker, not awaited inside the HTTP request.
 func (s *Service) RequestGraduationReport(
 	ctx context.Context, slug, userID string,
 ) (*GraduationView, error) {
@@ -183,12 +183,12 @@ func (s *Service) RequestGraduationReport(
 		view.TasksTotal = total
 		view.TasksCompleted = done
 
-		// Sudah ada laporannya: dikembalikan apa adanya, tanpa pekerjaan baru.
+		// The report already exists: returned as-is, without new work.
 		if program.GraduationStatus == domain.GraduationCompleted {
 			view.Report = program.GraduationReport
 			return nil
 		}
-		// Sedang dibuat: tidak perlu meminta lagi.
+		// Being produced: no need to ask again.
 		if program.GraduationStatus == domain.GraduationPending {
 			return nil
 		}
@@ -209,11 +209,11 @@ func (s *Service) RequestGraduationReport(
 	return view, nil
 }
 
-// graduationRequest menyusun event permintaan laporan kelulusan.
+// graduationRequest composes the graduation report request event.
 //
-// Ia memakai CurriculumRequested dengan penanda di difficulty, BUKAN event
-// baru: menambah jenis event berarti menambah topic, konsumen, dan rutenya -
-// dan itu keputusan yang layak diambil saat ada pembaca kedua, bukan sebelumnya.
+// It uses CurriculumRequested with a marker in difficulty, NOT a new event:
+// adding an event kind means adding a topic, a consumer, and its route - and
+// that is a decision worth taking when there is a second reader, not before.
 func graduationRequest(
 	p *domain.Program, total, done int, now time.Time,
 ) *eventsv1.Envelope {
@@ -227,20 +227,20 @@ func graduationRequest(
 				ProgramId: p.ID.String(),
 				JobId:     p.ID.String(),
 
-				// Penanda jenis pekerjaan. Ia menumpang bidang difficulty
-				// karena kontraknya belum punya tempat lain, dan itu dinyatakan
-				// di sini alih-alih dibiarkan ditemukan pembacanya.
+				// The job kind marker. It rides on the difficulty field because the
+				// contract has no other place for it yet, and that is stated here
+				// instead of being left for readers to discover.
 				Difficulty: graduationMarker,
 			},
 		},
 	}
 }
 
-// graduationMarker membedakan permintaan laporan kelulusan dari permintaan
-// kurikulum di topic yang sama.
+// graduationMarker tells a graduation report request apart from a
+// curriculum request on the same topic.
 const graduationMarker = "__graduation_report__"
 
-// StoreGraduationReport menyimpan laporan yang datang dari llm-worker.
+// StoreGraduationReport stores a report that comes from llm-worker.
 func (s *Service) StoreGraduationReport(
 	ctx context.Context, programID string, report map[string]any,
 ) error {
@@ -259,9 +259,9 @@ func (s *Service) StoreGraduationReport(
 			return err
 		}
 
-		// Laporan yang sudah ada TIDAK ditimpa. Event bisa tiba dua kali, dan
-		// menimpanya dengan yang datang belakangan akan mengganti isi yang
-		// mungkin sudah dibaca pengguna.
+		// An existing report is NOT overwritten. Events can arrive twice, and
+		// overwriting it with the one arriving later would replace content the
+		// user may already have read.
 		if program.GraduationStatus == domain.GraduationCompleted {
 			return nil
 		}
@@ -270,10 +270,10 @@ func (s *Service) StoreGraduationReport(
 		program.GraduationStatus = domain.GraduationCompleted
 		program.GraduationError = ""
 
-		// Program yang laporannya sudah ada dinyatakan SELESAI. Ia tidak bisa
-		// di-toggle lagi setelah ini (D4) - dan itu memang yang diinginkan:
-		// laporan tentang program yang kemudian dijalankan lagi menjadi laporan
-		// tentang sesuatu yang belum selesai.
+		// A program whose report exists is declared COMPLETED. It cannot be
+		// toggled again after this (D4) - and that is what is wanted: a report
+		// about a program that is then run again becomes a report about something
+		// not yet finished.
 		program.Status = domain.StatusCompleted
 		program.UpdatedAt = now
 
