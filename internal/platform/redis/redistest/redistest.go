@@ -1,4 +1,4 @@
-// Package redistest menyambungkan test ke Redis sungguhan.
+// Package redistest connects tests to a real Redis.
 package redistest
 
 import (
@@ -12,11 +12,11 @@ import (
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
 )
 
-// Open mengembalikan klien Redis untuk test.
+// Open returns a Redis client for tests.
 //
-// Tanpa TEST_REDIS_URL, test dilewati di mesin pengembang tetapi GAGAL di CI.
-// Test integrasi yang diam-diam melewati dirinya sendiri di CI lebih buruk
-// daripada tidak ada test sama sekali.
+// Without TEST_REDIS_URL, the test is skipped on a developer machine but
+// FAILS in CI. An integration test that quietly skips itself in CI is worse
+// than no test at all.
 func Open(t *testing.T) *goredis.Client {
 	t.Helper()
 
@@ -43,11 +43,12 @@ func Open(t *testing.T) *goredis.Client {
 	return client
 }
 
-// DeleteKeysFor membersihkan kunci milik satu subjek sebelum dan sesudah test.
+// DeleteKeysFor cleans the keys belonging to one subject before and after the
+// test.
 //
-// Pola SCAN dipakai, bukan FLUSHDB: basis data yang sama bisa sedang dipakai
-// hal lain di mesin pengembang, dan menghapus semuanya adalah cara test
-// merusak sesuatu yang bukan miliknya.
+// The SCAN pattern is used, not FLUSHDB: the same database may be in use by
+// something else on a developer machine, and wiping everything is how a test
+// breaks something that is not its own.
 func DeleteKeysFor(t *testing.T, client *goredis.Client, subject string) {
 	t.Helper()
 

@@ -1,9 +1,9 @@
-// Package pgtest menyambungkan test integrasi ke Postgres sungguhan.
+// Package pgtest connects integration tests to a real Postgres.
 //
-// Repository diuji terhadap basis data, bukan terhadap mock. Mock sebuah
-// repository hanya membuktikan mock-nya berperilaku seperti yang ditulis;
-// ia tidak tahu apa-apa tentang batasan CHECK, indeks unik parsial, tipe
-// kolom, atau perilaku NULL - dan justru di situlah kekeliruan bersembunyi.
+// Repositories are tested against the database, not against mocks. A mock
+// of a repository only proves the mock behaves as written; it knows nothing
+// about CHECK constraints, partial unique indexes, column types, or NULL
+// behaviour - and that is exactly where mistakes hide.
 package pgtest
 
 import (
@@ -19,16 +19,15 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Open mengembalikan kolam koneksi ke skema sebuah service.
+// Open returns a connection pool to a service's schema.
 //
-// DSN dibaca dari TEST_DSN_<SERVICE>, dan setiap service memakai peran
-// login-nya sendiri. Menyambung sebagai superuser akan menyembunyikan
-// kekeliruan hak akses sampai ia muncul di lingkungan lain.
+// The DSN is read from TEST_DSN_<SERVICE>, and every service uses its own
+// login role. Connecting as a superuser would hide permission mistakes
+// until they surface in another environment.
 //
-// Tanpa DSN, test dilewati di mesin pengembang tetapi GAGAL di CI. Test
-// integrasi yang diam-diam melewati dirinya sendiri di CI lebih buruk
-// daripada tidak ada test sama sekali: pipeline-nya hijau dan tidak ada
-// yang diperiksa.
+// Without a DSN, the test is skipped on a developer machine but FAILS in
+// CI. An integration test that quietly skips itself in CI is worse than no
+// test at all: the pipeline is green and nothing was checked.
 func Open(t *testing.T, service string) *pgxpool.Pool {
 	t.Helper()
 
@@ -52,12 +51,12 @@ func Open(t *testing.T, service string) *pgxpool.Pool {
 	return pool
 }
 
-// Truncate mengosongkan tabel yang disebutkan sebelum test berjalan, dan
-// mendaftarkannya lagi setelah selesai.
+// Truncate empties the named tables before the test runs, and registers
+// them for emptying again once it finishes.
 //
-// Pembersihan dilakukan di kedua ujung dengan sengaja. Membersihkan hanya
-// di akhir membuat test yang gagal di tengah jalan meninggalkan barisnya,
-// dan test berikutnya gagal karena alasan yang tidak ada hubungannya.
+// Cleaning at both ends is deliberate. Cleaning only at the end lets a test
+// that fails halfway leave its rows behind, and the next test fails for an
+// unrelated reason.
 func Truncate(t *testing.T, pool *pgxpool.Pool, tables ...string) {
 	t.Helper()
 	if len(tables) == 0 {

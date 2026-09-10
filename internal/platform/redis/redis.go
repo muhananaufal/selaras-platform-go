@@ -1,4 +1,4 @@
-// Package redis membuka koneksi Redis yang dipakai bersama seluruh unit.
+// Package redis opens the Redis connection shared by every unit.
 package redis
 
 import (
@@ -10,11 +10,11 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
-// Open membuka klien dan membuktikan ia benar-benar sampai.
+// Open opens a client and proves it actually gets through.
 //
-// Seperti pada Postgres, klien dibuat malas, jadi tanpa Ping sebuah alamat
-// yang keliru baru ketahuan pada permintaan pengguna pertama - bukan saat
-// service dinyalakan, yang justru satu-satunya waktu yang tepat untuk tahu.
+// As with Postgres, the client is created lazily, so without a Ping a wrong
+// address is only discovered on the first user request - not when the
+// service starts, which is the one right moment to find out.
 func Open(ctx context.Context, url string) (*goredis.Client, error) {
 	if url == "" {
 		return nil, errors.New("empty redis url")
