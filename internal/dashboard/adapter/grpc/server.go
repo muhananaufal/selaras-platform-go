@@ -54,8 +54,8 @@ func toProto(view *app.View, now time.Time) *dashboardv1.DashboardView {
 	}
 	dash := view.Dashboard
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi riwayat akan gagal alih-alih menampilkan halaman sambutan.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the history fails instead of showing the welcome page.
 	history := make([]*dashboardv1.AssessmentSummary, 0, len(dash.History))
 	for _, a := range dash.History {
 		history = append(history, assessmentToProto(a))
@@ -78,11 +78,12 @@ func toProto(view *app.View, now time.Time) *dashboardv1.DashboardView {
 		TotalAssessments:  int32(dash.Total),
 	}
 
-	// Waktu proyeksi hanya dikirim bila proyeksinya SUDAH pernah bergerak.
+	// The projection time is only sent when the projection HAS moved at some
+	// point.
 	//
-	// Pengguna yang belum menghasilkan satu event pun tidak punya waktu
-	// proyeksi, dan mengirim waktu nol membuat klien menampilkan "diperbarui
-	// 1 Januari tahun 1" - derau yang terlihat persis seperti kerusakan.
+	// A user who has not produced a single event has no projection time, and
+	// sending a zero time makes the client show "updated 1 January of year 1"
+	// - noise that looks exactly like breakage.
 	if !dash.ProjectedAt.IsZero() {
 		out.Timestamps = &commonv1.Timestamps{UpdatedAt: timestamppb.New(dash.ProjectedAt)}
 	}
@@ -121,10 +122,10 @@ func programToProto(p *domain.Program) *dashboardv1.ProgramSummary {
 		CurrentDay: int32(p.CurrentDay),
 		TotalDays:  int32(p.TotalDays),
 	}
-	// Nol yang jujur: kontrak ini tidak punya presence untuk persentase, jadi
-	// "belum dihitung" dan "nol persen" kembali sama. Bedanya tidak hilang di
-	// penyimpanan - hanya di kawat - dan menambah presence di sini adalah
-	// perubahan kontrak yang tidak dibutuhkan klien mana pun hari ini.
+	// An honest zero: this contract has no presence for the percentage, so
+	// "not computed yet" and "zero percent" come back the same. The
+	// distinction is not lost in storage - only on the wire - and adding
+	// presence here is a contract change no client needs today.
 	if p.Completion != nil {
 		out.CompletionPercentage = *p.Completion
 	}

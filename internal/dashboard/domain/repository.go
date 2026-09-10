@@ -6,43 +6,43 @@ import (
 	"time"
 )
 
-// ErrNoDashboard berarti pengguna itu belum punya baris proyeksi sama sekali.
+// ErrNoDashboard means that user has no projection row at all yet.
 //
-// Ia BUKAN kesalahan: pengguna yang baru mendaftar belum menghasilkan satu
-// event pun. Pemanggilnya menjawabnya dengan dasbor kosong, bukan dengan 404 -
-// halaman yang menyambut pengguna baru tidak boleh terlihat rusak.
+// It is NOT a mistake: a user who has just registered has not produced a
+// single event. Callers answer it with an empty dashboard, not a 404 - the
+// page that welcomes a new user must not look broken.
 var ErrNoDashboard = errors.New("no dashboard has been projected for this user")
 
-// Repository membaca dan menulis read-model.
+// Repository reads and writes the read-model.
 //
-// Ia sengaja tidak punya Create dan Update terpisah. Proyeksi menerima event
-// dalam urutan yang tidak dijamin, dan setiap penulisannya harus berlaku baik
-// barisnya sudah ada maupun belum - dua metode berarti pemanggil harus tahu
-// yang mana, dan tebakan yang salah menjatuhkan proyeksi.
+// It deliberately has no separate Create and Update. The projection receives
+// events in an order that is not guaranteed, and every write has to apply
+// whether the row exists or not - two methods mean the caller has to know
+// which, and a wrong guess takes the projection down.
 type Repository interface {
-	// Find mengembalikan ErrNoDashboard bila belum ada barisnya.
+	// Find returns ErrNoDashboard when there is no row yet.
 	Find(ctx context.Context, userID UserID) (*Dashboard, error)
 
-	// ApplyAssessment memasukkan satu penilaian ke dalam proyeksi.
+	// ApplyAssessment enters one assessment into the projection.
 	//
-	// IDEMPOTEN terhadap slug: penilaian yang sama diterapkan dua kali
-	// menghasilkan baris yang sama, bukan dua baris riwayat dan bukan pula
-	// jumlah yang bertambah dua (F7-03). Event bisa tiba dua kali - relay
-	// outbox at-least-once - dan yang kedua tidak boleh menggeser apa pun.
+	// IDEMPOTENT on the slug: the same assessment applied twice yields the
+	// same row, not two history rows and not a count raised by two (F7-03).
+	// Events can arrive twice - the outbox relay is at-least-once - and the
+	// second must not shift anything.
 	ApplyAssessment(ctx context.Context, userID UserID, a *Assessment, occurredAt time.Time) error
 
-	// ApplyProgram menyalin keadaan program coaching.
+	// ApplyProgram copies the state of a coaching program.
 	//
-	// completion nil berarti event ini tidak membawanya, dan angka yang sudah
-	// tersimpan DIBIARKAN. Menulis nol untuk "tidak dibawa" membuat dasbor
-	// melompat kembali ke nol persen setiap kali program dijeda.
+	// A nil completion means this event does not carry it, and the stored
+	// number is LEFT ALONE. Writing zero for "not carried" makes the dashboard
+	// jump back to zero percent every time a program is paused.
 	ApplyProgram(ctx context.Context, userID UserID, p *Program, occurredAt time.Time) error
 
-	// Forget menghapus proyeksi seorang pengguna, untuk saga penghapusan akun.
+	// Forget removes a user's projection, for the account deletion saga.
 	Forget(ctx context.Context, userID UserID) error
 }
 
-// ProjectionState adalah posisi sebuah proyeksi.
+// ProjectionState is the position of a projection.
 type ProjectionState struct {
 	Name          string
 	LastEventAt   time.Time
@@ -50,13 +50,13 @@ type ProjectionState struct {
 	UpdatedAt     time.Time
 }
 
-// StateRepository menyimpan posisi proyeksi.
+// StateRepository stores projection positions.
 //
-// Ia BUKAN pengganti offset Kafka - itu tetap milik consumer group. Yang di
-// sini menjawab pertanyaan yang berbeda: "sampai peristiwa kapan proyeksi ini
-// sudah dibangun", yang dipakai perintah rebuild untuk menyatakan hasilnya
-// lengkap dan dipakai pengukuran lag untuk mengetahui seberapa jauh
-// tertinggalnya.
+// It is NOT a replacement for the Kafka offset - that still belongs to the
+// consumer group. What lives here answers a different question: "up to which
+// event has this projection been built", which the rebuild command uses to
+// declare its result complete and the lag measurement uses to know how far
+// behind it is.
 type StateRepository interface {
 	Get(ctx context.Context, name string) (ProjectionState, error)
 	Advance(ctx context.Context, name string, eventAt time.Time) error

@@ -11,7 +11,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// UnitOfWork memenuhi app.UnitOfWork dengan transaksi Postgres sungguhan.
+// UnitOfWork implements app.UnitOfWork with a real Postgres transaction.
 type UnitOfWork struct {
 	pool *pgxpool.Pool
 }
@@ -31,11 +31,11 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(app.Repositories) error) er
 	})
 }
 
-// transactional memberi proyeksi dan posisinya transaksi yang SAMA.
+// transactional gives the projection and its position the SAME transaction.
 //
-// Itulah gunanya: kalau keduanya bisa terpisah, posisi bisa maju melewati event
-// yang belum diterapkan - dan pembangunan ulang akan mengira event itu sudah
-// masuk, lalu berhenti sebelum selesai tanpa satu pun galat.
+// That is its purpose: if the two could be separated, the position could
+// advance past an event not yet applied - and a rebuild would assume that event
+// is in, then stop before finishing without a single error.
 type transactional struct {
 	q pg.Querier
 }

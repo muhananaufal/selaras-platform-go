@@ -1,4 +1,4 @@
-// Package app merangkai read-model dasbor menjadi use case.
+// Package app composes the dashboard read-model into use cases.
 package app
 
 import (
@@ -10,25 +10,25 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// ProjectionName adalah nama proyeksi ini di projection_state.
+// ProjectionName is the name of this projection in projection_state.
 //
-// Ia tetap. Mengubahnya berarti posisi yang sudah tercatat menjadi milik
-// proyeksi lain, dan perintah rebuild akan mengira tidak ada yang pernah
-// dibangun.
+// It is fixed. Changing it makes the recorded position belong to another
+// projection, and the rebuild command would assume nothing has ever been
+// built.
 const ProjectionName = "dashboard"
 
-// Repositories adalah repository yang berbagi satu transaksi.
+// Repositories are the repositories that share one transaction.
 type Repositories interface {
 	Dashboards() domain.Repository
 	State() domain.StateRepository
 }
 
-// UnitOfWork menjalankan sebuah fungsi di dalam satu transaksi.
+// UnitOfWork runs a function inside one transaction.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(Repositories) error) error
 }
 
-// Service adalah seluruh use case dasbor.
+// Service is the whole set of dashboard use cases.
 type Service struct {
 	dashboards domain.Repository
 	state      domain.StateRepository
@@ -55,25 +55,25 @@ func NewService(
 	return &Service{dashboards: dashboards, state: state, uow: uow, now: now}, nil
 }
 
-// View adalah dasbor beserta hal-hal yang diturunkan darinya.
+// View is the dashboard together with what is derived from it.
 type View struct {
 	Dashboard *domain.Dashboard
 
-	// Lag adalah jeda antara peristiwa terakhir yang diproyeksikan dan
-	// sekarang. Ia DIBUKA lewat API, bukan disembunyikan: read-model bersifat
-	// eventually consistent, dan jeda yang disembunyikan tampak seperti bug.
+	// Lag is the delay between the last projected event and now. It is EXPOSED
+	// through the API, not hidden: the read-model is eventually consistent,
+	// and a hidden delay looks like a bug.
 	Lag time.Duration
 }
 
-// Get membaca dasbor seorang pengguna (F7-04).
+// Get reads a user's dashboard (F7-04).
 //
-// SATU query untuk ringkasannya dan satu untuk riwayatnya - bukan empat
-// repository yang saling memanggil seperti sistem lama, dan tanpa cache yang
-// harus diingat seseorang untuk dihapus.
+// ONE query for the summary and one for the history - not four repositories
+// calling each other as in the legacy system, and without a cache someone has
+// to remember to clear.
 //
-// Pengguna yang belum punya proyeksi mendapat dasbor KOSONG, bukan galat.
-// Halaman yang menyambut pengguna baru tidak boleh terlihat rusak, dan gateway
-// menerjemahkan kosongnya menjadi pesan sambutan seperti sistem lama.
+// A user who has no projection yet gets an EMPTY dashboard, not an error. The
+// page that welcomes a new user must not look broken, and the gateway
+// translates the emptiness into a welcome message as the legacy system did.
 func (s *Service) Get(ctx context.Context, userID string) (*View, error) {
 	user, err := domain.ParseUserID(userID)
 	if err != nil {
@@ -90,12 +90,12 @@ func (s *Service) Get(ctx context.Context, userID string) (*View, error) {
 
 	view := &View{Dashboard: dash}
 
-	// Lag dibaca dari posisi PROYEKSI, bukan dari baris pengguna ini.
+	// Lag is read from the PROJECTION position, not from this user's row.
 	//
-	// Baris pengguna yang jarang berubah akan melaporkan lag berjam-jam
-	// meskipun proyeksinya baru saja memproses ratusan event orang lain -
-	// angka yang benar tentang barisnya, tetapi jawaban yang salah untuk
-	// pertanyaan "seberapa tertinggal dasbor ini".
+	// A user's row that rarely changes would report hours of lag even though
+	// the projection has just processed hundreds of other people's events - a
+	// correct number about the row, but the wrong answer to "how far behind is
+	// this dashboard".
 	state, err := s.state.Get(ctx, ProjectionName)
 	if err != nil {
 		return nil, err
@@ -106,11 +106,11 @@ func (s *Service) Get(ctx context.Context, userID string) (*View, error) {
 	return view, nil
 }
 
-// ProjectAssessment menerapkan satu penilaian ke dalam proyeksi (F7-02).
+// ProjectAssessment applies one assessment to the projection (F7-02).
 //
-// Proyeksi dan posisinya bergerak dalam SATU transaksi. Kalau keduanya bisa
-// terpisah, posisi bisa maju melewati event yang belum diterapkan - dan
-// pembangunan ulang akan mengira event itu sudah masuk.
+// The projection and its position move in ONE transaction. If the two could
+// be separated, the position could advance past an event not yet applied -
+// and a rebuild would assume that event is in.
 func (s *Service) ProjectAssessment(
 	ctx context.Context, userID string, a *domain.Assessment, occurredAt time.Time,
 ) error {
@@ -127,7 +127,8 @@ func (s *Service) ProjectAssessment(
 	})
 }
 
-// ProjectProgram menyalin keadaan program coaching ke dalam proyeksi.
+// ProjectProgram copies the state of a coaching program into the
+// projection.
 func (s *Service) ProjectProgram(
 	ctx context.Context, userID string, p *domain.Program, occurredAt time.Time,
 ) error {
@@ -144,7 +145,7 @@ func (s *Service) ProjectProgram(
 	})
 }
 
-// Forget menghapus proyeksi seorang pengguna.
+// Forget removes a user's projection.
 func (s *Service) Forget(ctx context.Context, userID string) error {
 	user, err := domain.ParseUserID(userID)
 	if err != nil {
@@ -156,11 +157,12 @@ func (s *Service) Forget(ctx context.Context, userID string) error {
 	})
 }
 
-// State mengembalikan posisi proyeksi, untuk perintah rebuild dan pengukuran.
+// State returns the projection position, for the rebuild command and
+// measurement.
 func (s *Service) State(ctx context.Context) (domain.ProjectionState, error) {
 	return s.state.Get(ctx, ProjectionName)
 }
 
-// Querier diekspor ulang supaya pemasangan di cmd tidak perlu mengimpor paket
-// platform hanya untuk satu tipe.
+// Querier is re-exported so the wiring in cmd need not import the platform
+// package for a single type.
 type Querier = pg.Querier

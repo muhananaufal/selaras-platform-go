@@ -1,4 +1,5 @@
-// Package deletion menghapus proyeksi dasbor saat akun dihapus.
+// Package deletion erases the dashboard projection when an account is
+// deleted.
 package deletion
 
 import (
@@ -8,20 +9,20 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Service adalah nama unit ini di dalam saga.
+// Service is the name of this unit inside the saga.
 const Service = "dashboard"
 
-// Erase menghapus read-model seorang pengguna.
+// Erase deletes a user's read-model.
 //
-// Read-model tidak memiliki satu fakta pun - seluruhnya salinan - tetapi
-// salinan itu memuat persentase risiko, kategori kesehatan, dan riwayat
-// analisis. "Hanya proyeksi" bukan alasan membiarkannya: yang tertinggal
-// setelah akun dihapus tetap data pribadi, dan justru lebih sulit ditemukan
-// karena tidak ada yang menganggapnya sumber.
+// The read-model owns not a single fact - all of it is copies - but those
+// copies hold risk percentages, health categories, and analysis history. "Only
+// a projection" is no reason to leave it: what remains after the account is
+// deleted is still personal data, and harder to find precisely because nobody
+// regards it as a source.
 //
-// Riwayat lebih dulu, lalu barisnya: keduanya tidak dihubungkan foreign key -
-// tabel ini sengaja tidak memakainya supaya proyeksi bisa menerima event dalam
-// urutan apa pun - jadi urutannya dijaga di sini.
+// The history first, then the row: the two are not linked by a foreign key -
+// this table deliberately has none so the projection can accept events in any
+// order - so the ordering is kept here.
 func Erase(ctx context.Context, q pg.Querier, userID, _ string) error {
 	for _, table := range []string{"dashboard_assessments", "dashboards"} {
 		if _, err := q.Exec(ctx, "DELETE FROM "+table+" WHERE user_id = $1", userID); err != nil {

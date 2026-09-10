@@ -1,4 +1,4 @@
-// Package postgres menyimpan read-model dasbor di Postgres.
+// Package postgres stores the dashboard read-model in Postgres.
 package postgres
 
 import (
@@ -13,30 +13,30 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Repository memenuhi domain.Repository.
+// Repository implements domain.Repository.
 //
-// Dua sambungan: db untuk menulis dan reader untuk membaca. Read-model
-// dasbor adalah tabel yang paling sering dibaca dan paling jarang ditulis di
-// seluruh sistem, jadi ia kandidat pertama untuk replika baca (F9-32).
-// Proyeksi (ApplyAssessment, ApplyProgram, Forget) SELALU ke db: menulis ke
-// replika mustahil, dan membaca lalu menulis lintas sambungan akan membuat
-// penjaga urutan membandingkan dengan keadaan yang tertinggal.
+// Two connections: db for writing and reader for reading. The dashboard
+// read-model is the most read and least written table in the whole system,
+// so it is the first candidate for a read replica (F9-32). Projections
+// (ApplyAssessment, ApplyProgram, Forget) ALWAYS go to db: writing to a
+// replica is impossible, and reading then writing across connections would
+// make the ordering guard compare against a state that lags behind.
 type Repository struct {
 	db     pg.Querier
 	reader pg.Querier
 }
 
-// NewRepository membaca dan menulis lewat satu sambungan.
+// NewRepository reads and writes through one connection.
 func NewRepository(db pg.Querier) *Repository { return &Repository{db: db, reader: db} }
 
-// NewRepositoryWithReader membaca lewat reader (replika) dan menulis lewat
-// db (primer).
+// NewRepositoryWithReader reads through reader (the replica) and writes
+// through db (the primary).
 //
-// Pembacaan dari replika boleh tertinggal beberapa ratus milidetik di
-// belakang primer - lag-nya diukur dan dinyatakan di docs/db-connections.md.
-// Untuk dasbor itu dapat diterima: proyeksinya sendiri sudah tertinggal
-// ratusan milidetik di belakang event (F7), dan klien tidak pernah dijanjikan
-// pembacaan seketika setelah penulisan.
+// Reads from the replica may lag a few hundred milliseconds behind the
+// primary - the lag is measured and stated in docs/db-connections.md. For the
+// dashboard that is acceptable: the projection itself already lags hundreds
+// of milliseconds behind the events (F7), and clients were never promised a
+// read immediately after a write.
 func NewRepositoryWithReader(db, reader pg.Querier) *Repository {
 	if reader == nil {
 		reader = db
@@ -46,13 +46,13 @@ func NewRepositoryWithReader(db, reader pg.Querier) *Repository {
 
 var _ domain.Repository = (*Repository)(nil)
 
-// Find membaca satu dasbor beserta riwayatnya.
+// Find reads one dashboard together with its history.
 //
-// Ringkasannya - penilaian terbaru, penilaian sebelumnya, dan jumlahnya -
-// DITURUNKAN dari riwayat, bukan dibaca dari kolom yang diperbarui tiap event.
-// Versi pertama menyimpannya sebagai kolom, dan itu meninggalkan "penilaian
-// sebelumnya" kosong selamanya ketika dua event tiba terbalik. Yang diturunkan
-// saat dibaca benar untuk urutan kedatangan apa pun.
+// Its summary - the latest assessment, the previous one, and the count - is
+// DERIVED from the history, not read from columns updated on every event. The
+// first version stored them as columns, and that left "previous assessment"
+// empty forever when two events arrived reversed. What is derived on read is
+// correct for any order of arrival.
 func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Dashboard, error) {
 	const q = `
 		SELECT
@@ -102,8 +102,8 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 	dash.History = history
 	dash.Total = len(history)
 
-	// Terbaru dan sebelumnya adalah dua baris teratas riwayat, yang sudah
-	// terurut menurut WAKTU PENILAIAN - bukan menurut urutan kedatangannya.
+	// Latest and previous are the top two rows of the history, which is
+	// already ordered by ASSESSMENT TIME - not by order of arrival.
 	if len(history) > 0 {
 		dash.Latest = history[0]
 	}
@@ -115,7 +115,7 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 	return &dash, nil
 }
 
-// history membaca riwayat penilaian, terbaru lebih dulu.
+// history reads the assessment history, newest first.
 func (r *Repository) history(ctx context.Context, userID domain.UserID) ([]*domain.Assessment, error) {
 	const q = `
 		SELECT slug, assessed_at, risk_percentage, risk_category, model_used
@@ -129,7 +129,7 @@ func (r *Repository) history(ctx context.Context, userID domain.UserID) ([]*doma
 	}
 	defer rows.Close()
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON.
+	// An empty slice, not nil: nil becomes `null` in JSON.
 	out := make([]*domain.Assessment, 0, 8)
 	for rows.Next() {
 		var a domain.Assessment
@@ -145,10 +145,10 @@ func (r *Repository) history(ctx context.Context, userID domain.UserID) ([]*doma
 	return out, nil
 }
 
-// ApplyAssessment memasukkan satu penilaian ke dalam proyeksi.
+// ApplyAssessment enters one assessment into the projection.
 //
-// Dua penulisan, keduanya IDEMPOTEN, dan keduanya harus jadi atau batal
-// bersama - pemanggilnya menjalankan keduanya di dalam satu transaksi.
+// Two writes, both IDEMPOTENT, and both have to succeed or fail together -
+// the caller runs both inside one transaction.
 func (r *Repository) ApplyAssessment(
 	ctx context.Context, userID domain.UserID, a *domain.Assessment, occurredAt time.Time,
 ) error {
@@ -156,8 +156,8 @@ func (r *Repository) ApplyAssessment(
 		return errors.New("nil assessment")
 	}
 
-	// Riwayat lebih dulu. ON CONFLICT DO NOTHING: pengiriman kedua dari relay
-	// at-least-once tidak menambah baris apa pun.
+	// The history first. ON CONFLICT DO NOTHING: a second delivery from the
+	// at-least-once relay adds no row at all.
 	const insertHistory = `
 		INSERT INTO dashboard_assessments
 			(user_id, slug, assessed_at, risk_percentage, risk_category, model_used)
@@ -170,27 +170,27 @@ func (r *Repository) ApplyAssessment(
 		return fmt.Errorf("projecting the assessment: %w", err)
 	}
 
-	// Baris yang sudah ada berarti event ini SUDAH pernah diterapkan.
+	// An existing row means this event HAS already been applied.
 	//
-	// Waktu proyeksinya tetap dimajukan di bawah - pengiriman ulang tetap
-	// peristiwa yang terjadi - tetapi tidak ada satu angka pun yang bisa
-	// bergeser, karena tidak ada angka yang disimpan. Gerbangnya ditegakkan
-	// basis data lewat kunci primer (user_id, slug), bukan dengan SELECT lalu
-	// INSERT yang di antara keduanya ada celah tempat dua proses membaca
-	// "belum ada".
+	// The projection time is still advanced below - a redelivery is still an
+	// occurrence - but not a single number can shift, because no number is
+	// stored. The gate is enforced by the database through the primary key
+	// (user_id, slug), not by a SELECT followed by an INSERT with a gap
+	// between them where two processes both read "not there yet".
 	if tag.RowsAffected() == 0 {
 		return nil
 	}
 
-	// Lalu barisnya disentuh supaya waktu proyeksinya maju - dan itu SEMUA.
+	// Then the row is touched so its projection time advances - and that is
+	// ALL.
 	//
-	// Tidak ada ringkasan yang perlu diperbarui: penilaian terbaru, penilaian
-	// sebelumnya, dan jumlahnya diturunkan dari riwayat saat DIBACA. Versi
-	// pertama menyimpan ketiganya sebagai kolom dan memperbaruinya lewat
-	// serangkaian CASE yang membandingkan waktu; itu meninggalkan "penilaian
-	// sebelumnya" kosong selamanya ketika dua event tiba terbalik - keadaan
-	// biasa, karena Kafka menjamin urutan per kunci partisi dan penilaian
-	// dikunci pada id penilaiannya, bukan pada penggunanya.
+	// There is no summary to update: the latest assessment, the previous one,
+	// and the count are derived from the history when READ. The first version
+	// stored the three as columns and updated them through a series of CASE
+	// expressions comparing times; that left "previous assessment" empty
+	// forever when two events arrived reversed - an ordinary state, since
+	// Kafka guarantees order per partition key and assessments are keyed on
+	// their assessment id, not their user.
 	const touch = `
 		INSERT INTO dashboards (user_id, projected_at, updated_at)
 		VALUES ($1, $2, now())
@@ -204,7 +204,7 @@ func (r *Repository) ApplyAssessment(
 	return nil
 }
 
-// ApplyProgram menyalin keadaan program coaching.
+// ApplyProgram copies the state of a coaching program.
 func (r *Repository) ApplyProgram(
 	ctx context.Context, userID domain.UserID, p *domain.Program, occurredAt time.Time,
 ) error {
@@ -212,9 +212,9 @@ func (r *Repository) ApplyProgram(
 		return errors.New("nil program")
 	}
 
-	// COALESCE pada completion: nilai baru dipakai bila ada, dan yang lama
-	// DIPERTAHANKAN bila tidak. Itulah yang membuat program yang dijeda tidak
-	// melompat kembali ke nol persen.
+	// COALESCE on completion: the new value is used when present, and the old
+	// one is KEPT when not. That is what keeps a paused program from jumping
+	// back to zero percent.
 	const q = `
 		INSERT INTO dashboards (
 			user_id, program_slug, program_title, program_status,
@@ -242,7 +242,7 @@ func (r *Repository) ApplyProgram(
 	return nil
 }
 
-// Forget menghapus proyeksi seorang pengguna.
+// Forget removes a user's projection.
 func (r *Repository) Forget(ctx context.Context, userID domain.UserID) error {
 	if _, err := r.db.Exec(ctx,
 		`DELETE FROM dashboard_assessments WHERE user_id = $1`, userID.String()); err != nil {

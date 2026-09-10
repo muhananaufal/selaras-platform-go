@@ -1,4 +1,5 @@
-// Package dashboard membaca konfigurasi dashboard-svc dari environment.
+// Package dashboard reads the dashboard-svc configuration from the
+// environment.
 package dashboard
 
 import (
@@ -6,26 +7,26 @@ import (
 	"os"
 )
 
-// Config adalah seluruh yang dibutuhkan dashboard-svc untuk menyala.
+// Config is everything dashboard-svc needs to start.
 type Config struct {
 	GRPCAddr    string
 	HealthAddr  string
 	DatabaseDSN string
 
-	// ReadDSN, bila terisi, adalah replika baca untuk Find (F9-32). Kosong
-	// berarti membaca dari sambungan yang sama dengan menulis - bentuk yang
-	// dipakai lingkungan tanpa replika, dan itu sah, bukan kesalahan.
+	// ReadDSN, when set, is the read replica for Find (F9-32). Empty means
+	// reading from the same connection as writing - the shape used by
+	// environments without a replica, and that is valid, not a mistake.
 	ReadDSN string
 
-	// KafkaBrokers kosong berarti service berjalan tanpa outbox: pembacaan
-	// tetap dilayani, dan setiap use case yang menerbitkan event DITOLAK
-	// dengan pesan yang menyebutkan sebabnya.
+	// An empty KafkaBrokers means the service runs without an outbox: reads
+	// are still served, and every use case that publishes an event is REFUSED
+	// with a message naming the reason.
 	KafkaBrokers string
 }
 
-// LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
+// LoadConfig reads the configuration and refuses an incomplete one.
 //
-// Tidak ada nilai bawaan untuk DSN (ADR-016).
+// There is no default for the DSN (ADR-016).
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		GRPCAddr:     envOr("DASHBOARD_GRPC_ADDR", ":9701"),

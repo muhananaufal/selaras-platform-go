@@ -21,13 +21,13 @@ func userID(t *testing.T) domain.UserID {
 	return id
 }
 
-// TestTheFirstAssessmentHasNoTrend memisahkan dua keadaan yang sistem lama
-// campur menjadi satu.
+// TestTheFirstAssessmentHasNoTrend separates two states the legacy system
+// mixed into one.
 //
-// Sistem lama menjawab "stable" untuk analisis pertama, dengan teks penjelas
-// yang menerangkan bahwa itu sebenarnya bukan stabil. Klien yang menggambar
-// panah mendatar untuk "stabil" akan menggambarnya juga untuk orang yang belum
-// punya pembanding sama sekali.
+// The legacy system answered "stable" for the first analysis, with explanatory
+// text saying it was not actually stable. A client drawing a flat arrow for
+// "stable" would draw it for someone who has nothing to compare against at
+// all.
 func TestTheFirstAssessmentHasNoTrend(t *testing.T) {
 	if got := domain.TrendBetween(12.5, nil); got != domain.TrendInsufficientData {
 		t.Errorf("with no previous assessment the trend is %q", got)
@@ -45,10 +45,10 @@ func TestTheFirstAssessmentHasNoTrend(t *testing.T) {
 	}
 }
 
-// TestTheTrendIgnoresChangesTooSmallToMean anything menjaga deadband-nya.
+// TestTheTrendIgnoresChangesTooSmallToMean anything guards the deadband.
 //
-// Tanpa deadband, kabar tentang risiko kesehatan berubah arah setiap kali
-// seseorang mengisi ulang kuesioner, dan kabar seperti itu berhenti dipercaya.
+// Without the deadband, news about a health risk changes direction every time
+// someone refills the questionnaire, and news like that stops being believed.
 func TestTheTrendIgnoresChangesTooSmallToMean(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
@@ -77,7 +77,7 @@ func TestTheTrendIgnoresChangesTooSmallToMean(t *testing.T) {
 	}
 }
 
-// TestTheChangeIsRoundedLikeTheOldSystem menjaga angka yang dilihat pengguna.
+// TestTheChangeIsRoundedLikeTheOldSystem guards the number the user sees.
 func TestTheChangeIsRoundedLikeTheOldSystem(t *testing.T) {
 	previous := 10.0
 	if got := domain.ChangeBetween(12.3456, &previous); got != 2.35 {
@@ -85,11 +85,11 @@ func TestTheChangeIsRoundedLikeTheOldSystem(t *testing.T) {
 	}
 }
 
-// TestTheRiskTrendHoldsThirtyDaysOldestFirst adalah grafiknya.
+// TestTheRiskTrendHoldsThirtyDaysOldestFirst is the chart.
 func TestTheRiskTrendHoldsThirtyDaysOldestFirst(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 
-	// Riwayat disimpan TERBARU lebih dulu, sebagaimana dibaca dari basis data.
+	// The history is stored NEWEST first, as read from the database.
 	dash := &domain.Dashboard{
 		UserID: userID(t),
 		Total:  4,
@@ -97,7 +97,7 @@ func TestTheRiskTrendHoldsThirtyDaysOldestFirst(t *testing.T) {
 			{Slug: "d", AssessedAt: now.AddDate(0, 0, -1), RiskPercentage: 11},
 			{Slug: "c", AssessedAt: now.AddDate(0, 0, -10), RiskPercentage: 12},
 			{Slug: "b", AssessedAt: now.AddDate(0, 0, -29), RiskPercentage: 13},
-			// Di luar jendela: 31 hari lalu.
+			// Outside the window: 31 days ago.
 			{Slug: "a", AssessedAt: now.AddDate(0, 0, -31), RiskPercentage: 14},
 		},
 	}
@@ -107,20 +107,20 @@ func TestTheRiskTrendHoldsThirtyDaysOldestFirst(t *testing.T) {
 		t.Fatalf("the graph holds %d points, want 3 - the 31-day-old one is outside the window", len(points))
 	}
 
-	// TERLAMA lebih dulu: grafik dibaca kiri ke kanan sebagai waktu yang maju.
+	// OLDEST first: a chart is read left to right as time moving forward.
 	for i, want := range []string{"b", "c", "d"} {
 		if points[i].Slug != want {
 			t.Errorf("point %d is %q, want %q", i, points[i].Slug, want)
 		}
 	}
 
-	// Slice kosong, bukan nil.
+	// An empty slice, not nil.
 	if got := (&domain.Dashboard{}).RiskTrend(now); got == nil {
 		t.Error("an empty graph is nil, which becomes null in JSON")
 	}
 }
 
-// TestADashboardWithHistoryIsNotEmpty menjaga kedua penanda tetap sepakat.
+// TestADashboardWithHistoryIsNotEmpty keeps both markers in agreement.
 func TestADashboardWithHistoryIsNotEmpty(t *testing.T) {
 	dash := &domain.Dashboard{
 		UserID:   userID(t),

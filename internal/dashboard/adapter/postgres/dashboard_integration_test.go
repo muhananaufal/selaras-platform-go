@@ -59,16 +59,16 @@ func TestAnUnknownUserHasNoDashboard(t *testing.T) {
 	}
 }
 
-// TestTheSameEventTwiceProjectsTheSameRow adalah F7-03.
+// TestTheSameEventTwiceProjectsTheSameRow is F7-03.
 //
-// Relay outbox bersifat at-least-once: event yang sama BISA tiba dua kali, dan
-// itu bukan kekeliruan yang perlu diperbaiki di sisi pengirim - itu jaminan
-// yang dipilih dengan sadar. Yang harus benar adalah proyeksinya.
+// The outbox relay is at-least-once: the same event CAN arrive twice, and that
+// is not a mistake to fix on the sending side - it is a guarantee chosen
+// knowingly. What has to be right is the projection.
 //
-// Tanpa gerbang idempotensi, pengiriman kedua menaikkan jumlah penilaian
-// menjadi dua dan menggeser "penilaian sebelumnya" menjadi angka yang sama
-// dengan yang terbaru - sehingga tren berubah menjadi "stabil" untuk seseorang
-// yang baru melakukan satu analisis.
+// Without the idempotency gate, the second delivery raises the assessment
+// count to two and shifts the "previous assessment" to the same number as the
+// latest - so the trend turns into "stable" for someone who has done exactly
+// one analysis.
 func TestTheSameEventTwiceProjectsTheSameRow(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -101,7 +101,7 @@ func TestTheSameEventTwiceProjectsTheSameRow(t *testing.T) {
 	}
 }
 
-// TestASecondAssessmentMovesTheLatestAndKeepsThePrevious adalah alur normalnya.
+// TestASecondAssessmentMovesTheLatestAndKeepsThePrevious is the normal flow.
 func TestASecondAssessmentMovesTheLatestAndKeepsThePrevious(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -135,20 +135,20 @@ func TestASecondAssessmentMovesTheLatestAndKeepsThePrevious(t *testing.T) {
 		t.Errorf("a drop from 25.36 to 18.2 is reported as %q", got)
 	}
 
-	// Riwayat terbaru lebih dulu.
+	// The history is newest first.
 	if dash.History[0].Slug != "bbb" || dash.History[1].Slug != "aaa" {
 		t.Errorf("the history is ordered %s, %s", dash.History[0].Slug, dash.History[1].Slug)
 	}
 }
 
-// TestAnEventThatArrivesLateDoesNotBecomeTheLatest adalah urutan yang tidak
-// dijamin.
+// TestAnEventThatArrivesLateDoesNotBecomeTheLatest is the ordering that is not
+// guaranteed.
 //
-// Kafka menjamin urutan PER KUNCI PARTISI, dan penilaian dikunci pada id
-// penilaiannya - bukan pada penggunanya. Dua penilaian dari satu orang bisa
-// mendarat di partisi berbeda dan tiba terbalik. Proyeksi yang menerima yang
-// terakhir TIBA sebagai yang terbaru akan menampilkan angka lama sebagai hasil
-// analisis terkini, dan tren yang arahnya terbalik.
+// Kafka guarantees order PER PARTITION KEY, and assessments are keyed on their
+// assessment id - not on their user. Two assessments from one person can land
+// on different partitions and arrive reversed. A projection that takes the
+// last to ARRIVE as the latest would show an old number as the most recent
+// analysis, and a trend pointing the wrong way.
 func TestAnEventThatArrivesLateDoesNotBecomeTheLatest(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -157,11 +157,11 @@ func TestAnEventThatArrivesLateDoesNotBecomeTheLatest(t *testing.T) {
 	newer := assessment("bbb", base.Add(time.Hour), 18.2)
 	older := assessment("aaa", base, 25.36)
 
-	// Yang BARU tiba lebih dulu.
+	// The NEW one arrives first.
 	if err := repo.ApplyAssessment(ctx, owner, newer, base.Add(time.Hour)); err != nil {
 		t.Fatalf("ApplyAssessment: %v", err)
 	}
-	// Lalu yang lama menyusul.
+	// Then the old one follows.
 	if err := repo.ApplyAssessment(ctx, owner, older, base); err != nil {
 		t.Fatalf("ApplyAssessment: %v", err)
 	}
@@ -180,18 +180,18 @@ func TestAnEventThatArrivesLateDoesNotBecomeTheLatest(t *testing.T) {
 	if dash.Latest.RiskPercentage != 18.2 {
 		t.Errorf("the latest risk is %v, want 18.2", dash.Latest.RiskPercentage)
 	}
-	// Keduanya tetap muncul di riwayat, terurut menurut waktu penilaiannya.
+	// Both still appear in the history, ordered by assessment time.
 	if len(dash.History) != 2 || dash.History[0].Slug != "bbb" {
 		t.Errorf("the history is %v", dash.History)
 	}
 }
 
-// TestAProgramWithoutCompletionKeepsTheNumberItHad adalah B16 dalam bentuk lain.
+// TestAProgramWithoutCompletionKeepsTheNumberItHad is B16 in another form.
 //
-// Event program terbit dari dua tempat, dan yang satu - saat program dijeda
-// atau dihidupkan - tidak menghitung tugas sama sekali. Tanpa presence
-// eksplisit, nol persen dari event itu akan menimpa angka yang sudah benar, dan
-// dasbor melompat kembali ke nol setiap kali program dijeda.
+// Program events are published from two places, and one of them - when a program
+// is paused or resumed - does not count tasks at all. Without explicit presence,
+// zero percent from that event would overwrite a number that was already right,
+// and the dashboard would jump back to zero every time a program is paused.
 func TestAProgramWithoutCompletionKeepsTheNumberItHad(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -199,7 +199,7 @@ func TestAProgramWithoutCompletionKeepsTheNumberItHad(t *testing.T) {
 	owner := userID(t)
 	completion := 42.5
 
-	// Sebuah tugas ditandai selesai: event ini MEMBAWA persentasenya.
+	// A task is marked done: this event CARRIES the percentage.
 	if err := repo.ApplyProgram(ctx, owner, &domain.Program{
 		Slug: "prog", Title: "Program Jantung", Status: "active",
 		CurrentDay: 5, TotalDays: 28, Completion: &completion,
@@ -207,7 +207,7 @@ func TestAProgramWithoutCompletionKeepsTheNumberItHad(t *testing.T) {
 		t.Fatalf("ApplyProgram: %v", err)
 	}
 
-	// Lalu program dijeda: event ini TIDAK membawa persentasenya.
+	// Then the program is paused: this event does NOT carry the percentage.
 	if err := repo.ApplyProgram(ctx, owner, &domain.Program{
 		Slug: "prog", Title: "Program Jantung", Status: "paused",
 		CurrentDay: 6, TotalDays: 28, Completion: nil,
@@ -233,11 +233,11 @@ func TestAProgramWithoutCompletionKeepsTheNumberItHad(t *testing.T) {
 	}
 }
 
-// TestAProgramAndAnAssessmentShareOneRow membuktikan keduanya tidak saling
-// menghapus.
+// TestAProgramAndAnAssessmentShareOneRow proves the two do not wipe each
+// other.
 //
-// Keduanya menulis ke tabel yang sama lewat upsert, dan upsert yang menyebut
-// seluruh kolom akan menimpa kolom milik event yang lain dengan nol.
+// Both write to the same table through an upsert, and an upsert naming every
+// column would overwrite the other event's columns with zeros.
 func TestAProgramAndAnAssessmentShareOneRow(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -269,7 +269,7 @@ func TestAProgramAndAnAssessmentShareOneRow(t *testing.T) {
 		t.Errorf("the total is %d; projecting a program changed the assessment count", dash.Total)
 	}
 
-	// Dan urutan sebaliknya juga aman.
+	// And the reverse order is safe as well.
 	other := userID(t)
 	if err := repo.ApplyProgram(ctx, other, &domain.Program{
 		Slug: "prog2", Status: "active", CurrentDay: 1, TotalDays: 28,
@@ -289,7 +289,8 @@ func TestAProgramAndAnAssessmentShareOneRow(t *testing.T) {
 	}
 }
 
-// TestForgettingAUserLeavesNothingBehind adalah bagian saga penghapusan akun.
+// TestForgettingAUserLeavesNothingBehind is part of the account deletion
+// saga.
 func TestForgettingAUserLeavesNothingBehind(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -321,20 +322,20 @@ func TestForgettingAUserLeavesNothingBehind(t *testing.T) {
 		t.Errorf("%d history rows survived the deletion", leftover)
 	}
 
-	// Dan orang lain tidak ikut terhapus.
+	// And someone else is not deleted along with them.
 	if _, err := repo.Find(ctx, stranger); err != nil {
 		t.Errorf("forgetting one user removed another's dashboard: %v", err)
 	}
 }
 
-// TestTheProjectionStateOnlyMovesForward menjaga pengukuran lag tetap jujur.
+// TestTheProjectionStateOnlyMovesForward keeps the lag measurement honest.
 func TestTheProjectionStateOnlyMovesForward(t *testing.T) {
 	pool, ctx := setup(t)
 	states := dashboardpg.NewStateRepository(pool)
 
 	const name = "dashboard"
 
-	// Belum pernah berjalan bukan galat.
+	// Never having run is not an error.
 	state, err := states.Get(ctx, name)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -346,7 +347,7 @@ func TestTheProjectionStateOnlyMovesForward(t *testing.T) {
 	if err := states.Advance(ctx, name, base.Add(time.Hour)); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
-	// Event yang lebih TUA tiba belakangan: posisinya tidak boleh mundur.
+	// An OLDER event arrives later: the position must not move backwards.
 	if err := states.Advance(ctx, name, base); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
@@ -358,8 +359,8 @@ func TestTheProjectionStateOnlyMovesForward(t *testing.T) {
 	if !state.LastEventAt.Equal(base.Add(time.Hour)) {
 		t.Errorf("the projection position moved back to %v", state.LastEventAt)
 	}
-	// Kedua event tetap dihitung: yang tidak menggeser posisi pun tetap
-	// dikerjakan.
+	// Both events are still counted: the one that does not move the position
+	// is still processed.
 	if state.EventsApplied != 2 {
 		t.Errorf("%d events were counted, want 2", state.EventsApplied)
 	}
@@ -376,23 +377,23 @@ func TestTheProjectionStateOnlyMovesForward(t *testing.T) {
 	}
 }
 
-// TestTwoAssessmentsArrivingBackwardsStillGiveATrend adalah regresi untuk bug
-// yang ditemukan saat menjalankan test e2e, bukan saat membaca kode.
+// TestTwoAssessmentsArrivingBackwardsStillGiveATrend is the regression test for
+// a bug found by running the e2e tests, not by reading the code.
 //
-// Versi pertama tabel ini menyimpan latest_*, previous_risk_percentage, dan
-// total_assessments sebagai kolom yang diperbarui tiap event, lewat serangkaian
-// CASE yang membandingkan waktu. CASE itu hanya mengisi "penilaian sebelumnya"
-// ketika event yang tiba LEBIH BARU dari yang tersimpan - sehingga dua
-// penilaian yang tiba TERBALIK meninggalkannya kosong selamanya, dan dasbor
-// menjawab "belum ada pembanding" untuk orang yang sudah dua kali menganalisis.
+// The first version of this table stored latest_*, previous_risk_percentage,
+// and total_assessments as columns updated on every event, through a series of
+// CASE expressions comparing times. That CASE only filled "previous assessment"
+// when the arriving event was NEWER than the stored one - so two assessments
+// arriving REVERSED left it empty forever, and the dashboard answered "nothing
+// to compare against" for someone who had analysed twice.
 //
-// Kedatangan terbalik bukan hal langka: Kafka menjamin urutan per kunci
-// partisi, dan penilaian dikunci pada id penilaiannya, bukan pada penggunanya.
-// Dua penilaian satu orang bisa mendarat di partisi berbeda.
+// Reversed arrival is not rare: Kafka guarantees order per partition key, and
+// assessments are keyed on their assessment id, not their user. Two assessments
+// of one person can land on different partitions.
 //
-// Perbaikannya bukan menambah CASE. Ketiga nilai itu adalah turunan dari
-// riwayat, yang sudah memuat seluruhnya, jadi ketiganya dihapus dari tabel dan
-// diturunkan saat dibaca - benar untuk urutan kedatangan APA PUN.
+// The fix is not more CASE. All three values are derived from the history,
+// which already holds everything, so they were removed from the table and
+// derived on read - correct for ANY order of arrival.
 func TestTwoAssessmentsArrivingBackwardsStillGiveATrend(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := dashboardpg.NewRepository(pool)
@@ -401,7 +402,7 @@ func TestTwoAssessmentsArrivingBackwardsStillGiveATrend(t *testing.T) {
 	older := assessment("aaa", base, 25.36)
 	newer := assessment("bbb", base.Add(10*time.Millisecond), 18.2)
 
-	// Yang BARU tiba lebih dulu - persis yang terjadi di test e2e.
+	// The NEW one arrives first - exactly what happened in the e2e test.
 	if err := repo.ApplyAssessment(ctx, owner, newer, newer.AssessedAt); err != nil {
 		t.Fatalf("ApplyAssessment: %v", err)
 	}

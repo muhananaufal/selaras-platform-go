@@ -1,6 +1,6 @@
-// Package domain memuat aturan dasbor.
+// Package domain holds the dashboard rules.
 //
-// Ia tidak mengimpor apa pun dari adapter, dan itu dijaga test batas.
+// It imports nothing from the adapters, and a boundary test guards that.
 package domain
 
 import (
@@ -12,13 +12,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// Galat yang dikenali pemanggil.
+// Errors that callers recognise.
 var (
 	ErrInvalidID       = errors.New("invalid id")
 	ErrEventFromFuture = errors.New("the event is dated in the future")
 )
 
-// UserID menunjuk ke identity.users (ADR-024).
+// UserID points at identity.users (ADR-024).
 type UserID struct{ v uuid.UUID }
 
 func ParseUserID(raw string) (UserID, error) {
@@ -32,16 +32,17 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// Trend adalah arah perubahan risiko antara dua penilaian terakhir.
+// Trend is the direction of the risk change between the last two
+// assessments.
 type Trend string
 
 const (
-	// TrendInsufficientData dipakai saat baru ada satu penilaian.
+	// TrendInsufficientData is used when there is only one assessment so far.
 	//
-	// Ia BUKAN "stabil". Sistem lama menjawab stable dengan teks "Ini adalah
-	// analisis pertama Anda", mencampur dua keadaan yang berbeda ke dalam satu
-	// nilai - klien yang menggambar panah untuk "stabil" akan menggambarnya
-	// untuk orang yang belum punya pembanding sama sekali.
+	// It is NOT "stable". The legacy system answered stable with the text "Ini
+	// adalah analisis pertama Anda", mixing two different states into one
+	// value - a client drawing an arrow for "stable" would draw it for someone
+	// who has nothing to compare against at all.
 	TrendInsufficientData Trend = "insufficient_data"
 
 	TrendImproving Trend = "improving"
@@ -49,17 +50,17 @@ const (
 	TrendWorsening Trend = "worsening"
 )
 
-// trendDeadband adalah perubahan yang dianggap TIDAK berarti.
+// trendDeadband is the change regarded as NOT meaningful.
 //
-// Nol koma satu poin persen, sama dengan sistem lama. Ia ada supaya pembulatan
-// dan perubahan jawaban yang sepele tidak dilaporkan sebagai "membaik" atau
-// "memburuk" - kabar tentang risiko kesehatan yang berubah arah setiap kali
-// seseorang mengisi ulang kuesioner akan berhenti dipercaya.
+// Zero point one percentage point, the same as the legacy system. It exists so
+// rounding and trivial answer changes are not reported as "improving" or
+// "worsening" - news about a health risk that changes direction every time
+// someone refills the questionnaire stops being believed.
 const trendDeadband = 0.1
 
-// TrendBetween menyatakan arah perubahan dari previous ke latest.
+// TrendBetween states the direction of change from previous to latest.
 //
-// previous nil berarti belum ada pembanding.
+// A nil previous means there is nothing to compare against yet.
 func TrendBetween(latest float64, previous *float64) Trend {
 	if previous == nil {
 		return TrendInsufficientData
@@ -75,12 +76,12 @@ func TrendBetween(latest float64, previous *float64) Trend {
 	}
 }
 
-// ChangeBetween adalah besar perubahannya, dibulatkan dua angka di belakang
-// koma - sama dengan sistem lama.
+// ChangeBetween is the size of the change, rounded to two decimal places - the
+// same as the legacy system.
 //
-// Nol bila belum ada pembanding, DAN nol bila perubahannya di dalam deadband:
-// melaporkan angka yang tidak cukup besar untuk mengubah arahnya hanya membuat
-// klien menampilkan "stabil, +0,04%".
+// Zero when there is nothing to compare against, AND zero when the change is
+// inside the deadband: reporting a number too small to change the direction
+// only makes the client show "stable, +0.04%".
 func ChangeBetween(latest float64, previous *float64) float64 {
 	if previous == nil {
 		return 0
@@ -93,7 +94,7 @@ func ChangeBetween(latest float64, previous *float64) float64 {
 	return math.Round(diff*100) / 100
 }
 
-// Assessment adalah satu penilaian di dalam riwayat dasbor.
+// Assessment is one assessment in the dashboard history.
 type Assessment struct {
 	Slug           string
 	AssessedAt     time.Time
@@ -102,7 +103,7 @@ type Assessment struct {
 	ModelUsed      string
 }
 
-// Program adalah ringkasan program coaching yang berjalan.
+// Program is the summary of the running coaching program.
 type Program struct {
 	Slug       string
 	Title      string
@@ -110,12 +111,12 @@ type Program struct {
 	CurrentDay int
 	TotalDays  int
 
-	// Completion nil berarti belum dihitung, BUKAN nol persen. Event program
-	// terbit dari dua tempat dan hanya salah satunya menghitung tugas.
+	// A nil Completion means not computed yet, NOT zero percent. Program
+	// events are published from two places and only one of them counts tasks.
 	Completion *float64
 }
 
-// Dashboard adalah satu baris read-model.
+// Dashboard is one read-model row.
 type Dashboard struct {
 	UserID UserID
 
@@ -126,12 +127,13 @@ type Dashboard struct {
 	History []*Assessment
 	Program *Program
 
-	// ProjectedAt adalah occurred_at event terakhir yang masuk, bukan waktu
-	// pemrosesannya. Selisih antara keduanya adalah lag yang diukur F7-06.
+	// ProjectedAt is the occurred_at of the last event that came in, not its
+	// processing time. The difference between the two is the lag F7-06
+	// measures.
 	ProjectedAt time.Time
 }
 
-// Trend adalah arah kesehatan pengguna ini.
+// Trend is the health direction of this user.
 func (d *Dashboard) Trend() Trend {
 	if d.Latest == nil {
 		return TrendInsufficientData
@@ -139,7 +141,7 @@ func (d *Dashboard) Trend() Trend {
 	return TrendBetween(d.Latest.RiskPercentage, d.Previous)
 }
 
-// Change adalah besar perubahannya.
+// Change is the size of the change.
 func (d *Dashboard) Change() float64 {
 	if d.Latest == nil {
 		return 0
@@ -147,27 +149,28 @@ func (d *Dashboard) Change() float64 {
 	return ChangeBetween(d.Latest.RiskPercentage, d.Previous)
 }
 
-// IsEmpty menyatakan pengguna ini belum pernah melakukan analisis.
+// IsEmpty says this user has never run an analysis.
 //
-// Gateway menerjemahkannya menjadi pesan sambutan, sebagaimana sistem lama.
-// Ia diperiksa lewat riwayat, bukan lewat Latest: keduanya harus sepakat, dan
-// riwayat yang kosong adalah keadaan yang lebih dasar.
+// The gateway translates it into a welcome message, as the legacy system did.
+// It is checked through the history, not through Latest: the two have to
+// agree, and an empty history is the more fundamental state.
 func (d *Dashboard) IsEmpty() bool { return d.Total == 0 }
 
-// TrendWindow adalah panjang jendela grafik risiko.
+// TrendWindow is the length of the risk chart window.
 //
-// Tiga puluh hari, sama dengan sistem lama.
+// Thirty days, the same as the legacy system.
 const TrendWindow = 30 * 24 * time.Hour
 
-// RiskTrend mengembalikan titik grafik dalam jendela, TERLAMA lebih dulu.
+// RiskTrend returns the chart points inside the window, OLDEST first.
 //
-// Urutannya sengaja terbalik dari riwayat: grafik dibaca kiri ke kanan sebagai
-// waktu yang maju, sementara daftar riwayat dibaca dari yang terbaru.
+// The order is deliberately the reverse of the history: a chart is read left
+// to right as time moving forward, while a history list is read from the
+// newest.
 func (d *Dashboard) RiskTrend(now time.Time) []*Assessment {
 	cutoff := now.Add(-TrendWindow)
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// menggambar grafik akan gagal alih-alih menggambar grafik kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// drawing the chart fails instead of drawing an empty chart.
 	out := make([]*Assessment, 0, len(d.History))
 	for i := len(d.History) - 1; i >= 0; i-- {
 		if d.History[i].AssessedAt.Before(cutoff) {

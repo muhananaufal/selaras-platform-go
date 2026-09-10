@@ -17,9 +17,9 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// recorder membungkus sambungan sungguhan dan mencatat siapa yang dipanggil.
-// Keduanya menunjuk ke Postgres yang sama; yang diuji adalah PILIHAN
-// sambungannya, bukan hasil kuerinya.
+// recorder wraps a real connection and records who was called. Both point at
+// the same Postgres; what is tested is the CHOICE of connection, not the
+// query result.
 type recorder struct {
 	pg.Querier
 	name  string
@@ -48,8 +48,8 @@ func (r recorder) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	return r.Querier.QueryRow(ctx, sql, args...)
 }
 
-// TestReadsGoToTheReaderAndWritesToThePrimary adalah kontrak F9-32: Find
-// hanya menyentuh sambungan baca, proyeksi hanya sambungan tulis.
+// TestReadsGoToTheReaderAndWritesToThePrimary is the F9-32 contract: Find
+// touches only the read connection, projections only the write connection.
 func TestReadsGoToTheReaderAndWritesToThePrimary(t *testing.T) {
 	pool := pgtest.Open(t, "dashboard")
 	pgtest.Truncate(t, pool, "dashboards", "dashboard_assessments")
@@ -67,7 +67,7 @@ func TestReadsGoToTheReaderAndWritesToThePrimary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Sebuah proyeksi: HANYA primer yang boleh disentuh.
+	// A projection: ONLY the primary may be touched.
 	if err := repo.ApplyAssessment(ctx, userID, &domain.Assessment{
 		Slug: "abc123", AssessedAt: time.Now().Add(-time.Minute),
 		RiskPercentage: 4.2, RiskCategory: "LOW_MODERATE", ModelUsed: "SCORE2",
@@ -84,7 +84,7 @@ func TestReadsGoToTheReaderAndWritesToThePrimary(t *testing.T) {
 		t.Fatal("the projection issued no statements at all")
 	}
 
-	// Pembacaan: HANYA replika.
+	// A read: ONLY the replica.
 	calls = calls[:0]
 	if _, err := repo.Find(ctx, userID); err != nil {
 		t.Fatalf("Find: %v", err)
@@ -99,7 +99,8 @@ func TestReadsGoToTheReaderAndWritesToThePrimary(t *testing.T) {
 	}
 }
 
-// Tanpa reader, keduanya lewat satu sambungan - bentuk lama tetap berlaku.
+// Without a reader, both go through one connection - the old shape still
+// holds.
 func TestWithoutAReaderEverythingUsesThePrimary(t *testing.T) {
 	pool := pgtest.Open(t, "dashboard")
 	var calls []string

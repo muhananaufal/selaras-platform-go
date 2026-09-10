@@ -12,7 +12,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// StateRepository memenuhi domain.StateRepository.
+// StateRepository implements domain.StateRepository.
 type StateRepository struct {
 	db pg.Querier
 }
@@ -23,11 +23,11 @@ func NewStateRepository(db pg.Querier) *StateRepository {
 
 var _ domain.StateRepository = (*StateRepository)(nil)
 
-// Get membaca posisi proyeksi.
+// Get reads the projection position.
 //
-// Proyeksi yang belum pernah berjalan mengembalikan keadaan KOSONG, bukan
-// galat: belum pernah memproyeksikan apa pun adalah keadaan yang sah, dan
-// perintah rebuild memulai justru dari sana.
+// A projection that has never run returns an EMPTY state, not an error:
+// never having projected anything is a valid state, and the rebuild command
+// starts precisely from there.
 func (s *StateRepository) Get(ctx context.Context, name string) (domain.ProjectionState, error) {
 	const q = `
 		SELECT name, last_event_at, events_applied, updated_at
@@ -54,12 +54,12 @@ func (s *StateRepository) Get(ctx context.Context, name string) (domain.Projecti
 	return state, nil
 }
 
-// Advance mencatat bahwa satu event sudah diproyeksikan.
+// Advance records that one event has been projected.
 //
-// last_event_at hanya MAJU, tidak pernah mundur. Event bisa tiba tidak
-// berurutan, dan posisi yang mundur akan membuat pengukuran lag melaporkan
-// jeda yang lebih besar daripada yang sebenarnya - lalu seseorang menghabiskan
-// sore mencari perlambatan yang tidak ada.
+// last_event_at only moves FORWARD, never back. Events can arrive out of
+// order, and a position moving backwards would make the lag measurement report
+// a bigger delay than the real one - and then someone spends an afternoon
+// hunting a slowdown that does not exist.
 func (s *StateRepository) Advance(ctx context.Context, name string, eventAt time.Time) error {
 	const q = `
 		INSERT INTO projection_state (name, last_event_at, events_applied, updated_at)
@@ -75,11 +75,11 @@ func (s *StateRepository) Advance(ctx context.Context, name string, eventAt time
 	return nil
 }
 
-// Reset mengembalikan proyeksi ke keadaan belum pernah berjalan.
+// Reset returns the projection to the never-run state.
 //
-// Dipakai perintah rebuild. Ia menghapus barisnya, bukan menulis nol: baris
-// yang ada dengan nol event terbaca sebagai "sudah berjalan dan tidak menemukan
-// apa-apa", yang berbeda artinya dari "belum pernah berjalan".
+// Used by the rebuild command. It deletes the row rather than writing zeros: an
+// existing row with zero events reads as "has run and found nothing", which
+// means something different from "has never run".
 func (s *StateRepository) Reset(ctx context.Context, name string) error {
 	if _, err := s.db.Exec(ctx, `DELETE FROM projection_state WHERE name = $1`, name); err != nil {
 		return fmt.Errorf("resetting the projection state: %w", err)

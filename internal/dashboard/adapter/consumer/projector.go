@@ -18,16 +18,16 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Scope adalah ruang lingkup idempotensi proyektor ini.
+// Scope is the idempotency scope of this projector.
 const Scope = "dashboard-projector"
 
-// Projector membaca event domain dan memperbarui read-model.
+// Projector reads domain events and updates the read-model.
 //
-// Ia menggantikan empat listener invalidasi cache di sistem lama. Bedanya bukan
-// jumlahnya: listener menghapus cache dan berharap yang berikutnya membacanya
-// ulang dengan benar, sementara proyektor MENULIS bentuk yang akan dibaca.
-// Yang pertama gagal diam-diam saat seseorang lupa menambahkan listener kelima;
-// yang kedua gagal terlihat, karena bentuknya tidak akan pernah terisi.
+// It replaces four cache-invalidation listeners in the legacy system. The
+// difference is not the count: a listener deletes the cache and hopes the next
+// reader rebuilds it correctly, while a projector WRITES the shape that will be
+// read. The first fails silently when someone forgets to add a fifth listener;
+// the second fails visibly, because the shape never gets filled.
 type Projector struct {
 	client *kgo.Client
 	svc    *app.Service
@@ -53,7 +53,7 @@ func (p *Projector) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			p.log.InfoContext(ctx, "dashboard projector stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -65,8 +65,8 @@ func (p *Projector) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(p.client, errs); len(recovered) > 0 {
 				p.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -102,16 +102,16 @@ func (p *Projector) Run(ctx context.Context) error {
 			continue
 		}
 		if rewinder.Any() {
-			// Offset DITAHAN. Proyeksi yang melewatkan satu event akan salah
-			// SELAMANYA - tidak ada yang mengirimnya lagi, dan tidak ada yang
-			// menyadarinya sampai seseorang membandingkan dasbor dengan
-			// sumbernya. Pengiriman ulang aman: proyeksinya idempoten.
+			// The offset is HELD. A projection that skips one event is wrong FOREVER
+			// - nothing sends it again, and nobody notices until someone compares
+			// the dashboard with its source. Redelivery is safe: the projection is
+			// idempotent.
 			p.log.WarnContext(ctx, "holding offsets so failed events are redelivered",
 				"handled", handled)
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
-			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			// Not committing alone is NOT enough: franz-go redelivers nothing within
+			// the same session, so the next batch would arrive, succeed, and commit
+			// EVERYTHING consumed so far - including the record that just failed.
+			// The consumer is rewound to it instead.
 			rewinder.Rewind(p.client)
 
 			select {
@@ -132,22 +132,22 @@ func (p *Projector) Run(ctx context.Context) error {
 func (p *Projector) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
-		// Pesan yang tidak bisa dibaca tidak akan pernah bisa dibaca. Ia
-		// dilewati dan dicatat, bukan menahan offset selamanya.
+		// An unreadable message will never become readable. It is skipped and
+		// logged, rather than holding the offset forever.
 		p.log.ErrorContext(ctx, "an event could not be decoded and was skipped",
 			"topic", rec.Topic, "offset", rec.Offset, "error", err)
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on its span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
 	occurredAt := env.GetOccurredAt().AsTime()
 	if occurredAt.IsZero() {
-		// Tanpa waktu peristiwa, penjaga urutan tidak punya apa pun untuk
-		// dibandingkan dan pengukuran lag kehilangan dasarnya.
+		// Without the event time, the ordering guard has nothing to compare
+		// against and the lag measurement loses its basis.
 		p.log.ErrorContext(ctx, "an event carried no timestamp and was skipped",
 			"event_id", env.GetEventId(), "topic", rec.Topic)
 		return nil
@@ -164,9 +164,9 @@ func (p *Projector) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return p.forget(ctx, &env, payload.UserDeletionRequested)
 
 	default:
-		// Event lain di topic yang sama bukan urusan proyeksi ini. Ia dilewati,
-		// bukan digagalkan - menggagalkannya menahan offset dan menyumbat
-		// antrean dengan pesan yang memang bukan miliknya.
+		// Other events on the same topic are not this projection's business. They
+		// are skipped, not failed - failing them holds the offset and clogs the
+		// queue with messages that were never its own.
 		return nil
 	}
 }
@@ -176,16 +176,16 @@ func (p *Projector) projectAssessment(
 	done *eventsv1.AssessmentCompleted, occurredAt time.Time,
 ) error {
 	if done.GetUserId() == "" {
-		// Event tanpa pemilik tidak bisa diproyeksikan ke baris siapa pun. Ia
-		// dicatat, bukan ditebak - menebaknya berarti menulis penilaian
-		// seseorang ke dasbor orang lain.
+		// An event without an owner cannot be projected onto anyone's row. It is
+		// logged, not guessed - guessing means writing someone's assessment onto
+		// someone else's dashboard.
 		p.log.ErrorContext(ctx, "a completed assessment named no user",
 			"event_id", env.GetEventId(), "assessment_id", done.GetAssessmentId())
 		return nil
 	}
 	if done.GetSlug() == "" {
-		// Slug adalah kunci idempotensinya. Tanpa itu, pengiriman ulang tidak
-		// bisa dikenali.
+		// The slug is its idempotency key. Without it, a redelivery cannot be
+		// recognised.
 		p.log.ErrorContext(ctx, "a completed assessment carried no slug",
 			"event_id", env.GetEventId(), "user_id", done.GetUserId())
 		return nil
@@ -193,9 +193,9 @@ func (p *Projector) projectAssessment(
 
 	return p.svc.ProjectAssessment(ctx, done.GetUserId(), &domain.Assessment{
 		Slug: done.GetSlug(),
-		// Waktu penilaiannya adalah waktu PERISTIWANYA, bukan waktu
-		// pemrosesannya. Yang kedua akan membuat seluruh riwayat yang dibangun
-		// ulang bertanggal hari pembangunan ulang itu.
+		// The assessment time is the time of the EVENT, not of its processing.
+		// The latter would date an entirely rebuilt history on the day of the
+		// rebuild.
 		AssessedAt:     occurredAt,
 		RiskPercentage: done.GetRiskPercentage(),
 		RiskCategory:   done.GetRiskCategory(),
@@ -221,9 +221,9 @@ func (p *Projector) projectProgram(
 		TotalDays:  int(updated.GetTotalDays()),
 	}
 
-	// Presence eksplisit: nil berarti event ini tidak menghitung tugas, dan
-	// angka yang sudah tersimpan dibiarkan. GetCompletionPercentage akan
-	// mengembalikan nol untuk keduanya, jadi bidangnya diperiksa langsung.
+	// Explicit presence: nil means this event did not count tasks, and the
+	// stored number is left alone. GetCompletionPercentage would return zero
+	// for both, so the field is checked directly.
 	if updated.CompletionPercentage != nil {
 		completion := updated.GetCompletionPercentage()
 		program.Completion = &completion
@@ -232,11 +232,11 @@ func (p *Projector) projectProgram(
 	return p.svc.ProjectProgram(ctx, updated.GetUserId(), program, occurredAt)
 }
 
-// forget menghapus proyeksi saat akun dihapus.
+// forget removes the projection when an account is deleted.
 //
-// Read-model memuat salinan data pribadi - persentase risiko, kategori
-// kesehatan, riwayat analisis. Salinan yang tertinggal setelah akun dihapus
-// adalah data pribadi yang tidak seorang pun tahu masih ada.
+// The read-model holds copies of personal data - risk percentages, health
+// categories, analysis history. A copy left behind after the account is
+// deleted is personal data nobody knows still exists.
 func (p *Projector) forget(
 	ctx context.Context, env *eventsv1.Envelope, req *eventsv1.UserDeletionRequested,
 ) error {
@@ -248,17 +248,16 @@ func (p *Projector) forget(
 	return p.svc.Forget(ctx, req.GetUserId())
 }
 
-// Drain memproyeksikan seluruh yang tersedia lalu berhenti (F7-05).
+// Drain projects everything available and then stops (F7-05).
 //
-// Berbeda dari Run yang berjalan selamanya, Drain berhenti setelah idle
-// berlalu tanpa satu pesan pun. Kafka tidak punya "sudah sampai akhir" yang
-// bisa ditanyakan konsumen tanpa menebak; yang ada hanya "tidak ada lagi yang
-// datang", dan batas itu diserahkan pemanggilnya karena broker yang lambat
-// membutuhkan lebih lama.
+// Unlike Run, which runs forever, Drain stops once idle has passed without a
+// single message. Kafka has no "reached the end" a consumer can ask about
+// without guessing; there is only "nothing more is coming", and that bound is
+// left to the caller because a slow broker needs longer.
 //
-// Ia mengembalikan jumlah pesan yang DIBACA, bukan yang diterapkan: pesan yang
-// dilewati karena bukan urusan proyeksi ini tetap dibaca, dan angka yang
-// menyembunyikannya membuat "kenapa hanya sekian" tidak bisa dijawab.
+// It returns the number of messages READ, not applied: messages skipped
+// because they are not this projection's business are still read, and a number
+// that hides them makes "why only this many" unanswerable.
 func (p *Projector) Drain(ctx context.Context, idle time.Duration) (int, error) {
 	var read int
 	lastMessage := time.Now()
@@ -273,8 +272,8 @@ func (p *Projector) Drain(ctx context.Context, idle time.Duration) (int, error) 
 			return read, nil
 		}
 
-		// Poll dengan batas waktunya sendiri, supaya diamnya broker tidak
-		// menahan seluruh perintah selamanya.
+		// A poll with its own deadline, so a silent broker does not hold the
+		// whole command forever.
 		pollCtx, cancel := context.WithTimeout(ctx, idle)
 		fetches := p.client.PollFetches(pollCtx)
 		cancel()
@@ -294,10 +293,9 @@ func (p *Projector) Drain(ctx context.Context, idle time.Duration) (int, error) 
 			if failure != nil {
 				return
 			}
-			// Kegagalan MENGHENTIKAN pembangunan ulang, tidak seperti Run yang
-			// menahan offset dan mencoba lagi. Proyeksi yang dibangun ulang
-			// separuh lalu dilaporkan selesai adalah kebohongan yang tidak
-			// terlihat sampai seseorang membandingkannya dengan sumbernya.
+			// A failure STOPS the rebuild, unlike Run which holds the offset and
+			// retries. A projection rebuilt halfway and then reported complete is a
+			// lie invisible until someone compares it with its source.
 			if err := p.handle(ctx, rec); err != nil {
 				failure = fmt.Errorf("projecting %s offset %d: %w", rec.Topic, rec.Offset, err)
 				return
