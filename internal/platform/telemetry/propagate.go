@@ -13,24 +13,24 @@ import (
 	eventsv1 "github.com/muhananaufal/selaras-platform-go/gen/events/v1"
 )
 
-// traceParentKey adalah nama bidang W3C yang dibawa Envelope.
+// traceParentKey is the W3C field name carried by the Envelope.
 const traceParentKey = "traceparent"
 
-// scopeName menandai span yang dibuat paket ini, bukan oleh instrumentasi
-// pustaka.
+// scopeName marks spans created by this package, as opposed to library
+// instrumentation.
 const scopeName = "github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 
-// InjectEnvelope menyalin konteks trace aktif ke dalam envelope.
+// InjectEnvelope copies the active trace context into the envelope.
 //
-// Ini satu-satunya jembatan trace yang menyeberangi broker. gRPC dan HTTP
-// membawa traceparent di header masing-masing, tetapi event ditulis ke tabel
-// outbox dan diterbitkan belakangan oleh relay yang tidak tahu apa-apa soal
-// permintaan yang melahirkannya. Yang bisa dibawa hanyalah yang ada di
-// dalam payload-nya sendiri.
+// This is the only trace bridge across the broker. gRPC and HTTP carry the
+// traceparent in their own headers, but events are written to the outbox
+// table and published later by a relay that knows nothing about the request
+// that produced them. The only thing that can be carried is what sits inside
+// the payload itself.
 //
-// Tanpa span aktif, envelope dibiarkan apa adanya: event yang lahir dari
-// pekerjaan terjadwal memang tidak punya induk, dan mengarangnya akan
-// menghasilkan trace satu span yang menyesatkan.
+// Without an active span, the envelope is left as it is: an event born from
+// scheduled work has no parent, and inventing one would produce a misleading
+// single-span trace.
 func InjectEnvelope(ctx context.Context, env *eventsv1.Envelope) {
 	if env == nil {
 		return
@@ -52,8 +52,8 @@ func InjectEnvelope(ctx context.Context, env *eventsv1.Envelope) {
 	env.TraceId = &traceID
 }
 
-// ContextFromEnvelope mengembalikan ctx yang induk span-nya adalah trace di
-// dalam envelope, atau ctx apa adanya bila envelope tidak membawa trace.
+// ContextFromEnvelope returns a ctx whose parent span is the trace inside
+// the envelope, or ctx as-is when the envelope carries no trace.
 func ContextFromEnvelope(ctx context.Context, env *eventsv1.Envelope) context.Context {
 	parent := env.GetTraceParent()
 	if parent == "" {
@@ -63,14 +63,14 @@ func ContextFromEnvelope(ctx context.Context, env *eventsv1.Envelope) context.Co
 		propagation.MapCarrier{traceParentKey: parent})
 }
 
-// StartConsumerSpan membuka span untuk pemrosesan satu event dari broker.
+// StartConsumerSpan opens a span for processing one event from the broker.
 //
-// Span-nya menjadi ANAK dari permintaan yang menulis event itu, bukan trace
-// baru yang ditautkan. Semantik pesan OTel menyarankan tautan untuk
-// pemrosesan asinkron, tetapi yang ingin dijawab di sini adalah "apa yang
-// terjadi pada permintaan pengguna ini" - dan jawabannya harus terbaca
-// sebagai satu trace dari edge sampai worker (F9-07), bukan dua trace yang
-// harus dicocokkan orang secara manual.
+// The span becomes a CHILD of the request that wrote the event, not a new
+// trace with a link. OTel messaging semantics suggest links for
+// asynchronous processing, but the question to be answered here is "what
+// happened to this user's request" - and the answer has to read as one
+// trace from the edge to the worker (F9-07), not as two traces someone has
+// to match up by hand.
 func StartConsumerSpan(
 	ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record,
 ) (context.Context, trace.Span) {
@@ -89,7 +89,7 @@ func StartConsumerSpan(
 		))
 }
 
-// headerOf membaca satu header record; kosong bila tidak ada.
+// headerOf reads one record header; empty when absent.
 func headerOf(rec *kgo.Record, key string) string {
 	for _, h := range rec.Headers {
 		if h.Key == key {
@@ -99,19 +99,19 @@ func headerOf(rec *kgo.Record, key string) string {
 	return ""
 }
 
-// StartSpan membuka span internal biasa - untuk pekerjaan yang tidak
-// diinstrumentasi pustaka, seperti satu panggilan ke penyedia LLM.
+// StartSpan opens an ordinary internal span - for work that library
+// instrumentation does not cover, such as one call to the LLM provider.
 func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	return otel.Tracer(scopeName).Start(ctx, name,
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(attrs...))
 }
 
-// End menutup span dan mencatat galatnya, bila ada.
+// End closes the span and records the error, if any.
 //
-// Ia ada supaya setiap tempat yang menutup span melakukannya dengan cara yang
-// sama. Span yang berakhir dengan galat tetapi berstatus OK adalah span yang
-// tidak akan pernah ditemukan saat seseorang mencari yang gagal.
+// It exists so that every place that closes a span does it the same way. A
+// span that ended with an error but carries status OK is a span that will
+// never be found when someone searches for failures.
 func End(span trace.Span, err error) {
 	if err != nil {
 		span.RecordError(err)

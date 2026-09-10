@@ -18,8 +18,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// recordingProvider memasang tracer provider yang merekam ke memori sebagai
-// provider global, dan mengembalikannya saat test selesai.
+// recordingProvider installs an in-memory recording tracer provider as the
+// global one, and restores the previous one when the test finishes.
 func recordingProvider(t *testing.T) *tracetest.InMemoryExporter {
 	t.Helper()
 
@@ -55,8 +55,8 @@ func TestInjectEnvelopeCarriesTheActiveSpan(t *testing.T) {
 		t.Errorf("trace_id = %q, want %q", got, want)
 	}
 
-	// Yang diekstrak harus menunjuk ke span yang SAMA, sebagai induk jarak
-	// jauh - itu yang membuat span konsumen menjadi anaknya.
+	// What is extracted must point at the SAME span, as a remote parent - that
+	// is what makes the consumer span its child.
 	extracted := trace.SpanContextFromContext(telemetry.ContextFromEnvelope(context.Background(), env))
 	if !extracted.IsValid() {
 		t.Fatal("the extracted span context is not valid")
@@ -81,12 +81,12 @@ func TestInjectEnvelopeLeavesTheEnvelopeAloneWithoutASpan(t *testing.T) {
 			env.TraceParent, env.TraceId)
 	}
 
-	// Dan tanpa trace, ctx dikembalikan apa adanya.
+	// And without a trace, ctx is returned as it is.
 	if sc := trace.SpanContextFromContext(telemetry.ContextFromEnvelope(context.Background(), env)); sc.IsValid() {
 		t.Errorf("no trace should be extracted from an empty envelope, got %s", sc.TraceID())
 	}
 
-	// Nil tidak boleh panic: penulis outbox memvalidasi envelope setelahnya.
+	// Nil must not panic: the outbox writer validates the envelope afterwards.
 	telemetry.InjectEnvelope(context.Background(), nil)
 }
 

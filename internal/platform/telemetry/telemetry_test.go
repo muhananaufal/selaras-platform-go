@@ -19,7 +19,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// spanContext memberi ctx yang membawa span aktif.
+// spanContext returns a ctx carrying an active span.
 func spanContext(t *testing.T) (context.Context, string) {
 	t.Helper()
 
@@ -76,8 +76,8 @@ func TestWithTraceContextSurvivesDerivedLoggers(t *testing.T) {
 	log := slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(&buf, nil)))
 	ctx, traceID := spanContext(t)
 
-	// log.With dan WithGroup adalah bentuk yang dipakai hampir semua unit;
-	// keduanya harus tetap membawa bidang trace.
+	// log.With and WithGroup are the forms almost every unit uses; both must
+	// keep carrying the trace fields.
 	log.With("service", "identity").WithGroup("saga").InfoContext(ctx, "confirmed", "id", "s-1")
 
 	record := decode(t, strings.TrimSpace(buf.String()))
@@ -121,8 +121,8 @@ func TestStartWithoutAnEndpointKeepsTracingOffButPropagating(t *testing.T) {
 		t.Errorf("the log must say tracing is off, got:\n%s", buf.String())
 	}
 
-	// Propagator W3C tetap terpasang, sehingga traceparent yang datang tetap
-	// diteruskan walau proses ini tidak merekam.
+	// The W3C propagator stays installed, so an incoming traceparent is still
+	// forwarded even though this process does not record.
 	fields := otel.GetTextMapPropagator().Fields()
 	var hasTraceParent bool
 	for _, f := range fields {
@@ -134,16 +134,16 @@ func TestStartWithoutAnEndpointKeepsTracingOffButPropagating(t *testing.T) {
 		t.Errorf("the global propagator does not carry traceparent: %v", fields)
 	}
 
-	// Metrik tetap ada tanpa collector.
+	// Metrics still exist without a collector.
 	if tel.Meter() == nil || tel.Handler() == nil {
 		t.Error("metrics must be available even when tracing is off")
 	}
 }
 
 func TestStartWithAnEndpointInstallsARecordingProvider(t *testing.T) {
-	// Alamat yang tidak ada: exporter menyambung malas, jadi Start tetap
-	// berhasil dan kegagalan baru muncul saat mengekspor - persis perilaku
-	// yang diinginkan saat collector belum menyala.
+	// A non-existent address: the exporter connects lazily, so Start still
+	// succeeds and the failure only appears on export - exactly the behaviour
+	// wanted when the collector is not up yet.
 	t.Setenv(telemetry.EndpointVariable, "http://127.0.0.1:1")
 
 	previous := otel.GetTracerProvider()
@@ -164,17 +164,17 @@ func TestStartWithAnEndpointInstallsARecordingProvider(t *testing.T) {
 		t.Errorf("the log must say tracing is on, got:\n%s", buf.String())
 	}
 
-	// Span yang dibuat lewat provider global harus valid - itu bukti
-	// providernya benar-benar merekam, bukan tanpa-operasi.
+	// A span created through the global provider must be valid - that is the
+	// proof the provider really records rather than being a no-op.
 	_, span := otel.Tracer("test").Start(context.Background(), "probe")
 	if !span.SpanContext().IsValid() {
 		t.Error("spans from the installed provider are not valid; tracing is effectively off")
 	}
 	span.End()
 
-	// Shutdown mencoba mengekspor ke alamat yang tidak ada dan berhak gagal;
-	// yang dijaga hanyalah ia menghormati batas waktunya dan tidak
-	// menggantung. Setiap main membungkusnya dengan masa tenggang shutdown.
+	// Shutdown tries to export to a non-existent address and is entitled to
+	// fail; all that is guarded is that it honours its deadline and does not
+	// hang. Every main wraps it in the shutdown grace period.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	started := time.Now()
@@ -186,9 +186,9 @@ func TestStartWithAnEndpointInstallsARecordingProvider(t *testing.T) {
 	}
 }
 
-// Kompilasi menjamin propagator yang dipasang bertipe komposit W3C; test ini
-// memastikan Baggage ikut terpasang, karena atribut lintas unit
-// (misalnya id pengguna untuk log) bergantung padanya.
+// Compilation guarantees the installed propagator is the W3C composite type;
+// this test makes sure Baggage is installed too, because cross-unit
+// attributes (a user id for logs, say) depend on it.
 func TestStartInstallsBaggagePropagation(t *testing.T) {
 	t.Setenv(telemetry.EndpointVariable, "")
 	tel, err := telemetry.Start(context.Background(), "test-svc", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)))
@@ -212,8 +212,9 @@ func TestStartInstallsBaggagePropagation(t *testing.T) {
 	}
 }
 
-// Metrik proses dan runtime WAJIB ada di setiap /metrics: FinOps (F9-16) dan
-// ambang HPA (F9-21) dihitung darinya, dan docker stats tidak ada di klaster.
+// Process and runtime metrics MUST exist on every /metrics: FinOps (F9-16)
+// and the HPA thresholds (F9-21) are computed from them, and docker stats
+// does not exist in the cluster.
 func TestMetricsExposeProcessAndRuntimeCollectors(t *testing.T) {
 	t.Setenv(telemetry.EndpointVariable, "")
 	tel, err := telemetry.Start(context.Background(), "test-svc", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)))

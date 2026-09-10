@@ -8,31 +8,30 @@ import (
 	"google.golang.org/grpc/stats"
 )
 
-// GRPCServerOption memasang instrumentasi pada server gRPC.
+// GRPCServerOption installs instrumentation on a gRPC server.
 //
-// Satu opsi yang sama untuk ketujuh service, sehingga tidak ada service yang
-// span-nya berbentuk lain - atau tidak ada sama sekali - karena disusun
-// sendiri-sendiri.
+// One and the same option for all seven services, so no service ends up with
+// differently shaped spans - or none at all - because it assembled its own.
 func GRPCServerOption() grpc.ServerOption {
 	return grpc.StatsHandler(otelgrpc.NewServerHandler(
 		otelgrpc.WithFilter(notPlumbing),
 	))
 }
 
-// GRPCDialOption memasang instrumentasi pada klien gRPC, dan bersamanya
-// propagasi traceparent ke service yang dipanggil.
+// GRPCDialOption installs instrumentation on a gRPC client, and with it
+// traceparent propagation to the service being called.
 func GRPCDialOption() grpc.DialOption {
 	return grpc.WithStatsHandler(otelgrpc.NewClientHandler(
 		otelgrpc.WithFilter(notPlumbing),
 	))
 }
 
-// notPlumbing menyaring panggilan yang bukan milik pengguna.
+// notPlumbing filters out calls that do not belong to a user.
 //
-// Probe kesehatan datang setiap beberapa detik dari setiap replika, dan
-// reflection hanya dipakai grpcurl. Merekamnya berarti sebagian besar span
-// yang tersimpan adalah span yang tidak pernah dicari siapa pun, dan yang
-// dicari harus ditemukan di antaranya.
+// Health probes arrive every few seconds from every replica, and reflection
+// is only used by grpcurl. Recording them would mean most stored spans are
+// spans nobody ever looks for, and the ones people do look for would have
+// to be found among them.
 func notPlumbing(info *stats.RPCTagInfo) bool {
 	return !strings.HasPrefix(info.FullMethodName, "/grpc.health.v1.") &&
 		!strings.HasPrefix(info.FullMethodName, "/grpc.reflection.")

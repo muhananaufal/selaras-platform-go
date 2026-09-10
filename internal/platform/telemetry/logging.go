@@ -7,27 +7,28 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// traceHandler menambahkan trace_id dan span_id ke setiap catatan yang
-// ditulis dengan context yang membawa span.
+// traceHandler adds trace_id and span_id to every record written with a
+// context that carries a span.
 //
-// Bidangnya WAJIB berada di tingkat teratas catatan, bukan di dalam grup
-// yang kebetulan aktif: Loki dan Grafana mencari `trace_id`, bukan
-// `saga.trace_id`. Karena itu handler ini menyimpan handler AKAR beserta
-// urutan WithAttrs/WithGroup yang diterapkan padanya, dan saat ada span ia
-// menyisipkan bidang trace ke akar lebih dulu sebelum mengulang urutannya.
+// The fields MUST sit at the top level of the record, not inside whichever
+// group happens to be active: Loki and Grafana look for `trace_id`, not
+// `saga.trace_id`. That is why this handler keeps the ROOT handler together
+// with the sequence of WithAttrs/WithGroup applied to it, and when a span
+// is present it inserts the trace fields at the root first before replaying
+// that sequence.
 type traceHandler struct {
 	root    slog.Handler
 	ops     []func(slog.Handler) slog.Handler
 	current slog.Handler
 }
 
-// WithTraceContext membungkus handler log supaya catatannya bisa dibawa ke
-// trace-nya.
+// WithTraceContext wraps a log handler so its records can be followed to their
+// trace.
 //
-// Hanya catatan yang ditulis lewat varian *Context - InfoContext, ErrorContext -
-// yang mendapat bidangnya; varian tanpa context memang tidak punya span untuk
-// dibaca. Itu alasan seluruh log di jalur permintaan memakai varian context,
-// dan alasan keduanya bukan sekadar gaya.
+// Only records written through the *Context variants - InfoContext, ErrorContext
+// - get the fields; the variants without a context have no span to read. That is
+// why every log on the request path uses the context variant, and why the two
+// are not merely a matter of style.
 func WithTraceContext(h slog.Handler) slog.Handler {
 	if h == nil {
 		return nil
@@ -58,9 +59,9 @@ func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
 	return traced.Handle(ctx, r)
 }
 
-// WithAttrs dan WithGroup WAJIB mencatat operasinya, bukan hanya meneruskan.
-// Tanpa itu, logger turunan - log.With("service", ...) - kehilangan bidang
-// trace-nya diam-diam, dan itu persis logger yang dipakai hampir semua tempat.
+// WithAttrs and WithGroup MUST record the operation, not just pass it through.
+// Otherwise a derived logger - log.With("service", ...) - silently loses its
+// trace fields, and that is precisely the logger used almost everywhere.
 func (h *traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return h.derive(func(inner slog.Handler) slog.Handler { return inner.WithAttrs(attrs) })
 }

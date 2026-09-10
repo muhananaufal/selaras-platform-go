@@ -17,33 +17,32 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
-// EndpointVariable adalah variabel yang menyalakan pengiriman trace.
+// EndpointVariable is the variable that switches trace export on.
 //
-// Namanya milik spesifikasi OTel, bukan milik proyek ini, dan itu disengaja:
-// exporter membacanya sendiri, sehingga tidak ada penerjemahan dari nama
-// proyek ke nama pustaka yang bisa salah.
+// The name belongs to the OTel specification, not to this project, and that
+// is deliberate: the exporter reads it itself, so there is no translation
+// from a project name to a library name that could go wrong.
 const EndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
-// Telemetry adalah seluruh instrumentasi satu proses: metrik, trace, dan
-// propagasi konteks (F9-05).
+// Telemetry is the whole instrumentation of one process: metrics, traces,
+// and context propagation (F9-05).
 type Telemetry struct {
 	meters *Meters
 	traces *sdktrace.TracerProvider
 }
 
-// Start menyiapkan telemetri dan memasangnya sebagai penyedia global.
+// Start sets up telemetry and installs it as the global providers.
 //
-// Global, dengan sengaja. Instrumentasi pustaka - gRPC, Gin - mengambil
-// penyedia dari otel.GetTracerProvider() bila tidak diberi apa-apa, dan
-// meneruskan penyedia secara eksplisit ke setiap tempat berarti satu tempat
-// yang terlewat menghasilkan span yang diam-diam dibuang.
+// Global, on purpose. Library instrumentation - gRPC, Gin - takes the
+// provider from otel.GetTracerProvider() when given nothing, and passing
+// the provider explicitly to every place means one missed place produces
+// spans that are silently dropped.
 //
-// Trace HANYA dikirim bila OTEL_EXPORTER_OTLP_ENDPOINT terisi. Tanpa itu,
-// proses tetap menyala dengan tracer tanpa-operasi, dan keadaan itu
-// dinyatakan di log - bukan disembunyikan di balik grafik yang kosong.
-// Propagator W3C tetap dipasang dalam kedua keadaan, sehingga traceparent
-// yang datang dari luar tetap diteruskan sekalipun proses ini sendiri tidak
-// merekam.
+// Traces are sent ONLY when OTEL_EXPORTER_OTLP_ENDPOINT is set. Without it,
+// the process still comes up with a no-op tracer, and that state is
+// announced in the log - not hidden behind an empty graph. The W3C
+// propagator is installed in both states, so a traceparent arriving from
+// outside is still forwarded even when this process itself does not record.
 func Start(ctx context.Context, serviceName string, log *slog.Logger) (*Telemetry, error) {
 	if log == nil {
 		return nil, errors.New("nil logger")
@@ -58,8 +57,8 @@ func Start(ctx context.Context, serviceName string, log *slog.Logger) (*Telemetr
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{}, propagation.Baggage{}))
 
-	// Galat exporter - collector mati, antrean penuh - dilaporkan lewat log
-	// proses, bukan ke stderr mentah tempat tidak ada yang membacanya.
+	// Exporter errors - collector down, queue full - are reported through the
+	// process log, not to raw stderr where nobody reads them.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 		log.Error("telemetry export failed", "error", err)
 	}))
@@ -72,9 +71,9 @@ func Start(ctx context.Context, serviceName string, log *slog.Logger) (*Telemetr
 		return t, nil
 	}
 
-	// Alamat, TLS, dan header dibaca exporter dari OTEL_EXPORTER_OTLP_*
-	// sendiri. Tidak ada yang dibaca dua kali di sini supaya tidak ada dua
-	// sumber kebenaran untuk satu alamat.
+	// Address, TLS, and headers are read by the exporter itself from
+	// OTEL_EXPORTER_OTLP_*. Nothing is read twice here, so there are not two
+	// sources of truth for one address.
 	exporter, err := otlptracegrpc.New(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("building the trace exporter: %w", err)
@@ -85,9 +84,10 @@ func Start(ctx context.Context, serviceName string, log *slog.Logger) (*Telemetr
 		return nil, err
 	}
 
-	// Sampler dibaca dari OTEL_TRACES_SAMPLER; bawaannya parentbased_always_on
-	// [otel/sdk@v1.46.0/trace/sampler_env.go]. Tidak ditimpa di sini: rasio
-	// sampling adalah keputusan per lingkungan, bukan per kode.
+	// The sampler is read from OTEL_TRACES_SAMPLER; the default is
+	// parentbased_always_on [otel/sdk@v1.46.0/trace/sampler_env.go]. Not
+	// overridden here: the sampling ratio is a per-environment decision, not a
+	// per-code one.
 	t.traces = sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
@@ -98,17 +98,17 @@ func Start(ctx context.Context, serviceName string, log *slog.Logger) (*Telemetr
 	return t, nil
 }
 
-// Meter mengembalikan meter untuk membuat instrumen.
+// Meter returns a meter for creating instruments.
 func (t *Telemetry) Meter() metric.Meter { return t.meters.Meter() }
 
 // Handler menyajikan metriknya dalam format Prometheus.
 func (t *Telemetry) Handler() http.Handler { return t.meters.Handler() }
 
-// Shutdown mengosongkan antrean span lalu menutup kedua penyedia.
+// Shutdown drains the span queue and then closes both providers.
 //
-// Trace ditutup lebih dulu: span yang belum terkirim hilang bila prosesnya
-// keluar, sementara metrik dibaca oleh yang menariknya dan tidak punya
-// antrean yang perlu dikosongkan.
+// Traces are closed first: spans not yet exported are lost if the process
+// exits, whereas metrics are read by whoever scrapes them and have no queue
+// to drain.
 func (t *Telemetry) Shutdown(ctx context.Context) error {
 	var errs []error
 	if t.traces != nil {
@@ -122,12 +122,12 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// describe menyusun resource yang menempel pada setiap span dan metrik.
+// describe assembles the resource attached to every span and metric.
 //
-// Versi semconv WAJIB sama dengan yang dipakai resource.Default()
-// [otel/sdk@v1.46.0/resource/builtin.go:16], kalau tidak Merge menolak
-// dengan "conflicting Schema URL" - dan telemetrinya diam-diam tidak ada.
-// Ini benar-benar terjadi: v1.26.0 vs v1.43.0.
+// The semconv version MUST match the one used by resource.Default()
+// [otel/sdk@v1.46.0/resource/builtin.go:16], otherwise Merge refuses with
+// "conflicting Schema URL" - and the telemetry silently does not exist.
+// This really happened: v1.26.0 vs v1.43.0.
 func describe(serviceName string) (*resource.Resource, error) {
 	res, err := resource.Merge(resource.Default(),
 		resource.NewWithAttributes(semconv.SchemaURL,
