@@ -6,21 +6,23 @@ import (
 	"time"
 )
 
-// TestCulinaryPreferencesSurviveAPartialUpdate adalah B16 lewat empat lapisan.
+// TestCulinaryPreferencesSurviveAPartialUpdate is B16 through four layers.
 //
-// Di sistem lama, satu PATCH yang hanya membawa alergi MENGHAPUS selera dan
-// peralatan dapur pengguna: repositorinya menimpa seluruh kolom JSON dengan
-// bidang yang kebetulan lolos validasi. Tidak ada galat, dan pengguna baru
-// menyadarinya saat sarannya berubah.
+// In the legacy system, one PATCH carrying only allergies WIPED the user's
+// tastes and kitchen equipment: its repository overwrote the whole JSON column
+// with whichever fields happened to pass validation. No error, and the user
+// only noticed when their suggestions changed.
 //
-// Rantai yang menahannya panjang - badan HTTP, kontrak proto, use case, SQL -
-// dan memutusnya di SALAH SATU lapisan sudah cukup untuk menghidupkan bugnya
-// kembali. Itulah sebabnya ini diuji dari luar, bukan hanya di domain.
+// The chain holding it back is long - the HTTP body, the proto contract, the
+// use case, SQL - and breaking it at ANY ONE layer is enough to bring the bug
+// back to life. That is why it is tested from the outside, not only in the
+// domain.
 func TestCulinaryPreferencesSurviveAPartialUpdate(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// Belum pernah disentuh: hub tetap terbuka, dan isinya kosong - bukan 404.
+	// Never touched: the hub still opens, and its content is empty - not a
+	// 404.
 	code, empty := c.do(http.MethodGet, "/api/v1/culinary/hub-data", nil)
 	if code != http.StatusOK {
 		t.Fatalf("a hub for a user with no preferences answered %d: %v", code, empty)
@@ -41,7 +43,7 @@ func TestCulinaryPreferencesSurviveAPartialUpdate(t *testing.T) {
 		t.Fatalf("saving preferences answered %d: %v", code, full)
 	}
 
-	// Lalu HANYA alergi yang diubah.
+	// Then ONLY the allergies are changed.
 	code, partial := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
 		"allergies": "udang, kepiting, dan kacang",
 	})
@@ -65,7 +67,7 @@ func TestCulinaryPreferencesSurviveAPartialUpdate(t *testing.T) {
 		t.Errorf("the kitchen equipment was wiped to %v", got)
 	}
 
-	// Dan yang tersimpan sungguhan, bukan hanya yang dikembalikan.
+	// And what is really stored, not only what was returned.
 	code, hub := c.do(http.MethodGet, "/api/v1/culinary/hub-data", nil)
 	if code != http.StatusOK {
 		t.Fatalf("reading the hub answered %d", code)
@@ -74,8 +76,8 @@ func TestCulinaryPreferencesSurviveAPartialUpdate(t *testing.T) {
 		t.Errorf("the stored budget level is %q", got)
 	}
 
-	// Pengosongan yang DISENGAJA tetap bisa: kalau tidak, preferensi yang
-	// pernah diisi tidak akan pernah bisa dihapus lagi.
+	// DELIBERATE emptying still works: otherwise a preference once filled in
+	// could never be cleared again.
 	code, cleared := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
 		"taste_profiles": []string{},
 	})
@@ -90,17 +92,18 @@ func TestCulinaryPreferencesSurviveAPartialUpdate(t *testing.T) {
 	}
 }
 
-// TestADailyGuideIsAskedForAndArrives adalah gerbang keluar F6.
+// TestADailyGuideIsAskedForAndArrives is the F6 exit gate.
 //
-// Permintaan dijawab 202 dan panduannya tiba belakangan - menyeberangi gateway,
-// nutrition-svc, outbox, Kafka, llm-worker, dan kembali. Sistem lama menahan
-// permintaan HTTP selama Gemini bekerja, dengan timeout 180 detik (B14).
+// The request is answered 202 and the guide arrives later - crossing the
+// gateway, nutrition-svc, the outbox, Kafka, llm-worker, and back. The legacy
+// system held the HTTP request while Gemini worked, with a 180-second timeout
+// (B14).
 func TestADailyGuideIsAskedForAndArrives(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// Catatan alergi diisi lebih dulu: ia ikut ke dalam prompt, dan itu satu-
-	// satunya bagian konteks yang keliru bisa mencederai seseorang.
+	// The allergy note is filled in first: it goes into the prompt, and it is
+	// the only part of the context that can hurt someone when wrong.
 	if code, body := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
 		"allergies": "udang",
 	}); code != http.StatusOK {
@@ -129,7 +132,7 @@ func TestADailyGuideIsAskedForAndArrives(t *testing.T) {
 
 	guide := c.waitForGuide(guideID, 90*time.Second)
 
-	// Panduannya membawa isinya, bukan hanya statusnya.
+	// The guide carries its content, not only its status.
 	data, _ := guide["guide_data"].(map[string]any)
 	suggestions, _ := data["suggestions"].([]any)
 	if len(suggestions) == 0 {
@@ -140,17 +143,17 @@ func TestADailyGuideIsAskedForAndArrives(t *testing.T) {
 		t.Errorf("the first suggestion has no dish name: %v", first)
 	}
 
-	// Waktu makannya dibekukan saat diminta, dan bukan kosong.
+	// Its meal time was frozen when requested, and is not empty.
 	if mealTime, _ := guide["meal_time"].(string); mealTime == "" {
 		t.Error("the guide carries no meal time")
 	}
-	// Tanggalnya tanggal setempat, bukan stempel waktu.
+	// Its date is the local date, not a timestamp.
 	if date, _ := guide["guide_date"].(string); len(date) != 10 {
 		t.Errorf("the guide date is %q, want a plain date", date)
 	}
 }
 
-// TestTheCulinaryHistoryIsPagedAndPrivate adalah F6-08 lewat jalur sungguhan.
+// TestTheCulinaryHistoryIsPagedAndPrivate is F6-08 through the real path.
 func TestTheCulinaryHistoryIsPagedAndPrivate(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -189,12 +192,12 @@ func TestTheCulinaryHistoryIsPagedAndPrivate(t *testing.T) {
 		t.Fatalf("the second page holds %d guides, want 1", len(rest))
 	}
 
-	// Halaman terakhir TIDAK membawa token: kosongnya adalah tanda berhenti.
+	// The last page carries NO token: its emptiness is the stop signal.
 	if last, _ := dig(second, "data", "page", "next_page_token").(string); last != "" {
 		t.Errorf("the last page still carries a next token: %q", last)
 	}
 
-	// Dan orang lain tidak melihat satu pun.
+	// And someone else sees none at all.
 	stranger := newClient(t)
 	stranger.register()
 
@@ -210,10 +213,10 @@ func TestTheCulinaryHistoryIsPagedAndPrivate(t *testing.T) {
 	}
 }
 
-// TestAnInvalidDailyGuideRequestIsRefused menjaga masukan hariannya.
+// TestAnInvalidDailyGuideRequestIsRefused guards the daily input.
 //
-// Tiga jawaban pertama WAJIB: tanpa salah satunya, prompt kehilangan bagian
-// yang menjadikan saran hari ini berbeda dari saran mana pun.
+// The first three answers are REQUIRED: without any one of them, the prompt
+// loses the part that makes today's advice different from any other advice.
 func TestAnInvalidDailyGuideRequestIsRefused(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -249,8 +252,8 @@ func TestAnInvalidDailyGuideRequestIsRefused(t *testing.T) {
 		})
 	}
 
-	// Label lama sistem sebelumnya juga ditolak di preferensi, bukan diterima
-	// diam-diam lalu tersimpan sebagai nilai yang tidak dikenali kode mana pun.
+	// The old labels of the previous system are refused in the preferences as
+	// well, not silently accepted and stored as a value no code recognises.
 	code, answer := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
 		"budget_level": "Hemat",
 	})
@@ -259,7 +262,7 @@ func TestAnInvalidDailyGuideRequestIsRefused(t *testing.T) {
 	}
 }
 
-// waitForGuide menunggu sebuah panduan berhenti pending, lalu mengembalikannya.
+// waitForGuide waits for a guide to stop being pending, then returns it.
 func (c *client) waitForGuide(guideID string, timeout time.Duration) map[string]any {
 	c.t.Helper()
 

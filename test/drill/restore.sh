@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Latihan pemulihan dari nol (F9-31, ADR-016, kriteria selesai #14).
+# Recovery drill from zero (F9-31, ADR-016, exit criterion #14).
 #
-# Basis data DIHAPUS TOTAL lalu dipulihkan dari backup terakhir di volume
-# backups. Setiap langkah diberi waktu, dan skrip ini TIDAK menjalankan test
-# e2e sendiri - ia mencetak perintahnya di akhir, dijalankan dari Windows
-# (toolchain Go ada di sana), dan hasilnya dicatat di
-# docs/runbook/restore-drill.md bersama waktunya.
+# The database is DROPPED ENTIRELY and then restored from the latest backup
+# in the backups volume. Every step is timed, and this script does NOT run
+# the e2e tests itself - it prints the command at the end, to be run from
+# Windows (the Go toolchain lives there), and the result is recorded in
+# docs/runbook/restore-drill.md together with the timings.
 #
-# Jalankan dari WSL:  bash test/drill/restore.sh
+# Run from WSL: bash test/drill/restore.sh
 #
-# Ini MERUSAK: seluruh data lokal diganti dengan isi backup. Itu memang
-# intinya. Ia menolak berjalan tanpa DRILL=yes.
+# This is DESTRUCTIVE: all local data is replaced with the backup's content.
+# That is the point. It refuses to run without DRILL=yes.
 
 set -euo pipefail
 
@@ -22,37 +22,37 @@ COMPOSE="docker compose --env-file $ROOT/.env -f $ROOT/deploy/compose/core.yml -
 UNITS="identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway pgbouncer backup"
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
-# psql_admin bicara ke basis data "postgres" (untuk DROP/CREATE), psql_app ke
-# basis data aplikasi (untuk menghitung isinya).
+# psql_admin speaks to the "postgres" database (for DROP/CREATE), psql_app to
+# the application database (for counting its content).
 psql_admin() { docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -tA -c "$1"; }
 psql_app() { docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "$1"; }
 started=$(date +%s)
 mark() { echo $(( $(date +%s) - started )); }
 
-# 1. Backup terakhir dipilih SEBELUM apa pun dihapus.
+# 1. The latest backup is picked BEFORE anything is deleted.
 LATEST=$(docker run --rm -v selaras-core_backups:/backups alpine sh -c 'ls -1 /backups/*.dump | sort | tail -1')
 GLOBALS=$(docker run --rm -v selaras-core_backups:/backups alpine sh -c 'ls -1 /backups/globals-*.sql | sort | tail -1')
 [ -n "$LATEST" ] || { log "no backup found in the backups volume"; exit 1; }
 log "restoring from $LATEST (+ $GLOBALS)"
 
-# Angka sebelum: dipakai membandingkan setelah pulih.
+# The numbers before: used to compare after the restore.
 BEFORE=$(psql_app "SELECT (SELECT count(*) FROM identity.users) || ' users, ' || (SELECT count(*) FROM assessment.risk_assessments) || ' assessments'" 2>/dev/null || echo "unknown")
 log "before: $BEFORE"
 
-# 2. Semua yang memegang koneksi dimatikan.
+# 2. Everything holding a connection is stopped.
 log "stopping units and pgbouncer"
 # shellcheck disable=SC2086
 $COMPOSE stop $UNITS >/dev/null 2>&1
 log "stopped at +$(mark)s"
 
-# 3. Basis data dihapus TOTAL.
+# 3. The database is dropped ENTIRELY.
 psql_admin "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$POSTGRES_DB' AND pid <> pg_backend_pid()" >/dev/null
 psql_admin "DROP DATABASE $POSTGRES_DB"
 log "database dropped at +$(mark)s"
 psql_admin "CREATE DATABASE $POSTGRES_DB"
 
-# 4. Peran (sudah ada; galat 'already exists' diabaikan dengan sengaja),
-#    lalu isi.
+# 4. The roles (they already exist; the 'already exists' error is ignored
+#    deliberately), then the content.
 docker run --rm -v selaras-core_backups:/backups --network selaras-core_default \
   -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:18.6-alpine \
   psql -h postgres -U "$POSTGRES_USER" -d postgres -f "$GLOBALS" >/dev/null 2>&1 || true
@@ -61,8 +61,9 @@ docker run --rm -v selaras-core_backups:/backups --network selaras-core_default 
   pg_restore -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --role="$POSTGRES_USER" --exit-on-error "$LATEST"
 log "restored at +$(mark)s"
 
-# Pemilik dikembalikan ke peran per-service: --no-owner membuat semuanya
-# milik admin, dan ADR-006 menuntut svc_<skema> memiliki skemanya.
+# Ownership is handed back to the per-service roles: --no-owner makes
+# everything belong to admin, and ADR-006 demands that svc_<schema> owns its
+# schema.
 for s in identity profile assessment coaching chat nutrition dashboard llm; do
   docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q -c "
     ALTER SCHEMA $s OWNER TO svc_$s;

@@ -19,13 +19,13 @@ import (
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 )
 
-// Test ini melewati gateway dengan sengaja: ia berbicara gRPC langsung ke
-// profile-svc, seperti pod yang bocor atau proses di jaringan internal.
-// Sebelum ADR-026, jalur ini membaca profil siapa pun hanya dengan menebak
-// user_id (ADR-023 mencatatnya sebagai "belum dilakukan hari ini").
+// This test deliberately bypasses the gateway: it speaks gRPC directly to
+// profile-svc, like a leaked pod or a process on the internal network.
+// Before ADR-026, this path read anyone's profile just by guessing a
+// user_id (ADR-023 recorded it as "not done today").
 func profileGRPCAddr(t *testing.T) string {
 	t.Helper()
-	baseURL(t) // melewati diri tanpa stack, gagal di CI, sama seperti test lain
+	baseURL(t) // skips itself without a stack, fails in CI, like every other test
 	if addr := os.Getenv("TEST_PROFILE_GRPC_ADDR"); addr != "" {
 		return addr
 	}
@@ -42,9 +42,9 @@ func dialProfile(t *testing.T) profilev1.ProfileClient {
 	return profilev1.NewProfileClient(conn)
 }
 
-// subjectOf membaca `sub` dari token tanpa memverifikasinya - test ini
-// bukan pemeriksa tanda tangan, ia hanya perlu tahu id pengguna yang baru
-// didaftarkan.
+// subjectOf reads `sub` from the token without verifying it - this test is
+// not a signature checker, it only needs to know the id of the user it just
+// registered.
 func subjectOf(t *testing.T, token string) string {
 	t.Helper()
 	parts := strings.Split(token, ".")
@@ -85,13 +85,13 @@ func TestAServiceRefusesATokenThatBelongsToSomeoneElse(t *testing.T) {
 	defer cancel()
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.token)
 
-	// Token sah, tetapi user_id milik orang lain: 403, bukan data orang lain.
+	// A valid token, but someone else's user_id: 403, not someone else's data.
 	_, err := profiles.GetProfile(ctx, &profilev1.GetProfileRequest{UserId: uuid.NewString()})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("someone else's user_id must be refused with PermissionDenied, got %v", err)
 	}
 
-	// Token yang sama dengan user_id pemiliknya: jalur normal tetap bekerja.
+	// The same token with its owner's user_id: the normal path still works.
 	if _, err := profiles.GetProfile(ctx, &profilev1.GetProfileRequest{UserId: me}); err != nil {
 		t.Fatalf("the owner's own request was refused: %v", err)
 	}

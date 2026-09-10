@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Chaos F9-12: broker dimatikan paksa saat pekerjaan berjalan.
+# Chaos F9-12: the broker is killed while jobs are running.
 #
-# Yang dibuktikan: nol event hilang. Permintaan yang diterima saat broker mati
-# tetap tersimpan di outbox (published_at IS NULL), dan setelah broker kembali
-# SELURUH pekerjaan selesai - bukan sebagian.
+# What is proven: zero events lost. Requests accepted while the broker is down
+# stay stored in the outbox (published_at IS NULL), and once the broker is
+# back ALL jobs finish - not some.
 #
-# Jalankan dari WSL:  bash test/chaos/broker.sh
-# Hasilnya dibahas di test/chaos/broker.md.
+# Run from WSL: bash test/chaos/broker.sh The results are discussed in
+# test/chaos/broker.md.
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

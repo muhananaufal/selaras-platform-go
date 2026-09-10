@@ -6,24 +6,24 @@ import (
 	"time"
 )
 
-// dashboardLagBudget adalah batas yang DINYATAKAN, bukan yang ditaksir.
+// dashboardLagBudget is a DECLARED bound, not an estimated one.
 //
-// Lima pengukuran di docs/consistency-report.md menghasilkan 444-920 ms, dan
-// satu pengukuran setelah service baru dinyalakan menghasilkan 1204 ms. Batas
-// di sini sepuluh detik: cukup longgar untuk mesin yang sibuk menjalankan
-// tujuh container sekaligus, dan cukup ketat untuk menangkap proyeksi yang
-// benar-benar berhenti bergerak.
+// Five measurements in docs/consistency-report.md gave 444-920 ms, and one
+// measurement right after a new service started gave 1204 ms. The bound here
+// is ten seconds: loose enough for a busy machine running seven containers at
+// once, and tight enough to catch a projection that has really stopped moving.
 //
-// Batas yang terlalu ketat menghasilkan test yang gagal karena mesinnya sibuk,
-// dan test seperti itu berhenti dipercaya sebelum ia sempat menangkap apa pun.
+// A bound that is too tight produces a test that fails because the machine is
+// busy, and a test like that stops being trusted before it has a chance to
+// catch anything.
 const dashboardLagBudget = 10 * time.Second
 
-// TestANewUserSeesAWelcomeDashboardNotAnError adalah keadaan pertama yang
-// dilihat setiap pengguna.
+// TestANewUserSeesAWelcomeDashboardNotAnError is the first state every user
+// sees.
 //
-// Pengguna yang baru mendaftar belum menghasilkan satu event pun, jadi belum
-// ada barisnya di read-model. Itu BUKAN 404: halaman yang menyambut pengguna
-// baru tidak boleh terlihat rusak.
+// A user who has just registered has not produced a single event, so there
+// is no row for them in the read-model yet. That is NOT a 404: the page that
+// welcomes a new user must not look broken.
 func TestANewUserSeesAWelcomeDashboardNotAnError(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -46,7 +46,7 @@ func TestANewUserSeesAWelcomeDashboardNotAnError(t *testing.T) {
 		t.Error("a user with no program has a program")
 	}
 
-	// Daftar KOSONG, bukan null: klien yang mengiterasinya akan gagal.
+	// An EMPTY list, not null: a client iterating it would fail.
 	if history, ok := dig(body, "data", "assessment_history").([]any); !ok || len(history) != 0 {
 		t.Errorf("the history is %v; it should be an empty list", dig(body, "data", "assessment_history"))
 	}
@@ -54,19 +54,20 @@ func TestANewUserSeesAWelcomeDashboardNotAnError(t *testing.T) {
 		t.Errorf("the risk trend is %v; it should be an empty list", dig(body, "data", "risk_trend"))
 	}
 
-	// "insufficient_data", BUKAN "stable". Sistem lama menjawab stable untuk
-	// analisis pertama, mencampur dua keadaan yang berbeda: klien yang
-	// menggambar panah mendatar untuk stabil akan menggambarnya juga untuk
-	// orang yang belum punya pembanding sama sekali.
+	// "insufficient_data", NOT "stable". The legacy system answered stable for
+	// the first analysis, mixing two different states: a client drawing a flat
+	// arrow for stable would draw it for someone who has nothing to compare
+	// against at all.
 	if got, _ := dig(body, "data", "health_trend").(string); got != "insufficient_data" {
 		t.Errorf("a user with no assessments has health trend %q", got)
 	}
 }
 
-// TestTheDashboardCatchesUpAfterAnAssessment adalah gerbang keluar F7.
+// TestTheDashboardCatchesUpAfterAnAssessment is the F7 exit gate.
 //
-// Ia mengukur SELURUH rantai lewat HTTP: penulisan penilaian, baris outbox,
-// relay, Kafka, proyektor, dan pembacaan dasbor lewat gateway.
+// It measures the WHOLE chain over HTTP: the assessment write, the outbox
+// row, the relay, Kafka, the projector, and the dashboard read through the
+// gateway.
 func TestTheDashboardCatchesUpAfterAnAssessment(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -85,7 +86,7 @@ func TestTheDashboardCatchesUpAfterAnAssessment(t *testing.T) {
 
 	dash := c.waitForDashboard(1, dashboardLagBudget)
 
-	// Penilaiannya muncul utuh, bukan hanya jumlahnya.
+	// The assessment appears whole, not just its count.
 	latest, _ := dash["latest_assessment"].(map[string]any)
 	if latest == nil {
 		t.Fatalf("the dashboard has no latest assessment: %v", dash)
@@ -97,12 +98,13 @@ func TestTheDashboardCatchesUpAfterAnAssessment(t *testing.T) {
 		t.Errorf("the dashboard shows %v%%, the assessment said %v%%", got, risk)
 	}
 
-	// Kategori risiko ada, dan itu yang membedakannya dari sistem lama.
+	// The risk category is present, and that is what sets it apart from the
+	// legacy system.
 	//
-	// Di sana kategorinya dibaca dari laporan LLM, sehingga pengguna yang
-	// personalisasinya belum tiba - seperti pengguna ini, yang baru saja
-	// menganalisis - melihat "N/A" sebagai status kesehatannya (B19). Di sini
-	// ia dihitung dari SCORE2 dan ada begitu penilaiannya ada.
+	// There the category was read from the LLM report, so a user whose
+	// personalisation had not arrived - like this user, who has just analysed
+	// - saw "N/A" as their health status (B19). Here it is computed from
+	// SCORE2 and exists as soon as the assessment does.
 	category, _ := latest["risk_category"].(string)
 	switch category {
 	case "LOW_MODERATE", "HIGH", "VERY_HIGH":
@@ -110,7 +112,7 @@ func TestTheDashboardCatchesUpAfterAnAssessment(t *testing.T) {
 		t.Errorf("the risk category is %q; it should be computed, not awaited", category)
 	}
 
-	// Satu penilaian: belum ada pembanding.
+	// One assessment: nothing to compare against yet.
 	if got, _ := dash["health_trend"].(string); got != "insufficient_data" {
 		t.Errorf("with one assessment the trend is %q", got)
 	}
@@ -120,14 +122,15 @@ func TestTheDashboardCatchesUpAfterAnAssessment(t *testing.T) {
 		t.Errorf("the risk trend holds %d points, want 1", len(trend))
 	}
 
-	// projected_at dibuka apa adanya: read-model bersifat eventually
-	// consistent, dan jeda yang disembunyikan tampak seperti bug.
+	// projected_at is exposed as it is: the read-model is eventually
+	// consistent, and a hidden delay looks like a bug.
 	if got, _ := dash["projected_at"].(string); got == "" {
 		t.Error("the dashboard does not say when it was last projected")
 	}
 }
 
-// TestASecondAssessmentGivesTheDashboardATrend adalah alasan riwayat disimpan.
+// TestASecondAssessmentGivesTheDashboardATrend is the reason the history is
+// stored.
 func TestASecondAssessmentGivesTheDashboardATrend(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -141,9 +144,9 @@ func TestASecondAssessmentGivesTheDashboardATrend(t *testing.T) {
 
 	dash := c.waitForDashboard(2, dashboardLagBudget)
 
-	// Dua penilaian dengan jawaban yang sama menghasilkan angka yang sama, jadi
-	// trennya "stable" - dan itu berbeda dari "insufficient_data" yang dijawab
-	// saat baru ada satu.
+	// Two assessments with the same answers yield the same number, so the trend
+	// is "stable" - and that differs from the "insufficient_data" answered
+	// while there is only one.
 	if got, _ := dash["health_trend"].(string); got != "stable" {
 		t.Errorf("two identical assessments give trend %q, want stable", got)
 	}
@@ -155,11 +158,11 @@ func TestASecondAssessmentGivesTheDashboardATrend(t *testing.T) {
 	}
 }
 
-// TestOneUsersAssessmentsNeverReachAnothersDashboard adalah S9 di read-model.
+// TestOneUsersAssessmentsNeverReachAnothersDashboard is S9 in the read-model.
 //
-// Proyeksi menulis ke satu baris per pengguna, dan barisnya dipilih dari
-// user_id di dalam eventnya. Kekeliruan di sana tidak menghasilkan galat -
-// ia menghasilkan riwayat kesehatan seseorang di dasbor orang lain.
+// The projection writes to one row per user, and the row is chosen from the
+// user_id inside the event. A mistake there produces no error - it produces
+// someone's health history on someone else's dashboard.
 func TestOneUsersAssessmentsNeverReachAnothersDashboard(t *testing.T) {
 	owner := newClient(t)
 	owner.register()
@@ -185,7 +188,8 @@ func TestOneUsersAssessmentsNeverReachAnothersDashboard(t *testing.T) {
 	}
 }
 
-// waitForDashboard menunggu proyeksi menyusul sampai jumlah yang diharapkan.
+// waitForDashboard waits for the projection to catch up to the expected
+// count.
 func (c *client) waitForDashboard(want int, timeout time.Duration) map[string]any {
 	c.t.Helper()
 
@@ -215,7 +219,8 @@ func (c *client) waitForDashboard(want int, timeout time.Duration) map[string]an
 	return nil
 }
 
-// completeProfile mengisi profil secukupnya supaya penilaian bisa dihitung.
+// completeProfile fills in just enough of the profile for an assessment to
+// be computable.
 func (c *client) completeProfile() {
 	c.t.Helper()
 
@@ -231,10 +236,10 @@ func (c *client) completeProfile() {
 	}
 }
 
-// assessmentInput adalah kuesioner yang sah, seluruhnya diisi manual.
+// assessmentInput is a valid questionnaire, filled in manually throughout.
 //
-// Nilai jawabannya string berbahasa Indonesia karena itulah yang dikirim
-// antarmuka hari ini, dan bentuknya dipertahankan (ADR-005).
+// The answer values are Indonesian strings because that is what the
+// interface sends today, and the shape is kept (ADR-005).
 func assessmentInput() map[string]any {
 	return map[string]any{
 		"has_diabetes":     false,

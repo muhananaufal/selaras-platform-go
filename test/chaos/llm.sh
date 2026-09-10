@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Chaos F9-14: penyedia LLM lambat, sesekali gagal, atau selalu gagal.
+# Chaos F9-14: the LLM provider is slow, fails occasionally, or always fails.
 #
-# Tiga gangguan dimainkan pada penyedia palsu lewat LLM_FAKE_FAULT, dan yang
-# diperiksa adalah TIGA perilaku: worker mencoba ulang lalu berhasil (flaky),
-# pekerjaan yang tidak akan pernah berhasil berakhir "dead" dan penilaiannya
-# ditandai "failed" - bukan pending selamanya (error), dan jawaban 202 tetap
-# instan sekalipun penyedianya lambat (slow).
+# Three faults are played on the fake provider through LLM_FAKE_FAULT, and
+# what is checked is THREE behaviours: the worker retries and then succeeds
+# (flaky), a job that will never succeed ends up "dead" and its assessment is
+# marked "failed" - not pending forever (error), and the 202 answer stays
+# instant even when the provider is slow (slow).
 #
-# Jalankan dari WSL:  bash test/chaos/llm.sh
-# Hasilnya dibahas di test/chaos/llm.md.
+# Run from WSL: bash test/chaos/llm.sh The results are discussed in
+# test/chaos/llm.md.
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 COMPOSE="docker compose --env-file $ROOT/.env -f $ROOT/deploy/compose/core.yml -f $ROOT/deploy/compose/apps.yml"
 
-# with_fault menyalakan ulang llm-worker dengan gangguan yang diminta.
+# with_fault restarts llm-worker with the requested fault.
 with_fault() {
   log "llm-worker dinyalakan ulang dengan LLM_FAKE_FAULT=$1"
   LLM_FAKE_FAULT="$1" OTEL_COLLECTOR_ENDPOINT="${OTEL_COLLECTOR_ENDPOINT:-}" \
@@ -23,11 +23,11 @@ with_fault() {
   docker logs --since 10s selaras-llm-worker 2>&1 | grep -o '"msg":"[^"]*FAULT[^"]*","fault":"[^"]*"' || true
 }
 
-# job_row membaca baris llm_jobs milik sebuah penilaian (menurut slug).
+# job_row reads the llm_jobs row of an assessment (by slug).
 #
-# Dicari lewat aggregate_id, bukan job_id yang dijawab API: job_id itu adalah
-# id event permintaannya, sedangkan worker memberi id sendiri pada barisnya.
-# Keduanya bertemu hanya di idempotency_key dan aggregate_id.
+# Looked up through aggregate_id, not the job_id the API answers with: that
+# job_id is the id of the request event, while the worker gives its row an id
+# of its own. The two meet only in idempotency_key and aggregate_id.
 job_row() {
   psql "SELECT status || ' attempts=' || attempts || ' error=' || coalesce(left(last_error, 60), '-')
         FROM llm.llm_jobs
@@ -35,8 +35,8 @@ job_row() {
         ORDER BY created_at DESC LIMIT 1"
 }
 
-# request_flow mendaftar, mengisi profil, membuat penilaian, lalu meminta
-# personalisasi; mencetak slug penilaiannya.
+# request_flow registers, fills in the profile, creates an assessment, then
+# requests personalisation; prints the assessment slug.
 request_flow() {
   local token slug
   token=$(register "llm-$1"); complete_profile "$token"; slug=$(start_assessment "$token")

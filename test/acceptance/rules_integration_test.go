@@ -33,12 +33,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// Aturan yang butuh satu dependensi (Postgres atau Redis) tetapi bukan
-// seluruh stack. Tanpa variabel TEST_* yang sesuai, test melewati dirinya
-// sendiri - persis kebijakan pgtest.
+// Rules that need one dependency (Postgres or Redis) but not the whole
+// stack. Without the matching TEST_* variable the test skips itself -
+// exactly the pgtest policy.
 
-// S5 - Login sosial tidak dapat menimpa akun kata sandi. Menautkan Google ke
-// akun yang sudah punya kata sandi TIDAK mengubah hash-nya.
+// S5 - Social login cannot overwrite a password account. Linking Google to
+// an account that already has a password does NOT change its hash.
 func TestS05_SocialLoginNeverOverwritesAPasswordAccount(t *testing.T) {
 	email, err := identitydomain.NewEmail("s5@user.co")
 	if err != nil {
@@ -62,7 +62,7 @@ func TestS05_SocialLoginNeverOverwritesAPasswordAccount(t *testing.T) {
 	}
 }
 
-// fakeProvider menukar kode apa pun dengan id_token tetap.
+// fakeProvider exchanges any code for a fixed id_token.
 type fakeProvider struct{}
 
 func (fakeProvider) AuthCodeURL(state string) string {
@@ -72,8 +72,8 @@ func (fakeProvider) Exchange(context.Context, string) (string, error) {
 	return "id-token-dari-provider", nil
 }
 
-// fakeIdentity menjawab ExchangeSocialToken dengan token akses yang diketahui;
-// RPC lain tidak pernah dipanggil di jalur ini.
+// fakeIdentity answers ExchangeSocialToken with a known access token; no other
+// RPC is ever called on this path.
 type fakeIdentity struct {
 	identityv1.IdentityClient
 	accessToken string
@@ -124,10 +124,11 @@ func socialHandler(t *testing.T, store *oauth.Store) *gin.Engine {
 	return router
 }
 
-// S6 - Token tidak pernah dikirim lewat query string. Callback mengalihkan ke
-// frontend dengan KODE sekali pakai di fragment (#), bukan token di ?query.
-// S11 - Alur OAuth memakai parameter state: callback tanpa state yang pernah
-// diterbitkan ditolak, dan state hanya bisa dipakai sekali.
+// S6 - The token is never sent through the query string. The callback
+// redirects to the frontend with a one-time CODE in the fragment (#), not a
+// token in the ?query. S11 - The OAuth flow uses the state parameter: a
+// callback without a state that was ever issued is refused, and a state can
+// only be used once.
 func TestS06_S11_CallbackUsesAFragmentCodeAndDemandsAFreshState(t *testing.T) {
 	store := redisStore(t)
 	router := socialHandler(t, store)
@@ -144,15 +145,15 @@ func TestS06_S11_CallbackUsesAFragmentCodeAndDemandsAFreshState(t *testing.T) {
 		t.Fatalf("no state in the provider redirect: %s", location)
 	}
 
-	// S11: callback dengan state yang tidak pernah diterbitkan ditolak.
+	// S11: a callback with a state that was never issued is refused.
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=dikarang&code=abc", nil))
 	if rec.Code == http.StatusFound && strings.Contains(rec.Header().Get("Location"), "#code=") {
 		t.Fatal("a callback with a forged state was accepted")
 	}
 
-	// Callback dengan state yang benar berhasil - dan bentuk pengalihannya
-	// adalah S6.
+	// A callback with the right state succeeds - and the shape of its redirect
+	// is S6.
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/google/callback?state="+state+"&code=abc", nil))
 	if rec.Code != http.StatusFound {
@@ -169,22 +170,22 @@ func TestS06_S11_CallbackUsesAFragmentCodeAndDemandsAFreshState(t *testing.T) {
 		t.Fatalf("S6: nothing may travel in the query string: %s", location)
 	}
 
-	// S11: state yang sama tidak bisa dipakai dua kali.
+	// S11: the same state cannot be used twice.
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/google/callback?state="+state+"&code=abc", nil))
 	if rec.Code == http.StatusFound && strings.Contains(rec.Header().Get("Location"), "#code=") {
 		t.Fatal("S11: a state was accepted twice")
 	}
 
-	// Kode di fragment ditukar sekali; kode yang tidak dikenal ditolak.
+	// The code in the fragment is exchanged once; an unknown code is refused.
 	if _, err := store.ConsumeHandoffCode(context.Background(), "kode-dikarang"); !errors.Is(err, oauth.ErrUnknownCode) {
 		t.Fatalf("a forged handoff code answered %v, want ErrUnknownCode", err)
 	}
 }
 
-// D9 - Kegagalan AI tidak menjadi pesan model: event LlmJobFailed untuk
-// percakapan TIDAK menulis apa pun ke riwayat, dan konsumen menerimanya
-// (offset maju) alih-alih mengulang.
+// D9 - An AI failure does not become a model message: an LlmJobFailed event
+// for a conversation writes NOTHING to the history, and the consumer
+// accepts it (the offset advances) instead of retrying.
 func TestD09_AnAIFailureNeverBecomesAModelMessage(t *testing.T) {
 	pool := pgtest.Open(t, "chat")
 	pgtest.Truncate(t, pool, "conversations")

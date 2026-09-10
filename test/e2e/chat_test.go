@@ -6,17 +6,17 @@ import (
 	"time"
 )
 
-// TestAChatConversationRunsFromCreationToDeletion adalah gate F5-10.
+// TestAChatConversationRunsFromCreationToDeletion is gate F5-10.
 //
-// Buat percakapan -> kirim pesan -> balasan tiba -> hapus. Setiap langkah lewat
-// HTTP, dan balasan itu menyeberangi gateway, chat-svc, Kafka, llm-worker, dan
-// kembali.
+// Create a conversation -> send a message -> the reply arrives -> delete. Every
+// step goes over HTTP, and that reply crosses the gateway, chat-svc, Kafka,
+// llm-worker, and back.
 func TestAChatConversationRunsFromCreationToDeletion(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// 1. Percakapan dibuat BERSAMA pesan pertamanya. Jawabannya 202: balasan
-	//    model datang belakangan.
+	// 1. The conversation is created TOGETHER with its first message. The
+	//    answer is 202: the model's reply comes later.
 	code, body := c.do(http.MethodPost, "/api/v1/chat/conversations", map[string]any{
 		"message": "Apakah kopi berpengaruh pada tekanan darah saya?",
 	})
@@ -29,17 +29,18 @@ func TestAChatConversationRunsFromCreationToDeletion(t *testing.T) {
 		t.Fatalf("the conversation has no slug: %v", body)
 	}
 
-	// Judulnya diturunkan dari pesan pertama, beserta penanda pemotongan (D12).
+	// The title is derived from the first message, with the truncation marker
+	// (D12).
 	title, _ := dig(body, "data", "title").(string)
 	if title != "Apakah kopi berpengaruh pada tekanan darah sa..." {
 		t.Fatalf("the derived title is %q", title)
 	}
 
-	// 2. Balasan model tiba.
+	// 2. The model's reply arrives.
 	c.waitForModelReply(slug, 90*time.Second)
 
-	// 3. Pesan kedua, dan balasannya juga tiba - kunci idempotensi per pesan
-	//    yang membuatnya tidak dilewati sebagai duplikat.
+	// 3. A second message, and its reply arrives too - the per-message
+	//    idempotency key is what keeps it from being skipped as a duplicate.
 	code, sent := c.do(http.MethodPost,
 		"/api/v1/chat/conversations/"+slug+"/messages",
 		map[string]any{"message": "Berapa cangkir yang aman?"})
@@ -58,7 +59,7 @@ func TestAChatConversationRunsFromCreationToDeletion(t *testing.T) {
 		t.Fatalf("only %d model replies arrived; the second message was skipped as a duplicate", got)
 	}
 
-	// 4. Judulnya diganti.
+	// 4. The title is changed.
 	code, renamed := c.do(http.MethodPatch, "/api/v1/chat/conversations/"+slug,
 		map[string]any{"title": "Soal kopi"})
 	if code != http.StatusOK {
@@ -68,7 +69,7 @@ func TestAChatConversationRunsFromCreationToDeletion(t *testing.T) {
 		t.Fatalf("the title came back as %q", got)
 	}
 
-	// 5. Dihapus, dan hilang.
+	// 5. Deleted, and gone.
 	if code, _ := c.do(http.MethodDelete, "/api/v1/chat/conversations/"+slug, nil); code != http.StatusNoContent {
 		t.Fatalf("deleting answered %d, want 204", code)
 	}
@@ -77,12 +78,12 @@ func TestAChatConversationRunsFromCreationToDeletion(t *testing.T) {
 	}
 }
 
-// TestAnEmptyConversationQueuesNothing menjaga tombol "mulai baru".
+// TestAnEmptyConversationQueuesNothing guards the "start new" button.
 func TestAnEmptyConversationQueuesNothing(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// 201, bukan 202: tidak ada yang perlu ditunggu.
+	// 201, not 202: there is nothing to wait for.
 	code, body := c.do(http.MethodPost, "/api/v1/chat/conversations", map[string]any{})
 	if code != http.StatusCreated {
 		t.Fatalf("creating an empty conversation answered %d, want 201: %v", code, body)
@@ -93,16 +94,15 @@ func TestAnEmptyConversationQueuesNothing(t *testing.T) {
 		t.Fatalf("an empty conversation is titled %q", title)
 	}
 
-	// Diberi waktu, lalu diperiksa: tidak ada balasan yang datang untuk pesan
-	// yang tidak pernah ada.
+	// Given time, then checked: no reply arrives for a message that never
+	// existed.
 	time.Sleep(8 * time.Second)
 	if got := c.countModelReplies(slug); got != 0 {
 		t.Fatalf("%d model replies arrived for a conversation with no message", got)
 	}
 }
 
-// TestTheConversationListIsPagedAndPrivate adalah F5-04 lewat jalur yang
-// sesungguhnya.
+// TestTheConversationListIsPagedAndPrivate is F5-04 through the real path.
 func TestTheConversationListIsPagedAndPrivate(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -123,7 +123,7 @@ func TestTheConversationListIsPagedAndPrivate(t *testing.T) {
 		t.Fatalf("the first page holds %d conversations, want 2", len(items))
 	}
 
-	// Token halaman berikutnya ada, dan membawa ke sisa daftarnya.
+	// The next-page token is present, and leads to the rest of the list.
 	token, _ := dig(first, "data", "page", "next_page_token").(string)
 	if token == "" {
 		t.Fatalf("the first page carries no next token: %v", first)
@@ -139,13 +139,14 @@ func TestTheConversationListIsPagedAndPrivate(t *testing.T) {
 		t.Fatalf("the second page holds %d conversations, want 1", len(rest))
 	}
 
-	// Halaman terakhir TIDAK membawa token: kosongnya adalah tanda berhenti,
-	// dan token yang selalu ada membuat klien meminta halaman kosong selamanya.
+	// The last page carries NO token: its emptiness is the stop signal, and a
+	// token that is always present makes the client request empty pages
+	// forever.
 	if last, _ := dig(second, "data", "page", "next_page_token").(string); last != "" {
 		t.Fatalf("the last page still carries a next token: %q", last)
 	}
 
-	// Dan orang lain tidak melihat satu pun.
+	// And someone else sees none at all.
 	stranger := newClient(t)
 	stranger.register()
 
@@ -158,7 +159,7 @@ func TestTheConversationListIsPagedAndPrivate(t *testing.T) {
 	}
 }
 
-// TestSomeoneElsesConversationIsNotFound adalah S9 lewat tiga lapisan.
+// TestSomeoneElsesConversationIsNotFound is S9 through three layers.
 func TestSomeoneElsesConversationIsNotFound(t *testing.T) {
 	owner := newClient(t)
 	owner.register()
@@ -188,13 +189,13 @@ func TestSomeoneElsesConversationIsNotFound(t *testing.T) {
 		}
 	}
 
-	// Dan percakapan yang memang tidak ada menjawab sama.
+	// And a conversation that really does not exist answers the same.
 	if code, _ := stranger.do(http.MethodGet, "/api/v1/chat/conversations/tidakadaslugini", nil); code != http.StatusNotFound {
 		t.Errorf("a missing conversation answered %d, want 404", code)
 	}
 }
 
-// waitForModelReply menunggu balasan pertama dari model.
+// waitForModelReply waits for the first reply from the model.
 func (c *client) waitForModelReply(slug string, timeout time.Duration) {
 	c.t.Helper()
 
@@ -208,7 +209,8 @@ func (c *client) waitForModelReply(slug string, timeout time.Duration) {
 	c.t.Fatalf("the model never replied within %v", timeout)
 }
 
-// countModelReplies menghitung pesan berperan "model" di sebuah percakapan.
+// countModelReplies counts the messages with the "model" role in a
+// conversation.
 func (c *client) countModelReplies(slug string) int {
 	c.t.Helper()
 

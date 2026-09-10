@@ -1,9 +1,9 @@
-// Package e2e menguji ketahanan sistem terhadap gangguan yang sungguhan.
+// Package e2e tests the system's resilience against real disruptions.
 //
-// Test di sini MEMATIKAN container. Ia tidak berjalan pada `go test ./...`
-// biasa: tanpa TEST_E2E_DISRUPTIVE=1 ia melewati dirinya sendiri, karena
-// mematikan broker di tengah suite lain akan menjatuhkan test yang tidak ada
-// hubungannya dan kegagalannya akan menyesatkan.
+// The tests here KILL containers. They do not run on an ordinary `go test
+// ./...`: without TEST_E2E_DISRUPTIVE=1 they skip themselves, because
+// killing the broker in the middle of another suite would take down
+// unrelated tests and their failures would mislead.
 package e2e_test
 
 import (
@@ -25,7 +25,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// requireDisruptive menjaga test ini dari jalankan yang tidak sengaja.
+// requireDisruptive guards this test against an accidental run.
 func requireDisruptive(t *testing.T) {
 	t.Helper()
 	if os.Getenv("TEST_E2E_DISRUPTIVE") != "1" {
@@ -33,10 +33,10 @@ func requireDisruptive(t *testing.T) {
 	}
 }
 
-// docker menjalankan perintah docker di dalam WSL.
+// docker runs a docker command inside WSL.
 //
-// Lewat WSL, bukan langsung: daemon-nya hidup di sana, dan memanggilnya dari
-// Windows bergantung pada TCP endpoint yang belum tentu ada.
+// Through WSL, not directly: the daemon lives there, and calling it from
+// Windows depends on a TCP endpoint that may not exist.
 func docker(t *testing.T, args ...string) string {
 	t.Helper()
 
@@ -84,39 +84,39 @@ func openPool(t *testing.T) (*pgxpool.Pool, context.Context) {
 	return pool, ctx
 }
 
-// TestTheOutboxSurvivesABrokerOutage adalah gate F3-14.
+// TestTheOutboxSurvivesABrokerOutage is gate F3-14.
 //
-// Ia menjawab satu pertanyaan yang tidak bisa dijawab test unit: apa yang
-// terjadi pada event yang sudah tersimpan ketika brokernya benar-benar mati?
+// It answers one question a unit test cannot: what happens to already stored
+// events when the broker really dies?
 //
-// Yang diharapkan bukan "tidak terjadi apa-apa". Relay akan gagal menerbitkan,
-// mencatat kegagalannya, dan MENAHAN event-nya - lalu mengirimkannya setelah
-// broker pulih. Nol event hilang; nol event yang tertahan diam-diam.
+// What is expected is not "nothing happens". The relay will fail to publish,
+// log its failure, and HOLD the events - then send them once the broker
+// recovers. Zero events lost; zero events silently held back.
 func TestTheOutboxSurvivesABrokerOutage(t *testing.T) {
 	requireDisruptive(t)
 
 	pool, ctx := openPool(t)
 
-	// Penanda unik, sehingga baris test ini bisa dibedakan dari isi outbox yang
-	// lain tanpa mengosongkan tabel milik sistem yang sedang berjalan.
+	// A unique marker, so this test's rows can be told apart from the rest of
+	// the outbox without emptying a table that belongs to the running system.
 	marker := "outage-" + uuid.NewString()
 
-	// Brokernya dimatikan LEBIH DULU, bukan setelah event ditulis.
+	// The broker is killed FIRST, not after the events are written.
 	//
-	// Urutan sebaliknya sudah dicoba dan tidak menguji apa pun: relay berputar
-	// setiap detik dan sudah menerbitkan kelima event sebelum perintah kill
-	// selesai. Yang ingin dibuktikan adalah event yang ditulis SELAGI broker
-	// mati tetap aman - dan itu hanya bisa diuji kalau brokernya sudah mati
-	// saat event itu ditulis.
+	// The opposite order was tried and tested nothing: the relay spins every
+	// second and had already published all five events before the kill command
+	// finished. What is to be proven is that events written WHILE the broker
+	// is down stay safe - and that can only be tested if the broker is already
+	// down when those events are written.
 	//
-	// `docker kill` mengirim SIGKILL: tidak ada kesempatan menutup koneksi,
-	// persis seperti mesin yang hilang.
+	// `docker kill` sends SIGKILL: no chance to close connections, exactly
+	// like a machine that vanishes.
 	t.Log("killing the broker")
 	docker(t, "kill", "selaras-kafka")
 
-	// Dinyalakan lagi apa pun yang terjadi pada test ini, termasuk saat ia
-	// gagal di tengah - meninggalkan broker mati akan menjatuhkan setiap test
-	// berikutnya karena alasan yang tidak ada hubungannya.
+	// Started again whatever happens to this test, including when it fails
+	// halfway - leaving the broker dead would take down every following test
+	// for an unrelated reason.
 	t.Cleanup(func() {
 		docker(t, "start", "selaras-kafka")
 	})
@@ -144,9 +144,9 @@ func TestTheOutboxSurvivesABrokerOutage(t *testing.T) {
 		}
 	}
 
-	// Relay di dalam llm-worker berputar setiap detik dan akan gagal berkali-kali
-	// selama jendela ini. Yang diperiksa setelahnya bukan "tidak ada yang
-	// terjadi" - melainkan tidak ada yang HILANG.
+	// The relay inside llm-worker spins every second and will fail repeatedly
+	// during this window. What is checked afterwards is not "nothing happened" -
+	// but that nothing was LOST.
 	time.Sleep(20 * time.Second)
 
 	if got := unpublished(t, ctx, pool, marker); got != events {
@@ -155,8 +155,8 @@ func TestTheOutboxSurvivesABrokerOutage(t *testing.T) {
 			got, events)
 	}
 
-	// Dan kegagalannya TERCATAT, bukan didiamkan: baris yang gagal berulang
-	// harus bisa ditemukan, bukan hanya menyumbat antrean diam-diam.
+	// And the failure is RECORDED, not silenced: a row that keeps failing has
+	// to be findable, not just silently clogging the queue.
 	if attempts, lastErr := failureOf(t, ctx, pool, marker); attempts == 0 || lastErr == "" {
 		t.Errorf("the relay failed silently: attempts=%d last_error=%q", attempts, lastErr)
 	} else {
@@ -167,8 +167,8 @@ func TestTheOutboxSurvivesABrokerOutage(t *testing.T) {
 	docker(t, "start", "selaras-kafka")
 	waitForBroker(t, 3*time.Minute)
 
-	// Relay memulihkan diri sendiri. Ia tidak perlu dinyalakan ulang: kegagalan
-	// satu putaran tidak mematikannya.
+	// The relay recovers on its own. It need not be restarted: one failed
+	// iteration does not kill it.
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
 		if unpublished(t, ctx, pool, marker) == 0 {

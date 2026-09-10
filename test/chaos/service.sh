@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Chaos F9-13: satu service dimatikan; yang lain harus tetap melayani.
+# Chaos F9-13: one service is stopped; the others have to keep serving.
 #
-# Yang diukur adalah BLAST RADIUS: endpoint mana yang ikut mati, mana yang
-# bertahan, dan berapa lama pemulihannya setelah service dinyalakan kembali.
-# Hasilnya, dan pembacaannya, ada di test/chaos/service.md.
+# What is measured is the BLAST RADIUS: which endpoints die along with it,
+# which survive, and how long recovery takes once the service is started
+# again. The results, and how to read them, are in test/chaos/service.md.
 #
-# Jalankan dari WSL:  bash test/chaos/service.sh [nama-service]
-# Bawaan: profile-svc, karena ia yang paling banyak dipanggil unit lain.
+# Run from WSL: bash test/chaos/service.sh [service-name] Default:
+# profile-svc, because it is the one most called by other units.
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -18,9 +18,9 @@ TOKEN=$(register "service")
 complete_profile "$TOKEN"
 SLUG=$(start_assessment "$TOKEN")
 
-# call mencetak kode HTTP, atau TIMEOUT(<kode curl>) bila permintaannya tidak
-# dijawab dalam sepuluh detik. Yang kedua adalah temuan, bukan galat skrip:
-# gateway yang menggantung lebih buruk daripada gateway yang menjawab 503.
+# call prints the HTTP code, or TIMEOUT(<curl code>) when the request is not
+# answered within ten seconds. The latter is a finding, not a script error: a
+# gateway that hangs is worse than a gateway that answers 503.
 call() {
   local method="$1" path="$2" body="$3"
   if [ "$method" = "GET" ]; then
@@ -32,10 +32,10 @@ call() {
   fi
 }
 
-# probe mencetak "METHOD PATH -> kode" untuk daftar endpoint yang mewakili
-# setiap unit. Yang dibaca bukan hanya "gagal atau tidak", tetapi KODE-nya:
-# 503 dengan badan galat yang seragam adalah kegagalan yang jujur; 500 atau
-# koneksi menggantung bukan.
+# probe prints "METHOD PATH -> code" for a list of endpoints representing
+# every unit. What is read is not just "failed or not" but the CODE: a 503
+# with the uniform error body is an honest failure; a 500 or a hanging
+# connection is not.
 probe() {
   log "--- $1"
   while read -r method path body; do
@@ -56,18 +56,18 @@ EOF
 
 probe "sebelum gangguan (semua service hidup)"
 
-# stop -t 0, bukan kill: kebijakan restart unless-stopped menyalakan ulang
-# container yang MATI sendiri, tetapi tidak yang dihentikan. Yang diuji di
-# sini adalah service yang tidak ada selama beberapa saat, bukan yang
-# langsung bangkit.
+# stop -t 0, not kill: the unless-stopped restart policy restarts a
+# container that DIED on its own, but not one that was stopped. What is
+# tested here is a service that is absent for a while, not one that springs
+# straight back.
 log "MEMATIKAN $VICTIM (docker stop -t 0 $CONTAINER)"
 docker stop -t 0 "$CONTAINER" >/dev/null
 sleep 3
 
 probe "saat $VICTIM mati"
 
-# Pendaftaran akun baru menyentuh identity -> profile (pembuatan profil);
-# ini jalur lintas-unit yang paling menarik saat profile-svc mati.
+# Registering a new account touches identity -> profile (profile creation);
+# this is the most interesting cross-unit path while profile-svc is down.
 register_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST "$BASE_URL/api/v1/register" \
   -H 'Content-Type: application/json' \
   -d "{\"name\":\"Chaos\",\"email\":\"chaos-during-$(date +%s%N)@user.co\",\"password\":\"$PASSWORD\",\"password_confirmation\":\"$PASSWORD\"}" \

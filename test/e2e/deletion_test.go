@@ -6,25 +6,24 @@ import (
 	"time"
 )
 
-// deletionBudget adalah berapa lama menunggu keenam unit menjawab.
+// deletionBudget is how long to wait for all six units to answer.
 //
-// Setiap unit harus menerima permintaannya lewat Kafka, menghapus datanya,
-// menulis konfirmasinya ke outbox-nya sendiri, dan relay-nya harus
-// mengirimkannya kembali. Enam kali perjalanan itu, ditambah interval sapuan
-// relay yang satu detik di tujuh service.
+// Every unit has to receive its request through Kafka, delete its data, write
+// its confirmation to its own outbox, and its relay has to send it back. Six of
+// those round trips, plus the one-second relay sweep interval across seven
+// services.
 //
-// Empat puluh detik: longgar untuk mesin yang menjalankan sembilan container
-// sekaligus, dan tetap cukup ketat untuk menangkap saga yang benar-benar macet.
+// Forty seconds: loose for a machine running nine containers at once, and still
+// tight enough to catch a saga that is really stuck.
 const deletionBudget = 40 * time.Second
 
-// TestTheWrongPasswordDeletesNothingOverHTTP adalah S2 lewat seluruh lapisan.
+// TestTheWrongPasswordDeletesNothingOverHTTP is S2 through every layer.
 //
-// Di sistem lama, DeleteAccountRequest mewajibkan bidang password ada lalu
-// tidak pernah membandingkannya: authorize() mengembalikan true, aturannya
-// hanya 'required|string', dan aksinya langsung memanggil forceDelete().
-// Siapa pun yang memegang token sah - termasuk token yang dicuri dari perangkat
-// yang tidak terkunci - bisa menghapus akun secara permanen dengan mengirim
-// string apa pun.
+// In the legacy system, DeleteAccountRequest required the password field to be
+// present and then never compared it: authorize() returned true, the rule was
+// only 'required|string', and the action called forceDelete() straight away.
+// Anyone holding a valid token - including one stolen from an unlocked device -
+// could permanently delete the account by sending any string.
 func TestTheWrongPasswordDeletesNothingOverHTTP(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -35,21 +34,21 @@ func TestTheWrongPasswordDeletesNothingOverHTTP(t *testing.T) {
 		t.Fatalf("a wrong password answered %d, want 403: %v", code, body)
 	}
 
-	// 403 dengan PERMISSION_DENIED, bukan 401: pemanggilnya SUDAH
-	// terautentikasi. Menjawab 401 akan membuat klien mengira tokennya
-	// kedaluwarsa lalu meminta orangnya masuk lagi - untuk kesalahan yang
-	// sebenarnya hanya salah ketik.
+	// 403 with PERMISSION_DENIED, not 401: the caller IS authenticated.
+	// Answering 401 would make the client assume its token has expired and ask
+	// the person to sign in again - for a mistake that was really just a typo.
 	if got, _ := dig(body, "code").(string); got != "PERMISSION_DENIED" {
 		t.Errorf("the error code is %q, want PERMISSION_DENIED", got)
 	}
 
-	// Dan akunnya masih bisa dipakai.
+	// And the account is still usable.
 	if code, _ := c.do(http.MethodGet, "/api/v1/me", nil); code != http.StatusOK {
 		t.Errorf("the account stopped working after a refused deletion: %d", code)
 	}
 }
 
-// TestAMissingPasswordIsRefusedBeforeAnythingHappens menutup jalur terpendek.
+// TestAMissingPasswordIsRefusedBeforeAnythingHappens closes the shortest
+// path.
 func TestAMissingPasswordIsRefusedBeforeAnythingHappens(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -64,17 +63,17 @@ func TestAMissingPasswordIsRefusedBeforeAnythingHappens(t *testing.T) {
 	}
 }
 
-// TestDeletingAnAccountLeavesNothingBehind adalah gerbang keluar F8.
+// TestDeletingAnAccountLeavesNothingBehind is the F8 exit gate.
 //
-// Ia memakai SELURUH fitur lebih dulu, supaya penghapusannya benar-benar
-// menyentuh keenam unit. Menghapus akun yang tidak pernah dipakai hanya
-// membuktikan bahwa menghapus dari tabel kosong berhasil.
+// It uses EVERY feature first, so the deletion really touches all six
+// units. Deleting an account that was never used only proves that deleting
+// from empty tables works.
 func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 	c := newClient(t)
 	c.register()
 	c.completeProfile()
 
-	// Setiap unit diberi sesuatu untuk dihapus.
+	// Every unit is given something to delete.
 	if code, body := c.do(http.MethodPost, "/api/v1/risk-assessments", assessmentInput()); code != http.StatusCreated {
 		t.Fatalf("starting an assessment answered %d: %v", code, body)
 	}
@@ -97,10 +96,10 @@ func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 		t.Fatalf("starting a program answered %d: %v", code, body)
 	}
 
-	// Dasbor menyusul, membuktikan proyeksinya juga punya barisnya.
+	// The dashboard catches up, proving the projection has its row too.
 	c.waitForDashboard(1, dashboardLagBudget)
 
-	// Dan sekarang dihapus.
+	// And now it is deleted.
 	code, accepted := c.do(http.MethodDelete, "/api/v1/delete-account",
 		map[string]any{"password": defaultPassword})
 	if code != http.StatusAccepted {
@@ -110,19 +109,19 @@ func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 	if saga, _ := dig(accepted, "data", "saga_id").(string); saga == "" {
 		t.Errorf("the answer names no saga: %v", accepted)
 	}
-	// 202, dan statusnya dinyatakan apa adanya: belum selesai. Klien yang
-	// menampilkan "akun Anda telah dihapus" pada saat ini mengatakan sesuatu
-	// yang belum benar.
+	// 202, and the status is stated as it is: not finished. A client that
+	// shows "your account has been deleted" at this point says something that
+	// is not yet true.
 	if got, _ := dig(accepted, "data", "status").(string); got != "in_progress" {
 		t.Errorf("the status is %q, want in_progress", got)
 	}
 
-	// Akun hilang saat keenam unit sudah menjawab. Yang diamati dari luar:
-	// tokennya berhenti berlaku.
+	// The account is gone once all six units have answered. What is observable
+	// from the outside: its token stops working.
 	c.waitUntilGone(deletionBudget)
 
-	// Masuk lagi dengan kredensial yang sama TIDAK berhasil - akunnya benar-
-	// benar hilang, bukan sekadar sesinya berakhir.
+	// Signing in again with the same credentials does NOT work - the account
+	// is really gone, not merely its session ended.
 	code, denied := c.doAnonymous(http.MethodPost, "/api/v1/login", map[string]any{
 		"email":    c.email,
 		"password": defaultPassword,
@@ -132,12 +131,12 @@ func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 	}
 }
 
-// TestASecondDeletionRequestIsRefusedWhileTheFirstRuns menjaga satu saga per
-// akun.
+// TestASecondDeletionRequestIsRefusedWhileTheFirstRuns keeps one saga per
+// account.
 //
-// Dua rangkaian konfirmasi untuk satu akun akan membuat yang kedua mengira
-// dirinya belum lengkap - unit-unitnya sudah menjawab yang pertama - dan
-// akunnya tidak akan pernah terhapus.
+// Two chains of confirmations for one account would make the second one
+// think it is incomplete - its units have already answered the first - and
+// the account would never be deleted.
 func TestASecondDeletionRequestIsRefusedWhileTheFirstRuns(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -147,9 +146,10 @@ func TestASecondDeletionRequestIsRefusedWhileTheFirstRuns(t *testing.T) {
 		t.Fatalf("the first request answered %d: %v", code, body)
 	}
 
-	// Segera, sebelum saganya sempat selesai. Kalau ia sudah selesai, akunnya
-	// hilang dan jawabannya 401 - juga bukan 202, jadi test ini tetap
-	// bermakna, hanya menguji hal yang sedikit berbeda.
+	// Immediately, before the saga has a chance to finish. If it has already
+	// finished, the account is gone and the answer is 401 - also not 202, so
+	// this test still means something, it just tests something slightly
+	// different.
 	code, second := c.do(http.MethodDelete, "/api/v1/delete-account",
 		map[string]any{"password": defaultPassword})
 
@@ -159,17 +159,18 @@ func TestASecondDeletionRequestIsRefusedWhileTheFirstRuns(t *testing.T) {
 			t.Errorf("the refusal code is %q", got)
 		}
 	case http.StatusUnauthorized:
-		// Saganya sudah selesai lebih dulu; akunnya hilang. Sah.
+		// The saga finished first; the account is gone. Valid.
 	default:
 		t.Fatalf("the second request answered %d: %v", code, second)
 	}
 }
 
-// waitUntilGone menunggu token pemanggil berhenti berlaku.
+// waitUntilGone waits for the caller's token to stop working.
 //
-// Itu yang bisa diamati dari LUAR saat akun dihapus, dan mengamatinya dari luar
-// adalah intinya: test yang menanyai basis data langsung akan lulus meski
-// gateway masih melayani permintaan atas nama akun yang sudah tidak ada.
+// That is what is observable from the OUTSIDE when an account is deleted, and
+// observing it from the outside is the point: a test that asks the database
+// directly would pass even while the gateway still serves requests on behalf of
+// an account that no longer exists.
 func (c *client) waitUntilGone(timeout time.Duration) {
 	c.t.Helper()
 

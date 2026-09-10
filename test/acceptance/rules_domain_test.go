@@ -1,15 +1,15 @@
-// Package acceptance adalah daftar periksa aturan domain D1-D12 dan temuan
-// keamanan S1-S11 (F9-19, kriteria selesai #11 dan #12).
+// Package acceptance is the checklist of domain rules D1-D12 and security
+// findings S1-S11 (F9-19, exit criteria #11 and #12).
 //
-// Satu test per aturan, dinamai menurut ID-nya, supaya "apakah D6 dijaga"
-// dijawab dengan `go test ./test/acceptance -run TestD06`. Yang bisa diuji
-// tanpa infrastruktur ada di berkas ini; yang menuntut stack yang menyala ada
-// di rules_e2e_test.go dan melewati dirinya sendiri bila TEST_E2E_BASE_URL
-// kosong - persis seperti suite e2e.
+// One test per rule, named after its ID, so "is D6 guarded" is answered by
+// `go test ./test/acceptance -run TestD06`. What can be tested without
+// infrastructure lives in this file; what demands a running stack lives in
+// rules_e2e_test.go and skips itself when TEST_E2E_BASE_URL is empty -
+// exactly like the e2e suite.
 //
-// Aturan yang sudah dijaga test lain di paketnya sendiri TETAP diulang di
-// sini dalam bentuk paling langsung: daftar periksa yang merujuk ke test di
-// tempat lain adalah daftar yang tidak bisa dibaca sendiri.
+// Rules already guarded by other tests in their own packages are STILL
+// repeated here in their most direct form: a checklist that points at tests
+// elsewhere is a checklist that cannot be read on its own.
 package acceptance
 
 import (
@@ -29,8 +29,8 @@ import (
 	nutrition "github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 )
 
-// diabetesAnswers adalah kuesioner sah untuk model SCORE2-Diabetes, seluruh
-// nilai klinis diketik manual.
+// diabetesAnswers is a valid questionnaire for the SCORE2-Diabetes model,
+// with every clinical value entered manually.
 func diabetesAnswers(diagnosedAt float64) map[string]any {
 	return map[string]any{
 		"has_diabetes":              true,
@@ -50,10 +50,10 @@ func diabetesAnswers(diagnosedAt float64) map[string]any {
 	}
 }
 
-// D6 - Batas usia diabetes bergantung profil: usia saat diagnosis tidak boleh
-// melampaui usia pengguna sekarang. Sistem lama memvalidasinya di request
-// (`max:` umur dari basis data); di sini aturannya milik mesin skor, karena
-// mesin itulah yang memakai angkanya.
+// D6 - The diabetes age bound depends on the profile: the age at diagnosis
+// must not exceed the user's current age. The legacy system validated it in
+// the request (`max:` age from the database); here the rule belongs to the
+// scoring engine, because that engine is what uses the number.
 func TestD06_DiabetesDiagnosisAgeCannotExceedCurrentAge(t *testing.T) {
 	engine := score.NewEngine(score.MustLoad())
 
@@ -65,7 +65,7 @@ func TestD06_DiabetesDiagnosisAgeCannotExceedCurrentAge(t *testing.T) {
 		t.Fatalf("a diagnosis at 50 for a 45-year-old must be refused, got err=%v", err)
 	}
 
-	// Sama dengan usia sekarang masih sah: didiagnosis tahun ini.
+	// Equal to the current age is still valid: diagnosed this year.
 	if _, err := engine.Calculate(score.Request{
 		Sex: "male", CountryOfResidence: "Indonesia", Age: 45,
 		Answers: diabetesAnswers(45),
@@ -74,8 +74,9 @@ func TestD06_DiabetesDiagnosisAgeCannotExceedCurrentAge(t *testing.T) {
 	}
 }
 
-// D7 - Masukan klinis punya dua mode. Setiap parameter menerima manual atau
-// proksi; manual tanpa nilai ditolak, proksi ditebak dari jawaban gaya hidup.
+// D7 - Clinical input has two modes. Every parameter accepts manual or proxy;
+// manual without a value is refused, proxy is estimated from the lifestyle
+// answers.
 func TestD07_ClinicalInputsAcceptManualOrProxy(t *testing.T) {
 	engine := score.NewEngine(score.MustLoad())
 	base := func() map[string]any {
@@ -110,15 +111,15 @@ func TestD07_ClinicalInputsAcceptManualOrProxy(t *testing.T) {
 	}
 }
 
-// D8 - Jendela konteks percakapan 20 pesan.
+// D8 - The conversation context window is 20 messages.
 func TestD08_ConversationContextWindowIsTwentyMessages(t *testing.T) {
 	if chatdomain.ContextWindow != 20 {
 		t.Fatalf("ContextWindow = %d, want 20", chatdomain.ContextWindow)
 	}
 }
 
-// D10 - Waktu makan ditentukan jam server di zona Asia/Jakarta: 05-10 sarapan,
-// 10-15 makan siang, 15-18 camilan, sisanya makan malam.
+// D10 - The meal time is determined by the server clock in the Asia/Jakarta
+// zone: 05-10 breakfast, 10-15 lunch, 15-18 snack, the rest dinner.
 func TestD10_MealTimeFollowsTheJakartaClock(t *testing.T) {
 	wib := time.FixedZone("WIB", 7*60*60)
 	cases := map[time.Time]nutrition.MealTime{
@@ -137,13 +138,13 @@ func TestD10_MealTimeFollowsTheJakartaClock(t *testing.T) {
 	}
 }
 
-// D12 - Judul thread dan percakapan dibuat otomatis dari 45 karakter pertama
-// pesan pertama bila tidak diberikan.
+// D12 - Thread and conversation titles are generated from the first 45
+// characters of the first message when none is given.
 func TestD12_TitleIsDerivedFromTheFirstFortyFiveRunes(t *testing.T) {
 	long := strings.Repeat("abcdefghij", 6) // 60 rune
 	got := chatdomain.DeriveTitle(long)
-	// 45 rune pertama, lalu penanda pemotongan - bentuk Str::limit(45) di
-	// sistem lama, yang dipertahankan supaya judul lama dan baru serupa.
+	// The first 45 runes, then the truncation marker - the Str::limit(45)
+	// shape of the legacy system, kept so old and new titles look alike.
 	if !strings.HasPrefix(got, long[:45]) || got == long || len([]rune(got)) > 45+3 {
 		t.Fatalf("derived title = %q (%d runes), want the first 45 plus a truncation mark", got, len([]rune(got)))
 	}
@@ -152,9 +153,9 @@ func TestD12_TitleIsDerivedFromTheFirstFortyFiveRunes(t *testing.T) {
 	}
 }
 
-// S3/S4 - Verifikasi TLS ke Gemini TIDAK dimatikan. Sistem lama menulis
-// verify=false; klien Go memakai transport bawaan, dan bukti bahwa ia
-// memverifikasi adalah: sertifikat yang tidak dipercaya DITOLAK.
+// S3/S4 - TLS verification to Gemini is NOT disabled. The legacy system
+// wrote verify=false; the Go client uses the default transport, and the
+// proof that it verifies is: an untrusted certificate is REFUSED.
 func TestS03_S04_TLSToTheProviderIsVerified(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -178,7 +179,7 @@ func TestS03_S04_TLSToTheProviderIsVerified(t *testing.T) {
 	}
 }
 
-// S7 - Kunci API tidak pernah ada di URL; ia dikirim sebagai header.
+// S7 - The API key is never in the URL; it is sent as a header.
 func TestS07_APIKeyTravelsInAHeaderNotTheURL(t *testing.T) {
 	var seenURL, seenHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

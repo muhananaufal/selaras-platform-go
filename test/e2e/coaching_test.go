@@ -11,17 +11,17 @@ import (
 	"time"
 )
 
-// Test ini menjalankan sistem yang SEDANG BERJALAN lewat HTTP - lima service,
-// broker, dan basis data yang sungguhan.
+// These tests drive the RUNNING system over HTTP - five services, a broker, and
+// a real database.
 //
-// Ia bukan pengganti test integrasi per paket: yang dibuktikan di sini adalah
-// hal yang tidak bisa dibuktikan satu paket sendirian - bahwa permintaan yang
-// masuk lewat gateway benar-benar menjadi pekerjaan, dan hasilnya benar-benar
-// kembali ke tempat yang menunggunya.
+// They are no substitute for the per-package integration tests: what is proven
+// here is what no single package can prove on its own - that a request entering
+// through the gateway really becomes a job, and that its result really comes
+// back to where it is awaited.
 //
-// Tanpa TEST_E2E_BASE_URL ia melewati dirinya sendiri; di CI ia GAGAL alih-alih
-// dilewati, karena test yang diam-diam melewati dirinya di CI membuat pipeline
-// hijau tanpa memeriksa apa pun.
+// Without TEST_E2E_BASE_URL they skip themselves; in CI they FAIL instead of
+// skipping, because a test that silently skips itself in CI turns the pipeline
+// green without checking anything.
 
 func baseURL(t *testing.T) string {
 	t.Helper()
@@ -36,24 +36,24 @@ func baseURL(t *testing.T) string {
 	return url
 }
 
-// client menjalankan permintaan HTTP terhadap gateway.
+// client runs HTTP requests against the gateway.
 type client struct {
 	t     *testing.T
 	base  string
 	token string
 	http  *http.Client
 
-	// email disimpan supaya test yang perlu masuk lagi - misalnya untuk
-	// membuktikan akun yang dihapus benar-benar hilang - tidak perlu
-	// menebaknya kembali dari nama testnya.
+	// email is kept so a test that needs to sign in again - to prove a deleted
+	// account is really gone, say - need not reconstruct it from the test
+	// name.
 	email string
 }
 
-// defaultPassword dipakai setiap akun yang dibuat register().
+// defaultPassword is used by every account register() creates.
 //
-// Ia konstanta, bukan literal yang diulang: test penghapusan akun harus
-// mengirimkan kata sandi yang SAMA untuk mengonfirmasi, dan dua literal yang
-// perlahan menyimpang akan membuat test itu gagal dengan alasan yang salah.
+// It is a constant, not a repeated literal: the account deletion test has to
+// send the SAME password to confirm, and two literals slowly drifting apart
+// would make that test fail for the wrong reason.
 const defaultPassword = "correct-horse-battery"
 
 func newClient(t *testing.T) *client {
@@ -61,14 +61,14 @@ func newClient(t *testing.T) *client {
 	return &client{
 		t:    t,
 		base: baseURL(t),
-		// Batas waktu di klien, bukan hanya di ctx: test yang menggantung
-		// karena satu service diam akan menahan seluruh suite sampai timeout
-		// paketnya, dan pesannya tidak menyebutkan permintaan mana.
+		// A timeout on the client, not only on ctx: a test that hangs because one
+		// service is silent holds the whole suite until the package timeout, and
+		// the message does not say which request.
 		http: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// do menjalankan satu permintaan dan mengembalikan status beserta badannya.
+// do runs one request and returns the status together with the body.
 func (c *client) do(method, path string, body any) (int, map[string]any) {
 	c.t.Helper()
 
@@ -105,8 +105,8 @@ func (c *client) do(method, path string, body any) (int, map[string]any) {
 		c.t.Fatalf("reading the response: %v", err)
 	}
 
-	// 204 tidak punya badan, dan memaksanya menjadi JSON akan menggagalkan
-	// permintaan yang justru berhasil.
+	// 204 has no body, and forcing it into JSON would fail a request that
+	// actually succeeded.
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return resp.StatusCode, nil
 	}
@@ -119,7 +119,7 @@ func (c *client) do(method, path string, body any) (int, map[string]any) {
 	return resp.StatusCode, decoded
 }
 
-// register membuat akun baru dan menyimpan tokennya.
+// register creates a new account and keeps its token.
 func (c *client) register() {
 	c.t.Helper()
 
@@ -134,11 +134,11 @@ func (c *client) register() {
 		c.t.Fatalf("register answered %d: %v", code, body)
 	}
 
-	// Token ada di AKAR jawaban, bukan di bawah "data" seperti sumber daya
-	// lain. Bentuk itu dipertahankan dari sistem lama, dan test ini pernah
-	// gagal karena mengandaikan sebaliknya - yang justru berguna: ekspektasi
-	// yang salah tentang bentuk respons adalah hal yang seharusnya ditemukan
-	// test ujung ke ujung.
+	// The token is at the ROOT of the answer, not under "data" like other
+	// resources. That shape is kept from the legacy system, and this test once
+	// failed by assuming otherwise - which is useful in itself: a wrong
+	// expectation about the response shape is exactly what an end-to-end test
+	// is meant to find.
 	token, _ := body["access_token"].(string)
 	if token == "" {
 		c.t.Fatalf("register returned no access token: %v", body)
@@ -147,10 +147,10 @@ func (c *client) register() {
 	c.email = email
 }
 
-// doAnonymous menjalankan permintaan TANPA token.
+// doAnonymous runs a request WITHOUT a token.
 //
-// Dipakai test yang perlu membuktikan sesuatu tentang akun yang tokennya sudah
-// tidak berlaku - masuk kembali setelah akun dihapus, misalnya.
+// Used by tests that need to prove something about an account whose token no
+// longer works - signing in again after the account is deleted, say.
 func (c *client) doAnonymous(method, path string, body any) (int, map[string]any) {
 	c.t.Helper()
 
@@ -161,8 +161,8 @@ func (c *client) doAnonymous(method, path string, body any) (int, map[string]any
 	return c.do(method, path, body)
 }
 
-// dig membaca nilai bersarang tanpa memaksa pemanggil menulis type assertion
-// berlapis, yang menyembunyikan di lapisan mana bentuknya berubah.
+// dig reads a nested value without forcing the caller to write layered type
+// assertions, which hide the layer at which the shape changed.
 func dig(m map[string]any, keys ...string) any {
 	var current any = m
 	for _, key := range keys {
@@ -175,17 +175,19 @@ func dig(m map[string]any, keys ...string) any {
 	return current
 }
 
-// TestACoachingProgramRunsFromRequestToCompletedTask adalah gate F4-17.
+// TestACoachingProgramRunsFromRequestToCompletedTask is gate F4-17.
 //
-// Mulai program -> kurikulum tiba -> selesaikan tugas -> minta laporan
-// kelulusan. Setiap langkah lewat HTTP, dan setiap langkah menyeberangi
-// batas service: gateway, coaching-svc, Kafka, llm-worker, dan kembali.
+// Start a program -> the curriculum arrives -> complete a task -> request
+// the graduation report. Every step goes over HTTP, and every step crosses
+// a service boundary: the gateway, coaching-svc, Kafka, llm-worker, and
+// back.
 func TestACoachingProgramRunsFromRequestToCompletedTask(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// 1. Program dimulai. Jawabannya 202, BUKAN 200 dengan kurikulumnya -
-	//    sistem lama menahan permintaan HTTP selama model bekerja.
+	// 1. The program is started. The answer is 202, NOT 200 with the
+	//    curriculum - the legacy system held the HTTP request while the model
+	//    worked.
 	code, body := c.do(http.MethodPost, "/api/v1/coaching/programs", map[string]any{
 		"difficulty": "Standar & Konsisten",
 	})
@@ -201,8 +203,9 @@ func TestACoachingProgramRunsFromRequestToCompletedTask(t *testing.T) {
 		t.Fatalf("a new program has curriculum status %q, want pending", status)
 	}
 
-	// 2. Kurikulumnya tiba. Ia datang lewat Kafka dan llm-worker, jadi yang
-	//    ditunggu adalah keadaan sistem - bukan jawaban satu permintaan.
+	// 2. The curriculum arrives. It comes through Kafka and llm-worker, so
+	//    what is awaited is the state of the system - not the answer to one
+	//    request.
 	program := c.waitForCurriculum(slug, 90*time.Second)
 
 	weeks, _ := dig(program, "data", "weeks").([]any)
@@ -210,8 +213,8 @@ func TestACoachingProgramRunsFromRequestToCompletedTask(t *testing.T) {
 		t.Fatalf("the curriculum arrived with no weeks: %v", program)
 	}
 
-	// Nomor pekannya berurutan dari satu. Kurikulum yang melompat akan
-	// menampilkan program yang berlubang.
+	// The week numbers run consecutively from one. A curriculum with gaps
+	// would show a program full of holes.
 	for i, rw := range weeks {
 		week, _ := rw.(map[string]any)
 		number, _ := week["week_number"].(float64)
@@ -220,8 +223,8 @@ func TestACoachingProgramRunsFromRequestToCompletedTask(t *testing.T) {
 		}
 	}
 
-	// Dan tanggal akhirnya dihitung dari jumlah pekan yang BENAR-BENAR datang
-	// (F4-18), bukan dari created_at ditambah 28 hari.
+	// And the end date is computed from the number of weeks that ACTUALLY
+	// arrived (F4-18), not from created_at plus 28 days.
 	assertEndDateMatchesWeeks(t, program, len(weeks))
 
 	// 3. Satu tugas diselesaikan.
@@ -236,8 +239,8 @@ func TestACoachingProgramRunsFromRequestToCompletedTask(t *testing.T) {
 		t.Fatalf("the task did not report itself completed: %v", toggled)
 	}
 
-	// Dibalik lagi, lalu diselesaikan lagi: idempotensi diuji lewat jalur
-	// yang sesungguhnya, bukan hanya di unit.
+	// Flipped again, then completed again: idempotency is tested through the
+	// real path, not only in the unit.
 	if code, _ := c.do(http.MethodPatch,
 		"/api/v1/coaching/tasks/"+taskID+"/toggle-task-status", nil); code != http.StatusOK {
 		t.Fatalf("reopening the task answered %d", code)
@@ -262,7 +265,8 @@ func TestACoachingProgramRunsFromRequestToCompletedTask(t *testing.T) {
 	}
 }
 
-// waitForCurriculum menunggu kurikulum tiba, lalu mengembalikan programnya.
+// waitForCurriculum waits for the curriculum to arrive, then returns the
+// program.
 func (c *client) waitForCurriculum(slug string, timeout time.Duration) map[string]any {
 	c.t.Helper()
 
@@ -280,9 +284,9 @@ func (c *client) waitForCurriculum(slug string, timeout time.Duration) map[strin
 		case "ready":
 			return body
 		case "failed":
-			// Kegagalan dilaporkan APA ADANYA, bukan ditunggu sampai batas
-			// waktu: menunggu sesuatu yang sudah menyerah hanya menyembunyikan
-			// sebabnya di balik pesan timeout.
+			// A failure is reported AS IT IS, not waited out until the deadline:
+			// waiting for something that has already given up only hides the cause
+			// behind a timeout message.
 			c.t.Fatalf("the curriculum failed: %v", body)
 		}
 		time.Sleep(2 * time.Second)
@@ -292,7 +296,7 @@ func (c *client) waitForCurriculum(slug string, timeout time.Duration) map[strin
 	return nil
 }
 
-// assertEndDateMatchesWeeks memeriksa F4-18 lewat API publik.
+// assertEndDateMatchesWeeks checks F4-18 through the public API.
 func assertEndDateMatchesWeeks(t *testing.T, program map[string]any, weeks int) {
 	t.Helper()
 
@@ -316,7 +320,7 @@ func assertEndDateMatchesWeeks(t *testing.T, program map[string]any, weeks int) 
 	}
 }
 
-// firstTaskID mengambil id tugas pertama dari kurikulum.
+// firstTaskID takes the id of the first task from the curriculum.
 func firstTaskID(t *testing.T, weeks []any) string {
 	t.Helper()
 
@@ -335,13 +339,12 @@ func firstTaskID(t *testing.T, weeks []any) string {
 	return ""
 }
 
-// TestSomeoneElsesCoachingProgramIsNotFound adalah S9 lewat jalur yang
-// sesungguhnya.
+// TestSomeoneElsesCoachingProgramIsNotFound is S9 through the real path.
 //
-// Ia diuji di sini, bukan hanya di unit, karena otorisasi melewati tiga
-// lapisan: token diverifikasi gateway, user_id diteruskan lewat gRPC, dan
-// kepemilikan diperiksa service. Kekeliruan di salah satunya tidak terlihat
-// dari salah satu lapisan sendirian.
+// It is tested here, not only in the unit, because authorisation passes
+// through three layers: the token is verified by the gateway, user_id is
+// passed on over gRPC, and ownership is checked by the service. A mistake
+// in any one of them is invisible from any single layer on its own.
 func TestSomeoneElsesCoachingProgramIsNotFound(t *testing.T) {
 	owner := newClient(t)
 	owner.register()
@@ -371,15 +374,15 @@ func TestSomeoneElsesCoachingProgramIsNotFound(t *testing.T) {
 		}
 	}
 
-	// Dan program yang MEMANG tidak ada menjawab sama. Membedakan keduanya
-	// memberi tahu penanya bahwa slug itu ada.
+	// And a program that REALLY does not exist answers the same. Telling the
+	// two apart tells the asker that the slug exists.
 	if code, _ := stranger.do(http.MethodGet,
 		"/api/v1/coaching/programs/tidakadaslugini", nil); code != http.StatusNotFound {
 		t.Errorf("a missing program answered %d, want 404", code)
 	}
 }
 
-// TestAPausedProgramFreezesInteraction adalah D5 lewat jalur yang sesungguhnya.
+// TestAPausedProgramFreezesInteraction is D5 through the real path.
 func TestAPausedProgramFreezesInteraction(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -403,7 +406,7 @@ func TestAPausedProgramFreezesInteraction(t *testing.T) {
 		t.Fatalf("opening a thread on a paused program answered %d, want 409: %v", code, refused)
 	}
 
-	// Dilanjutkan lagi, dan interaksinya hidup kembali.
+	// Resumed again, and interaction comes back to life.
 	if code, _ := c.do(http.MethodPatch,
 		"/api/v1/coaching/programs/"+slug+"/toggle-program-status", nil); code != http.StatusOK {
 		t.Fatalf("resuming the program answered %d", code)
@@ -414,11 +417,11 @@ func TestAPausedProgramFreezesInteraction(t *testing.T) {
 	}
 }
 
-// TestAThreadReplyComesBackFromTheWorker membuktikan jalur balasan chat.
+// TestAThreadReplyComesBackFromTheWorker proves the chat reply path.
 //
-// Ia jalur yang paling banyak menyeberang: pesan masuk lewat HTTP, permintaan
-// keluar lewat outbox, worker menjawabnya, dan balasannya kembali ke thread
-// yang sama sebagai pesan berperan "model".
+// It is the path that crosses the most boundaries: the message comes in over
+// HTTP, the request goes out through the outbox, the worker answers it, and
+// the reply comes back to the same thread as a message with the "model" role.
 func TestAThreadReplyComesBackFromTheWorker(t *testing.T) {
 	c := newClient(t)
 	c.register()
@@ -438,7 +441,8 @@ func TestAThreadReplyComesBackFromTheWorker(t *testing.T) {
 	}
 	threadSlug, _ := dig(thread, "data", "slug").(string)
 
-	// Judulnya diturunkan dari pesan pertama, beserta sufiks pemotongan (D12).
+	// The title is derived from the first message, with the truncation suffix
+	// (D12).
 	if title, _ := dig(thread, "data", "title").(string); title != "Saya kesulitan bangun pagi, ada saran?" {
 		t.Fatalf("the derived title is %q", title)
 	}

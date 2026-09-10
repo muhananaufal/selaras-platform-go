@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// Aturan yang hanya bisa dibuktikan lewat kontrak publik, terhadap stack
-// yang menyala (compose atau k3d). Tanpa TEST_E2E_BASE_URL test ini melewati
-// dirinya sendiri; di CI ia WAJIB berjalan.
+// Rules that can only be proven through the public contract, against a
+// running stack (compose or k3d). Without TEST_E2E_BASE_URL these tests skip
+// themselves; in CI they MUST run.
 
 const password = "correct-horse-battery"
 
@@ -140,12 +140,12 @@ func (a *api) startProgram() (int, map[string]any) {
 	return a.do(http.MethodPost, "/coaching/programs", map[string]any{"difficulty": "Standar & Konsisten"})
 }
 
-// startProgramFrom memulai program yang bersumber dari satu hasil analisis.
+// startProgramFrom starts a program sourced from one analysis result.
 //
-// Coaching mengenal analisis lewat event assessment.completed (F4-06), jadi
-// ada jeda antara 201 dari /risk-assessments dan saat slug-nya bisa dipakai:
-// 404 selama jeda itu dicoba lagi selama beberapa detik, bukan diasumsikan
-// tidak ada.
+// Coaching learns about an analysis through the assessment.completed event
+// (F4-06), so there is a delay between the 201 from /risk-assessments and
+// the moment its slug can be used: a 404 during that delay is retried for a
+// few seconds, not assumed to mean it does not exist.
 func (a *api) startProgramFrom(assessmentSlug string) (int, map[string]any) {
 	a.t.Helper()
 	body := map[string]any{"difficulty": "Standar & Konsisten", "risk_assessment_slug": assessmentSlug}
@@ -179,7 +179,7 @@ func slugOf(t *testing.T, body map[string]any) string {
 	return slug
 }
 
-// D1 - Satu sesi per pengguna: login yang berhasil mencabut token sebelumnya.
+// D1 - One session per user: a successful login revokes the previous token.
 func TestD01_ANewLoginRevokesTheOlderSession(t *testing.T) {
 	a := stack(t).register()
 	old := a.token
@@ -189,8 +189,8 @@ func TestD01_ANewLoginRevokesTheOlderSession(t *testing.T) {
 	}
 	fresh := a.login()
 
-	// Pencabutan disebarkan lewat Redis; ia hampir seketika, tetapi bukan
-	// nol - diberi beberapa detik, bukan diasumsikan.
+	// Revocation propagates through Redis; it is almost immediate, but not
+	// zero - given a few seconds, not assumed.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		code, _, _ := a.call(http.MethodGet, "/me", nil, old)
@@ -207,13 +207,13 @@ func TestD01_ANewLoginRevokesTheOlderSession(t *testing.T) {
 	}
 }
 
-// D2 - Satu program aktif per pengguna. Memulai yang kedua TIDAK ditolak:
-// seperti sistem lama (`initiateProgram`), program aktif sebelumnya dijeda dan
-// yang baru menjadi satu-satunya yang aktif. Yang dijaga adalah "satu aktif",
-// bukan "tidak boleh memulai lagi" - itu perbedaan yang sempat saya salah
-// tulis sebagai 409, dan test inilah yang menangkapnya.
-// D3 - Satu program per hasil analisis: penilaian yang sudah dipakai satu
-// program ditolak 409, sekalipun program itu sudah dijeda.
+// D2 - One active program per user. Starting a second one is NOT refused: as
+// in the legacy system (`initiateProgram`), the previously active program is
+// paused and the new one becomes the only active one. What is guarded is "one
+// active", not "may not start again" - a distinction I once wrote wrongly as
+// 409, and this test is what caught it. D3 - One program per analysis result:
+// an assessment already used by one program is refused with 409, even when
+// that program has been paused.
 func TestD02_D03_OneActiveProgramPerUserAndPerAssessment(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
@@ -245,9 +245,9 @@ func TestD02_D03_OneActiveProgramPerUserAndPerAssessment(t *testing.T) {
 	}
 }
 
-// D4 - Program hanya bisa dijeda dari active dan dilanjutkan dari paused.
-// Menjeda dua kali berturut-turut berarti melanjutkan; yang ditolak adalah
-// status lain (selesai/dibatalkan), diuji lewat program yang dihapus.
+// D4 - A program can only be paused from active and resumed from paused.
+// Pausing twice in a row means resuming; what is refused is other statuses
+// (completed/cancelled), tested through a deleted program.
 func TestD04_ToggleOnlyMovesBetweenActiveAndPaused(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
@@ -273,8 +273,8 @@ func TestD04_ToggleOnlyMovesBetweenActiveAndPaused(t *testing.T) {
 	}
 }
 
-// D5 - Program non-aktif membekukan interaksi: thread baru pada program yang
-// dijeda ditolak 409.
+// D5 - A non-active program freezes interaction: a new thread on a paused
+// program is refused with 409.
 func TestD05_APausedProgramFreezesInteraction(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
@@ -292,8 +292,8 @@ func TestD05_APausedProgramFreezesInteraction(t *testing.T) {
 	}
 }
 
-// D11 - Penghapusan akun bersifat permanen: setelah saga selesai, masuk
-// kembali dengan kredensial yang sama gagal.
+// D11 - Account deletion is permanent: once the saga finishes, signing in
+// again with the same credentials fails.
 func TestD11_DeletionIsPermanent(t *testing.T) {
 	a := stack(t).register()
 	if code, body := a.do(http.MethodDelete, "/delete-account", map[string]any{"password": password}); code != http.StatusAccepted {
@@ -312,8 +312,8 @@ func TestD11_DeletionIsPermanent(t *testing.T) {
 	}
 }
 
-// S1 - Reset kata sandi menuntut token yang sah; tanpa token yang benar,
-// kata sandi TIDAK diganti.
+// S1 - A password reset demands a valid token; without the right token, the
+// password is NOT changed.
 func TestS01_PasswordResetRequiresAValidToken(t *testing.T) {
 	a := stack(t).register()
 	code, _, _ := a.call(http.MethodPost, "/password-reset/confirm", map[string]any{
@@ -322,7 +322,7 @@ func TestS01_PasswordResetRequiresAValidToken(t *testing.T) {
 	if code < 400 || code >= 500 {
 		t.Fatalf("a bogus token answered %d, want a 4xx", code)
 	}
-	// Kata sandi lama masih berlaku: tidak ada yang diganti.
+	// The old password still works: nothing was changed.
 	if code, _, _ := a.call(http.MethodPost, "/login", map[string]any{"email": a.email, "password": password}, ""); code != http.StatusOK {
 		t.Fatalf("the original password stopped working after a bogus reset: %d", code)
 	}
@@ -342,8 +342,8 @@ func TestS02_DeleteAccountVerifiesThePassword(t *testing.T) {
 	}
 }
 
-// S8 - Token kedaluwarsa: setiap token membawa exp yang berada di masa depan
-// yang terbatas, dan API melaporkan expires_at.
+// S8 - Token expiry: every token carries an exp in the bounded future, and
+// the API reports expires_at.
 func TestS08_TokensExpire(t *testing.T) {
 	a := stack(t).register()
 	parts := strings.Split(a.token, ".")
@@ -369,8 +369,8 @@ func TestS08_TokensExpire(t *testing.T) {
 	}
 }
 
-// S9 - Otorisasi tidak membocorkan keberadaan sumber daya: milik orang lain
-// dijawab 404, bukan 403.
+// S9 - Authorisation does not leak the existence of resources: someone
+// else's is answered with 404, not 403.
 func TestS09_OtherPeoplesResourcesLookNonexistent(t *testing.T) {
 	owner := stack(t).register()
 	owner.completeProfile()
@@ -385,7 +385,7 @@ func TestS09_OtherPeoplesResourcesLookNonexistent(t *testing.T) {
 	}
 }
 
-// S10 - Tidak ada bidang debug di kontrak dashboard.
+// S10 - No debug fields in the dashboard contract.
 func TestS10_DashboardCarriesNoDebugFields(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()

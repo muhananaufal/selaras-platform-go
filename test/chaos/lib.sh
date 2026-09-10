@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Pustaka bersama skrip chaos. Dijalankan dari WSL, tempat daemon Docker
-# hidup, terhadap stack compose lokal.
+# Shared library of the chaos scripts. Run from WSL, where the Docker daemon
+# lives, against the local compose stack.
 #
-# Yang disediakan: pembacaan .env, kueri ke Postgres lewat container-nya,
-# dan alur HTTP minimum (daftar -> profil -> penilaian -> personalisasi)
-# supaya setiap skenario memulai dari keadaan yang sama.
+# What it provides: reading .env, queries to Postgres through its container,
+# and the minimum HTTP flow (register -> profile -> assessment ->
+# personalisation) so every scenario starts from the same state.
 
 set -euo pipefail
 
@@ -18,14 +18,14 @@ set -a; . "$ROOT/.env"; set +a
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 
-# psql menjalankan satu pernyataan sebagai superuser dan mencetak hasilnya
-# tanpa hiasan. Superuser, karena skrip ini membaca lintas skema - hal yang
-# sengaja tidak bisa dilakukan peran per-service (ADR-006).
+# psql runs one statement as the superuser and prints the result without
+# decoration. Superuser, because this script reads across schemas -
+# something the per-service roles deliberately cannot do (ADR-006).
 psql() {
   docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "$1"
 }
 
-# unpublished menghitung baris outbox yang belum terkirim di seluruh skema.
+# unpublished counts the outbox rows not yet sent across every schema.
 unpublished() {
   psql "SELECT
       (SELECT count(*) FROM identity.outbox   WHERE published_at IS NULL)
@@ -38,7 +38,7 @@ unpublished() {
     + (SELECT count(*) FROM llm.outbox        WHERE published_at IS NULL)"
 }
 
-# Alur HTTP. Setiap fungsi mencetak yang dibutuhkan langkah berikutnya.
+# The HTTP flow. Every function prints what the next step needs.
 register() {
   local email="chaos-$1-$(date +%s%N)@user.co"
   curl -sf -X POST "$BASE_URL/api/v1/register" -H 'Content-Type: application/json' \
@@ -59,19 +59,19 @@ start_assessment() {
     | sed -n 's/.*"slug":"\([^"]*\)".*/\1/p'
 }
 
-# personalize mencetak kode HTTP-nya; 202 berarti pekerjaannya diantre.
+# personalize prints its HTTP code; 202 means the job was queued.
 personalize() {
   curl -s -o /dev/null -w '%{http_code}' -X PATCH "$BASE_URL/api/v1/risk-assessments/$2/personalize" \
     -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d '{}'
 }
 
-# personalization_status membaca status penilaian menurut slug.
+# personalization_status reads the assessment status by slug.
 personalization_status() {
   psql "SELECT personalization_status FROM assessment.risk_assessments WHERE slug = '$1'"
 }
 
-# wait_until mengulang sebuah perintah sampai keluarannya sama dengan yang
-# diharapkan, atau menyerah setelah batas detik. Mencetak berapa lama.
+# wait_until repeats a command until its output equals what is expected, or
+# gives up after the limit in seconds. Prints how long it took.
 wait_until() {
   local want="$1" timeout="$2" started; shift 2
   started=$(date +%s)
