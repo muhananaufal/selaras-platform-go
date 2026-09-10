@@ -34,7 +34,7 @@ func guard(t *testing.T, q pg.Querier, scope string) *idempotency.Guard {
 	return g
 }
 
-// TestTheSameKeyIsClaimedOnce adalah bentuk paling sederhana dari gate F3.
+// TestTheSameKeyIsClaimedOnce is the simplest form of gate F3.
 func TestTheSameKeyIsClaimedOnce(t *testing.T) {
 	pool, ctx := setup(t)
 	key := uuid.NewString()
@@ -56,11 +56,11 @@ func TestTheSameKeyIsClaimedOnce(t *testing.T) {
 	}
 }
 
-// TestWorkRunsOnceWhenTheJobArrivesTwice adalah gate F3 apa adanya:
-// "Job dijalankan dua kali dengan idempotency key sama menghasilkan satu hasil."
+// TestWorkRunsOnceWhenTheJobArrivesTwice is gate F3 as written: "A job run twice
+// with the same idempotency key produces one result."
 //
-// Yang dihitung bukan berapa kali Claim dipanggil, melainkan berapa kali
-// PEKERJAANNYA benar-benar terjadi - di sini, berapa baris users yang tertulis.
+// What is counted is not how many times Claim was called, but how many times the
+// WORK actually happened - here, how many users rows were written.
 func TestWorkRunsOnceWhenTheJobArrivesTwice(t *testing.T) {
 	pool, ctx := setup(t)
 	key := uuid.NewString()
@@ -101,11 +101,11 @@ func TestWorkRunsOnceWhenTheJobArrivesTwice(t *testing.T) {
 	}
 }
 
-// TestAFailedJobCanBeRetried adalah separuh yang mudah dilupakan.
+// TestAFailedJobCanBeRetried is the half that is easy to forget.
 //
-// Klaim yang commit terpisah dari pekerjaannya akan meninggalkan kunci yang
-// tercatat selesai untuk pekerjaan yang gagal - dan tidak ada percobaan ulang
-// yang bisa memperbaikinya. Klaim harus ikut batal bersama pekerjaannya.
+// A claim that commits separately from its work leaves a key recorded as done
+// for work that failed - and no retry can repair it. The claim has to be
+// rolled back together with its work.
 func TestAFailedJobCanBeRetried(t *testing.T) {
 	pool, ctx := setup(t)
 	key := uuid.NewString()
@@ -126,7 +126,7 @@ func TestAFailedJobCanBeRetried(t *testing.T) {
 		t.Fatalf("InTx returned %v, want the failure", err)
 	}
 
-	// Percobaan kedua harus bisa mengklaim kunci yang sama.
+	// The second attempt must be able to claim the same key.
 	if err := pg.InTx(ctx, pool, func(q pg.Querier) error {
 		claimed, err := guard(t, q, "worker").Claim(ctx, key)
 		if err != nil {
@@ -160,8 +160,8 @@ func TestTwoConsumersDoNotSilenceEachOther(t *testing.T) {
 	}
 }
 
-// TestAConcurrentRaceStillYieldsOneWinner adalah alasan Claim memakai
-// ON CONFLICT alih-alih SELECT lalu INSERT.
+// TestAConcurrentRaceStillYieldsOneWinner is the reason Claim uses ON
+// CONFLICT instead of SELECT then INSERT.
 func TestAConcurrentRaceStillYieldsOneWinner(t *testing.T) {
 	pool, ctx := setup(t)
 	key := uuid.NewString()
@@ -201,7 +201,7 @@ func TestAConcurrentRaceStillYieldsOneWinner(t *testing.T) {
 	}
 }
 
-// TestTheStoredResultComesBack menjaga permintaan ulang tetap bisa dijawab.
+// TestTheStoredResultComesBack keeps repeated requests answerable.
 func TestTheStoredResultComesBack(t *testing.T) {
 	pool, ctx := setup(t)
 	key := uuid.NewString()
@@ -225,13 +225,15 @@ func TestTheStoredResultComesBack(t *testing.T) {
 		t.Fatalf("the stored result came back as %q", result)
 	}
 
-	// Kunci yang belum pernah diklaim dibedakan dari kunci tanpa hasil.
+	// A key that was never claimed is distinguished from a key without a
+	// result.
 	if _, found, err := g.Result(ctx, uuid.NewString()); err != nil || found {
 		t.Fatalf("an unclaimed key reported found=%v err=%v, want false and nil", found, err)
 	}
 }
 
-// TestSweepKeepsRecentClaims menjaga penyapuan tidak menghapus yang masih perlu.
+// TestSweepKeepsRecentClaims makes sure the sweep does not remove what is still
+// needed.
 func TestSweepKeepsRecentClaims(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -245,8 +247,8 @@ func TestSweepKeepsRecentClaims(t *testing.T) {
 		}
 	}
 
-	// Yang satu dituakan langsung di basis data - menunggu sungguhan akan
-	// membuat test ini bergantung pada jam dinding.
+	// One of them is aged directly in the database - actually waiting would
+	// make this test depend on the wall clock.
 	aged := `UPDATE processed_messages SET created_at = now() - interval '48 hours'
 	         WHERE key LIKE '%' || $1`
 	if _, err := pool.Exec(ctx, aged, stale); err != nil {
@@ -284,11 +286,11 @@ func insertUser(ctx context.Context, q pg.Querier, id uuid.UUID) error {
 	return err
 }
 
-// TestAnEmptyKeyIsRefused menjaga seluruh sistem dari satu kunci kosong.
+// TestAnEmptyKeyIsRefused protects the whole system from a single empty key.
 //
-// Kunci kosong yang diterima akan diklaim sekali, lalu SETIAP pekerjaan
-// berikutnya - yang tidak berhubungan sama sekali - ditolak sebagai duplikat.
-// Satu pemanggil yang lupa mengisi kuncinya akan menghentikan semuanya.
+// An empty key that was accepted would be claimed once, and then EVERY
+// subsequent job - entirely unrelated - would be refused as a duplicate. One
+// caller that forgot to set its key would stop everything.
 func TestAnEmptyKeyIsRefused(t *testing.T) {
 	pool, ctx := setup(t)
 	g := guard(t, pool, "worker")
