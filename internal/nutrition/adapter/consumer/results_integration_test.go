@@ -21,11 +21,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// newResults merakit konsumen di atas service sungguhan dan Postgres uji.
+// newResults assembles the consumer on top of the real service and the test
+// Postgres.
 //
-// Klien Kafka-nya tidak pernah menyambung: handle dipanggil langsung dengan
-// record yang disusun di sini, karena yang diuji adalah keputusan konsumen
-// atas sebuah hasil - bukan pengambilannya dari broker.
+// Its Kafka client never connects: handle is called directly with records
+// composed here, because what is tested is the consumer's decision about a
+// result - not fetching it from the broker.
 func newResults(t *testing.T) (*Results, context.Context) {
 	t.Helper()
 
@@ -90,11 +91,11 @@ func completedRecord(t *testing.T, guideID string) *kgo.Record {
 	}
 }
 
-// TestAResultForADeletedGuideIsDroppedNotRetried menutup putaran tanpa akhir
-// yang tersingkap oleh trace (F9-07): panduan yang dihapus bersama akunnya
-// masih punya hasil LLM yang datang belakangan, dan "meal guide not found"
-// diperlakukan sebagai kegagalan sementara - konsumen memundurkan offset,
-// membaca ulang, gagal lagi, setiap detik, selamanya.
+// TestAResultForADeletedGuideIsDroppedNotRetried closes the endless loop the
+// trace exposed (F9-07): a guide deleted along with its account still has an
+// LLM result arriving later, and "meal guide not found" was treated as a
+// transient failure - the consumer rewound the offset, reread, failed again,
+// every second, forever.
 func TestAResultForADeletedGuideIsDroppedNotRetried(t *testing.T) {
 	results, ctx := newResults(t)
 
@@ -104,11 +105,11 @@ func TestAResultForADeletedGuideIsDroppedNotRetried(t *testing.T) {
 	}
 }
 
-// TestATransientFailureIsStillAnError menjaga perbaikan di atas tidak
-// melebar: galat SEMENTARA tetap galat, supaya offset ditahan dan hasilnya
-// datang lagi - hanya ketiadaan pemiliknya yang terminal. Context yang sudah
-// dibatalkan membuat setiap panggilan basis data gagal, persis seperti
-// Postgres yang sedang tidak terjangkau.
+// TestATransientFailureIsStillAnError keeps the fix above from spreading: a
+// TRANSIENT error is still an error, so the offset is held and the result
+// comes back - only a missing owner is terminal. An already cancelled
+// context makes every database call fail, exactly like a Postgres that is
+// unreachable.
 func TestATransientFailureIsStillAnError(t *testing.T) {
 	results, ctx := newResults(t)
 	gone, cancel := context.WithCancel(ctx)

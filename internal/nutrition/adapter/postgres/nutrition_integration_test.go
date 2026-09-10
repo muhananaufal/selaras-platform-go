@@ -38,8 +38,8 @@ func userID(t *testing.T) domain.UserID {
 	return id
 }
 
-// wib adalah zona pengguna sebenarnya; sebagian aturan tanggal hanya salah di
-// zona yang bukan UTC.
+// wib is the real users' zone; some date rules are only wrong in a zone that
+// is not UTC.
 var wib = time.FixedZone("WIB", 7*60*60)
 
 func validInput() domain.GuideInput {
@@ -55,7 +55,7 @@ func validInput() domain.GuideInput {
 
 // --------------------------------------------------------------- preferensi
 
-// TestPreferencesSurviveARoundTrip menyimpan lalu membaca kembali.
+// TestPreferencesSurviveARoundTrip stores and reads back.
 func TestPreferencesSurviveARoundTrip(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewPreferencesRepository(pool)
@@ -105,11 +105,11 @@ func TestPreferencesSurviveARoundTrip(t *testing.T) {
 	}
 }
 
-// TestUnsetPreferencesAreStoredAsNull menjaga kolom enum tetap bisa ditulis.
+// TestUnsetPreferencesAreStoredAsNull keeps the enum columns writable.
 //
-// Kolomnya punya CHECK yang tidak memuat string kosong. Menyimpan "belum
-// dipilih" sebagai string kosong akan DITOLAK basis data, jadi ia harus menjadi NULL - dan
-// harus kembali sebagai kosong, bukan sebagai galat.
+// The columns have a CHECK that does not include the empty string. Storing "not chosen
+// yet" as an empty string would be REFUSED by the database, so it has to become NULL - and
+// has to come back as empty, not as an error.
 func TestUnsetPreferencesAreStoredAsNull(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewPreferencesRepository(pool)
@@ -135,13 +135,14 @@ func TestUnsetPreferencesAreStoredAsNull(t *testing.T) {
 	if back.Allergies != "" {
 		t.Errorf("an absent allergy note came back as %q", back.Allergies)
 	}
-	// Daftar kosong, bukan nil: pembacanya menyerahkannya ke JSON.
+	// An empty list, not nil: its reader hands it straight to JSON.
 	if back.TasteProfiles == nil || len(back.TasteProfiles) != 0 {
 		t.Errorf("the empty taste profiles came back as %#v", back.TasteProfiles)
 	}
 }
 
-// TestAPartialUpdatePersistsOnlyWhatChanged adalah B16 sampai ke basis data.
+// TestAPartialUpdatePersistsOnlyWhatChanged is B16 all the way to the
+// database.
 func TestAPartialUpdatePersistsOnlyWhatChanged(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewPreferencesRepository(pool)
@@ -160,8 +161,8 @@ func TestAPartialUpdatePersistsOnlyWhatChanged(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Dibaca kembali, ditambal sebagian, lalu disimpan - persis alur yang
-	// dipakai use case.
+	// Read back, partially patched, then stored - exactly the flow the use
+	// case uses.
 	loaded, err := repo.FindByUser(ctx, owner)
 	if err != nil {
 		t.Fatalf("FindByUser: %v", err)
@@ -192,8 +193,8 @@ func TestAbsentPreferencesAreDistinguishable(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewPreferencesRepository(pool)
 
-	// "Belum pernah menyentuh preferensi" harus bisa dibedakan dari "kosong":
-	// yang satu INSERT, yang lain UPDATE.
+	// "Never touched the preferences" has to be distinguishable from "empty":
+	// one is an INSERT, the other an UPDATE.
 	if _, err := repo.FindByUser(ctx, userID(t)); !errors.Is(err, domain.ErrPreferencesNotFound) {
 		t.Fatalf("a user with no preferences was reported as %v", err)
 	}
@@ -201,7 +202,7 @@ func TestAbsentPreferencesAreDistinguishable(t *testing.T) {
 
 // ------------------------------------------------------------------ panduan
 
-// TestAGuideIsWrittenPendingAndFilledLater adalah alur asinkronnya, utuh.
+// TestAGuideIsWrittenPendingAndFilledLater is the asynchronous flow, whole.
 func TestAGuideIsWrittenPendingAndFilledLater(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewGuideRepository(pool)
@@ -222,7 +223,8 @@ func TestAGuideIsWrittenPendingAndFilledLater(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Baris pending TIDAK membawa isi - itu ditegakkan CHECK di basis data.
+	// A pending row carries NO content - that is enforced by a CHECK in the
+	// database.
 	pending, err := repo.FindByID(ctx, guide.ID)
 	if err != nil {
 		t.Fatalf("FindByID: %v", err)
@@ -236,8 +238,8 @@ func TestAGuideIsWrittenPendingAndFilledLater(t *testing.T) {
 	if pending.MealTime != domain.MealBreakfast {
 		t.Errorf("the frozen meal time came back as %q", pending.MealTime)
 	}
-	// Masukan hariannya dibaca kembali dari generation_context, bukan dari
-	// kolom kedua yang bisa menyimpang darinya.
+	// The daily input is read back from generation_context, not from a second
+	// column that could drift from it.
 	if pending.Input.CuisinePreference != "Masakan Sunda" {
 		t.Errorf("the daily input came back as %+v", pending.Input)
 	}
@@ -245,7 +247,7 @@ func TestAGuideIsWrittenPendingAndFilledLater(t *testing.T) {
 		t.Errorf("the social context came back as %q", pending.Input.SocialContext)
 	}
 
-	// Panduannya tiba.
+	// The guide arrives.
 	data := json.RawMessage(`{"suggestions":[{"dish_name":"Sayur asem"}]}`)
 	if err := pending.MarkReady(data, now.Add(30*time.Second)); err != nil {
 		t.Fatalf("MarkReady: %v", err)
@@ -280,8 +282,8 @@ func TestTheGuideDateSurvivesTheTimezone(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewGuideRepository(pool)
 
-	// 05.00 WIB pada 3 September = 22.00 UTC pada 2 September. Kalau tanggalnya
-	// dikonversi ke UTC di suatu tempat, ia akan kembali sebagai tanggal 2.
+	// 05:00 WIB on 3 September = 22:00 UTC on 2 September. If the date is
+	// converted to UTC somewhere, it comes back as the 2nd.
 	at := time.Date(2026, 9, 3, 5, 0, 0, 0, wib)
 
 	guide, err := domain.NewGuide(userID(t), validInput(), nil, at)
@@ -302,7 +304,7 @@ func TestTheGuideDateSurvivesTheTimezone(t *testing.T) {
 	}
 }
 
-// TestTheHistoryIsPagedNewestFirstAndPrivate adalah F6-08 di lapisan simpanan.
+// TestTheHistoryIsPagedNewestFirstAndPrivate is F6-08 at the storage layer.
 func TestTheHistoryIsPagedNewestFirstAndPrivate(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewGuideRepository(pool)
@@ -310,9 +312,9 @@ func TestTheHistoryIsPagedNewestFirstAndPrivate(t *testing.T) {
 	owner := userID(t)
 	base := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
-	// Tiga panduan pada HARI YANG SAMA: seri pada guide_date, sehingga
-	// urutannya bergantung pada pemecah seri di ORDER BY. Tanpa pemecah itu,
-	// halaman kedua bisa mengulang baris halaman pertama.
+	// Three guides on the SAME DAY: tied on guide_date, so the order depends
+	// on the tie-breaker in ORDER BY. Without that tie-breaker, the second
+	// page can repeat rows from the first.
 	ids := make([]domain.ID, 0, 3)
 	for i := range 3 {
 		g, err := domain.NewGuide(owner, validInput(), nil, base.Add(time.Duration(i)*time.Minute))
@@ -335,7 +337,7 @@ func TestTheHistoryIsPagedNewestFirstAndPrivate(t *testing.T) {
 	if len(first) != 2 {
 		t.Fatalf("the first page holds %d guides, want 2", len(first))
 	}
-	// Terbaru lebih dulu: yang terakhir dibuat ada di puncak.
+	// Newest first: the last one created is at the top.
 	if first[0].ID != ids[2] {
 		t.Errorf("the newest guide is not first")
 	}
@@ -347,14 +349,14 @@ func TestTheHistoryIsPagedNewestFirstAndPrivate(t *testing.T) {
 	if len(second) != 1 {
 		t.Fatalf("the second page holds %d guides, want 1", len(second))
 	}
-	// Tidak ada baris yang muncul di dua halaman.
+	// No row appears on two pages.
 	for _, a := range first {
 		if a.ID == second[0].ID {
 			t.Errorf("guide %s appears on both pages", a.ID)
 		}
 	}
 
-	// Dan orang lain tidak melihat satu pun.
+	// And someone else sees none at all.
 	theirs, total, err := repo.ListForUser(ctx, userID(t), domain.Page{})
 	if err != nil {
 		t.Fatalf("ListForUser for a stranger: %v", err)
@@ -364,12 +366,12 @@ func TestTheHistoryIsPagedNewestFirstAndPrivate(t *testing.T) {
 	}
 }
 
-// TestTheLearningHistoryOnlyHoldsChosenGuides adalah B17.
+// TestTheLearningHistoryOnlyHoldsChosenGuides is B17.
 //
-// Sistem lama mengambil panduan TERAKHIR DIBUAT dan menyebutnya "menu yang
-// pernah dipilih", padahal kolom chosen tidak pernah ditulis satu baris kode
-// pun. Akibatnya saran model disuapkan kembali kepada model sebagai bukti
-// selera pengguna.
+// The legacy system took the LAST CREATED guides and called them "menus once
+// chosen", while the chosen column was never written by a single line of
+// code. The result was the model's own suggestions fed back to the model as
+// evidence of the user's taste.
 func TestTheLearningHistoryOnlyHoldsChosenGuides(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewGuideRepository(pool)
@@ -397,8 +399,8 @@ func TestTheLearningHistoryOnlyHoldsChosenGuides(t *testing.T) {
 	ready(t, base, "tidak dipilih", false)
 	wanted := ready(t, base.Add(time.Minute), "dipilih", true)
 
-	// Panduan yang DITANDAI tetapi belum tiba isinya juga tidak masuk: tidak
-	// ada yang bisa dipelajari darinya.
+	// A guide that is MARKED but whose content has not arrived is excluded
+	// too: there is nothing to learn from it.
 	pendingChosen, err := domain.NewGuide(owner, validInput(), nil, base.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("NewGuide: %v", err)
@@ -420,11 +422,11 @@ func TestTheLearningHistoryOnlyHoldsChosenGuides(t *testing.T) {
 	}
 }
 
-// TestAnUntouchedLearningHistoryIsEmpty menyatakan keadaan sebenarnya hari ini.
+// TestAnUntouchedLearningHistoryIsEmpty states today's real state.
 //
-// Belum ada endpoint yang menandai panduan sebagai dipilih, jadi daftar ini
-// memang kosong. Itu jawaban yang BENAR, dan sengaja diuji supaya perubahan
-// yang diam-diam mengembalikannya ke perilaku lama terlihat.
+// There is no endpoint yet that marks a guide as chosen, so this list is indeed
+// empty. That is the CORRECT answer, and it is tested deliberately so a change
+// that silently restores the old behaviour becomes visible.
 func TestAnUntouchedLearningHistoryIsEmpty(t *testing.T) {
 	pool, ctx := setup(t)
 	repo := nutritionpg.NewGuideRepository(pool)
@@ -467,17 +469,16 @@ func TestAMissingGuideIsReportedAsMissing(t *testing.T) {
 
 func ptr[T any](v T) *T { return &v }
 
-// TestAStoredValueTheCheckWouldRejectIsRefusedOnRead menutup jalur baca.
+// TestAStoredValueTheCheckWouldRejectIsRefusedOnRead closes the read path.
 //
-// CHECK di basis data menjaga jalur tulis, tetapi baris bisa juga datang dari
-// skrip pindah data atau perbaikan manual yang dijalankan dengan batasan
-// sementara dilepas. Kalau nilai asing dibaca diam-diam, ia menyebar ke prompt
-// dan ke klien; kalau ditolak di sini, baris yang rusak TERLIHAT.
+// The CHECK in the database guards the write path, but rows can also come from
+// a data migration script or a manual fix run with the constraint temporarily
+// dropped. If a foreign value is read silently, it spreads into prompts and to
+// clients; if it is refused here, the corrupt row is VISIBLE.
 //
-// Batasannya dilepas di dalam TRANSAKSI yang dibatalkan, bukan di basis data
-// yang sesungguhnya: PostgreSQL menjalankan DDL di dalam transaksi, jadi tidak
-// ada satu pun perubahan yang bertahan setelah test ini - termasuk bila ia
-// gagal di tengah.
+// The constraint is dropped inside a TRANSACTION that is rolled back, not on
+// the real database: PostgreSQL runs DDL inside transactions, so not a single
+// change survives this test - including when it fails halfway.
 func TestAStoredValueTheCheckWouldRejectIsRefusedOnRead(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -505,7 +506,7 @@ func TestAStoredValueTheCheckWouldRejectIsRefusedOnRead(t *testing.T) {
 		t.Fatalf("inserting the legacy label: %v", err)
 	}
 
-	// Dibaca lewat repository yang sama, di atas transaksi yang sama.
+	// Read through the same repository, on top of the same transaction.
 	repo := nutritionpg.NewPreferencesRepository(tx)
 	if _, err := repo.FindByUser(ctx, owner); !errors.Is(err, domain.ErrInvalidBudgetLevel) {
 		t.Fatalf("a stored legacy label was read back as %v, want it refused", err)
@@ -515,7 +516,8 @@ func TestAStoredValueTheCheckWouldRejectIsRefusedOnRead(t *testing.T) {
 		t.Fatalf("rolling back: %v", err)
 	}
 
-	// Dan batasannya masih ada sesudahnya - transaksinya benar-benar dibatalkan.
+	// And the constraint is still there afterwards - the transaction was really
+	// rolled back.
 	var count int
 	if err := pool.QueryRow(ctx,
 		`SELECT count(*) FROM pg_constraint WHERE conname = 'culinary_preferences_budget_level_check'`,

@@ -41,8 +41,8 @@ func (s *Server) GetHubData(
 		return nil, toStatus(ctx, "GetHubData", err)
 	}
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi riwayat akan gagal alih-alih menampilkan riwayat kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the history fails instead of showing an empty history.
 	history := make([]*nutritionv1.DailyMealGuide, 0, len(hub.History))
 	for _, g := range hub.History {
 		history = append(history, guideToProto(g))
@@ -88,12 +88,12 @@ func (s *Server) GenerateDailyGuide(
 	}, nil
 }
 
-// patchFrom menerjemahkan permintaan pembaruan PARSIAL.
+// patchFrom translates a PARTIAL update request.
 //
-// Bidang yang tidak ada di permintaan tetap nil di sini, dan nil berarti
-// "jangan sentuh". Itulah seluruh gunanya presence eksplisit di kontraknya:
-// tanpa itu, satu permintaan yang hanya membawa alergi akan menghapus selera
-// dan peralatan dapur pengguna (B16).
+// Fields absent from the request stay nil here, and nil means "do not
+// touch". That is the whole point of explicit presence in the contract:
+// without it, one request carrying only allergies would wipe the user's
+// tastes and kitchen equipment (B16).
 func patchFrom(req *nutritionv1.UpdatePreferencesRequest) (domain.PreferencesPatch, error) {
 	var patch domain.PreferencesPatch
 
@@ -153,11 +153,11 @@ func cookingFromProto(v nutritionv1.CookingStyle) (domain.CookingStyle, error) {
 	}
 }
 
-// inputFrom menerjemahkan masukan harian.
+// inputFrom translates the daily input.
 //
-// Nilai enum yang tidak dikenali menjadi string kosong, dan domain menolaknya
-// di Validate. Menolaknya di sini pula akan menggandakan aturan yang sama di
-// dua tempat, dan dua salinan aturan adalah dua aturan yang akan menyimpang.
+// An unrecognised enum value becomes an empty string, and the domain refuses
+// it in Validate. Refusing it here as well would duplicate the same rule in
+// two places, and two copies of a rule are two rules that will drift.
 func inputFrom(in *nutritionv1.DailyGuideInput) domain.GuideInput {
 	return domain.GuideInput{
 		PlanType:          planFromProto(in.GetPlanType()),
@@ -215,7 +215,7 @@ func cravingFromProto(v nutritionv1.CravingType) domain.CravingType {
 	case nutritionv1.CravingType_CRAVING_TYPE_QUICK_STIR_FRY:
 		return domain.CravingQuickStirFry
 	default:
-		// UNSPECIFIED SAH: tidak setiap orang sedang menginginkan sesuatu.
+		// UNSPECIFIED is VALID: not everyone is craving something.
 		return domain.CravingUnspecified
 	}
 }
@@ -251,9 +251,8 @@ func preferencesToProto(p *domain.Preferences) *nutritionv1.CulinaryPreferences 
 			UpdatedAt: timestamppb.New(p.UpdatedAt),
 		},
 	}
-	// allergies OPTIONAL di kontraknya: catatan yang kosong tidak dikirim sama
-	// sekali, sehingga klien bisa membedakan "tidak ada catatan" dari "catatan
-	// kosong" tanpa aturan tambahan.
+	// allergies is OPTIONAL in the contract: an empty note is not sent at all,
+	// so a client can tell "no note" from "empty note" without an extra rule.
 	if p.Allergies != "" {
 		out.Allergies = &p.Allergies
 	}
@@ -409,11 +408,11 @@ func guideStatusToProto(v domain.GuideStatus) nutritionv1.GuideStatus {
 	}
 }
 
-// pageTokenPrefix membuat token ini bisa dikenali saat menyelidiki.
+// pageTokenPrefix makes this token recognisable when investigating.
 //
-// Sama dengan chat: token OPAQUE bagi klien, dan apa yang ada di dalamnya
-// urusan adapter ini. Yang disimpan adalah nomor halaman, dan itu bisa diganti
-// cursor sungguhan nanti TANPA mengubah kontraknya maupun kliennya.
+// The same as chat: the token is OPAQUE to the client, and what is inside is
+// this adapter's business. What is stored is the page number, and that can be
+// replaced by a real cursor later WITHOUT changing the contract or the client.
 const pageTokenPrefix = "p:"
 
 func pageFrom(p *commonv1.PageRequest) domain.Page {
@@ -423,12 +422,11 @@ func pageFrom(p *commonv1.PageRequest) domain.Page {
 	}
 }
 
-// pageNumberFromToken membaca nomor halaman dari token.
+// pageNumberFromToken reads the page number from the token.
 //
-// Token yang tidak bisa dibaca diperlakukan sebagai halaman pertama, bukan
-// sebagai galat: token yang kedaluwarsa atau terpotong jauh lebih sering
-// daripada token yang dipalsukan, dan galat untuk itu hanya membuat riwayat
-// berhenti bekerja.
+// An unreadable token is treated as the first page, not as an error: an
+// expired or truncated token is far more common than a forged one, and an
+// error for it only makes the history stop working.
 func pageNumberFromToken(token string) int {
 	if !strings.HasPrefix(token, pageTokenPrefix) {
 		return 1
@@ -440,11 +438,11 @@ func pageNumberFromToken(token string) int {
 	return number
 }
 
-// pageToProto menyusun jawaban halaman.
+// pageToProto composes the page answer.
 //
-// next_page_token KOSONG di halaman terakhir. Klien memakai kosongnya sebagai
-// tanda berhenti; token yang selalu ada membuatnya meminta halaman kosong
-// selamanya.
+// next_page_token is EMPTY on the last page. The client uses its emptiness as
+// the signal to stop; a token that is always present makes it request empty
+// pages forever.
 func pageToProto(p domain.Page, total int) *commonv1.PageResponse {
 	out := &commonv1.PageResponse{}
 
@@ -454,7 +452,7 @@ func pageToProto(p domain.Page, total int) *commonv1.PageResponse {
 	return out
 }
 
-// toStatus menerjemahkan galat domain menjadi kode gRPC.
+// toStatus translates a domain error into a gRPC code.
 func toStatus(ctx context.Context, op string, err error) error {
 	switch {
 	case err == nil:

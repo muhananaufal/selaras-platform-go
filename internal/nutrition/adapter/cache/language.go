@@ -1,7 +1,8 @@
-// Package cache menyimpan bahasa pengguna yang datang lewat event.
+// Package cache stores the user's language as it arrives through events.
 //
-// Ini CACHE, bukan sumber kebenaran: profile-svc tetap pemiliknya. Yang di sini
-// boleh basi, boleh hilang, dan boleh dibangun ulang dari awal topic.
+// This is a CACHE, not the source of truth: profile-svc remains the owner. What
+// lives here may be stale, may be lost, and may be rebuilt from the start of
+// the topic.
 package cache
 
 import (
@@ -16,30 +17,30 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// DefaultLanguage dipakai saat bahasa pengguna belum diketahui.
+// DefaultLanguage is used while the user's language is not known.
 //
-// Sama dengan bawaan sistem lama. Bahasa yang tidak diketahui menghasilkan
-// panduan dalam bahasa ini, bukan kegagalan: seseorang yang belum pernah
-// menyentuh profilnya tetap berhak mendapat saran menu.
+// The same as the legacy default. An unknown language yields a guide in
+// this language, not a failure: someone who has never touched their profile
+// is still entitled to menu advice.
 const DefaultLanguage = "id"
 
-// Languages membaca dan menulis bahasa yang di-cache.
+// Languages reads and writes the cached language.
 type Languages struct {
 	db pg.Querier
 }
 
 func NewLanguages(db pg.Querier) *Languages { return &Languages{db: db} }
 
-// Of mengembalikan bahasa seorang pengguna, atau bawaannya.
+// Of returns a user's language, or the default.
 //
-// Ia TIDAK pernah mengembalikan galat karena cache-nya kosong. Cache yang
-// kosong adalah keadaan normal - konsumen belum menyusul, atau pengguna belum
-// pernah menyimpan profilnya - dan menjadikannya galat akan menghentikan
-// pembuatan panduan karena sebuah salinan yang boleh hilang.
+// It NEVER returns an error because the cache is empty. An empty cache is a
+// normal state - the consumer has not caught up, or the user has never saved
+// their profile - and making it an error would stop guide generation over a
+// copy that is allowed to be missing.
 //
-// Galat basis data yang sungguhan tetap dikembalikan: itu bukan cache yang
-// kosong, itu penyimpanan yang bermasalah, dan mendiamkannya berarti setiap
-// pengguna diam-diam mendapat bahasa bawaan tanpa ada yang tahu.
+// A real database error is still returned: that is not an empty cache, that
+// is broken storage, and staying silent would mean every user silently gets
+// the default language without anyone knowing.
 func (l *Languages) Of(ctx context.Context, userID string) (string, error) {
 	const q = `SELECT language FROM user_languages WHERE user_id = $1`
 
@@ -57,12 +58,12 @@ func (l *Languages) Of(ctx context.Context, userID string) (string, error) {
 	return language, nil
 }
 
-// Remember menyimpan bahasa dari sebuah event.
+// Remember stores the language from an event.
 //
-// Event yang LEBIH TUA dari yang sudah tersimpan diabaikan. Kafka menjamin
-// urutan per partisi, tetapi partisi bisa berubah dan konsumen bisa diputar
-// ulang - tanpa penjagaan ini, pemutaran ulang akan mengembalikan bahasa lama
-// seseorang berbulan-bulan setelah ia menggantinya.
+// An event OLDER than what is already stored is ignored. Kafka guarantees
+// order per partition, but partitions can change and consumers can be
+// replayed - without this guard, a replay would restore someone's old
+// language months after they changed it.
 func (l *Languages) Remember(ctx context.Context, userID, language string, observedAt time.Time) error {
 	if strings.TrimSpace(language) == "" {
 		language = DefaultLanguage
@@ -83,10 +84,10 @@ func (l *Languages) Remember(ctx context.Context, userID, language string, obser
 	return nil
 }
 
-// Forget menghapus cache seorang pengguna.
+// Forget removes a user's cache entry.
 //
-// Dipakai saga penghapusan akun: salinan yang tertinggal setelah akun dihapus
-// adalah data pribadi yang tidak seorang pun tahu masih ada.
+// Used by the account deletion saga: a copy left behind after the account is
+// deleted is personal data nobody knows still exists.
 func (l *Languages) Forget(ctx context.Context, userID string) error {
 	if _, err := l.db.Exec(ctx, `DELETE FROM user_languages WHERE user_id = $1`, userID); err != nil {
 		return fmt.Errorf("forgetting the cached language: %w", err)

@@ -15,37 +15,31 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 )
 
-// Nilai bawaan untuk konteks yang belum bisa diambil nutrition-svc.
+// Defaults for context that nutrition-svc cannot fetch yet.
 //
-// Keduanya sama persis dengan bawaan sistem lama, yang juga memakainya setiap
-// kali penilaian atau program coaching pengguna belum ada. Bedanya di sini
-// bawaan itu SELALU dipakai, karena nutrition belum punya jalan mendapatkan
-// fakta sebenarnya:
+// Both are exactly the legacy defaults, which the legacy system also used
+// whenever the user's assessment or coaching program did not exist. The
+// difference here is that the defaults are ALWAYS used, because nutrition has no
+// way yet to obtain the real facts:
 //
-//   - Fokus kesehatan ada di dalam laporan personalisasi milik assessment-svc,
-//     dan event PersonalizationCompleted tidak membawa user_id maupun judul
-//     kontributor risikonya. Menambahkannya adalah perubahan kontrak antar unit,
-//     bukan bagian dari fase ini.
-//   - Misi coaching hari ini berubah setiap hari, jadi tidak ada event yang
-//     bisa membawanya lebih dulu. Mendapatkannya butuh keputusan arsitektural -
-//     panggilan sinkron ke coaching-svc, atau event harian dari sana - dan
-//     keduanya di luar fase ini.
+//   - The health focus lives inside the personalisation report owned by assessment-svc, and the PersonalizationCompleted event carries neither user_id nor the titles of the risk contributors. Adding them is a contract change between units, not part of this phase.
+//   - Today's coaching mission changes every day, so no event can carry it ahead of time. Getting it needs an architectural decision - a synchronous call to coaching-svc, or a daily event from there - and both are outside this phase.
 //
-// Keduanya dicatat sebagai pekerjaan lanjutan, bukan disamarkan dengan tebakan.
-// Templat prompt-nya membaca nilai ini apa adanya, sehingga model tidak pernah
-// diberi tahu sesuatu tentang seseorang yang tidak benar.
+// Both are recorded as follow-up work, not disguised with a guess. The prompt
+// template reads these values as they are, so the model is never told something
+// about a person that is not true.
 const (
 	defaultHealthFocus  = "kesehatan jantung umum"
 	defaultDailyMission = "menjaga pola hidup sehat"
 )
 
-// GuideContext adalah konteks yang dirakit untuk sebuah panduan.
+// GuideContext is the context assembled for a guide.
 //
-// Bentuknya HARUS sama dengan yang dibaca llm-worker (mealGuideContext). Satu
-// salinan dipakai membuat panduannya, salinan yang sama disimpan di kolom
-// generation_context untuk menjelaskan panduan itu kemudian - dan dua bentuk
-// yang menyimpang berarti penjelasannya menggambarkan permintaan yang berbeda
-// dari yang benar-benar dikirim.
+// Its shape MUST match what llm-worker reads (mealGuideContext). One copy is
+// used to produce the guide, the same copy is stored in the
+// generation_context column to explain that guide later - and two drifting
+// shapes would mean the explanation describes a different request from the
+// one actually sent.
 type GuideContext struct {
 	Language     string `json:"language"`
 	HealthFocus  string `json:"health_focus"`
@@ -75,12 +69,13 @@ type guideInput struct {
 	SocialContext     string `json:"social_context"`
 }
 
-// GenerateDailyGuide meminta panduan menu hari ini (F6-06).
+// GenerateDailyGuide asks for today's menu guide (F6-06).
 //
-// Ia menjawab SEGERA dengan panduan berstatus pending; isinya tiba belakangan
-// lewat llm-worker. Sistem lama menunggu Gemini di dalam permintaan HTTP dengan
-// timeout 180 detik (B14): satu permintaan menahan satu worker PHP selama itu,
-// dan pengguna yang menutup aplikasinya kehilangan hasil yang sudah dibayar.
+// It answers IMMEDIATELY with a guide in the pending state; the content arrives
+// later through llm-worker. The legacy system waited for Gemini inside the HTTP
+// request with a 180-second timeout (B14): one request held one PHP worker for
+// that long, and a user who closed the app lost a result that had already been
+// paid for.
 func (s *Service) GenerateDailyGuide(
 	ctx context.Context, userID string, in domain.GuideInput, idempotencyKey string,
 ) (*domain.Guide, error) {
@@ -94,9 +89,9 @@ func (s *Service) GenerateDailyGuide(
 
 	now := s.now()
 
-	// Bahasa dibaca di LUAR transaksi: ia cache, dan galatnya tidak boleh
-	// menggagalkan penulisan panduan. Of sendiri sudah menjawab bawaan saat
-	// cache-nya kosong.
+	// The language is read OUTSIDE the transaction: it is a cache, and its
+	// error must not fail the guide write. Of already answers the default when
+	// the cache is empty.
 	language, err := s.languages.Of(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -127,9 +122,9 @@ func (s *Service) GenerateDailyGuide(
 			return err
 		}
 
-		// Event ditulis DI DALAM transaksi yang sama dengan barisnya (E10).
-		// Menerbitkannya setelah commit membiarkan proses mati di antara
-		// keduanya, dan panduan itu menunggu isi yang tidak pernah diminta.
+		// The event is written INSIDE the same transaction as the row (E10).
+		// Publishing it after the commit lets the process die between the two,
+		// and that guide waits for content nobody ever requested.
 		if err := r.Events().Write(ctx, "meal_guide", guide.ID.String(),
 			guideRequest(guide, string(context), idempotencyKey, now)); err != nil {
 			return err
@@ -144,11 +139,11 @@ func (s *Service) GenerateDailyGuide(
 	return created, nil
 }
 
-// StoreGuide menyimpan panduan yang datang dari llm-worker (F6-07).
+// StoreGuide stores a guide that comes from llm-worker (F6-07).
 //
-// Pengiriman ULANG dari Kafka aman: panduan yang sudah tidak pending menolak
-// isi baru di domain, dan penolakan itu BUKAN kegagalan - pesannya memang sudah
-// pernah dikerjakan.
+// A REDELIVERY from Kafka is safe: a guide that is no longer pending refuses
+// new content in the domain, and that refusal is NOT a failure - the message
+// has simply been handled before.
 func (s *Service) StoreGuide(ctx context.Context, guideID string, data json.RawMessage) error {
 	id, err := domain.ParseID(guideID)
 	if err != nil {
@@ -172,7 +167,7 @@ func (s *Service) StoreGuide(ctx context.Context, guideID string, data json.RawM
 	})
 }
 
-// FailGuide menandai panduan yang tidak pernah tiba (F6-07).
+// FailGuide marks a guide that never arrived (F6-07).
 func (s *Service) FailGuide(ctx context.Context, guideID string) error {
 	id, err := domain.ParseID(guideID)
 	if err != nil {
@@ -196,7 +191,7 @@ func (s *Service) FailGuide(ctx context.Context, guideID string) error {
 	})
 }
 
-// HubData adalah seluruh isi halaman Culinary Hub (F6-08).
+// HubData is the whole content of the Culinary Hub page (F6-08).
 type HubData struct {
 	Preferences *domain.Preferences
 	History     []*domain.Guide
@@ -204,12 +199,12 @@ type HubData struct {
 	Page        domain.Page
 }
 
-// HubData mengembalikan preferensi dan riwayat dalam SATU panggilan.
+// HubData returns the preferences and the history in ONE call.
 //
-// Riwayatnya BERHALAMAN, berbeda dari sistem lama yang mengembalikan seluruhnya
-// dan meng-cache-nya selamanya. Riwayat yang tumbuh tiap hari membuat satu
-// respons hub membesar tanpa batas, dan yang membayarnya adalah pengguna yang
-// paling setia memakai aplikasinya.
+// The history is PAGED, unlike the legacy system which returned all of it and
+// cached it forever. A history that grows every day makes one hub response grow
+// without bound, and the ones who pay for it are the users most loyal to the
+// app.
 func (s *Service) HubData(ctx context.Context, userID string, page domain.Page) (*HubData, error) {
 	user, err := domain.ParseUserID(userID)
 	if err != nil {
@@ -230,7 +225,7 @@ func (s *Service) HubData(ctx context.Context, userID string, page domain.Page) 
 	return &HubData{Preferences: prefs, History: history, Total: total, Page: page}, nil
 }
 
-// buildContext merakit konteks pembuatan panduan.
+// buildContext assembles the guide generation context.
 func buildContext(
 	language string, in domain.GuideInput,
 	prefs *domain.Preferences, chosen []*domain.Guide, now time.Time,
@@ -245,8 +240,8 @@ func buildContext(
 			Allergies:    prefs.Allergies,
 			BudgetLevel:  string(prefs.BudgetLevel),
 			CookingStyle: string(prefs.CookingStyle),
-			// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan pembaca
-			// di worker akan menanganinya sebagai bentuk kedua tanpa alasan.
+			// An empty slice, not nil: nil becomes `null` in JSON, and the reader in
+			// the worker would have to handle it as a second shape for no reason.
 			TasteProfiles:    orEmpty(prefs.TasteProfiles),
 			KitchenEquipment: orEmpty(prefs.KitchenEquipment),
 		},
@@ -264,11 +259,11 @@ func buildContext(
 	}
 }
 
-// dishNamesOf mengambil nama hidangan dari panduan yang pernah dipilih.
+// dishNamesOf takes the dish names from previously chosen guides.
 //
-// Hanya namanya, bukan seluruh panduannya: yang berguna bagi model adalah apa
-// yang pernah dipilih pengguna, dan menyertakan alasan kesehatan serta pro tip
-// lama hanya memperpanjang prompt yang dibayar per token.
+// Only the names, not the whole guides: what is useful to the model is what
+// the user once chose, and including old health reasons and pro tips only
+// lengthens a prompt paid for per token.
 func dishNamesOf(guides []*domain.Guide) []string {
 	names := make([]string, 0, len(guides))
 	seen := make(map[string]struct{}, len(guides))
@@ -279,9 +274,8 @@ func dishNamesOf(guides []*domain.Guide) []string {
 				DishName string `json:"dish_name"`
 			} `json:"suggestions"`
 		}
-		// Panduan yang tidak bisa dibaca DILEWATI, bukan menggagalkan
-		// permintaannya: satu baris lama yang bentuknya berbeda tidak boleh
-		// menghentikan pembuatan panduan hari ini.
+		// An unreadable guide is SKIPPED, not failing the request: one old row
+		// with a different shape must not stop today's guide from being produced.
 		if json.Unmarshal(g.Data, &payload) != nil {
 			continue
 		}
@@ -306,12 +300,12 @@ func orEmpty(v []string) []string {
 	return v
 }
 
-// guideRequest menyusun event permintaan panduan.
+// guideRequest composes the guide request event.
 func guideRequest(g *domain.Guide, context, key string, now time.Time) *eventsv1.Envelope {
 	if key == "" {
-		// Diturunkan dari PANDUANNYA: setiap permintaan menghasilkan barisnya
-		// sendiri, jadi kunci per pengguna atau per hari akan membuat
-		// permintaan kedua hari itu dilewati sebagai duplikat.
+		// Derived from the GUIDE: every request produces its own row, so a
+		// per-user or per-day key would make the second request of the day be
+		// skipped as a duplicate.
 		key = "meal-guide:" + g.ID.String()
 	}
 

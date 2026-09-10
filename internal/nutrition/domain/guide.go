@@ -25,7 +25,7 @@ var (
 
 const maxCuisineRunes = 100
 
-// PlanType adalah pilihan masak di rumah atau makan di luar.
+// PlanType is the choice between cooking at home and eating out.
 type PlanType string
 
 const (
@@ -33,7 +33,7 @@ const (
 	PlanEatOut     PlanType = "eat_out"
 )
 
-// TimeAvailability adalah seberapa banyak waktu yang dipunyai hari ini.
+// TimeAvailability is how much time there is today.
 type TimeAvailability string
 
 const (
@@ -41,7 +41,7 @@ const (
 	TimeRelaxed TimeAvailability = "relaxed"
 )
 
-// EnergyLevel adalah seberapa bertenaga pengguna hari ini.
+// EnergyLevel is how energetic the user feels today.
 type EnergyLevel string
 
 const (
@@ -50,7 +50,7 @@ const (
 	EnergyTired     EnergyLevel = "tired"
 )
 
-// CravingType boleh kosong: tidak setiap orang sedang menginginkan sesuatu.
+// CravingType may be empty: not everyone is craving something.
 type CravingType string
 
 const (
@@ -72,7 +72,7 @@ const (
 	SocialWithFamily  SocialContext = "with_family"
 )
 
-// MealTime adalah waktu makan yang sedang berlangsung.
+// MealTime is the meal time currently under way.
 type MealTime string
 
 const (
@@ -82,17 +82,17 @@ const (
 	MealDinner         MealTime = "dinner"
 )
 
-// MealTimeAt menentukan waktu makan dari jam setempat (D10).
+// MealTimeAt determines the meal time from the local clock (D10).
 //
-// Batasnya sama persis dengan sistem lama, termasuk sifat "sisanya": pukul dua
-// dini hari menghasilkan makan malam. Itu bukan kekeliruan yang diwarisi tanpa
-// dipikir - orang yang membuka aplikasi pukul dua pagi lebih mungkin sedang
-// menyelesaikan malamnya daripada memulai paginya, dan sarapan pukul dua akan
-// terasa lebih salah daripada makan malam.
+// The boundaries are exactly the legacy ones, including the "remainder"
+// property: two in the morning yields dinner. That is not a mistake inherited
+// without thought - someone opening the app at two in the morning is more
+// likely finishing their night than starting their morning, and breakfast at
+// two would feel more wrong than dinner.
 //
-// Waktunya diterima sebagai argumen, tidak dibaca dari time.Now() di dalam.
-// Fungsi yang membaca jam sendiri hanya bisa diuji pada jam berapa test itu
-// kebetulan dijalankan, dan ketiga batas di sini tidak akan pernah tersentuh.
+// The time is taken as an argument, not read from time.Now() inside. A
+// function that reads the clock itself can only be tested at whatever hour the
+// test happens to run, and the three boundaries here would never be touched.
 func MealTimeAt(t time.Time) MealTime {
 	switch h := t.Hour(); {
 	case h >= 5 && h < 10:
@@ -106,19 +106,18 @@ func MealTimeAt(t time.Time) MealTime {
 	}
 }
 
-// dateOf mengambil tanggal SETEMPAT dari sebuah waktu.
+// dateOf takes the LOCAL date of a time.
 //
-// Bukan now.Truncate(24 * time.Hour): Truncate memotong sejak epoch UTC, jadi
-// di zona waktu mana pun yang bukan UTC ia mendarat pada jam yang bergeser -
-// di WIB, pukul 07.00 tanggal 3 menjadi pukul 07.00 juga, sementara pukul 05.00
-// menjadi tanggal 2. Panduan seseorang akan tercatat pada hari yang salah,
-// setiap pagi.
+// Not now.Truncate(24 * time.Hour): Truncate cuts from the UTC epoch, so in any
+// zone that is not UTC it lands on a shifted hour - in WIB, 07:00 on the 3rd
+// stays 07:00, while 05:00 becomes the 2nd. Someone's guide would be recorded
+// on the wrong day, every morning.
 func dateOf(t time.Time) time.Time {
 	year, month, day := t.Date()
 	return time.Date(year, month, day, 0, 0, 0, 0, t.Location())
 }
 
-// GuideInput adalah masukan harian yang diberikan pengguna.
+// GuideInput is the daily input the user provides.
 type GuideInput struct {
 	PlanType          PlanType
 	TimeAvailability  TimeAvailability
@@ -128,11 +127,12 @@ type GuideInput struct {
 	SocialContext     SocialContext
 }
 
-// Validate memeriksa masukan harian.
+// Validate checks the daily input.
 //
-// Tiga bidang pertama WAJIB, sama dengan sistem lama: tanpa salah satunya,
-// prompt kehilangan bagian yang menjadikan saran hari ini berbeda dari saran
-// mana pun, dan yang tersisa hanyalah daftar masakan umum.
+// The first three fields are REQUIRED, the same as the legacy system:
+// without any one of them, the prompt loses the part that makes today's
+// advice different from any other advice, and what remains is only a list of
+// generic dishes.
 func (in GuideInput) Validate() error {
 	switch in.PlanType {
 	case PlanCookAtHome, PlanEatOut:
@@ -177,7 +177,7 @@ func (in GuideInput) Validate() error {
 	return nil
 }
 
-// GuideStatus adalah keadaan pembuatan panduan.
+// GuideStatus is the state of guide generation.
 type GuideStatus string
 
 const (
@@ -186,10 +186,10 @@ const (
 	GuideFailed  GuideStatus = "failed"
 )
 
-// Guide adalah satu panduan menu harian.
+// Guide is one daily menu guide.
 //
-// Ia lahir dalam keadaan pending: pembuatannya asinkron, berbeda dari sistem
-// lama yang menunggu Gemini di dalam permintaan HTTP (B14).
+// It is born in the pending state: its generation is asynchronous, unlike
+// the legacy system which waited for Gemini inside the HTTP request (B14).
 type Guide struct {
 	ID     ID
 	UserID UserID
@@ -200,11 +200,11 @@ type Guide struct {
 
 	Status GuideStatus
 
-	// Context adalah konteks yang dirakit saat permintaan dibuat, disimpan
-	// supaya sebuah saran bisa dijelaskan kembali kemudian.
+	// Context is the context assembled when the request was made, stored so a
+	// suggestion can be explained again later.
 	Context json.RawMessage
 
-	// Data kosong sampai panduannya tiba.
+	// Data is empty until the guide arrives.
 	Data json.RawMessage
 
 	Chosen bool
@@ -213,11 +213,11 @@ type Guide struct {
 	UpdatedAt time.Time
 }
 
-// NewGuide membuat permintaan panduan baru.
+// NewGuide creates a new guide request.
 //
-// mealTime diturunkan dari now dan DIBEKUKAN di sini. Menghitungnya ulang saat
-// panduan dibaca akan membuat saran sarapan tampil sebagai saran makan malam
-// hanya karena pengguna membuka aplikasi lagi malam harinya.
+// mealTime is derived from now and FROZEN here. Recomputing it when the guide
+// is read would make a breakfast suggestion show up as a dinner suggestion
+// just because the user opened the app again in the evening.
 func NewGuide(userID UserID, in GuideInput, context json.RawMessage, now time.Time) (*Guide, error) {
 	if userID.IsZero() {
 		return nil, fmt.Errorf("%w: a guide needs an owner", ErrInvalidID)
@@ -236,9 +236,9 @@ func NewGuide(userID UserID, in GuideInput, context json.RawMessage, now time.Ti
 
 	in.CuisinePreference = strings.TrimSpace(in.CuisinePreference)
 
-	// Konteks kosong disimpan sebagai objek JSON kosong, bukan sebagai NULL:
-	// kolomnya NOT NULL, dan `{}` masih bisa dibaca alat apa pun yang membaca
-	// JSON. NULL akan memaksa setiap pembaca menangani dua bentuk.
+	// An empty context is stored as an empty JSON object, not as NULL: the
+	// column is NOT NULL, and `{}` can still be read by any tool that reads
+	// JSON. NULL would force every reader to handle two shapes.
 	if len(context) == 0 {
 		context = json.RawMessage(`{}`)
 	}
@@ -256,12 +256,12 @@ func NewGuide(userID UserID, in GuideInput, context json.RawMessage, now time.Ti
 	}, nil
 }
 
-// MarkReady memasang panduan yang sudah tiba.
+// MarkReady installs a guide that has arrived.
 //
-// Invariannya sama persis dengan CHECK di basis data: yang ready ADA isinya.
-// Ia ditegakkan di kedua tempat dengan sengaja - di sini supaya pemanggilnya
-// mendapat galat yang bisa dijelaskan, di sana supaya jalur penulisan yang
-// terlupakan pun tidak bisa menembusnya.
+// The invariant is exactly the CHECK in the database: what is ready HAS
+// content. It is enforced in both places deliberately - here so the caller
+// gets an explainable error, there so even a forgotten write path cannot get
+// past it.
 func (g *Guide) MarkReady(data json.RawMessage, now time.Time) error {
 	if g.Status != GuidePending {
 		return fmt.Errorf("%w: %s", ErrGuideNotPending, g.Status)
@@ -279,12 +279,12 @@ func (g *Guide) MarkReady(data json.RawMessage, now time.Time) error {
 	return nil
 }
 
-// MarkFailed menandai panduan yang tidak pernah tiba.
+// MarkFailed marks a guide that never arrived.
 //
-// Statusnya berubah dan isinya TETAP kosong. Panduan gagal sengaja tidak diberi
-// isi pengganti: teks permintaan maaf yang disimpan sebagai guide_data akan
-// tampil kepada pengguna sebagai saran menu, dan tidak ada cara membedakannya
-// dari saran sungguhan sesudah itu.
+// The status changes and the content STAYS empty. A failed guide is
+// deliberately not given placeholder content: an apology text stored as
+// guide_data would be shown to the user as menu advice, and there would be no
+// way to tell it from a real suggestion afterwards.
 func (g *Guide) MarkFailed(now time.Time) error {
 	if g.Status != GuidePending {
 		return fmt.Errorf("%w: %s", ErrGuideNotPending, g.Status)

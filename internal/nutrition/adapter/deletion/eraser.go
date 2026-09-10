@@ -1,4 +1,4 @@
-// Package deletion menghapus data kuliner saat akun dihapus.
+// Package deletion erases culinary data when an account is deleted.
 package deletion
 
 import (
@@ -8,15 +8,16 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Service adalah nama unit ini di dalam saga.
+// Service is the name of this unit inside the saga.
 const Service = "nutrition"
 
-// Erase menghapus preferensi, panduan menu, dan bahasa yang di-cache.
+// Erase deletes the preferences, the menu guides, and the cached language.
 //
-// Ketiganya, bukan dua. Cache bahasa mudah terlupakan karena ia "hanya cache" -
-// tetapi ia tetap baris yang berkunci user_id seseorang, dan sistem lama justru
-// meninggalkan cache seperti ini utuh setelah akun dihapus (dua baris pembersih
-// cache di DeleteUserAccountAction ditulis lalu dikomentari).
+// All three, not two. The language cache is easy to forget because it is "only
+// a cache" - but it is still a row keyed by someone's user_id, and the legacy
+// system left exactly this kind of cache intact after account deletion (two
+// cache-clearing lines in DeleteUserAccountAction were written and then
+// commented out).
 func Erase(ctx context.Context, q pg.Querier, userID, _ string) error {
 	for _, table := range []string{
 		"culinary_preferences",

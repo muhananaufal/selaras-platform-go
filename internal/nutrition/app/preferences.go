@@ -7,16 +7,15 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 )
 
-// UpdatePreferences menerapkan pembaruan PARSIAL (F6-05).
+// UpdatePreferences applies a PARTIAL update (F6-05).
 //
-// Ia membaca, menambal, lalu menyimpan - di dalam SATU transaksi. Membaca di
-// luar transaksi lalu menulis di dalamnya akan membiarkan dua permintaan
-// bersamaan sama-sama membaca keadaan lama, dan yang menulis belakangan
-// menghapus perubahan yang pertama tanpa ada yang tahu.
+// It reads, patches, then stores - inside ONE transaction. Reading outside the
+// transaction and writing inside it would let two concurrent requests both read
+// the old state, and the one writing later wipes the first one's change without
+// anyone knowing.
 //
-// Pengguna yang belum punya barisnya mendapat baris baru, bukan galat: menyimpan
-// preferensi untuk pertama kali adalah hal yang paling wajar dilakukan seseorang
-// di halaman ini.
+// A user who has no row yet gets a new row, not an error: saving preferences for
+// the first time is the most natural thing someone does on this page.
 func (s *Service) UpdatePreferences(
 	ctx context.Context, userID string, patch domain.PreferencesPatch,
 ) (*domain.Preferences, error) {
@@ -67,7 +66,7 @@ func (s *Service) UpdatePreferences(
 	return updated, nil
 }
 
-// ShowPreferences membaca preferensi tanpa mengubahnya.
+// ShowPreferences reads the preferences without changing them.
 func (s *Service) ShowPreferences(ctx context.Context, userID string) (*domain.Preferences, error) {
 	user, err := domain.ParseUserID(userID)
 	if err != nil {

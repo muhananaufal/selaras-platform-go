@@ -1,6 +1,7 @@
-// Package domain memuat aturan preferensi kuliner dan panduan menu harian.
+// Package domain holds the rules for culinary preferences and daily menu
+// guides.
 //
-// Ia tidak mengimpor apa pun dari adapter, dan itu dijaga test batas.
+// It imports nothing from the adapters, and a boundary test guards that.
 package domain
 
 import (
@@ -13,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Galat yang dikenali pemanggil.
+// Errors that callers recognise.
 var (
 	ErrPreferencesNotFound = errors.New("culinary preferences not found")
 	ErrGuideNotFound       = errors.New("meal guide not found")
@@ -26,17 +27,17 @@ var (
 	ErrTooManyTags         = errors.New("too many preference tags")
 )
 
-// Batas panjang. Angka alergi dan tag mengikuti sistem lama; batas JUMLAH tag
-// tidak ada di sana, dan ketiadaannya berarti satu permintaan bisa menitipkan
-// daftar sepanjang apa pun ke dalam basis data - lalu ke dalam setiap prompt
-// yang dibayar per token sesudahnya.
+// Length bounds. The allergy and tag numbers follow the legacy system; a
+// bound on the NUMBER of tags did not exist there, and its absence meant one
+// request could deposit a list of any length into the database - and then
+// into every prompt paid for per token afterwards.
 const (
 	maxAllergiesRunes = 1000
 	maxTagRunes       = 50
 	maxTags           = 30
 )
 
-// ID adalah kunci internal preferensi.
+// ID is the internal key of the preferences.
 type ID struct{ v uuid.UUID }
 
 func NewID() (ID, error) {
@@ -58,7 +59,7 @@ func ParseID(raw string) (ID, error) {
 func (id ID) String() string { return id.v.String() }
 func (id ID) IsZero() bool   { return id.v == uuid.Nil }
 
-// UserID menunjuk ke identity.users (ADR-024).
+// UserID points at identity.users (ADR-024).
 type UserID struct{ v uuid.UUID }
 
 func ParseUserID(raw string) (UserID, error) {
@@ -72,13 +73,13 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// BudgetLevel adalah tingkat anggaran belanja.
+// BudgetLevel is the shopping budget level.
 //
-// Nilainya disimpan sebagai kata kunci Inggris, bukan sebagai label Indonesia
-// yang dipakai sistem lama ("Hemat", "Standar", "Fleksibel"). Label adalah
-// urusan tampilan: menyimpannya berarti mengubah bahasa antarmuka menjadi
-// migrasi basis data, dan berarti pula dua bahasa menghasilkan dua nilai
-// berbeda untuk preferensi yang sama.
+// Its values are stored as English keywords, not as the Indonesian labels the
+// legacy system used ("Hemat", "Standar", "Fleksibel"). Labels are a display
+// concern: storing them turns a change of interface language into a database
+// migration, and also means two languages produce two different values for
+// the same preference.
 type BudgetLevel string
 
 const (
@@ -88,11 +89,11 @@ const (
 	BudgetFlexible    BudgetLevel = "flexible"
 )
 
-// ParseBudgetLevel membaca tingkat anggaran.
+// ParseBudgetLevel reads the budget level.
 //
-// Kosong SAH dan berarti "belum dipilih". Itu berbeda dari nilai yang salah:
-// pengguna yang belum pernah membuka halaman preferensi tidak sedang mengirim
-// data buruk.
+// Empty is VALID and means "not chosen yet". That is different from a wrong
+// value: a user who has never opened the preferences page is not sending bad
+// data.
 func ParseBudgetLevel(raw string) (BudgetLevel, error) {
 	switch BudgetLevel(raw) {
 	case BudgetUnspecified:
@@ -108,7 +109,7 @@ func ParseBudgetLevel(raw string) (BudgetLevel, error) {
 	}
 }
 
-// CookingStyle adalah gaya memasak yang disukai.
+// CookingStyle is the preferred cooking style.
 type CookingStyle string
 
 const (
@@ -130,9 +131,9 @@ func ParseCookingStyle(raw string) (CookingStyle, error) {
 	}
 }
 
-// Preferences adalah preferensi kuliner satu pengguna.
+// Preferences are one user's culinary preferences.
 //
-// Satu pengguna satu himpunan; keunikannya ditegakkan basis data.
+// One user, one set; uniqueness is enforced by the database.
 type Preferences struct {
 	ID     ID
 	UserID UserID
@@ -147,11 +148,11 @@ type Preferences struct {
 	UpdatedAt time.Time
 }
 
-// NewPreferences membuat himpunan preferensi kosong untuk seorang pengguna.
+// NewPreferences creates an empty set of preferences for a user.
 //
-// Ia dipakai saat pengguna menyentuh preferensinya untuk PERTAMA kali. Sebelum
-// itu tidak ada barisnya, dan pembacanya mendapat Preferences kosong - bukan
-// galat: tidak punya preferensi adalah keadaan yang sah, bukan kesalahan.
+// It is used when the user touches their preferences for the FIRST time.
+// Before that there is no row, and readers get empty Preferences - not an
+// error: having no preferences is a valid state, not a mistake.
 func NewPreferences(userID UserID, now time.Time) (*Preferences, error) {
 	if userID.IsZero() {
 		return nil, fmt.Errorf("%w: preferences need an owner", ErrInvalidID)
@@ -172,16 +173,16 @@ func NewPreferences(userID UserID, now time.Time) (*Preferences, error) {
 	}, nil
 }
 
-// PreferencesPatch adalah pembaruan PARSIAL.
+// PreferencesPatch is a PARTIAL update.
 //
-// Setiap bidang bernilai nil berarti "jangan sentuh". Itulah seluruh alasan
-// tipe ini ada: tanpa pembedaan itu, satu permintaan yang hanya membawa alergi
-// akan menghapus selera dan peralatan dapur pengguna, yang persis terjadi di
-// sistem lama (B16) karena repositorinya menimpa seluruh kolom JSON dengan
-// bidang yang kebetulan lolos validasi.
+// Every nil field means "do not touch". That is the whole reason this type
+// exists: without that distinction, one request carrying only allergies would
+// wipe the user's tastes and kitchen equipment, which is exactly what happened
+// in the legacy system (B16) because its repository overwrote the whole JSON
+// column with whichever fields happened to pass validation.
 //
-// Pointer, bukan bidang "ada/tidak" terpisah: dua bidang paralel bisa saling
-// bertentangan, pointer tidak bisa.
+// Pointers, not separate "present" flags: two parallel fields can contradict
+// each other, pointers cannot.
 type PreferencesPatch struct {
 	Allergies        *string
 	BudgetLevel      *BudgetLevel
@@ -190,7 +191,7 @@ type PreferencesPatch struct {
 	KitchenEquipment *[]string
 }
 
-// IsEmpty menyatakan patch ini tidak meminta perubahan apa pun.
+// IsEmpty says this patch asks for no change at all.
 func (p PreferencesPatch) IsEmpty() bool {
 	return p.Allergies == nil &&
 		p.BudgetLevel == nil &&
@@ -199,12 +200,12 @@ func (p PreferencesPatch) IsEmpty() bool {
 		p.KitchenEquipment == nil
 }
 
-// Apply menerapkan patch, atau mengembalikan galat tanpa mengubah apa pun.
+// Apply applies the patch, or returns an error without changing anything.
 //
-// Seluruh patch divalidasi LEBIH DULU, sebelum satu bidang pun ditulis.
-// Memvalidasi sambil menulis akan meninggalkan preferensi separuh berubah saat
-// bidang keempat ternyata ditolak - dan pengguna tidak punya cara mengetahui
-// bagian mana yang jadi.
+// The whole patch is validated FIRST, before a single field is written.
+// Validating while writing would leave the preferences half changed when the
+// fourth field turns out to be refused - and the user would have no way of
+// knowing which parts went through.
 func (pr *Preferences) Apply(patch PreferencesPatch, now time.Time) error {
 	if patch.Allergies != nil {
 		if utf8.RuneCountInString(*patch.Allergies) > maxAllergiesRunes {
@@ -257,19 +258,19 @@ func (pr *Preferences) Apply(patch PreferencesPatch, now time.Time) error {
 	return nil
 }
 
-// cleanTags merapikan dan memeriksa satu daftar tag.
+// cleanTags tidies and checks one list of tags.
 //
-// Ia membuang spasi, menolak yang kosong, dan MEMBUANG duplikat: daftar yang
-// memuat "pedas" tiga kali memberi model kesan penekanan yang tidak dimaksudkan
-// pengguna, dan tidak ada arti yang hilang dengan menyingkatnya.
+// It trims whitespace, refuses empty ones, and DROPS duplicates: a list
+// containing "pedas" three times gives the model an impression of emphasis the
+// user did not intend, and no meaning is lost by shortening it.
 func cleanTags(raw []string) ([]string, error) {
 	if len(raw) > maxTags {
 		return nil, fmt.Errorf("%w: %d, max %d", ErrTooManyTags, len(raw), maxTags)
 	}
 
-	// Slice kosong, bukan nil: nil menjadi NULL di basis data, sementara
-	// kolomnya NOT NULL DEFAULT '{}' - dan "dikosongkan sengaja" harus bisa
-	// disimpan.
+	// An empty slice, not nil: nil becomes NULL in the database, while the
+	// column is NOT NULL DEFAULT '{}' - and "deliberately emptied" has to be
+	// storable.
 	out := make([]string, 0, len(raw))
 	seen := make(map[string]struct{}, len(raw))
 

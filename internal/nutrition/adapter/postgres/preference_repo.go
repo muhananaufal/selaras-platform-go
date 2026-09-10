@@ -1,4 +1,4 @@
-// Package postgres menyimpan preferensi kuliner dan panduan menu di Postgres.
+// Package postgres stores culinary preferences and menu guides in Postgres.
 package postgres
 
 import (
@@ -12,7 +12,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// PreferencesRepository memenuhi domain.PreferencesRepository.
+// PreferencesRepository implements domain.PreferencesRepository.
 type PreferencesRepository struct {
 	db pg.Querier
 }
@@ -28,7 +28,7 @@ const preferenceColumns = `
 	coalesce(cooking_style, ''), taste_profiles, kitchen_equipment,
 	created_at, updated_at`
 
-// FindByUser membaca preferensi seorang pengguna.
+// FindByUser reads a user's preferences.
 func (r *PreferencesRepository) FindByUser(
 	ctx context.Context, userID domain.UserID,
 ) (*domain.Preferences, error) {
@@ -88,12 +88,12 @@ func (r *PreferencesRepository) Update(ctx context.Context, p *domain.Preference
 	return nil
 }
 
-// nullIfEmpty menyimpan kosong sebagai NULL.
+// nullIfEmpty stores empty as NULL.
 //
-// Kolom enum-nya punya CHECK yang tidak memuat string kosong, jadi "belum
-// dipilih" HARUS menjadi NULL - menuliskannya sebagai dua petik tunggal akan ditolak basis
-// data. Alergi ikut pola yang sama supaya "tidak ada catatan" hanya punya satu
-// bentuk di penyimpanan, bukan dua yang harus dibedakan setiap pembaca.
+// The enum columns have a CHECK that does not include the empty string, so "not chosen
+// yet" MUST become NULL - writing it as two single quotes would be refused by the
+// database. Allergies follow the same pattern so "no note" has only one shape in storage,
+// not two that every reader has to tell apart.
 func nullIfEmpty(s string) *string {
 	if s == "" {
 		return nil
@@ -101,11 +101,11 @@ func nullIfEmpty(s string) *string {
 	return &s
 }
 
-// scanPreferences membaca satu baris preferensi.
+// scanPreferences reads one preferences row.
 //
-// coalesce di daftar kolom membuat NULL kembali sebagai string kosong, sehingga
-// tidak ada pointer yang perlu dibongkar di sini. Arah sebaliknya - kosong
-// menjadi NULL saat menulis - ditangani nullIfEmpty.
+// The coalesce in the column list makes NULL come back as an empty string, so
+// no pointer has to be unwrapped here. The opposite direction - empty becoming
+// NULL on write - is handled by nullIfEmpty.
 func scanPreferences(row pgx.Row) (*domain.Preferences, error) {
 	var (
 		p                          domain.Preferences
@@ -130,12 +130,12 @@ func scanPreferences(row pgx.Row) (*domain.Preferences, error) {
 		return nil, fmt.Errorf("reading the preferences owner: %w", err)
 	}
 
-	// Nilai yang tersimpan DIPERIKSA saat dibaca, tidak hanya saat ditulis.
+	// Stored values are CHECKED on read, not only on write.
 	//
-	// Basis data punya CHECK, tetapi baris bisa berasal dari skrip pindah data
-	// atau dari perbaikan manual. Membaca nilai asing diam-diam berarti
-	// menyebarkannya ke prompt dan ke klien; menolaknya di sini membuat baris
-	// yang rusak terlihat, bukan menular.
+	// The database has a CHECK, but rows can come from a data migration script
+	// or from a manual fix. Reading a foreign value silently means spreading
+	// it into prompts and to clients; refusing it here makes the corrupt row
+	// visible rather than contagious.
 	if p.BudgetLevel, err = domain.ParseBudgetLevel(budget); err != nil {
 		return nil, fmt.Errorf("reading the stored budget level: %w", err)
 	}
@@ -147,8 +147,8 @@ func scanPreferences(row pgx.Row) (*domain.Preferences, error) {
 	p.UserID = userID
 	p.Allergies = allergies
 
-	// Slice kosong, bukan nil: pembacanya menyerahkannya langsung ke JSON, dan
-	// nil menjadi `null` alih-alih `[]`.
+	// An empty slice, not nil: its reader hands it straight to JSON, and nil
+	// becomes `null` instead of `[]`.
 	p.TasteProfiles = orEmpty(tastes)
 	p.KitchenEquipment = orEmpty(equipment)
 

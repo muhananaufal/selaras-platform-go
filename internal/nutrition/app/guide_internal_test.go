@@ -12,22 +12,22 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 )
 
-// goldenContext adalah SATU dokumen yang mengikat kedua sisi kontrak.
+// goldenContext is ONE document that binds both sides of the contract.
 //
-// Berkas ini dihasilkan di sini oleh nutrition-svc, dan DIBACA oleh test
-// llm-worker sebagai masukan pembuat promptnya. Selama keduanya membaca berkas
-// yang sama, nama bidang tidak bisa menyimpang diam-diam: mengubah satu sisi
-// membuat sisi lain gagal.
+// This file is produced here by nutrition-svc, and READ by the llm-worker test
+// as the input of its prompt builder. As long as both read the same file,
+// field names cannot drift silently: changing one side makes the other fail.
 //
-// Dua literal terpisah di dua paket akan menyimpang tanpa ada yang tahu, dan
-// yang terlihat kemudian hanyalah prompt yang isinya kosong-kosong.
+// Two separate literals in two packages would drift without anyone knowing,
+// and what shows up later is only a prompt full of blanks.
 const goldenContext = "testdata/meal_guide_context.json"
 
 var wib = time.FixedZone("WIB", 7*60*60)
 
-// TestTheAssembledContextMatchesTheGoldenDocument menulis dan memeriksa golden.
+// TestTheAssembledContextMatchesTheGoldenDocument writes and checks the golden
+// file.
 //
-// Jalankan dengan -update untuk memperbaruinya setelah perubahan yang disengaja.
+// Run with -update to refresh it after a deliberate change.
 func TestTheAssembledContextMatchesTheGoldenDocument(t *testing.T) {
 	now := time.Date(2026, 9, 3, 7, 30, 0, 0, wib)
 
@@ -64,9 +64,9 @@ func TestTheAssembledContextMatchesTheGoldenDocument(t *testing.T) {
 		SocialContext:     domain.SocialWithFamily,
 	}, prefs, chosen, now)
 
-	// Waktu makan diturunkan dari jamnya, bukan diisi test: 07.30 adalah
-	// sarapan (D10), dan kalau ia berubah, itu perubahan aturan yang harus
-	// terlihat di sini.
+	// The meal time is derived from the hour, not filled in by the test: 07:30
+	// is breakfast (D10), and if that changes, it is a rule change that has to
+	// show up here.
 	if built.MealTime != string(domain.MealBreakfast) {
 		t.Errorf("a guide asked for at 07:30 carries meal time %q", built.MealTime)
 	}
@@ -102,7 +102,7 @@ func TestTheAssembledContextMatchesTheGoldenDocument(t *testing.T) {
 	}
 }
 
-// TestTheLearningHistoryHoldsDishNamesOnly menjaga prompt tetap pendek.
+// TestTheLearningHistoryHoldsDishNamesOnly keeps the prompt short.
 func TestTheLearningHistoryHoldsDishNamesOnly(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
@@ -111,7 +111,7 @@ func TestTheLearningHistoryHoldsDishNamesOnly(t *testing.T) {
 		t.Fatalf("ParseUserID: %v", err)
 	}
 
-	// Hidangan yang sama muncul di dua panduan; ia hanya boleh disebut sekali.
+	// The same dish appears in two guides; it may only be mentioned once.
 	guides := []*domain.Guide{
 		guideWithDishes(t, owner, now, "Sayur asem", "Pepes ikan"),
 		guideWithDishes(t, owner, now, "Sayur asem"),
@@ -126,7 +126,7 @@ func TestTheLearningHistoryHoldsDishNamesOnly(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableGuideIsSkippedNotFatal menjaga panduan hari ini tetap dibuat.
+// TestAnUnreadableGuideIsSkippedNotFatal keeps today's guide being produced.
 func TestAnUnreadableGuideIsSkippedNotFatal(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
@@ -147,13 +147,12 @@ func TestAnUnreadableGuideIsSkippedNotFatal(t *testing.T) {
 	}
 }
 
-// TestTheContextNamesTheDefaultsItCannotYetFill menyatakan lubangnya terbuka.
+// TestTheContextNamesTheDefaultsItCannotYetFill declares the gap open.
 //
-// Fokus kesehatan dan misi harian belum bisa diambil nutrition-svc, dan
-// keduanya memakai bawaan yang sama dengan sistem lama. Test ini ada supaya
-// keadaan itu tidak berubah diam-diam menjadi tebakan yang terdengar meyakinkan
-// - model yang diberi tahu sesuatu tentang seseorang akan memakainya sebagai
-// fakta.
+// The health focus and the daily mission cannot be fetched by nutrition-svc
+// yet, and both use the same defaults as the legacy system. This test exists so
+// that state does not silently turn into a convincing-sounding guess - a model
+// told something about a person will use it as fact.
 func TestTheContextNamesTheDefaultsItCannotYetFill(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
@@ -174,8 +173,8 @@ func TestTheContextNamesTheDefaultsItCannotYetFill(t *testing.T) {
 		t.Errorf("the daily mission is %q, want the stated default", built.DailyMission)
 	}
 
-	// Daftar kosong, bukan nil: nil menjadi `null` di JSON, dan pembaca di
-	// worker akan menanganinya sebagai bentuk kedua tanpa alasan.
+	// An empty list, not nil: nil becomes `null` in JSON, and the reader in
+	// the worker would have to handle it as a second shape for no reason.
 	if built.Preferences.TasteProfiles == nil || built.LearningHistory == nil {
 		t.Error("an empty list was marshalled as null instead of []")
 	}

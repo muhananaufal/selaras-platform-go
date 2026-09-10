@@ -1,4 +1,4 @@
-// Package consumer membaca panduan menu yang tiba dan bahasa yang berubah.
+// Package consumer reads arriving menu guides and changed languages.
 package consumer
 
 import (
@@ -20,10 +20,10 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Scope adalah ruang lingkup idempotensi konsumen ini.
+// Scope is the idempotency scope of this consumer.
 const Scope = "nutrition-results"
 
-// Results membaca hasil panduan menu dan pembaruan profil.
+// Results reads menu guide results and profile updates.
 type Results struct {
 	client *kgo.Client
 	svc    *app.Service
@@ -47,23 +47,22 @@ func NewResults(
 	return &Results{client: client, svc: svc, pool: pool, log: log}, nil
 }
 
-// isMine menyatakan pesan ini urusan nutrition.
+// isMine says this message is nutrition's business.
 //
-// Topic llm.results dan llm.dlq dipakai BERSAMA seluruh service yang memakai
-// llm-worker. Tanpa penyaringan ini, konsumen nutrition akan mencoba menyimpan
-// kurikulum coaching sebagai panduan menu - gagal, menahan offset, dan
-// menyumbat antrean untuk semua orang. Itu benar-benar terjadi saat coaching
-// ditambahkan.
+// The llm.results and llm.dlq topics are SHARED by every service that uses
+// llm-worker. Without this filter, the nutrition consumer would try to store a
+// coaching curriculum as a menu guide - fail, hold the offset, and clog the
+// queue for everyone. That really happened when coaching was added.
 //
-// Jenisnya dibaca dari header aggregate_type yang diisi relay outbox, tanpa
-// membongkar isinya dan tanpa menebak dari bentuknya.
+// The kind is read from the aggregate_type header the outbox relay fills in,
+// without unpacking the content and without guessing from its shape.
 //
-// profile.updated adalah topic terpisah dan TIDAK dibagi dengan siapa pun,
-// sehingga pesan di sana selalu urusan setiap pelanggannya. Ia dikenali lewat
-// header yang sama. Nilainya "user_profile" - dibaca dari internal/profile/app/
-// publish.go, bukan ditebak dari nama topicnya: menebaknya "profile" akan
-// membuat SETIAP pembaruan bahasa dilewati diam-diam, dan cache-nya tidak
-// pernah terisi tanpa satu pun galat yang terlihat.
+// profile.updated is a separate topic and is NOT shared with anyone, so a
+// message there is always the business of every subscriber. It is recognised
+// through the same header. The value is "user_profile" - read from
+// internal/profile/app/publish.go, not guessed from the topic name: guessing
+// "profile" would make EVERY language update be silently skipped, and the cache
+// would never fill without a single visible error.
 func isMine(rec *kgo.Record) bool {
 	for _, h := range rec.Headers {
 		if h.Key != "aggregate_type" {
@@ -77,9 +76,9 @@ func isMine(rec *kgo.Record) bool {
 		}
 	}
 
-	// Tanpa header, jenisnya tidak diketahui. Ia DILEWATI, bukan diterima:
-	// menerimanya berarti menebak, dan tebakan yang salah menulis panduan orang
-	// lain.
+	// Without the header, the kind is unknown. It is SKIPPED, not accepted:
+	// accepting it means guessing, and a wrong guess writes someone else's
+	// guide.
 	return false
 }
 
@@ -90,7 +89,7 @@ func (r *Results) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			r.log.InfoContext(ctx, "nutrition result consumer stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -102,8 +101,8 @@ func (r *Results) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(r.client, errs); len(recovered) > 0 {
 				r.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -138,14 +137,14 @@ func (r *Results) Run(ctx context.Context) error {
 			continue
 		}
 		if rewinder.Any() {
-			// Offset DITAHAN supaya yang gagal dikirim ulang. Melewatinya
-			// berarti panduan itu menunggu selamanya, dan tidak ada yang tahu.
+			// The offset is HELD so the failed one is redelivered. Skipping it means
+			// that guide waits forever, and nobody knows.
 			r.log.WarnContext(ctx, "holding offsets so failed results are redelivered",
 				"handled", handled)
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
-			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			// Not committing alone is NOT enough: franz-go redelivers nothing within
+			// the same session, so the next batch would arrive, succeed, and commit
+			// EVERYTHING consumed so far - including the record that just failed.
+			// The consumer is rewound to it instead.
 			rewinder.Rewind(r.client)
 
 			select {
@@ -162,7 +161,7 @@ func (r *Results) Run(ctx context.Context) error {
 	}
 }
 
-// handle memproses satu pesan.
+// handle processes one message.
 func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	if !isMine(rec) {
 		return nil
@@ -175,17 +174,17 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on its span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
 	err = r.dispatch(ctx, &env, rec)
 	if terminal(err) {
-		// Hasil untuk sesuatu yang sudah tidak ada. Mengulanginya tidak akan
-		// pernah berhasil, dan menahan offset untuknya berarti konsumen ini
-		// memundurkan diri setiap detik, selamanya - itu benar-benar terjadi
-		// setelah akun uji dihapus, dan trace-lah yang menyingkapkannya.
+		// A result for something that no longer exists. Retrying it will never
+		// succeed, and holding the offset for it means this consumer rewinds
+		// itself every second, forever - that really happened after a test
+		// account was deleted, and the trace is what exposed it.
 		r.log.WarnContext(ctx, "a result arrived for a guide that no longer exists and was dropped",
 			"event_id", env.GetEventId(), "error", err)
 		return nil
@@ -193,16 +192,16 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	return err
 }
 
-// terminal menyatakan galat yang tidak akan sembuh dengan mengulang.
+// terminal says an error will not heal by retrying.
 //
-// Hanya ketiadaan pemiliknya. Galat lain - Postgres tidak terjangkau,
-// transaksi bentrok - tetap dikembalikan supaya offset ditahan dan hasilnya
-// datang lagi.
+// Only a missing owner. Other errors - Postgres unreachable, a transaction
+// conflict - are still returned so the offset is held and the result comes
+// back.
 func terminal(err error) bool {
 	return errors.Is(err, domain.ErrGuideNotFound)
 }
 
-// dispatch mengarahkan satu event ke penanganannya.
+// dispatch routes one event to its handling.
 func (r *Results) dispatch(ctx context.Context, env *eventsv1.Envelope, rec *kgo.Record) error {
 	switch payload := env.GetPayload().(type) {
 	case *eventsv1.Envelope_MealGuideCompleted:
@@ -215,14 +214,14 @@ func (r *Results) dispatch(ctx context.Context, env *eventsv1.Envelope, rec *kgo
 		return r.cacheLanguage(ctx, env, payload.ProfileUpdated)
 
 	default:
-		// Event lain bukan urusan konsumen ini. Ia dilewati, bukan digagalkan -
-		// menggagalkannya membuat offset tidak maju dan seluruh antrean
-		// tersumbat oleh pesan yang memang bukan miliknya.
+		// Other events are not this consumer's business. They are skipped, not
+		// failed - failing them keeps the offset from advancing and clogs the
+		// whole queue with messages that were never its own.
 		return nil
 	}
 }
 
-// complete menyimpan panduan yang tiba (F6-07).
+// complete stores an arriving guide (F6-07).
 func (r *Results) complete(
 	ctx context.Context, env *eventsv1.Envelope, done *eventsv1.MealGuideCompleted,
 ) error {
@@ -235,10 +234,9 @@ func (r *Results) complete(
 
 	raw := json.RawMessage(done.GetGuideJson())
 	if len(raw) == 0 || !json.Valid(raw) {
-		// Jawaban yang tidak bisa dibaca tidak akan pernah bisa dibaca.
-		// Mengulanginya selamanya hanya menyumbat antrean, jadi panduannya
-		// ditandai GAGAL - bukan dibiarkan pending selamanya, dan bukan pula
-		// disimpan apa adanya sebagai saran menu berupa JSON rusak.
+		// An unreadable answer will never become readable. Retrying it forever
+		// only clogs the queue, so the guide is marked FAILED - not left pending
+		// forever, and not stored as-is as menu advice made of broken JSON.
 		r.log.ErrorContext(ctx, "a completed meal guide was not valid JSON",
 			"guide_id", guideID, "event_id", env.GetEventId())
 		return r.svc.FailGuide(ctx, guideID)
@@ -247,12 +245,12 @@ func (r *Results) complete(
 	return r.svc.StoreGuide(ctx, guideID, raw)
 }
 
-// fail menandai panduan yang tidak akan pernah tiba.
+// fail marks a guide that will never arrive.
 func (r *Results) fail(
 	ctx context.Context, env *eventsv1.Envelope, failed *eventsv1.LlmJobFailed, rec *kgo.Record,
 ) error {
-	// Id panduan datang dari kunci partisi, yang diisi relay dari aggregate_id
-	// baris outbox-nya.
+	// The guide id comes from the partition key, which the relay fills from
+	// the aggregate_id of its outbox row.
 	guideID := string(rec.Key)
 	if guideID == "" {
 		r.log.ErrorContext(ctx, "a failed job carried no guide key",
@@ -266,15 +264,15 @@ func (r *Results) fail(
 	return r.svc.FailGuide(ctx, guideID)
 }
 
-// cacheLanguage menyalin bahasa pengguna ke cache.
+// cacheLanguage copies the user's language into the cache.
 func (r *Results) cacheLanguage(
 	ctx context.Context, env *eventsv1.Envelope, updated *eventsv1.ProfileUpdated,
 ) error {
 	userID := updated.GetUserId()
 	if userID == "" {
-		// Event yang hanya membawa id profil tidak bisa dicari lewat identitas
-		// yang terverifikasi di setiap permintaan (ADR-023). Ia dicatat, bukan
-		// ditebak.
+		// An event carrying only a profile id cannot be looked up through the
+		// identity verified on every request (ADR-023). It is logged, not
+		// guessed.
 		r.log.ErrorContext(ctx, "a profile update carried no user id",
 			"event_id", env.GetEventId())
 		return nil
@@ -282,8 +280,8 @@ func (r *Results) cacheLanguage(
 
 	observedAt := env.GetOccurredAt().AsTime()
 	if observedAt.IsZero() {
-		// Tanpa waktu event, penjaga "jangan mundur" tidak punya apa pun untuk
-		// dibandingkan, dan pemutaran ulang akan mengembalikan bahasa lama.
+		// Without the event time, the "never go backwards" guard has nothing to
+		// compare against, and a replay would restore the old language.
 		r.log.ErrorContext(ctx, "a profile update carried no timestamp",
 			"event_id", env.GetEventId(), "user_id", userID)
 		return nil

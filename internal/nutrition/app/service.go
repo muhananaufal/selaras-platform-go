@@ -1,4 +1,4 @@
-// Package app merangkai aturan nutrition menjadi use case.
+// Package app composes the nutrition rules into use cases.
 package app
 
 import (
@@ -10,33 +10,33 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 )
 
-// EventWriter menulis event ke outbox.
+// EventWriter writes events to the outbox.
 type EventWriter interface {
 	Write(ctx context.Context, aggregateType, aggregateID string, envelope *eventsv1.Envelope) error
 }
 
-// Repositories adalah repository yang berbagi satu transaksi.
+// Repositories are the repositories that share one transaction.
 type Repositories interface {
 	Preferences() domain.PreferencesRepository
 	Guides() domain.GuideRepository
 	Events() EventWriter
 }
 
-// UnitOfWork menjalankan sebuah fungsi di dalam satu transaksi.
+// UnitOfWork runs a function inside one transaction.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(Repositories) error) error
 }
 
-// LanguageSource menyebutkan bahasa seorang pengguna.
+// LanguageSource names a user's language.
 //
-// Ia antarmuka, bukan tipe cache-nya langsung: yang dibutuhkan use case hanya
-// jawabannya, dan dari mana jawaban itu datang - cache, panggilan, atau nilai
-// tetap - bukan urusannya.
+// It is an interface, not the cache type directly: all the use case needs is
+// the answer, and where that answer comes from - a cache, a call, or a fixed
+// value - is none of its business.
 type LanguageSource interface {
 	Of(ctx context.Context, userID string) (string, error)
 }
 
-// Service adalah seluruh use case nutrition.
+// Service is the whole set of nutrition use cases.
 type Service struct {
 	preferences domain.PreferencesRepository
 	guides      domain.GuideRepository
@@ -74,17 +74,16 @@ func NewService(
 	}, nil
 }
 
-// learningHistoryLimit adalah berapa banyak menu yang dipilih ikut ke prompt.
+// learningHistoryLimit is how many chosen menus go into the prompt.
 //
-// Lima, sama dengan sistem lama. Lebih banyak hanya memperpanjang prompt yang
-// dibayar per token tanpa menambah apa yang bisa disimpulkan model tentang
-// selera seseorang.
+// Five, the same as the legacy system. More only lengthens a prompt paid for
+// per token without adding to what the model can infer about someone's taste.
 const learningHistoryLimit = 5
 
-// preferencesOrEmpty membaca preferensi, dan menganggap ketiadaannya kosong.
+// preferencesOrEmpty reads the preferences, treating their absence as empty.
 //
-// Pengguna yang belum pernah membuka halaman preferensi bukan kesalahan, dan
-// hub-nya tetap harus bisa dibuka.
+// A user who has never opened the preferences page is not a mistake, and
+// their hub still has to open.
 func (s *Service) preferencesOrEmpty(
 	ctx context.Context, repo domain.PreferencesRepository, user domain.UserID,
 ) (*domain.Preferences, error) {

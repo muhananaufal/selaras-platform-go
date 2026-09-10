@@ -12,7 +12,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// GuideRepository memenuhi domain.GuideRepository.
+// GuideRepository implements domain.GuideRepository.
 type GuideRepository struct {
 	db pg.Querier
 }
@@ -57,14 +57,15 @@ func (r *GuideRepository) FindByID(ctx context.Context, id domain.ID) (*domain.G
 	return g, nil
 }
 
-// ListForUser mengembalikan riwayat panduan, terbaru lebih dulu.
+// ListForUser returns the guide history, newest first.
 func (r *GuideRepository) ListForUser(
 	ctx context.Context, userID domain.UserID, page domain.Page,
 ) ([]*domain.Guide, int, error) {
 	page = page.Normalise()
 
-	// Jumlah dihitung terpisah: window function akan menghitung ulang untuk
-	// setiap baris, dan dua kueri lebih murah sekaligus lebih mudah dibaca.
+	// The count is computed separately: a window function would recompute it
+	// for every row, and two queries are cheaper and easier to read at the
+	// same time.
 	var total int
 	if err := r.db.QueryRow(ctx,
 		`SELECT count(*) FROM daily_meal_guides WHERE user_id = $1`, userID.String(),
@@ -72,12 +73,12 @@ func (r *GuideRepository) ListForUser(
 		return nil, 0, fmt.Errorf("counting meal guides: %w", err)
 	}
 
-	// created_at ikut ke ORDER BY sebagai pemecah seri, dan id sesudahnya.
+	// created_at joins the ORDER BY as a tie-breaker, and id after it.
 	//
-	// Beberapa panduan dalam satu hari punya guide_date yang sama; tanpa kolom
-	// pemecah, urutan baris seri ditentukan PostgreSQL sesukanya, dan halaman
-	// kedua bisa mengulang baris yang sudah muncul di halaman pertama sambil
-	// melewatkan yang lain sama sekali.
+	// Several guides on one day share the same guide_date; without a
+	// tie-breaker column, PostgreSQL orders tied rows however it likes, and
+	// the second page can repeat a row that already appeared on the first page
+	// while skipping another entirely.
 	const q = `
 		SELECT ` + guideColumns + `
 		FROM daily_meal_guides
@@ -98,7 +99,7 @@ func (r *GuideRepository) ListForUser(
 	return out, total, nil
 }
 
-// ListChosen mengembalikan panduan yang benar-benar dipilih pengguna.
+// ListChosen returns the guides the user actually chose.
 func (r *GuideRepository) ListChosen(
 	ctx context.Context, userID domain.UserID, limit int,
 ) ([]*domain.Guide, error) {
@@ -106,8 +107,8 @@ func (r *GuideRepository) ListChosen(
 		limit = 5
 	}
 
-	// chosen DAN ready: panduan yang ditandai sebelum isinya tiba tidak punya
-	// apa pun untuk dipelajari.
+	// chosen AND ready: a guide marked before its content arrived has nothing
+	// to learn from.
 	const q = `
 		SELECT ` + guideColumns + `
 		FROM daily_meal_guides
@@ -141,12 +142,12 @@ func (r *GuideRepository) Update(ctx context.Context, g *domain.Guide) error {
 	return nil
 }
 
-// nullIfNoJSON menyimpan isi kosong sebagai NULL.
+// nullIfNoJSON stores empty content as NULL.
 //
-// Kolomnya JSONB dengan CHECK yang mengikat status dan isi: panduan yang belum
-// ready HARUS ber-guide_data NULL. Menulis []byte kosong ke JSONB adalah galat
-// sintaks JSON, dan menulis 'null' JSON akan LOLOS dari IS NULL - sehingga
-// panduan pending akan terlihat sudah berisi.
+// The column is JSONB with a CHECK binding status and content: a guide that is
+// not yet ready MUST have a NULL guide_data. Writing an empty []byte to JSONB
+// is a JSON syntax error, and writing JSON 'null' would PASS an IS NULL check
+// - so a pending guide would look as if it had content.
 func nullIfNoJSON(v json.RawMessage) []byte {
 	if len(v) == 0 {
 		return nil
@@ -155,8 +156,8 @@ func nullIfNoJSON(v json.RawMessage) []byte {
 }
 
 func collectGuides(rows pgx.Rows, capacity int) ([]*domain.Guide, error) {
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi riwayat akan gagal alih-alih menampilkan riwayat kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the history fails instead of showing an empty history.
 	out := make([]*domain.Guide, 0, capacity)
 
 	for rows.Next() {
@@ -202,25 +203,25 @@ func scanGuide(row pgx.Row) (*domain.Guide, error) {
 	g.Status = domain.GuideStatus(status)
 	g.Context = json.RawMessage(context)
 
-	// Isi kosong tetap kosong, bukan RawMessage sepanjang nol yang bukan nil:
-	// len() sudah menyamakan keduanya, tetapi pembaca yang membandingkan
-	// dengan nil tidak.
+	// Empty content stays empty, not a zero-length RawMessage that is not nil:
+	// len() already treats the two alike, but a reader comparing against nil
+	// does not.
 	if len(data) > 0 {
 		g.Data = json.RawMessage(data)
 	}
 
-	// Masukan hariannya ada di dalam generation_context, dan dibaca kembali
-	// dari sana. Ia TIDAK disalin ke kolom terpisah: dua salinan dari satu
-	// jawaban akan menyimpang, dan yang mana yang benar tidak akan terjawab.
+	// The daily input lives inside generation_context, and is read back from
+	// there. It is NOT copied into a separate column: two copies of one answer
+	// would drift, and which one is right would never be answerable.
 	g.Input = inputFromContext(context)
 
 	return &g, nil
 }
 
-// generationContext adalah bentuk JSON konteks pembuatan.
+// generationContext is the JSON shape of the generation context.
 //
-// Ia sengaja tidak memakai map[string]any: bidangnya diketahui, dan map
-// membuat setiap pembacanya menebak tipe di tempat pemakaian.
+// It deliberately does not use map[string]any: the fields are known, and a
+// map makes every reader guess the types at the point of use.
 type generationContext struct {
 	Input struct {
 		PlanType          string `json:"plan_type"`
@@ -232,11 +233,11 @@ type generationContext struct {
 	} `json:"input"`
 }
 
-// inputFromContext membaca masukan harian kembali dari konteksnya.
+// inputFromContext reads the daily input back from its context.
 //
-// Konteks yang tidak bisa dibaca menghasilkan masukan kosong, bukan galat:
-// riwayat yang tidak bisa ditampilkan sama sekali adalah harga yang terlalu
-// mahal untuk satu baris lama yang bentuknya berbeda.
+// An unreadable context yields an empty input, not an error: a history that
+// cannot be displayed at all is too high a price for one old row with a
+// different shape.
 func inputFromContext(raw []byte) domain.GuideInput {
 	var parsed generationContext
 	if len(raw) == 0 || json.Unmarshal(raw, &parsed) != nil {

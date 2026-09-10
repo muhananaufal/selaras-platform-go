@@ -11,14 +11,14 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// EventWriterFor membuat penulis event DI ATAS satu transaksi.
+// EventWriterFor creates an event writer ON a single transaction.
 //
-// Pabrik, bukan penulis yang sudah jadi: penulis yang dibangun di atas kolam
-// koneksi akan commit sendiri, dan eventnya bertahan meski perubahan yang
-// memicunya batal.
+// A factory, not a ready-made writer: a writer built on the connection pool
+// would commit on its own, and its event would survive even when the change
+// that triggered it was rolled back.
 type EventWriterFor func(pg.Querier) app.EventWriter
 
-// UnitOfWork memenuhi app.UnitOfWork dengan transaksi Postgres sungguhan.
+// UnitOfWork implements app.UnitOfWork with a real Postgres transaction.
 type UnitOfWork struct {
 	pool   *pgxpool.Pool
 	events EventWriterFor
@@ -42,12 +42,12 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(app.Repositories) error) er
 	})
 }
 
-// transactional memberi seluruh repository transaksi yang SAMA.
+// transactional gives every repository the SAME transaction.
 //
-// Itulah gunanya: preferensi, panduan, dan baris outbox-nya harus jadi atau
-// batal bersama-sama. Repository yang masing-masing memegang koneksinya sendiri
-// akan membuat panduan tersimpan tanpa eventnya, dan panduan itu menunggu isi
-// yang tidak pernah diminta siapa pun.
+// That is its purpose: the preferences, the guide, and its outbox row have to
+// succeed or fail together. Repositories each holding their own connection
+// would let a guide be stored without its event, and that guide would wait for
+// content nobody ever requested.
 type transactional struct {
 	q      pg.Querier
 	events EventWriterFor

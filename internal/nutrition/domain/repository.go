@@ -2,21 +2,21 @@ package domain
 
 import "context"
 
-// Page adalah permintaan halaman riwayat panduan.
+// Page is a page request for the guide history.
 //
-// Berbasis offset. Riwayat menu seseorang berjumlah puluhan sampai ratusan,
-// bukan jutaan, dan cursor menambah bentuk yang harus dijelaskan klien tanpa
-// menghilangkan masalah yang belum ada.
+// Offset-based. Someone's menu history numbers tens to hundreds, not
+// millions, and a cursor adds a shape the client has to be told about
+// without removing a problem that does not exist yet.
 type Page struct {
 	Number int
 	Size   int
 }
 
-// Normalise membatasi halaman ke rentang yang masuk akal.
+// Normalise clamps the page to a sensible range.
 //
-// Sistem lama mengembalikan SELURUH riwayat dalam satu panggilan, di-cache
-// selamanya. Riwayat yang tumbuh tiap hari akan membuat satu respons hub
-// membesar tanpa batas, dan yang membayarnya adalah pengguna paling setia.
+// The legacy system returned the WHOLE history in one call, cached forever.
+// A history that grows every day would make one hub response grow without
+// bound, and the ones who pay for it are the most loyal users.
 func (p Page) Normalise() Page {
 	if p.Number < 1 {
 		p.Number = 1
@@ -30,47 +30,47 @@ func (p Page) Normalise() Page {
 	return p
 }
 
-// Offset adalah jumlah baris yang dilewati.
+// Offset is the number of rows skipped.
 func (p Page) Offset() int { return (p.Number - 1) * p.Size }
 
-// PreferencesRepository menyimpan preferensi kuliner.
+// PreferencesRepository stores culinary preferences.
 type PreferencesRepository interface {
-	// FindByUser mengembalikan ErrPreferencesNotFound bila pengguna belum
-	// pernah menyentuh preferensinya.
+	// FindByUser returns ErrPreferencesNotFound if the user has never touched
+	// their preferences.
 	//
-	// Ketiadaan preferensi BUKAN kegagalan, dan pemanggilnya menanganinya
-	// dengan membuat himpunan kosong. Galat terpisah dipakai supaya "belum ada"
-	// tidak tersamar sebagai "kosong" - keduanya perlu dibedakan saat menulis:
-	// yang satu INSERT, yang lain UPDATE.
+	// The absence of preferences is NOT a failure, and callers handle it by
+	// creating an empty set. A separate error is used so "not there yet" is not
+	// disguised as "empty" - the two have to be told apart when writing: one is
+	// an INSERT, the other an UPDATE.
 	FindByUser(ctx context.Context, userID UserID) (*Preferences, error)
 
 	Create(ctx context.Context, p *Preferences) error
 	Update(ctx context.Context, p *Preferences) error
 }
 
-// GuideRepository menyimpan panduan menu harian.
+// GuideRepository stores daily menu guides.
 type GuideRepository interface {
 	Create(ctx context.Context, g *Guide) error
 
 	FindByID(ctx context.Context, id ID) (*Guide, error)
 
-	// ListForUser mengembalikan riwayat panduan, terbaru lebih dulu, beserta
-	// jumlah seluruhnya.
+	// ListForUser returns the guide history, newest first, together with the
+	// total count.
 	//
-	// Jumlahnya ikut karena klien butuh tahu masih ada halaman berikutnya atau
-	// tidak; menghitungnya dengan memuat semuanya akan meniadakan gunanya
-	// berhalaman.
+	// The count comes along because the client needs to know whether there is
+	// a next page; counting by loading everything would defeat the point of
+	// paging.
 	ListForUser(ctx context.Context, userID UserID, page Page) (items []*Guide, total int, err error)
 
-	// ListChosen mengembalikan panduan yang benar-benar DIPILIH pengguna,
-	// terbaru lebih dulu, untuk riwayat pembelajaran.
+	// ListChosen returns the guides the user actually CHOSE, newest first, for
+	// the learning history.
 	//
-	// Ia menyaring chosen, bukan sekadar mengambil yang terakhir dibuat seperti
-	// sistem lama (B17). Perbedaannya bukan gaya: mengambil yang terakhir
-	// dibuat berarti menyuapkan kembali saran model kepada model sebagai
-	// "menu yang disukai pengguna", padahal pengguna belum tentu memakannya.
-	// Selama belum ada yang menandai, daftar ini memang kosong - dan kosong
-	// adalah jawaban yang benar.
+	// It filters on chosen, rather than simply taking the last created as the
+	// legacy system did (B17). The difference is not style: taking the last
+	// created means feeding the model's own suggestions back to the model as
+	// "menus the user likes", when the user may never have eaten them. Until
+	// something marks them, this list is indeed empty - and empty is the right
+	// answer.
 	ListChosen(ctx context.Context, userID UserID, limit int) ([]*Guide, error)
 
 	Update(ctx context.Context, g *Guide) error

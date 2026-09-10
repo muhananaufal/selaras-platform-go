@@ -11,10 +11,9 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 )
 
-// wib adalah zona waktu yang dipakai pengguna sebenarnya. Ia bukan UTC, dan
-// itulah gunanya di sini: sebagian aturan tanggal dan jam hanya salah di zona
-// yang bukan UTC, dan test yang seluruhnya berjalan di UTC tidak akan pernah
-// menyentuhnya.
+// wib is the time zone the real users are in. It is not UTC, and that is its
+// purpose here: some date and clock rules are only wrong in a zone that is
+// not UTC, and a test that runs entirely in UTC would never touch them.
 var wib = time.FixedZone("WIB", 7*60*60)
 
 func mustUser(t *testing.T) domain.UserID {
@@ -29,24 +28,24 @@ func mustUser(t *testing.T) domain.UserID {
 
 // ---------------------------------------------------------------- waktu makan
 
-// TestMealTimeFollowsTheClock menguji D10 di KEDUA sisi setiap batas.
+// TestMealTimeFollowsTheClock tests D10 on BOTH sides of every boundary.
 //
-// Menguji hanya bagian tengah tiap rentang tidak membuktikan apa pun tentang
-// batasnya, dan batasnya justru satu-satunya tempat aturan ini bisa salah.
+// Testing only the middle of each range proves nothing about the boundaries,
+// and the boundaries are the only place this rule can go wrong.
 func TestMealTimeFollowsTheClock(t *testing.T) {
 	for _, tc := range []struct {
 		hour int
 		want domain.MealTime
 	}{
-		{0, domain.MealDinner},          // Lewat tengah malam masih malam hari.
-		{2, domain.MealDinner},          // Sifat "sisanya", diwarisi dengan sadar.
+		{0, domain.MealDinner},          // Past midnight is still evening.
+		{2, domain.MealDinner},          // The "remainder" property, inherited knowingly.
 		{4, domain.MealDinner},          // Sesaat sebelum sarapan dimulai.
-		{5, domain.MealBreakfast},       // Batas bawah sarapan, inklusif.
-		{9, domain.MealBreakfast},       // Jam terakhir sarapan.
-		{10, domain.MealLunch},          // Batas bawah makan siang, inklusif.
-		{14, domain.MealLunch},          // Jam terakhir makan siang.
-		{15, domain.MealAfternoonSnack}, // Batas bawah camilan sore.
-		{17, domain.MealAfternoonSnack}, // Jam terakhir camilan sore.
+		{5, domain.MealBreakfast},       // Lower bound of breakfast, inclusive.
+		{9, domain.MealBreakfast},       // Last hour of breakfast.
+		{10, domain.MealLunch},          // Lower bound of lunch, inclusive.
+		{14, domain.MealLunch},          // Last hour of lunch.
+		{15, domain.MealAfternoonSnack}, // Lower bound of the afternoon snack.
+		{17, domain.MealAfternoonSnack}, // Last hour of the afternoon snack.
 		{18, domain.MealDinner},         // Makan malam dimulai.
 		{23, domain.MealDinner},
 	} {
@@ -57,14 +56,14 @@ func TestMealTimeFollowsTheClock(t *testing.T) {
 	}
 }
 
-// TestTheGuideDateIsLocalMidnight menjaga tanggal panduan di zona bukan UTC.
+// TestTheGuideDateIsLocalMidnight guards the guide date in a non-UTC zone.
 //
-// Ini regresi untuk pemotongan yang keliru: now.Truncate(24h) memotong sejak
-// epoch UTC, sehingga pukul 05.00 WIB - pukul 22.00 UTC HARI SEBELUMNYA -
-// mendarat pada tanggal kemarin. Setiap panduan pagi akan tercatat di hari yang
-// salah, dan hanya di zona waktu pengguna sebenarnya.
+// This is a regression test for a wrong truncation: now.Truncate(24h) truncates
+// from the UTC epoch, so 05:00 WIB - 22:00 UTC the PREVIOUS DAY - lands on
+// yesterday's date. Every morning guide would be recorded on the wrong day, and
+// only in the real users' time zone.
 func TestTheGuideDateIsLocalMidnight(t *testing.T) {
-	// 05.00 WIB pada 3 September = 22.00 UTC pada 2 September.
+	// 05:00 WIB on 3 September = 22:00 UTC on 2 September.
 	at := time.Date(2026, 9, 3, 5, 0, 0, 0, wib)
 
 	guide, err := domain.NewGuide(mustUser(t), validInput(), nil, at)
@@ -81,7 +80,7 @@ func TestTheGuideDateIsLocalMidnight(t *testing.T) {
 	}
 }
 
-// TestTheMealTimeIsFrozenAtCreation membuktikan waktu makan tidak dihitung ulang.
+// TestTheMealTimeIsFrozenAtCreation proves the meal time is not recomputed.
 func TestTheMealTimeIsFrozenAtCreation(t *testing.T) {
 	morning := time.Date(2026, 9, 3, 7, 0, 0, 0, wib)
 
@@ -93,8 +92,8 @@ func TestTheMealTimeIsFrozenAtCreation(t *testing.T) {
 		t.Fatalf("a guide asked for at 07:00 has meal time %q", guide.MealTime)
 	}
 
-	// Panduan dibaca malam harinya. Waktu makannya TETAP sarapan: yang tersimpan
-	// adalah konteks saat ia diminta.
+	// The guide is read in the evening. Its meal time is STILL breakfast: what
+	// is stored is the context at the time it was requested.
 	if got := domain.MealTimeAt(morning.Add(13 * time.Hour)); got == guide.MealTime {
 		t.Fatalf("the test proves nothing: 20:00 and 07:00 give the same meal time %q", got)
 	}
@@ -105,12 +104,12 @@ func TestTheMealTimeIsFrozenAtCreation(t *testing.T) {
 
 // ----------------------------------------------------------------- preferensi
 
-// TestAPartialUpdateLeavesUntouchedFieldsAlone adalah regresi B16.
+// TestAPartialUpdateLeavesUntouchedFieldsAlone is the B16 regression test.
 //
-// Di sistem lama, satu PATCH yang hanya membawa alergi MENGHAPUS selera dan
-// peralatan dapur pengguna, karena repositorinya menimpa seluruh kolom JSON
-// dengan bidang yang kebetulan dikirim. Itu kehilangan data yang senyap: tidak
-// ada galat, dan pengguna baru menyadarinya saat sarannya berubah.
+// In the legacy system, one PATCH carrying only allergies WIPED the user's
+// tastes and kitchen equipment, because its repository overwrote the whole
+// JSON column with whichever fields happened to be sent. That was silent data
+// loss: no error, and the user only noticed when their suggestions changed.
 func TestAPartialUpdateLeavesUntouchedFieldsAlone(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
@@ -119,7 +118,7 @@ func TestAPartialUpdateLeavesUntouchedFieldsAlone(t *testing.T) {
 		t.Fatalf("creating preferences: %v", err)
 	}
 
-	// Pengguna mengisi seluruh preferensinya.
+	// The user fills in all of their preferences.
 	full := domain.PreferencesPatch{
 		Allergies:        ptr("udang"),
 		BudgetLevel:      ptr(domain.BudgetStandard),
@@ -131,7 +130,7 @@ func TestAPartialUpdateLeavesUntouchedFieldsAlone(t *testing.T) {
 		t.Fatalf("applying the full patch: %v", err)
 	}
 
-	// Lalu ia hanya mengubah catatan alerginya.
+	// Then they change only their allergy note.
 	later := now.Add(time.Hour)
 	if err := prefs.Apply(domain.PreferencesPatch{Allergies: ptr("udang, kepiting")}, later); err != nil {
 		t.Fatalf("applying the partial patch: %v", err)
@@ -154,10 +153,11 @@ func TestAPartialUpdateLeavesUntouchedFieldsAlone(t *testing.T) {
 	}
 }
 
-// TestAnExplicitlyEmptyListIsNotTheSameAsAnAbsentOne adalah sisi lain B16.
+// TestAnExplicitlyEmptyListIsNotTheSameAsAnAbsentOne is the other side of
+// B16.
 //
-// Pembaruan parsial harus tetap MEMBOLEHKAN pengosongan yang disengaja. Kalau
-// tidak, preferensi yang pernah diisi tidak akan pernah bisa dihapus lagi.
+// A partial update must still ALLOW deliberate emptying. Otherwise a
+// preference once filled in could never be cleared again.
 func TestAnExplicitlyEmptyListIsNotTheSameAsAnAbsentOne(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
@@ -179,13 +179,13 @@ func TestAnExplicitlyEmptyListIsNotTheSameAsAnAbsentOne(t *testing.T) {
 	if len(prefs.TasteProfiles) != 0 {
 		t.Errorf("an explicitly emptied list still holds %v", prefs.TasteProfiles)
 	}
-	// Slice kosong, bukan nil: nil menjadi NULL di kolom yang NOT NULL.
+	// An empty slice, not nil: nil becomes NULL in a column that is NOT NULL.
 	if prefs.TasteProfiles == nil {
 		t.Error("the emptied list is nil, which cannot be written to a NOT NULL column")
 	}
 }
 
-// TestARejectedPatchChangesNothing menjaga sifat semua-atau-tidak-sama-sekali.
+// TestARejectedPatchChangesNothing guards the all-or-nothing property.
 func TestARejectedPatchChangesNothing(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 
@@ -200,8 +200,8 @@ func TestARejectedPatchChangesNothing(t *testing.T) {
 		t.Fatalf("applying: %v", err)
 	}
 
-	// Bidang pertama sah, bidang terakhir tidak. Yang pertama TIDAK boleh
-	// terlanjur tertulis.
+	// The first field is valid, the last is not. The first must NOT already
+	// have been written.
 	bad := domain.PreferencesPatch{
 		Allergies:        ptr("tidak ada"),
 		KitchenEquipment: ptr([]string{"   "}),
@@ -287,9 +287,9 @@ func TestUnknownPreferenceValuesAreRefused(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, wib)
 	prefs, _ := domain.NewPreferences(mustUser(t), now)
 
-	// "Hemat" adalah label Indonesia sistem lama. Ia BUKAN nilai yang sah di
-	// sini, dan menerimanya diam-diam akan menyelundupkan label tampilan ke
-	// dalam basis data.
+	// "Hemat" is the legacy Indonesian label. It is NOT a valid value here,
+	// and accepting it silently would smuggle a display label into the
+	// database.
 	if err := prefs.Apply(domain.PreferencesPatch{
 		BudgetLevel: ptr(domain.BudgetLevel("Hemat")),
 	}, now); !errors.Is(err, domain.ErrInvalidBudgetLevel) {
@@ -302,7 +302,7 @@ func TestUnknownPreferenceValuesAreRefused(t *testing.T) {
 		t.Errorf("a legacy cooking style was reported as %v", err)
 	}
 
-	// Kosong SAH: ia berarti "belum dipilih".
+	// Empty is VALID: it means "not chosen yet".
 	if err := prefs.Apply(domain.PreferencesPatch{
 		BudgetLevel: ptr(domain.BudgetUnspecified),
 	}, now); err != nil {
@@ -340,8 +340,8 @@ func TestGuideInputRequiresTheThreeDailyAnswers(t *testing.T) {
 		})
 	}
 
-	// Keinginan dan konteks sosial BOLEH kosong: tidak setiap orang sedang
-	// menginginkan sesuatu, dan tidak setiap makan punya teman.
+	// The craving and the social context MAY be empty: not everyone is craving
+	// something, and not every meal has company.
 	in := validInput()
 	in.CravingType = domain.CravingUnspecified
 	in.SocialContext = domain.SocialUnspecified
@@ -367,7 +367,8 @@ func TestAGuideStartsPendingAndWithoutData(t *testing.T) {
 	if guide.Chosen {
 		t.Error("a new guide is already marked chosen")
 	}
-	// Konteks kosong menjadi objek JSON kosong, bukan NULL: kolomnya NOT NULL.
+	// An empty context becomes an empty JSON object, not NULL: the column is
+	// NOT NULL.
 	if string(guide.Context) != "{}" {
 		t.Errorf("an absent context was stored as %q, want {}", guide.Context)
 	}
@@ -421,8 +422,8 @@ func TestAGuideBecomesReadyOnlyWithUsableData(t *testing.T) {
 			t.Errorf("updated_at is %v, want %v", g.UpdatedAt, later)
 		}
 
-		// Kedua kali ditolak: pengiriman ULANG dari Kafka tidak boleh menimpa
-		// panduan yang sudah tiba dengan isi dari percobaan lain.
+		// The second time is refused: a REDELIVERY from Kafka must not overwrite
+		// a guide that has arrived with content from another attempt.
 		if err := g.MarkReady(data, later); !errors.Is(err, domain.ErrGuideNotPending) {
 			t.Errorf("a second delivery was reported as %v", err)
 		}
@@ -439,8 +440,8 @@ func TestAGuideBecomesReadyOnlyWithUsableData(t *testing.T) {
 		if len(g.Data) != 0 {
 			t.Errorf("a failed guide carries data: %s", g.Data)
 		}
-		// Panduan yang sudah gagal tidak bisa berubah menjadi berhasil dengan
-		// isi yang datang belakangan.
+		// A guide that has already failed cannot turn into a success with content
+		// arriving later.
 		if err := g.MarkReady(json.RawMessage(`{"a":1}`), later); !errors.Is(err, domain.ErrGuideNotPending) {
 			t.Errorf("a failed guide accepted data, reported as %v", err)
 		}
@@ -465,7 +466,7 @@ func TestPageNormalisationBoundsTheRequest(t *testing.T) {
 		{domain.Page{}, domain.Page{Number: 1, Size: 20}},
 		{domain.Page{Number: -3, Size: 0}, domain.Page{Number: 1, Size: 20}},
 		{domain.Page{Number: 2, Size: 5}, domain.Page{Number: 2, Size: 5}},
-		// Sistem lama mengembalikan SELURUH riwayat; di sini ada atapnya.
+		// The legacy system returned the WHOLE history; here there is a ceiling.
 		{domain.Page{Number: 1, Size: 5000}, domain.Page{Number: 1, Size: 100}},
 	} {
 		if got := tc.in.Normalise(); got != tc.want {
@@ -481,7 +482,7 @@ func TestPageNormalisationBoundsTheRequest(t *testing.T) {
 	}
 }
 
-// validInput adalah masukan harian yang sah, dipakai sebagai titik awal.
+// validInput is a valid daily input, used as the starting point.
 func validInput() domain.GuideInput {
 	return domain.GuideInput{
 		PlanType:          domain.PlanCookAtHome,
