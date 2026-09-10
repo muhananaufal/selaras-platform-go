@@ -69,7 +69,7 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// Program status.
+// Status is the state of a program.
 type Status string
 
 const (
