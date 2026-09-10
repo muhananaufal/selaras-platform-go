@@ -1,4 +1,5 @@
-// Package assessment membaca konfigurasi assessment-svc dari environment.
+// Package assessment reads assessment-svc's configuration from the
+// environment.
 package assessment
 
 import (
@@ -6,15 +7,15 @@ import (
 	"os"
 )
 
-// Config adalah seluruh yang dibutuhkan assessment-svc untuk menyala.
+// Config is everything assessment-svc needs to start.
 type Config struct {
 	GRPCAddr    string
 	HealthAddr  string
 	DatabaseDSN string
 
-	// ProfileAddr WAJIB. Berbeda dari identity-svc, service ini tidak bisa
-	// mengerjakan apa pun tanpa profil: tanpa usia, jenis kelamin, dan negara
-	// tidak ada yang bisa dihitung.
+	// ProfileAddr is REQUIRED. Unlike identity-svc, this service can do
+	// nothing without a profile: without age, sex, and country there is
+	// nothing to compute.
 	ProfileAddr string
 }
 
