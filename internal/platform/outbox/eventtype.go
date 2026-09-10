@@ -1,11 +1,11 @@
 package outbox
 
-// Jenis event, dinamai sekali.
+// Event kinds, named once.
 //
-// Tiga di antaranya kebetulan senama dengan topic-nya, dan kebetulan itu yang
-// membuat literalnya berulang. Menamainya di sini membuat "jenis event" dan
-// "nama topic" tetap dua hal yang berbeda meski nilainya sama - kalau salah
-// satunya berubah nanti, yang berubah hanya satu sisi.
+// Three of them happen to share their topic's name, and that coincidence is
+// what makes the literal repeat. Naming them here keeps "event kind" and
+// "topic name" two different things even when their values agree - if one of
+// them changes later, only one side changes.
 const (
 	EventProfileUpdated        = "profile.updated"
 	EventAssessmentCompleted   = "assessment.completed"
@@ -27,7 +27,7 @@ const (
 	EventUserDeletionConfirmed = "user.deletion.confirmed"
 )
 
-// Nama topic. Terpisah dari jenis event dengan sengaja - lihat di atas.
+// Topic names. Deliberately separate from the event kinds - see above.
 const (
 	TopicProfileUpdated      = "profile.updated"
 	TopicAssessmentCompleted = "assessment.completed"

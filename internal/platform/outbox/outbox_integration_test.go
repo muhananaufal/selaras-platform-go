@@ -41,7 +41,7 @@ func envelope(t *testing.T, profileID string) *eventsv1.Envelope {
 	}
 }
 
-// countRows menghitung baris di dua tabel sekaligus.
+// countRows counts the rows in both tables at once.
 func countRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) (users, events int) {
 	t.Helper()
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE id = $1`, userID).Scan(&users); err != nil {
@@ -60,7 +60,7 @@ func insertUser(ctx context.Context, q pg.Querier, id uuid.UUID) error {
 	return err
 }
 
-// TestABusinessWriteAndItsEventCommitTogether adalah inti F3-03.
+// TestABusinessWriteAndItsEventCommitTogether is the heart of F3-03.
 func TestABusinessWriteAndItsEventCommitTogether(t *testing.T) {
 	pool, ctx := setup(t)
 	userID := uuid.New()
@@ -81,11 +81,12 @@ func TestABusinessWriteAndItsEventCommitTogether(t *testing.T) {
 	}
 }
 
-// TestAFailureRollsBackBoth adalah separuh lainnya, dan yang lebih penting.
+// TestAFailureRollsBackBoth is the other half, and the more important one.
 //
-// Sebuah outbox yang menulis eventnya di luar transaksi bisnis tetap lulus
-// test di atas. Yang membedakannya hanya ini: saat transaksinya batal, event
-// yang menjanjikan perubahan yang tidak pernah terjadi harus ikut hilang.
+// An outbox that writes its event outside the business transaction still
+// passes the test above. The only thing that separates them is this: when
+// the transaction is rolled back, the event promising a change that never
+// happened has to disappear with it.
 func TestAFailureRollsBackBoth(t *testing.T) {
 	pool, ctx := setup(t)
 	userID := uuid.New()
@@ -110,7 +111,7 @@ func TestAFailureRollsBackBoth(t *testing.T) {
 	}
 }
 
-// TestTheStoredPayloadIsTheEnvelopeItself menjaga BYTEA tetap bermakna.
+// TestTheStoredPayloadIsTheEnvelopeItself keeps BYTEA meaningful.
 func TestTheStoredPayloadIsTheEnvelopeItself(t *testing.T) {
 	pool, ctx := setup(t)
 	userID := uuid.New()
@@ -149,8 +150,8 @@ func TestTheStoredPayloadIsTheEnvelopeItself(t *testing.T) {
 	}
 }
 
-// TestAnEnvelopeWithNoEventIsRefused menjaga relay dari baris yang tidak bisa
-// dirutekan ke topic mana pun.
+// TestAnEnvelopeWithNoEventIsRefused protects the relay from rows that cannot
+// be routed to any topic.
 func TestAnEnvelopeWithNoEventIsRefused(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -177,9 +178,9 @@ func TestAnEventWithoutAnAggregateIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheStoredEnvelopeCarriesTheWritingSpan menjaga jembatan trace lintas
-// broker (F9-05): konsumen hanya bisa menyambung ke permintaan asalnya bila
-// penulis outbox menyalin traceparent ke dalam envelope.
+// TestTheStoredEnvelopeCarriesTheWritingSpan guards the trace bridge across
+// the broker (F9-05): a consumer can only join its originating request if
+// the outbox writer copied the traceparent into the envelope.
 func TestTheStoredEnvelopeCarriesTheWritingSpan(t *testing.T) {
 	pool, ctx := setup(t)
 	userID := uuid.New()

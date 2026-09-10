@@ -10,13 +10,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 )
 
-// TestEveryEventInTheContractHasATopic membaca kontraknya, bukan daftar tulisan
-// tangan.
+// TestEveryEventInTheContractHasATopic reads the contract, not a hand-written
+// list.
 //
-// Menambah event baru di events.proto tanpa memberinya topic akan membuat relay
-// menemukan barisnya, gagal merutekannya, dan mencoba lagi selamanya - kegagalan
-// yang muncul jauh setelah proto-nya diubah. Test ini memindahkannya ke waktu
-// build.
+// Adding a new event to events.proto without giving it a topic would make the
+// relay find its rows, fail to route them, and retry forever - a failure that
+// surfaces long after the proto was changed. This test moves it to build time.
 func TestEveryEventInTheContractHasATopic(t *testing.T) {
 	fields := (&eventsv1.Envelope{}).ProtoReflect().Descriptor().Oneofs().ByName("payload").Fields()
 
@@ -29,8 +28,8 @@ func TestEveryEventInTheContractHasATopic(t *testing.T) {
 	for i := range fields.Len() {
 		f := fields.Get(i)
 
-		// Envelope diisi lewat bidang oneof-nya, lalu jenisnya dibaca dengan
-		// jalur yang sama yang dipakai penulis outbox.
+		// The envelope is filled through its oneof field, and then its kind is
+		// read through the same path the outbox writer uses.
 		env := &eventsv1.Envelope{}
 		env.ProtoReflect().Set(f, newMessageFor(env, f))
 

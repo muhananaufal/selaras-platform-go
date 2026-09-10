@@ -1,16 +1,15 @@
-// Package outbox menulis event bersama perubahan bisnisnya, dalam satu
-// transaksi.
+// Package outbox writes events together with their business change, in one
+// transaction.
 //
-// Inilah yang membuat "kirim event setelah menyimpan" berhenti menjadi
-// harapan. Menulis ke basis data lalu menerbitkan ke broker adalah dua
-// tindakan yang bisa gagal terpisah: proses yang mati di antaranya
-// meninggalkan perubahan yang tersimpan dan event yang tidak pernah ada, dan
-// tidak ada yang tahu sampai seseorang bertanya mengapa dashboard-nya tidak
-// pernah berubah.
+// This is what turns "publish the event after saving" from a hope into a
+// guarantee. Writing to the database and then publishing to the broker are
+// two actions that can fail separately: a process that dies between them
+// leaves a stored change and an event that never existed, and nobody knows
+// until someone asks why the dashboard never changed.
 //
-// Dengan outbox, event ditulis ke tabel yang sama dalam transaksi yang sama.
-// Ia terkirim atau tidak sama sekali bersama perubahannya, dan relay yang
-// terpisah yang memindahkannya ke broker - berkali-kali kalau perlu.
+// With the outbox, the event is written to the same table in the same
+// transaction. It is delivered or not at all together with its change, and a
+// separate relay moves it to the broker - as many times as it takes.
 package outbox
 
 import (
@@ -28,12 +27,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Schema adalah DDL tabel outbox, dipakai generator migrasi per service.
+// Schema is the DDL of the outbox table, used by the per-service migration
+// generator.
 //
 //go:embed schema.sql
 var Schema string
 
-// Record adalah satu baris outbox yang sudah dibaca kembali.
+// Record is one outbox row read back.
 type Record struct {
 	ID            uuid.UUID
 	CreatedAt     time.Time
@@ -44,22 +44,23 @@ type Record struct {
 	Attempts      int
 }
 
-// Writer menulis event ke outbox.
+// Writer writes events to the outbox.
 //
-// Ia menerima Querier, bukan kolam koneksi, dan itu bukan detail: satu-satunya
-// cara outbox bermakna adalah kalau ia menulis lewat transaksi yang sama
-// dengan perubahan bisnisnya.
+// It takes a Querier, not a connection pool, and that is not a detail: the
+// only way an outbox means anything is if it writes through the same
+// transaction as the business change.
 type Writer struct {
 	db pg.Querier
 }
 
 func NewWriter(db pg.Querier) *Writer { return &Writer{db: db} }
 
-// Write menyimpan satu event.
+// Write stores one event.
 //
-// aggregateID menjadi kunci partisi Kafka nanti. Ia wajib: tanpa kunci, Kafka
-// menyebar event ke partisi mana pun dan urutan antar event satu agregat
-// hilang - "profil diperbarui" bisa tiba setelah "profil dihapus".
+// aggregateID becomes the Kafka partition key later. It is required: without
+// a key, Kafka spreads events across any partition and the ordering between
+// events of one aggregate is lost - "profile updated" can arrive after
+// "profile deleted".
 func (w *Writer) Write(
 	ctx context.Context,
 	aggregateType, aggregateID string,
@@ -74,15 +75,15 @@ func (w *Writer) Write(
 
 	eventType := EventTypeOf(envelope)
 	if eventType == "" {
-		// Envelope tanpa payload tidak bisa dirutekan ke topic mana pun.
-		// Menyimpannya berarti relay akan menemukannya, gagal, dan mencoba
-		// lagi selamanya.
+		// An envelope without a payload cannot be routed to any topic. Storing it
+		// means the relay will find it, fail, and retry forever.
 		return errors.New("the envelope carries no event")
 	}
 
-	// Konteks trace disalin ke dalam envelope SEBELUM diserialkan. Relay
-	// tidak tahu apa-apa soal permintaan yang melahirkan baris ini; yang
-	// bisa menyeberang ke konsumen hanyalah yang ada di dalam payload (F9-05).
+	// The trace context is copied into the envelope BEFORE serialisation. The
+	// relay knows nothing about the request that produced this row; the only
+	// thing that can cross over to the consumer is what sits inside the
+	// payload (F9-05).
 	telemetry.InjectEnvelope(ctx, envelope)
 
 	payload, err := proto.Marshal(envelope)
@@ -99,10 +100,10 @@ func (w *Writer) Write(
 		INSERT INTO outbox (id, created_at, aggregate_type, aggregate_id, event_type, payload)
 		VALUES ($1, $2, $3, $4, $5, $6)`
 
-	// created_at diberikan eksplisit, bukan diserahkan ke now() basis data.
-	// Ia kunci partisi, dan waktu yang datang dari satu tempat lebih mudah
-	// dijelaskan daripada waktu yang bergantung pada jam server mana yang
-	// kebetulan menjalankan kuerinya.
+	// created_at is supplied explicitly rather than left to the database's
+	// now(). It is the partition key, and a time that comes from one place is
+	// easier to explain than one that depends on which server's clock happened
+	// to run the query.
 	if _, err := w.db.Exec(ctx, q,
 		id, envelope.GetOccurredAt().AsTime(), aggregateType, aggregateID, eventType, payload,
 	); err != nil {
@@ -111,22 +112,22 @@ func (w *Writer) Write(
 	return nil
 }
 
-// Reader membaca event yang belum terkirim, untuk relay.
+// Reader reads unpublished events, for the relay.
 type Reader struct {
 	db pg.Querier
 }
 
 func NewReader(db pg.Querier) *Reader { return &Reader{db: db} }
 
-// Unpublished mengambil sekumpulan event yang belum terkirim.
+// Unpublished fetches a batch of events that have not been published yet.
 //
-// FOR UPDATE SKIP LOCKED, dan keduanya diperlukan: FOR UPDATE menahan baris
-// yang sedang dikirim sebuah relay, SKIP LOCKED membuat relay lain melewatinya
-// alih-alih menunggu. Tanpa yang kedua, dua relay akan berbaris dan hanya satu
-// yang bekerja; tanpa yang pertama, keduanya mengirim event yang sama.
+// FOR UPDATE SKIP LOCKED, and both halves are needed: FOR UPDATE holds the
+// rows a relay is currently sending, SKIP LOCKED makes another relay skip them
+// instead of waiting. Without the second, two relays queue up and only one
+// works; without the first, both send the same events.
 //
-// Pemanggil WAJIB menjalankannya di dalam transaksi - kunci itu dilepas saat
-// transaksinya selesai, dan tanpa transaksi ia dilepas seketika.
+// The caller MUST run this inside a transaction - the lock is released when
+// the transaction ends, and without a transaction it is released immediately.
 func (r *Reader) Unpublished(ctx context.Context, limit int) ([]Record, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
@@ -161,7 +162,7 @@ func (r *Reader) Unpublished(ctx context.Context, limit int) ([]Record, error) {
 	return out, nil
 }
 
-// MarkPublished menandai event yang sudah terkirim.
+// MarkPublished marks events as published.
 func (r *Reader) MarkPublished(ctx context.Context, ids []uuid.UUID, at time.Time) error {
 	if len(ids) == 0 {
 		return nil
@@ -174,12 +175,12 @@ func (r *Reader) MarkPublished(ctx context.Context, ids []uuid.UUID, at time.Tim
 	return nil
 }
 
-// MarkFailed mencatat percobaan yang gagal.
+// MarkFailed records a failed attempt.
 //
-// Ia menaikkan penghitung dan menyimpan galatnya, tetapi TIDAK menandai
-// barisnya terkirim: event yang gagal harus dicoba lagi. Yang membedakan
-// "gagal sementara" dari "gagal selamanya" adalah penghitungnya, dan itu
-// keputusan relay - bukan keputusan di sini.
+// It bumps the counter and stores the error, but does NOT mark the row as
+// published: a failed event has to be retried. What separates "failed for
+// now" from "failed for good" is the counter, and that is the relay's
+// decision - not one made here.
 func (r *Reader) MarkFailed(ctx context.Context, ids []uuid.UUID, cause string) error {
 	if len(ids) == 0 {
 		return nil
@@ -192,10 +193,10 @@ func (r *Reader) MarkFailed(ctx context.Context, ids []uuid.UUID, cause string) 
 	return nil
 }
 
-// truncate menjaga pesan galat tetap masuk akal ukurannya.
+// truncate keeps error messages to a sensible size.
 //
-// Galat dari pustaka jaringan bisa membawa dump koneksi yang panjang, dan
-// tabel outbox bukan tempat menyimpannya.
+// Errors from networking libraries can carry long connection dumps, and the
+// outbox table is not the place to store them.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
@@ -203,11 +204,11 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
-// EventTypeOf membaca jenis event dari envelope.
+// EventTypeOf reads the event kind from the envelope.
 //
-// Ia dipakai untuk merutekan ke topic. Nama yang dikembalikan sengaja mengikuti
-// nama bidang di kontrak, sehingga menambah event baru di proto langsung
-// terbawa ke sini tanpa daftar kedua yang bisa tertinggal.
+// It is used for routing to a topic. The name returned deliberately follows the
+// field name in the contract, so adding a new event to the proto is carried
+// through here without a second list that could fall behind.
 func EventTypeOf(e *eventsv1.Envelope) string {
 	switch e.GetPayload().(type) {
 	case *eventsv1.Envelope_ProfileUpdated:

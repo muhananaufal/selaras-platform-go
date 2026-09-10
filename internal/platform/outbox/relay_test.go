@@ -17,20 +17,21 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// recorder adalah broker palsu yang mencatat apa yang benar-benar diterimanya.
+// recorder is a fake broker that records what it actually received.
 //
-// Ia mencatat berdasarkan header outbox_id, bukan berdasarkan urutan panggilan,
-// supaya "hilang" dan "ganda" bisa dibedakan dengan tegas.
+// It records by the outbox_id header, not by call order, so "lost" and
+// "duplicated" can be told apart unambiguously.
 type recorder struct {
 	mu       sync.Mutex
 	received []string
 
-	// failFrom membuat pesan mulai indeks ini gagal. -1 berarti semuanya lolos.
+	// failFrom makes messages from this index onwards fail. -1 means everything
+	// gets through.
 	failFrom int
 
-	// panicAfter membuat publisher panik setelah sekian pesan tercatat, meniru
-	// proses yang mati SETELAH broker menerima tetapi SEBELUM transaksinya
-	// commit. Nol berarti tidak pernah panik.
+	// panicAfter makes the publisher panic once this many messages have been
+	// recorded, imitating a process that dies AFTER the broker accepted them
+	// but BEFORE its transaction committed. Zero means it never panics.
 	panicAfter int
 }
 
@@ -53,8 +54,8 @@ func (r *recorder) Publish(_ context.Context, msgs []kafka.Message) ([]int, erro
 		ok = append(ok, i)
 
 		if r.panicAfter > 0 && len(r.received) >= r.panicAfter {
-			// Diterima broker, lalu prosesnya mati. Persis titik yang membuat
-			// relay ini at-least-once dan bukan exactly-once.
+			// Accepted by the broker, then the process dies. Exactly the point that
+			// makes this relay at-least-once rather than exactly-once.
 			panic("the process died after the broker accepted")
 		}
 	}
@@ -78,7 +79,7 @@ func newRelay(t *testing.T, pool *pgxpool.Pool, pub outbox.Publisher, batch int)
 	return relay
 }
 
-// seedEvents menulis n event dan mengembalikan id baris outbox-nya.
+// seedEvents writes n events and returns their outbox row ids.
 func seedEvents(t *testing.T, ctx context.Context, pool *pgxpool.Pool, n int) []string {
 	t.Helper()
 
@@ -123,7 +124,7 @@ func unpublishedCount(t *testing.T, ctx context.Context, pool *pgxpool.Pool) int
 	return n
 }
 
-// TestTheRelayMovesEveryEventOnce adalah keadaan normal.
+// TestTheRelayMovesEveryEventOnce is the normal case.
 func TestTheRelayMovesEveryEventOnce(t *testing.T) {
 	pool, ctx := setup(t)
 	ids := seedEvents(t, ctx, pool, 7)
@@ -145,12 +146,12 @@ func TestTheRelayMovesEveryEventOnce(t *testing.T) {
 	}
 }
 
-// TestAKillMidFlightLosesNothing adalah gate F3-04.
+// TestAKillMidFlightLosesNothing is gate F3-04.
 //
-// Publisher-nya panik setelah tiga pesan diterima broker - proses yang mati
-// setelah broker menerima tetapi sebelum transaksinya commit. Relay dinyalakan
-// lagi, dan yang diperiksa adalah: setiap event sampai SETIDAKNYA sekali, dan
-// tidak ada satu pun yang hilang.
+// The publisher panics after three messages were accepted by the broker - a
+// process dying after the broker accepted them but before its transaction
+// committed. The relay is started again, and what is checked is this: every
+// event arrives AT LEAST once, and not a single one is lost.
 func TestAKillMidFlightLosesNothing(t *testing.T) {
 	pool, ctx := setup(t)
 	ids := seedEvents(t, ctx, pool, 6)
@@ -164,12 +165,13 @@ func TestAKillMidFlightLosesNothing(t *testing.T) {
 				t.Error("the publisher was supposed to die mid-flight")
 			}
 		}()
-		//nolint:errcheck // Yang diuji adalah paniknya, bukan nilai kembaliannya.
+		//nolint:errcheck // What is under test is the panic, not the return value.
 		_, _ = newRelay(t, pool, dying, 10).Once(ctx)
 	}()
 
-	// Transaksinya batal, jadi TIDAK ADA yang tertandai terkirim - meski broker
-	// sudah menerima tiga. Itulah harga at-least-once, dan itu harga yang benar.
+	// The transaction was rolled back, so NOTHING is marked as sent - even
+	// though the broker accepted three. That is the price of at-least-once, and
+	// it is the right price.
 	if left := unpublishedCount(t, ctx, pool); left != 6 {
 		t.Fatalf("after the crash %d events are unpublished, want all 6", left)
 	}
@@ -185,17 +187,17 @@ func TestAKillMidFlightLosesNothing(t *testing.T) {
 		t.Fatalf("%d events survived the restart unpublished", left)
 	}
 
-	// Dan duplikatnya nyata, bukan diabaikan: tiga event sampai dua kali di
-	// seluruh riwayat. Ia dinyatakan di sini supaya jaminan yang sebenarnya -
-	// at-least-once - tidak diam-diam berubah menjadi klaim exactly-once.
+	// And the duplicates are real, not ignored: three events arrived twice
+	// across the whole history. It is stated here so the actual guarantee -
+	// at-least-once - does not quietly turn into an exactly-once claim.
 	total := len(dying.seen()) + len(revived.seen())
 	if total != 9 {
 		t.Fatalf("the broker saw %d deliveries in total, want 9 (6 plus the 3 that were re-sent)", total)
 	}
 }
 
-// TestAPartialFailureKeepsTheRestPublished menjaga kegagalan sebagian tidak
-// berubah menjadi kegagalan seluruhnya.
+// TestAPartialFailureKeepsTheRestPublished keeps a partial failure from
+// turning into a total one.
 func TestAPartialFailureKeepsTheRestPublished(t *testing.T) {
 	pool, ctx := setup(t)
 	seedEvents(t, ctx, pool, 5)
@@ -215,7 +217,7 @@ func TestAPartialFailureKeepsTheRestPublished(t *testing.T) {
 		t.Fatalf("%d events are unpublished, want exactly the 2 that failed", left)
 	}
 
-	// Yang gagal tercatat gagal, bukan hanya tertinggal diam-diam.
+	// What failed is recorded as failed, not merely left behind in silence.
 	var attempts int
 	if err := pool.QueryRow(ctx,
 		`SELECT coalesce(max(attempts), 0) FROM outbox WHERE published_at IS NULL`,
@@ -226,8 +228,8 @@ func TestAPartialFailureKeepsTheRestPublished(t *testing.T) {
 		t.Fatalf("the failed rows record %d attempts, want 1", attempts)
 	}
 
-	// Percobaan berikutnya menyelesaikannya, dan TIDAK mengirim ulang yang
-	// sudah berhasil.
+	// The next attempt finishes it, and does NOT resend what already
+	// succeeded.
 	again := newRecorder()
 	if _, err := newRelay(t, pool, again, 10).Once(ctx); err != nil {
 		t.Fatalf("the retry failed: %v", err)
@@ -237,12 +239,13 @@ func TestAPartialFailureKeepsTheRestPublished(t *testing.T) {
 	}
 }
 
-// TestTheMessageKeyIsTheAggregate menjaga alasan keberadaan kunci partisi.
+// TestTheMessageKeyIsTheAggregate guards the reason the partition key exists.
 //
-// Kunci menentukan partisi, dan partisi menentukan urutan. Dengan kunci yang
-// unik per baris - id outbox, misalnya - setiap event mendarat di partisi acak
-// dan urutan antar event satu agregat hilang: "profil diperbarui" bisa tiba
-// setelah "profil dihapus". Tidak ada galat yang muncul saat itu terjadi.
+// The key decides the partition, and the partition decides the ordering. With
+// a key unique per row - the outbox id, say - every event lands on a random
+// partition and the ordering between events of one aggregate is lost: "profile
+// updated" can arrive after "profile deleted". No error appears when that
+// happens.
 func TestTheMessageKeyIsTheAggregate(t *testing.T) {
 	pool, ctx := setup(t)
 
@@ -272,7 +275,7 @@ func TestTheMessageKeyIsTheAggregate(t *testing.T) {
 	}
 }
 
-// keySpy mencatat kunci dan topic tiap pesan.
+// keySpy records the key and topic of every message.
 type keySpy struct {
 	keys   []string
 	topics []string
@@ -288,12 +291,12 @@ func (k *keySpy) Publish(_ context.Context, msgs []kafka.Message) ([]int, error)
 	return ok, nil
 }
 
-// TestNothingIsMarkedSentWhenTheBrokerRefusesEverything adalah penjaga terhadap
-// urutan yang terbalik.
+// TestNothingIsMarkedSentWhenTheBrokerRefusesEverything guards against the
+// reversed order.
 //
-// Kalau baris ditandai terkirim SEBELUM broker mengakuinya, penerbitan yang
-// gagal seluruhnya tetap meninggalkan outbox yang bersih - dan setiap event di
-// dalamnya hilang tanpa jejak. Tidak ada yang akan mencarinya lagi.
+// If rows were marked as sent BEFORE the broker acknowledged them, a publish
+// that failed entirely would still leave a clean outbox - and every event in it
+// would be lost without a trace. Nothing would ever look for them again.
 func TestNothingIsMarkedSentWhenTheBrokerRefusesEverything(t *testing.T) {
 	pool, ctx := setup(t)
 	seedEvents(t, ctx, pool, 4)

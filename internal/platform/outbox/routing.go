@@ -2,12 +2,12 @@ package outbox
 
 import "fmt"
 
-// TopicFor memetakan jenis event ke topic Kafka-nya.
+// TopicFor maps an event kind to its Kafka topic.
 //
-// Pemetaannya eksplisit dan tanpa jalur bawaan. Event yang tidak dikenali
-// menjadi galat, bukan diarahkan ke topic serbaguna: event yang mendarat di
-// topic yang salah akan dibaca konsumen yang tidak mengharapkannya, dan
-// kegagalannya muncul jauh dari sebabnya.
+// The mapping is explicit and has no default branch. An unrecognised event
+// becomes an error, not a message steered to a catch-all topic: an event
+// landing on the wrong topic is read by a consumer that does not expect it,
+// and the failure shows up far from its cause.
 func TopicFor(eventType string) (string, error) {
 	switch eventType {
 	case EventProfileUpdated:
@@ -19,10 +19,9 @@ func TopicFor(eventType string) (string, error) {
 	case EventCoachingProgramUpdate:
 		return TopicCoachingProgram, nil
 
-	// Seluruh permintaan pekerjaan LLM berbagi satu topic. Mereka dikerjakan
-	// armada worker yang sama dan bersaing memperebutkan kuota penyedia yang
-	// sama, jadi memisahkannya per jenis hanya akan membagi antrean yang
-	// sebetulnya satu.
+	// Every LLM job request shares one topic. They are worked by the same
+	// worker fleet and compete for the same provider quota, so splitting them
+	// per kind would only divide a queue that is really one.
 	case EventPersonalizationRequested,
 		EventCurriculumRequested,
 		EventChatReplyRequested,

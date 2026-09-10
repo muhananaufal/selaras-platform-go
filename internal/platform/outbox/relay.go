@@ -13,58 +13,59 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Publisher adalah yang dibutuhkan relay dari broker, dan tidak lebih.
+// Publisher is what the relay needs from the broker, and nothing more.
 //
-// Ia antarmuka supaya relay bisa diuji tanpa broker, dan supaya kegagalan
-// penerbitan bisa dibuat terjadi sesuai kehendak - yang di broker sungguhan
-// justru sulit dilakukan.
+// It is an interface so the relay can be tested without a broker, and so
+// publishing failures can be made to happen on demand - which a real broker
+// makes hard to do.
 type Publisher interface {
-	// Publish mengembalikan indeks pesan yang berhasil diterbitkan.
+	// Publish returns the indexes of the messages that were published
+	// successfully.
 	//
-	// Per pesan, bukan satu keputusan untuk seluruh batch: menyatakan batch
-	// gagal seluruhnya padahal sebagian sudah diterima broker akan mengirim
-	// ulang bagian yang berhasil, dan mengubah setiap kegagalan sementara
-	// menjadi duplikat yang bisa dihindari.
+	// Per message, not one verdict for the whole batch: declaring a batch
+	// failed as a whole when part of it was already accepted by the broker
+	// would resend the successful part, and turn every transient failure into
+	// an avoidable duplicate.
 	Publish(ctx context.Context, msgs []kafka.Message) ([]int, error)
 }
 
 // RelayOptions mengatur ritme relay.
 type RelayOptions struct {
-	// Batch adalah jumlah maksimum event yang diambil sekali putaran.
+	// Batch is the maximum number of events fetched per round.
 	Batch int
 
-	// Interval adalah jeda saat outbox kosong. Saat masih ada isinya, relay
-	// langsung berputar lagi - menunggu di sana hanya menambah keterlambatan
-	// pada pekerjaan yang sudah menunggu.
+	// Interval is the pause while the outbox is empty. While there is still
+	// something in it, the relay goes straight into the next round - waiting
+	// there only adds delay to work that is already waiting.
 	Interval time.Duration
 
-	// PublishTimeout membatasi berapa lama satu penerbitan boleh menunggu.
+	// PublishTimeout bounds how long a single publish may wait.
 	//
-	// Ia ada karena klien Kafka menyangga dan mencoba ulang di dalam: dengan
-	// broker yang mati, ProduceSync tidak mengembalikan galat sampai batas
-	// coba ulangnya sendiri habis - puluhan detik - dan selama itu relay
-	// tergantung tanpa mencatat apa pun. Baris outbox-nya diam di sana dengan
-	// attempts nol dan last_error kosong, dan orang yang menyelidikinya tidak
-	// menemukan penjelasan apa pun.
+	// It exists because the Kafka client buffers and retries internally: with
+	// the broker down, ProduceSync returns no error until its own retry budget
+	// is exhausted - tens of seconds - and for all that time the relay hangs
+	// without recording anything. Its outbox rows sit there with attempts at
+	// zero and last_error empty, and whoever investigates finds no explanation
+	// at all.
 	//
-	// Ini benar-benar terjadi: test ketahanan F3-14 menemukannya dengan
-	// mematikan broker sungguhan.
+	// This really happened: the F3-14 resilience test found it by killing a
+	// real broker.
 	PublishTimeout time.Duration
 }
 
-// Relay memindahkan event dari outbox ke broker.
+// Relay moves events from the outbox to the broker.
 //
-// Jaminannya AT-LEAST-ONCE, dan itu bukan kompromi yang bisa dihindari.
-// Menerbitkan ke broker dan menandai baris terkirim adalah dua sistem yang
-// berbeda; salah satu dari keduanya harus terjadi lebih dulu:
+// Its guarantee is AT-LEAST-ONCE, and that is not a compromise that could
+// have been avoided. Publishing to the broker and marking the row as sent
+// are two different systems; one of them has to happen first:
 //
-//   - Menandai lebih dulu, lalu menerbitkan: proses yang mati di antaranya
-//     kehilangan event itu SELAMANYA. Tidak ada yang akan mencarinya lagi.
-//   - Menerbitkan lebih dulu, lalu menandai: proses yang mati di antaranya
-//     menerbitkannya lagi saat hidup kembali. Duplikat, bukan kehilangan.
+//   - Mark first, then publish: a process that dies in between loses the
+//     event FOREVER. Nothing will ever look for it again.
+//   - Publish first, then mark: a process that dies in between publishes
+//     it again when it comes back. A duplicate, not a loss.
 //
-// Yang kedua yang dipilih. Duplikat bisa ditangani penerimanya lewat kunci
-// idempotensi (F3-05); kehilangan tidak bisa ditangani siapa pun.
+// The second is what was chosen. A duplicate can be handled by its receiver
+// through an idempotency key (F3-05); a loss cannot be handled by anyone.
 type Relay struct {
 	pool pg.Beginner
 	pub  Publisher
@@ -94,11 +95,11 @@ func NewRelay(pool pg.Beginner, pub Publisher, log *slog.Logger, opts RelayOptio
 	return &Relay{pool: pool, pub: pub, log: log, opts: opts}, nil
 }
 
-// Run berputar sampai ctx selesai.
+// Run loops until ctx is done.
 //
-// Ia mengembalikan nil saat dihentikan lewat ctx: penghentian yang diminta
-// bukan kegagalan, dan melaporkannya sebagai galat akan membuat setiap
-// shutdown yang rapi terlihat seperti kerusakan.
+// It returns nil when stopped through ctx: a requested stop is not a
+// failure, and reporting it as an error would make every clean shutdown
+// look like a crash.
 func (r *Relay) Run(ctx context.Context) error {
 	r.log.InfoContext(ctx, "outbox relay started",
 		"batch", r.opts.Batch, "interval", r.opts.Interval)
@@ -110,14 +111,14 @@ func (r *Relay) Run(ctx context.Context) error {
 			r.log.InfoContext(ctx, "outbox relay stopped")
 			return nil
 		case err != nil:
-			// Satu putaran yang gagal tidak mematikan relay. Basis data yang
-			// sedang restart atau broker yang sedang memilih leader adalah
-			// keadaan sementara, dan relay yang mati karenanya meninggalkan
-			// outbox yang menumpuk tanpa ada yang mengurusnya.
+			// One failed round does not kill the relay. A database that is
+			// restarting or a broker that is electing a leader are transient
+			// conditions, and a relay that died because of them would leave an
+			// outbox piling up with nobody attending to it.
 			r.log.ErrorContext(ctx, "outbox relay round failed", "error", err)
 		}
 
-		// Masih ada isinya: berputar lagi tanpa jeda.
+		// Still something in it: go straight into the next round.
 		if err == nil && moved >= r.opts.Batch {
 			continue
 		}
@@ -131,13 +132,12 @@ func (r *Relay) Run(ctx context.Context) error {
 	}
 }
 
-// Once menjalankan satu putaran dan mengembalikan jumlah event yang terkirim.
+// Once runs a single round and returns the number of events published.
 //
-// Seluruhnya di dalam SATU transaksi. Kunci FOR UPDATE SKIP LOCKED yang
-// diambil saat membaca hanya bertahan selama transaksinya, jadi membaca di satu
-// transaksi lalu menandai di transaksi lain akan melepaskan kuncinya di antara
-// keduanya - dan relay kedua akan mengambil event yang sedang dikirim relay
-// pertama.
+// All of it inside ONE transaction. The FOR UPDATE SKIP LOCKED lock taken while
+// reading only lasts for the transaction, so reading in one transaction and
+// marking in another would release the lock between them - and a second relay
+// would pick up the events the first is still sending.
 func (r *Relay) Once(ctx context.Context) (int, error) {
 	var moved int
 
@@ -154,9 +154,9 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 
 		msgs, routable, unroutable := r.toMessages(records)
 
-		// Event yang tidak bisa dirutekan tidak akan pernah bisa dikirim.
-		// Menaikkan penghitungnya membuatnya bisa ditemukan; membiarkannya
-		// membuat relay membacanya lagi setiap putaran, selamanya.
+		// Events that cannot be routed will never be sendable. Bumping their
+		// counter makes them findable; leaving them makes the relay read them
+		// again every round, forever.
 		if len(unroutable) > 0 {
 			if err := reader.MarkFailed(ctx, unroutable, "no topic is defined for this event type"); err != nil {
 				return err
@@ -167,9 +167,10 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 			return nil
 		}
 
-		// Penerbitannya dibatasi waktu, TERPISAH dari transaksinya. Tanpa
-		// batas ini, satu putaran bisa tergantung selama klien Kafka menyangga
-		// dan mencoba ulang di dalam - dan kegagalannya tidak pernah tercatat.
+		// Publishing is time-bounded, SEPARATELY from the transaction. Without
+		// this bound, one round could hang for as long as the Kafka client
+		// buffers and retries internally - and the failure would never be
+		// recorded.
 		pubCtx, cancelPub := context.WithTimeout(ctx, r.opts.PublishTimeout)
 		sent, pubErr := r.pub.Publish(pubCtx, msgs)
 		cancelPub()
@@ -184,10 +185,10 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 		moved = len(published)
 
 		if pubErr != nil {
-			// Yang gagal dicatat, lalu galatnya DITELAN di sini dengan sengaja:
-			// mengembalikannya akan membatalkan transaksi ini, dan bersamanya
-			// tanda terkirim untuk event yang benar-benar sampai. Event itu
-			// akan dikirim ulang tanpa alasan.
+			// The failures are recorded, and then the error is SWALLOWED here on
+			// purpose: returning it would roll back this transaction, and with it
+			// the sent marks for the events that really did arrive. Those would be
+			// resent for no reason.
 			failed := make([]uuid.UUID, 0, len(routable)-len(published))
 			ok := make(map[int]bool, len(sent))
 			for _, i := range sent {
@@ -212,10 +213,10 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 	return moved, nil
 }
 
-// toMessages memetakan baris outbox ke pesan Kafka.
+// toMessages maps outbox rows to Kafka messages.
 //
-// Ia mengembalikan tiga hal: pesannya, id baris yang bersesuaian menurut indeks,
-// dan id baris yang tidak bisa dirutekan sama sekali.
+// It returns three things: the messages, the row ids that correspond to them by
+// index, and the ids of rows that cannot be routed at all.
 func (r *Relay) toMessages(records []Record) (msgs []kafka.Message, routable, unroutable []uuid.UUID) {
 	for _, rec := range records {
 		topic, err := TopicFor(rec.EventType)
@@ -227,8 +228,8 @@ func (r *Relay) toMessages(records []Record) (msgs []kafka.Message, routable, un
 		msgs = append(msgs, kafka.Message{
 			Topic: topic,
 
-			// Kuncinya aggregate_id, sehingga seluruh event satu agregat
-			// mendarat di partisi yang sama dan urutannya terjaga.
+			// The key is aggregate_id, so every event of one aggregate lands on the
+			// same partition and its ordering is preserved.
 			Key:   []byte(rec.AggregateID),
 			Value: rec.Payload,
 			Headers: map[string]string{
