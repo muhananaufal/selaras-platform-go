@@ -7,8 +7,8 @@ lint:
   use:
     - STANDARD
   except:
-    # Nama paket sudah membawa versi (identity.v1), sehingga sufiks pada
-    # nama service menjadi pengulangan tanpa nilai.
+    # The package name already carries the version (identity.v1), so a
+    # suffix on the service name is repetition without value.
     - SERVICE_SUFFIX
   enum_zero_value_suffix: _UNSPECIFIED
   rpc_allow_same_request_response: false
@@ -18,5 +18,5 @@ lint:
 breaking:
   use:
     - FILE
-  # Kontrak dikunci di B1. Breaking change wajib lewat versi paket baru
-  # (identity.v2), bukan dengan mengubah v1 di tempat.
+  # The contracts were locked in B1. A breaking change has to go through a
+  # new package version (identity.v2), not by changing v1 in place.

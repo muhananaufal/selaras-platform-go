@@ -4,13 +4,13 @@ package dashboard.v1;
 
 import "common/v1/common.proto";
 
-// Read-model dasbor.
+// The dashboard read-model.
 //
-// Bukan service CRUD: ia tidak memiliki data sendiri, melainkan
-// memproyeksikan event dari domain lain menjadi satu baris per profil.
-// Di sistem lama, tempat ini ditempati repository-of-repositories dengan
-// cache 15 menit dan empat listener invalidasi manual - dan empat listener
-// itulah gejala yang read-model hapus (ADR-009).
+// Not a CRUD service: it owns no data of its own, but projects events from
+// other domains into one row per profile. In the legacy system this spot
+// was held by a repository-of-repositories with a 15-minute cache and four
+// manual invalidation listeners - and those four listeners are the symptom
+// the read-model removes (ADR-009).
 service Dashboard {
   rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse);
 }
@@ -20,7 +20,8 @@ enum HealthTrend {
   HEALTH_TREND_IMPROVING = 1;
   HEALTH_TREND_STABLE = 2;
   HEALTH_TREND_WORSENING = 3;
-  // Dipakai ketika baru ada satu analisis: arah belum bisa disimpulkan.
+  // Used when there is only one analysis so far: no direction can be
+  // concluded yet.
   HEALTH_TREND_INSUFFICIENT_DATA = 4;
 }
 
@@ -30,11 +31,11 @@ message AssessmentSummary {
   string model_used = 3;
   double risk_percentage = 4;
 
-  // Kategori risiko yang DIHITUNG, bukan yang dikarang model.
+  // The risk category that is COMPUTED, not made up by the model.
   //
-  // Sistem lama membacanya dari laporan LLM, sehingga dasbor pengguna yang
-  // personalisasinya belum tiba menampilkan "N/A" sebagai status kesehatannya.
-  // Nilai ini datang dari SCORE2, jadi ia ada begitu penilaiannya ada.
+  // The legacy system read it from the LLM report, so the dashboard of a user
+  // whose personalisation had not arrived showed "N/A" as their health status.
+  // This value comes from SCORE2, so it exists as soon as the assessment does.
   string risk_category = 5;
 }
 
@@ -55,21 +56,21 @@ message RiskTrendPoint {
 message DashboardView {
   string user_id = 1;
 
-  // Kosong bila pengguna belum pernah melakukan analisis. Gateway
-  // menerjemahkannya menjadi pesan sambutan, sebagaimana perilaku lama.
+  // Empty when the user has never run an analysis. The gateway translates
+  // it into a welcome message, as the legacy behaviour did.
   repeated AssessmentSummary assessment_history = 2;
   optional AssessmentSummary latest_assessment = 3;
 
-  // Kosong bila tidak ada program berjalan. Itu state yang sah.
+  // Empty when no program is running. That is a valid state.
   optional ProgramSummary program = 4;
 
   repeated RiskTrendPoint risk_trend = 5;
   HealthTrend health_trend = 6;
   int32 total_assessments = 7;
 
-  // Kapan proyeksi ini terakhir diperbarui dari event. Dibuka apa adanya
-  // karena read-model bersifat eventually consistent; menyembunyikannya
-  // membuat lag tampak seperti bug.
+  // When this projection was last updated from an event. Exposed as it is
+  // because the read-model is eventually consistent; hiding it makes the
+  // lag look like a bug.
   common.v1.Timestamps timestamps = 8;
 }
 

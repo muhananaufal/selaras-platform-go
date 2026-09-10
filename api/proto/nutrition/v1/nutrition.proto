@@ -4,16 +4,16 @@ package nutrition.v1;
 
 import "common/v1/common.proto";
 
-// Preferensi kuliner dan panduan menu harian.
+// Culinary preferences and daily menu guides.
 //
-// Preferensi dipisah menjadi tabel sendiri lewat expand-contract. Di
-// sistem lama ia menumpang sebagai satu kolom JSON di user_profiles -
-// gejala batas agregat yang bocor.
+// Preferences are split into their own table through expand-contract. In
+// the legacy system they rode along as one JSON column in user_profiles - a
+// symptom of a leaking aggregate boundary.
 service Nutrition {
   rpc GetHubData(GetHubDataRequest) returns (GetHubDataResponse);
   rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
 
-  // Menjawab segera; panduan tiba lewat worker.
+  // Answers immediately; the guide arrives through the worker.
   rpc GenerateDailyGuide(GenerateDailyGuideRequest) returns (GenerateDailyGuideResponse);
 }
 
@@ -73,14 +73,14 @@ enum MealTime {
   MEAL_TIME_DINNER = 4;
 }
 
-// StringList membuat "tidak dikirim" bisa dibedakan dari "dikirim kosong".
+// StringList makes "not sent" distinguishable from "sent empty".
 //
-// proto3 tidak mengenal `optional repeated`: daftar kosong dan daftar yang
-// tidak disertakan terlihat SAMA PERSIS di kawat. Tanpa pembungkus ini,
-// UpdatePreferences tidak punya cara menyatakan "jangan sentuh selera saya",
-// dan satu PATCH yang hanya mengirim alergi akan menghapus selera serta
-// peralatan dapur pengguna. Itu bug yang benar-benar ada di sistem lama (B16),
-// dan ia lahir dari KONTRAKNYA, bukan dari kodenya.
+// proto3 has no `optional repeated`: an empty list and a list not included
+// look EXACTLY THE SAME on the wire. Without this wrapper, UpdatePreferences
+// has no way to say "do not touch my tastes", and one PATCH sending only
+// allergies would wipe the user's tastes and kitchen equipment. That bug
+// really existed in the legacy system (B16), and it was born from its
+// CONTRACT, not its code.
 message StringList {
   repeated string values = 1;
 }
@@ -116,7 +116,8 @@ message DailyMealGuide {
   string user_id = 2;
   string guide_date = 3;
   DailyGuideInput input = 4;
-  // Waktu makan ditentukan jam server saat panduan diminta (D10).
+  // The meal time is determined by the server clock when the guide is
+  // requested (D10).
   MealTime meal_time = 5;
   GuideStatus status = 6;
   optional string guide_json = 7;
@@ -135,11 +136,11 @@ message GetHubDataResponse {
   common.v1.PageResponse page = 3;
 }
 
-// UpdatePreferencesRequest adalah pembaruan PARSIAL.
+// UpdatePreferencesRequest is a PARTIAL update.
 //
-// Bidang yang tidak disertakan DIBIARKAN apa adanya; yang disertakan diganti.
-// Tiap bidang memakai presence eksplisit supaya keduanya bisa dibedakan - lihat
-// StringList di atas untuk alasan lengkapnya.
+// Fields not included are LEFT as they are; fields included are replaced. Every
+// field uses explicit presence so the two can be told apart - see StringList
+// above for the full reason.
 message UpdatePreferencesRequest {
   string user_id = 1;
   optional string allergies = 2;

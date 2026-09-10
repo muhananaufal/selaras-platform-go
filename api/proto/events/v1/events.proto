@@ -5,37 +5,39 @@ package events.v1;
 import "common/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
-// Amplop yang sama untuk setiap event yang melintasi broker.
+// The same envelope for every event crossing the broker.
 //
-// Pengiriman bersifat at-least-once, jadi setiap konsumen WAJIB idempoten
-// (ADR-004). event_id dan idempotency_key ada supaya konsumen bisa
-// mengenali pengulangan tanpa menebak dari isi payload.
+// Delivery is at-least-once, so every consumer MUST be idempotent
+// (ADR-004). event_id and idempotency_key exist so consumers can recognise
+// a repeat without guessing from the payload content.
 message Envelope {
   string event_id = 1;
   google.protobuf.Timestamp occurred_at = 2;
 
-  // Identitas dibawa di setiap event supaya konsumen tidak perlu
-  // memanggil identity atau profile untuk menafsirkannya (ADR-007).
+  // The identity travels in every event so consumers need not call identity
+  // or profile to interpret it (ADR-007).
   common.v1.Identity identity = 3;
 
-  // Diisi bila event ini lahir dari permintaan yang membawa kunci
-  // idempotensi. Kosong untuk event yang dipicu sistem.
+  // Set when this event was born from a request carrying an idempotency
+  // key. Empty for system-triggered events.
   optional common.v1.IdempotencyKey idempotency_key = 4;
 
-  // Untuk menyambungkan event ke trace yang melahirkannya. Tanpa ini,
-  // jejak sebuah permintaan terputus begitu ia masuk broker.
+  // For linking the event to the trace that gave birth to it. Without it,
+  // the trail of a request breaks as soon as it enters the broker.
   optional string trace_id = 5;
 
-  // Versi skema payload. Konsumen menolak versi yang tidak dikenalnya
-  // alih-alih menafsirkannya sembarangan.
+  // The payload schema version. Consumers refuse a version they do not know
+  // instead of interpreting it arbitrarily.
   int32 schema_version = 6;
 
-  // Konteks trace W3C (`traceparent`) dari transaksi yang menulis event ini.
+  // The W3C trace context (`traceparent`) of the transaction that wrote this
+  // event.
   //
-  // trace_id saja tidak cukup untuk menyambung: konsumen butuh span induk
-  // dan flag sampling supaya span-nya menjadi anak dari permintaan yang
-  // melahirkannya, bukan trace baru yang kebetulan berbagi id. Diisi oleh
-  // penulis outbox; kosong berarti event lahir tanpa trace aktif.
+  // trace_id alone is not enough to link up: the consumer needs the parent
+  // span and the sampling flag so its span becomes a child of the request
+  // that gave birth to it, not a new trace that happens to share an id.
+  // Filled in by the outbox writer; empty means the event was born without
+  // an active trace.
   optional string trace_parent = 7;
 
   oneof payload {
@@ -56,8 +58,8 @@ message Envelope {
   }
 }
 
-// Disiarkan setiap kali demografi berubah. Assessment menyimpan salinannya
-// supaya tidak memanggil profile pada setiap kalkulasi.
+// Announced whenever the demographics change. Assessment keeps a copy so it
+// need not call profile on every computation.
 message ProfileUpdated {
   string user_profile_id = 1;
   optional string date_of_birth = 2;
@@ -65,16 +67,16 @@ message ProfileUpdated {
   optional string country_of_residence = 4;
   string language = 5;
 
-  // user_id WAJIB ada, dan alasannya sama dengan ADR-022 dan ADR-023.
+  // user_id is REQUIRED, and the reason is the same as ADR-022 and ADR-023.
   //
-  // Konsumennya - cache profil di assessment-svc - mencari lewat user_id,
-  // karena itulah identitas yang sudah terverifikasi di setiap permintaan.
-  // Event yang hanya membawa user_profile_id akan menghasilkan cache yang
-  // tidak bisa dicari: assessment harus memanggil profile-svc lebih dulu untuk
-  // menerjemahkan user_id menjadi user_profile_id, dan panggilan itulah yang
-  // seharusnya dihilangkan cache ini.
+  // Its consumer - the profile cache in assessment-svc - looks up by user_id,
+  // because that is the identity already verified on every request. An event
+  // carrying only user_profile_id would produce a cache that cannot be looked
+  // up: assessment would have to call profile-svc first to translate user_id
+  // into user_profile_id, and that call is precisely what this cache is meant
+  // to remove.
   //
-  // Ditambahkan saat F2-16, sebelum ada yang membangun apa pun di atasnya.
+  // Added during F2-16, before anything was built on top of it.
   string user_id = 6;
 }
 
@@ -84,18 +86,18 @@ message AssessmentCompleted {
   double risk_percentage = 3;
   string model_used = 4;
 
-  // user_id WAJIB ada, alasannya sama dengan CoachingProgramUpdated di bawah:
-  // read-model dasbor menyimpan satu baris per pengguna dan harus tahu baris
-  // siapa yang diperbarui.
+  // user_id is REQUIRED, for the same reason as CoachingProgramUpdated below:
+  // the dashboard read-model keeps one row per user and has to know whose row
+  // to update.
   string user_id = 5;
 
-  // Kategori risiko yang dihitung, bukan yang dikarang model.
+  // The computed risk category, not one made up by the model.
   //
-  // Dasbor menampilkannya sebagai "status terkini". Di sistem lama ia dibaca
-  // dari laporan LLM (`result_details.riskSummary.riskCategory`), sehingga
-  // dasbor pengguna yang personalisasinya belum tiba - atau gagal - menampilkan
-  // "N/A". Nilai ini datang dari SCORE2 yang sudah selesai dihitung, jadi ia
-  // selalu ada begitu penilaiannya ada.
+  // The dashboard shows it as the "current status". In the legacy system it was
+  // read from the LLM report (`result_details.riskSummary.riskCategory`), so
+  // the dashboard of a user whose personalisation had not arrived - or had
+  // failed - showed "N/A". This value comes from the already computed SCORE2,
+  // so it is always there as soon as the assessment is.
   string risk_category = 6;
 }
 
@@ -117,32 +119,34 @@ message CoachingProgramUpdated {
   string slug = 2;
   string status = 3;
 
-  // OPTIONAL, dan itu bukan kelalaian.
+  // OPTIONAL, and that is not an oversight.
   //
-  // Event ini terbit dari dua tempat. Yang satu - saat program dibuat,
-  // dihidupkan, atau dijeda - tidak menghitung tugas sama sekali; yang lain
-  // terbit justru karena sebuah tugas ditandai selesai. Tanpa presence
-  // eksplisit, "tidak dihitung" dan "nol persen" terlihat SAMA di kawat, dan
-  // dasbor yang menjeda programnya akan melompat kembali ke nol persen dari
-  // angka yang sudah benar.
+  // This event is published from two places. One - when a program is
+  // created, resumed, or paused - does not count tasks at all; the other is
+  // published precisely because a task was marked done. Without explicit
+  // presence, "not counted" and "zero percent" look the SAME on the wire,
+  // and a dashboard whose program was paused would jump back to zero percent
+  // from a number that was already right.
   //
-  // Ini bentuk lain dari B16, dan pelajarannya sama: nilai nol proto3 bukan
-  // "tidak ada".
+  // This is another form of B16, and the lesson is the same: a proto3 zero
+  // value is not "absent".
   optional double completion_percentage = 4;
 
-  // user_id WAJIB ada, dan alasannya sama dengan ADR-022, ADR-023, dan ADR-024.
+  // user_id is REQUIRED, and the reason is the same as ADR-022, ADR-023, and
+  // ADR-024.
   //
-  // Konsumennya - read-model dasbor - menyimpan SATU BARIS PER PENGGUNA, jadi
-  // ia harus tahu baris siapa yang diperbarui. Event yang hanya membawa
-  // program_id memaksa dasbor memanggil coaching-svc untuk menerjemahkannya,
-  // dan panggilan itulah yang seharusnya dihilangkan read-model.
+  // Its consumer - the dashboard read-model - keeps ONE ROW PER USER, so it has
+  // to know whose row to update. An event carrying only program_id would force
+  // the dashboard to call coaching-svc to translate it, and that call is
+  // precisely what the read-model is meant to remove.
   string user_id = 5;
 
-  // Judul dan kemajuan program, untuk ditampilkan tanpa memanggil siapa pun.
+  // The program's title and progress, for display without calling anyone.
   //
-  // Dasbor menampilkan "hari ke-N dari M" persis seperti sistem lama. Kalau
-  // angka itu tidak ikut, dasbor harus menghitungnya sendiri dari tanggal
-  // mulai - dan perhitungan yang sama di dua tempat akan menyimpang.
+  // The dashboard shows "day N of M" exactly as the legacy system did. If
+  // those numbers did not come along, the dashboard would have to compute
+  // them itself from the start date - and the same computation in two places
+  // will drift.
   string title = 6;
   int32 current_day = 7;
   int32 total_days = 8;
@@ -166,7 +170,7 @@ message ChatReplyRequested {
   string conversation_id = 1;
   string message_id = 2;
   string job_id = 3;
-  // Dipakai juga untuk thread coaching; kosong bila percakapan umum.
+  // Also used for coaching threads; empty for a general conversation.
   optional string coaching_thread_id = 4;
 }
 
@@ -180,18 +184,17 @@ message MealGuideRequested {
   string guide_id = 1;
   string job_id = 2;
 
-  // Konteks lengkap yang dirakit nutrition-svc, sebagai JSON.
+  // The full context assembled by nutrition-svc, as JSON.
   //
-  // Ia IKUT di dalam event, tidak dibiarkan sebagai isian kosong yang
-  // dilengkapi belakangan seperti permintaan LLM lainnya (lihat F3-10).
-  // Alasannya bukan keseragaman: konteks ini memuat CATATAN ALERGI pengguna,
-  // dan prompt yang berangkat tanpanya akan meminta model menyarankan makanan
-  // kepada orang yang alergi terhadapnya. Penanda "belum dibawa event" yang
-  // jujur pun tidak menolong - yang dihasilkan tetap saran makanan yang
-  // terlihat sah.
+  // It COMES ALONG inside the event, rather than being left as a blank filled
+  // in later like the other LLM requests (see F3-10). The reason is not
+  // uniformity: this context holds the user's ALLERGY NOTE, and a prompt that
+  // leaves without it would ask the model to suggest food to someone allergic
+  // to it. Even an honest "not yet in the event" marker does not help - what
+  // comes out is still food advice that looks valid.
   //
-  // Isinya sama persis dengan yang disimpan di kolom generation_context,
-  // sehingga sebuah saran selalu bisa dijelaskan kembali dari barisnya sendiri.
+  // Its content is exactly what is stored in the generation_context column, so
+  // a suggestion can always be explained again from its own row.
   string context_json = 3;
 }
 
@@ -202,8 +205,8 @@ message MealGuideCompleted {
   string prompt_version = 4;
 }
 
-// Awal saga penghapusan akun. Setiap unit domain mengonsumsinya, menghapus
-// datanya, lalu membalas dengan konfirmasi (ADR-011).
+// The start of the account deletion saga. Every domain unit consumes it,
+// deletes its data, then replies with a confirmation (ADR-011).
 message UserDeletionRequested {
   string saga_id = 1;
   string user_id = 2;
@@ -212,14 +215,15 @@ message UserDeletionRequested {
 
 message UserDeletionConfirmed {
   string saga_id = 1;
-  // Nama unit yang mengonfirmasi, supaya saga tahu siapa yang belum.
+  // The name of the confirming unit, so the saga knows who has not yet.
   string service = 2;
   bool succeeded = 3;
   optional string failure_reason = 4;
 }
 
-// Diterbitkan setelah percobaan terakhir gagal. Pesan aslinya masuk
-// dead-letter; event ini yang membuat kegagalannya terlihat oleh domain.
+// Published after the last attempt failed. The original message goes to the
+// dead-letter queue; this event is what makes the failure visible to the
+// domain.
 message LlmJobFailed {
   string job_id = 1;
   string kind = 2;

@@ -4,31 +4,30 @@ package identity.v1;
 
 import "common/v1/common.proto";
 
-// Autentikasi dan kredensial. Data demografis tinggal di profile.v1:
-// keduanya menjawab pertanyaan yang berbeda, dan user_profiles adalah hub
-// yang di-FK seluruh domain sementara users hampir tidak dipakai siapa pun
-// kecuali gateway (ADR-002).
+// Authentication and credentials. Demographic data lives in profile.v1: the
+// two answer different questions, and user_profiles is the hub every domain
+// FKs to while users is hardly used by anyone except the gateway (ADR-002).
 service Identity {
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 
-  // Dua langkah, karena sistem lama tidak punya langkah pertama sama
-  // sekali: endpoint resetnya publik dan langsung mengganti kata sandi
-  // siapa pun yang emailnya diketahui (temuan S1).
+  // Two steps, because the legacy system had no first step at all: its
+  // reset endpoint was public and directly changed the password of anyone
+  // whose email was known (finding S1).
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
   rpc ConfirmPasswordReset(ConfirmPasswordResetRequest) returns (ConfirmPasswordResetResponse);
 
   rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
   rpc ExchangeSocialToken(ExchangeSocialTokenRequest) returns (ExchangeSocialTokenResponse);
 
-  // Dipanggil gateway HANYA saat cache pencabutan tidak tahu, bukan di
-  // setiap request. Gateway memverifikasi tanda tangan token sendiri
-  // dengan kunci publik (ADR-020); yang tidak bisa ia ketahui sendiri
-  // hanyalah generasi token yang sedang berlaku.
+  // Called by the gateway ONLY when the revocation cache does not know, not
+  // on every request. The gateway verifies the token signature itself with
+  // the public key (ADR-020); the only thing it cannot know on its own is
+  // the token generation currently in effect.
   //
-  // Menggantikan VerifyToken, yang menempatkan identity-svc di jalur
-  // terpanas - persis panggilan jaringan wajib yang dihapus ADR-007.
+  // Replaces VerifyToken, which put identity-svc on the hottest path -
+  // exactly the mandatory network call ADR-007 removed.
   rpc GetTokenGeneration(GetTokenGenerationRequest) returns (GetTokenGenerationResponse);
 }
 
@@ -46,9 +45,9 @@ message User {
   common.v1.Timestamps timestamps = 5;
 }
 
-// Token akses berumur pendek beserta klaimnya. Klaim membawa
-// user_profile_id supaya tidak ada lookup per request (ADR-007); nilainya
-// diambil sekali saat penerbitan.
+// A short-lived access token together with its claims. The claims carry
+// user_profile_id so there is no per-request lookup (ADR-007); the value is
+// fetched once at issuance.
 message TokenPair {
   string access_token = 1;
   int64 expires_in_seconds = 2;
@@ -70,8 +69,8 @@ message LoginRequest {
   string password = 2;
 }
 
-// Login mencabut seluruh token lama milik pengguna: satu sesi per
-// pengguna, sesuai perilaku sistem lama yang wajib dipertahankan (D1).
+// Login revokes all of the user's old tokens: one session per user,
+// matching the legacy behaviour that had to be kept (D1).
 message LoginResponse {
   User user = 1;
   TokenPair token = 2;
@@ -88,8 +87,8 @@ message RequestPasswordResetRequest {
   string email = 1;
 }
 
-// Sengaja tidak memberi tahu apakah emailnya terdaftar. Membedakan
-// keduanya mengubah endpoint ini menjadi alat enumerasi akun.
+// Deliberately does not say whether the email is registered. Telling the
+// two apart turns this endpoint into an account enumeration tool.
 message RequestPasswordResetResponse {}
 
 message ConfirmPasswordResetRequest {
@@ -99,8 +98,8 @@ message ConfirmPasswordResetRequest {
 
 message ConfirmPasswordResetResponse {}
 
-// Kata sandi wajib diverifikasi sebelum penghapusan dimulai. Sistem lama
-// memintanya di validasi lalu tidak pernah memeriksanya (temuan S2).
+// The password has to be verified before deletion starts. The legacy system
+// asked for it in validation and then never checked it (finding S2).
 message DeleteAccountRequest {
   string user_id = 1;
   string password = 2;
@@ -110,18 +109,18 @@ message DeleteAccountResponse {
   string saga_id = 1;
 }
 
-// id_token adalah ID token OIDC dari penyedia, bukan access token-nya.
-// Ia ditandatangani penyedia, sehingga klaim email_verified sampai ke
-// identity-svc dengan tanda tangannya utuh - identity-svc tidak perlu
-// mempercayai pemanggilnya soal alamat siapa yang sudah terbukti.
+// id_token is the OIDC ID token from the provider, not its access token. It
+// is signed by the provider, so the email_verified claim reaches
+// identity-svc with its signature intact - identity-svc need not trust its
+// caller about whose address has been proven.
 message ExchangeSocialTokenRequest {
   string provider = 1;
   string id_token = 2;
 }
 
-// Menautkan akun, tidak pernah menimpanya. Sistem lama memakai
-// updateOrCreate berdasarkan email, sehingga login sosial menimpa kata
-// sandi akun yang sudah ada (temuan S5).
+// Links accounts, never overwrites them. The legacy system used
+// updateOrCreate by email, so a social login overwrote the password of an
+// existing account (finding S5).
 message ExchangeSocialTokenResponse {
   User user = 1;
   TokenPair token = 2;

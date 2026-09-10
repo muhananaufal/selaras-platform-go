@@ -4,25 +4,25 @@ package profile.v1;
 
 import "common/v1/common.proto";
 
-// Data demografis pengguna. Berdiri sendiri karena user_profiles adalah
-// hub yang di-FK oleh seluruh domain, sementara users hanya gerbang
-// autentikasi (ADR-002).
+// The user's demographic data. Stands on its own because user_profiles is
+// the hub every domain FKs to, while users is only the authentication gate
+// (ADR-002).
 //
-// risk_region sengaja TIDAK ada di sini. Ia konsep klinis, bukan
-// demografis: profil menyimpan negara, assessment yang memetakannya lewat
-// tabel kalibrasi SCORE2, dan gateway yang menggabungkan keduanya untuk
-// kontrak REST (ADR-002 aturan 3).
+// risk_region is deliberately NOT here. It is a clinical concept, not a
+// demographic one: the profile stores the country, assessment maps it
+// through the SCORE2 calibration table, and the gateway joins the two for
+// the REST contract (ADR-002 rule 3).
 service Profile {
   rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
   rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
 
-  // Dipanggil identity-svc setelah pendaftaran. Bersifat best-effort:
-  // kegagalannya tidak menggagalkan pendaftaran, karena pengguna tanpa
-  // profil adalah state yang memang sudah sah (ADR-002 aturan 1).
+  // Called by identity-svc after registration. Best-effort: its failure
+  // does not fail the registration, because a user without a profile is a
+  // state that is already valid (ADR-002 rule 1).
   rpc CreateEmptyProfile(CreateEmptyProfileRequest) returns (CreateEmptyProfileResponse);
 
-  // Dipakai identity-svc saat menerbitkan token, sekali per login dan
-  // bukan sekali per request (ADR-007).
+  // Used by identity-svc when issuing a token, once per login and not once
+  // per request (ADR-007).
   rpc ResolveProfileId(ResolveProfileIdRequest) returns (ResolveProfileIdResponse);
 }
 
@@ -32,18 +32,17 @@ enum Sex {
   SEX_FEMALE = 2;
 }
 
-// Seluruh field yang boleh kosong ditandai optional dan dipetakan apa
-// adanya. Sistem lama menjalankan Carbon::parse(null) pada tanggal lahir
-// yang belum diisi, sehingga umur tampil 0 dan tanggal lahir tampil hari
-// ini (temuan B6).
+// Every field that may be empty is marked optional and mapped as it is. The
+// legacy system ran Carbon::parse(null) on a date of birth not yet filled
+// in, so the age showed as 0 and the date of birth as today (finding B6).
 message UserProfile {
   string id = 1;
   string user_id = 2;
   optional string first_name = 3;
   optional string last_name = 4;
 
-  // Format ISO-8601 tanggal saja: 1990-05-17. Bukan Timestamp, karena
-  // tanggal lahir tidak punya jam dan tidak punya zona waktu.
+  // ISO-8601 date-only format: 1990-05-17. Not a Timestamp, because a date
+  // of birth has no time and no time zone.
   optional string date_of_birth = 5;
 
   Sex sex = 6;
@@ -52,16 +51,16 @@ message UserProfile {
   common.v1.Timestamps timestamps = 9;
 }
 
-// Berkunci user_id, bukan user_profile_id.
+// Keyed on user_id, not user_profile_id.
 //
-// Pemanggilnya selalu punya user_id dari klaim token, sementara
-// user_profile_id bisa kosong - dan justru pengguna yang profilnya belum
-// ada adalah yang paling butuh endpoint ini. Biayanya sama: satu lewat
-// kunci primer, satu lewat indeks unik.
+// The caller always has user_id from the token claims, while
+// user_profile_id may be empty - and it is precisely the user whose profile
+// does not exist yet who needs this endpoint the most. The cost is the
+// same: one through the primary key, one through a unique index.
 //
-// Klaim user_profile_id di token tetap berguna, tetapi bukan untuk
-// service ini: ia dipakai unit lain yang meng-FK user_profiles supaya
-// tidak perlu bertanya ke profile-svc lebih dulu (ADR-007).
+// The user_profile_id claim in the token remains useful, but not for this
+// service: it is used by the other units that FK user_profiles so they need
+// not ask profile-svc first (ADR-007).
 message GetProfileRequest {
   string user_id = 1;
 }
@@ -70,11 +69,12 @@ message GetProfileResponse {
   UserProfile profile = 1;
 }
 
-// Membuat profil bila belum ada, seperti updateOrCreate di sistem lama.
+// Creates the profile if it does not exist, like updateOrCreate in the
+// legacy system.
 //
-// Tanpa itu, pengguna yang pembuatan profilnya gagal saat mendaftar tidak
-// akan pernah bisa punya profil - padahal ADR-002 aturan 1 menyatakan
-// keadaan itu memang boleh terjadi dan harus bisa dipulihkan.
+// Without that, a user whose profile creation failed at registration could
+// never have a profile - even though ADR-002 rule 1 says that state may
+// happen and has to be recoverable.
 message UpdateProfileRequest {
   string user_id = 1;
   optional string first_name = 2;
@@ -101,7 +101,7 @@ message ResolveProfileIdRequest {
   string user_id = 1;
 }
 
-// Kosong bila profil belum ada. Bukan galat.
+// Empty when the profile does not exist yet. Not an error.
 message ResolveProfileIdResponse {
   string user_profile_id = 1;
 }

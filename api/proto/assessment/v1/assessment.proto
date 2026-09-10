@@ -4,32 +4,32 @@ package assessment.v1;
 
 import "common/v1/common.proto";
 
-// Penilaian risiko kardiovaskular berbasis SCORE2, SCORE2-OP, dan
+// Cardiovascular risk assessment based on SCORE2, SCORE2-OP, and
 // SCORE2-Diabetes.
 //
-// Seluruh jawaban proksi dimodelkan sebagai enum bernilai semantik, bukan
-// string berbahasa Indonesia seperti di sistem lama. String itu detail
-// presentasi; memasukkannya ke kontrak berarti satu salah ketik diam-diam
-// menghasilkan skor yang berbeda. Pemetaan enum ke nilai lama hidup di
-// adapter dan diuji terhadap golden vector.
+// Every proxy answer is modelled as a semantically valued enum, not an
+// Indonesian string as in the legacy system. Those strings are a
+// presentation detail; putting them into the contract means one typo
+// silently yields a different score. The mapping from enum to legacy value
+// lives in the adapter and is tested against golden vectors.
 service Assessment {
-  // Mengembalikan skor numerik dengan segera. Personalisasi naratif
-  // dikerjakan terpisah karena ia memanggil LLM.
+  // Returns the numeric score immediately. The narrative personalisation is
+  // done separately because it calls the LLM.
   rpc StartAssessment(StartAssessmentRequest) returns (StartAssessmentResponse);
 
-  // Menjawab segera: pekerjaan dititipkan lewat outbox, bukan dikerjakan
-  // di dalam request seperti sistem lama.
+  // Answers immediately: the work is handed to the outbox, not done inside
+  // the request as in the legacy system.
   rpc RequestPersonalization(RequestPersonalizationRequest) returns (RequestPersonalizationResponse);
 
   rpc GetAssessment(GetAssessmentRequest) returns (GetAssessmentResponse);
   rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse);
 
-  // Memetakan negara tempat tinggal ke wilayah kalibrasi SCORE2.
+  // Maps the country of residence to its SCORE2 calibration region.
   //
-  // Ia ada di sini, bukan di profile-svc, karena risk_region adalah konsep
-  // KLINIS: ia bagian dari kalibrasi model, bukan data demografis
-  // (ADR-002 aturan 3). profile-svc menyimpan negaranya; yang tahu artinya
-  // bagi risiko adalah service ini.
+  // It lives here, not in profile-svc, because risk_region is a CLINICAL
+  // concept: it is part of the model calibration, not demographic data
+  // (ADR-002 rule 3). profile-svc stores the country; the one that knows
+  // what it means for risk is this service.
   rpc ResolveRiskRegion(ResolveRiskRegionRequest) returns (ResolveRiskRegionResponse);
 }
 
@@ -93,7 +93,7 @@ enum SaltHabit {
 message SbpProxy {
   bool family_hypertension = 1;
   SleepPattern sleep_pattern = 2;
-  // Pilihan ganda; jumlah yang dipilih yang menentukan bobotnya.
+  // Multiple choice; the number selected determines the weight.
   repeated SaltHabit salt_habits = 3;
   StressResponse stress_response = 4;
   BodyShape body_shape = 5;
@@ -173,8 +173,8 @@ message Hba1cProxy {
   TreatmentAdherence treatment_adherence = 2;
 }
 
-// Tiap parameter klinis punya dua mode. Bila MANUAL, nilai terukur yang
-// dipakai; bila PROXY, nilainya diestimasi dari kuesioner.
+// Every clinical parameter has two modes. With MANUAL, the measured value
+// is used; with PROXY, the value is estimated from the questionnaire.
 message ClinicalParameter {
   InputMode mode = 1;
   optional double measured_value = 2;
@@ -193,17 +193,17 @@ message AssessmentInput {
   ClinicalParameter hdl_cholesterol = 7;
   HdlProxy hdl_proxy = 8;
 
-  // Empat field berikut hanya dibaca bila has_diabetes bernilai true.
+  // The next four fields are read only when has_diabetes is true.
   optional int32 age_at_diabetes_diagnosis = 9;
   ClinicalParameter hba1c = 10;
   Hba1cProxy hba1c_proxy = 11;
   ClinicalParameter serum_creatinine = 12;
   SerumCreatinineProxy serum_creatinine_proxy = 13;
 
-  // Kebiasaan olahraga dipakai dua estimator sekaligus, dan di sini hanya
-  // ada SATU sumbernya. Sistem lama membacanya dari dua tempat berbeda
-  // dengan dua nilai berbeda, sehingga potongan pada HbA1c tidak pernah
-  // berlaku (temuan B12).
+  // The exercise habit is used by two estimators at once, and here there is
+  // only ONE source for it. The legacy system read it from two different
+  // places with two different values, so the HbA1c deduction never applied
+  // (finding B12).
   ExerciseHabit exercise = 14;
 }
 
@@ -222,9 +222,9 @@ enum PersonalizationStatus {
   PERSONALIZATION_STATUS_FAILED = 4;
 }
 
-// Nilai klinis yang benar-benar masuk ke kalkulator, baik terukur maupun
-// hasil estimasi. Disimpan apa adanya supaya sebuah skor lama tetap bisa
-// dijelaskan bertahun-tahun kemudian.
+// The clinical values that actually entered the calculator, whether
+// measured or estimated. Stored as they are so an old score can still be
+// explained years later.
 message ResolvedClinicalValues {
   int32 age = 1;
   string sex = 2;
@@ -251,12 +251,12 @@ message RiskAssessment {
   common.v1.Timestamps timestamps = 10;
 }
 
-// Berkunci user_id, bukan user_profile_id (ADR-023).
+// Keyed on user_id, not user_profile_id (ADR-023).
 //
-// Service ini TIDAK memakai identitas yang sekadar dikirimkan sebagai dasar
-// otorisasi: user_profile_id yang dipercaya begitu saja akan membiarkan
-// penilaian ditulis ke profil orang lain oleh apa pun yang bisa menjangkau
-// jaringan internal. Ia menanyakannya sendiri ke profile-svc.
+// This service does NOT use an identity that is merely sent along as the
+// basis for authorisation: a user_profile_id trusted at face value would
+// let an assessment be written to someone else's profile by anything that
+// can reach the internal network. It asks profile-svc itself.
 message StartAssessmentRequest {
   string user_id = 1;
   AssessmentInput input = 2;
@@ -272,7 +272,7 @@ message RequestPersonalizationRequest {
   common.v1.IdempotencyKey idempotency_key = 3;
 }
 
-// Dikembalikan segera; hasilnya diambil lewat GetAssessment.
+// Returned immediately; the result is fetched through GetAssessment.
 message RequestPersonalizationResponse {
   string job_id = 1;
   PersonalizationStatus status = 2;
@@ -301,10 +301,10 @@ message ResolveRiskRegionRequest {
   string country_of_residence = 1;
 }
 
-// Negara yang tidak ada di tabel kalibrasi menghasilkan wilayah "high".
-// Itu pilihan konservatif yang dipertahankan dari sistem lama: menurunkannya
-// akan menggeser angka risiko setiap pengguna dari negara yang belum
-// terdaftar, ke arah yang lebih rendah dari yang bisa dibuktikan.
+// A country not in the calibration table yields the "high" region. That is a
+// conservative choice kept from the legacy system: lowering it would shift
+// the risk number of every user from an unlisted country in a direction
+// lower than can be proven.
 message ResolveRiskRegionResponse {
   string risk_region = 1;
 }

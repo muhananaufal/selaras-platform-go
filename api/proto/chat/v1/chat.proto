@@ -4,9 +4,9 @@ package chat.v1;
 
 import "common/v1/common.proto";
 
-// Percakapan dengan asisten umum, terpisah dari diskusi di dalam program
-// coaching. Agregatnya memang berbeda: percakapan berdiri sendiri,
-// sementara thread selalu milik sebuah program.
+// Conversations with the general assistant, separate from discussions
+// inside a coaching program. The aggregates are indeed different: a
+// conversation stands alone, while a thread always belongs to a program.
 service Chat {
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
   rpc CreateConversation(CreateConversationRequest) returns (CreateConversationResponse);
@@ -14,7 +14,7 @@ service Chat {
   rpc UpdateConversationTitle(UpdateConversationTitleRequest) returns (UpdateConversationTitleResponse);
   rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
 
-  // Menjawab segera; balasan tiba lewat worker.
+  // Answers immediately; the reply arrives through the worker.
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
 }
 
@@ -35,11 +35,11 @@ message Conversation {
   string id = 1;
   string slug = 2;
 
-  // Pemilik percakapan adalah PENGGUNA, bukan profilnya (ADR-024).
+  // The owner of a conversation is the USER, not their profile (ADR-024).
   //
-  // Sistem lama sudah memakai user_id di ChatController; yang keliru adalah
-  // CoachingController yang memakai profile->id. Keduanya bersama membentuk
-  // temuan S9, dan kontrak ini semula justru mengulangi sisi yang keliru.
+  // The legacy system already used user_id in ChatController; the wrong one
+  // was CoachingController, which used profile->id. Together the two form
+  // finding S9, and this contract initially repeated the wrong side.
   string user_id = 3;
   string title = 4;
   optional string last_message_snippet = 5;
