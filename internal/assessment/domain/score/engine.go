@@ -7,21 +7,21 @@ import (
 )
 
 var (
-	// ErrUnknownSex ditolak sebelum apa pun dihitung: model tidak punya
-	// koefisien untuk nilai lain, dan melanjutkan akan menghasilkan angka
-	// yang tampak masuk akal dari koefisien nol.
+	// ErrUnknownSex is refused before anything is computed: the models have no
+	// coefficients for other values, and continuing would produce a
+	// plausible-looking number from zero coefficients.
 	ErrUnknownSex = errors.New("the risk model has no coefficients for this sex")
 
-	// ErrMissingDiabetesInput menandai penilaian diabetes yang kekurangan
-	// masukan wajibnya.
+	// ErrMissingDiabetesInput marks a diabetes assessment that lacks its
+	// required inputs.
 	ErrMissingDiabetesInput = errors.New("missing an input the diabetes model requires")
 
-	// ErrDiabetesAgeAfterCurrentAge menolak usia diagnosis yang melampaui
-	// usia pengguna sekarang (D6).
+	// ErrDiabetesAgeAfterCurrentAge refuses an age at diagnosis beyond the
+	// user's current age (D6).
 	ErrDiabetesAgeAfterCurrentAge = errors.New("the age at diabetes diagnosis is after the current age")
 )
 
-// Request adalah satu permintaan perhitungan.
+// Request is one computation request.
 type Request struct {
 	Sex                string
 	CountryOfResidence string
@@ -29,12 +29,12 @@ type Request struct {
 	Answers            map[string]any
 }
 
-// ClinicalInputs adalah nilai yang benar-benar masuk ke model, entah diketik
-// pengguna atau ditebak dari proksi.
+// ClinicalInputs are the values that actually enter the model, whether typed
+// by the user or estimated from proxies.
 //
-// Ia ikut dikembalikan, bukan disimpan diam-diam, karena inilah yang membuat
-// hasilnya bisa diperiksa: angka risiko tanpa masukannya tidak bisa
-// dibantah siapa pun.
+// They are returned alongside the result rather than stored silently,
+// because that is what makes the result checkable: a risk number without its
+// inputs cannot be disputed by anyone.
 type ClinicalInputs struct {
 	Age         int
 	SexLabel    string
@@ -49,18 +49,18 @@ type ClinicalInputs struct {
 	SCr                    float64
 }
 
-// Result adalah hasil lengkap satu perhitungan.
+// Result is the complete result of one computation.
 type Result struct {
 	RiskRegion     string
 	ModelUsed      string
 	RiskPercent    float64
 	ClinicalInputs ClinicalInputs
 
-	// Category dihitung di sini, bukan diminta dari model bahasa (B19).
+	// Category is computed here, not requested from the language model (B19).
 	//
-	// Ia ikut ke dalam Result karena usianya ada di sini dan tidak di tempat
-	// lain: pemanggil yang menghitungnya sendiri harus membawa usia ke sana,
-	// dan itu cara termudah membuat dua jawaban berbeda untuk satu penilaian.
+	// It is part of Result because the age is here and nowhere else: a caller
+	// computing it itself would have to carry the age there, and that is the
+	// easiest way to end up with two different answers for one assessment.
 	Category Category
 }
 
@@ -73,12 +73,12 @@ func NewEngine(constants Constants) *Engine {
 	return &Engine{constants: constants}
 }
 
-// Calculate memilih model dan menghitung risikonya.
+// Calculate chooses the model and computes the risk.
 //
-// Padanan processRiskCalculation. Urutan pemilihannya dipertahankan persis:
-// diabetes menang atas usia, sehingga pengguna berusia 75 dengan diabetes
-// memakai SCORE2-Diabetes, bukan SCORE2-OP. Membalik urutannya mengubah
-// angka bagi seluruh kelompok itu.
+// The counterpart of processRiskCalculation. The selection order is
+// preserved exactly: diabetes wins over age, so a 75-year-old with diabetes
+// uses SCORE2-Diabetes, not SCORE2-OP. Reversing the order changes the
+// number for that entire group.
 func (e *Engine) Calculate(req Request) (Result, error) {
 	if req.Sex != SexMale && req.Sex != SexFemale {
 		return Result{}, fmt.Errorf("%w: %q", ErrUnknownSex, req.Sex)
@@ -119,8 +119,9 @@ func (e *Engine) Calculate(req Request) (Result, error) {
 	}, nil
 }
 
-// prepare menyusun nilai klinis, memakai yang diketik pengguna bila ada dan
-// menebaknya bila tidak. Padanan prepareClinicalValues.
+// prepare assembles the clinical values, using what the user typed where
+// present and estimating otherwise. The counterpart of
+// prepareClinicalValues.
 func (e *Engine) prepare(req Request) (ClinicalInputs, error) {
 	all := answers(req.Answers)
 
@@ -149,10 +150,10 @@ func (e *Engine) prepare(req Request) (ClinicalInputs, error) {
 	if !ok {
 		return ClinicalInputs{}, fmt.Errorf("%w: age_at_diabetes_diagnosis", ErrMissingDiabetesInput)
 	}
-	// D6: diagnosis tidak bisa terjadi setelah hari ini. Sistem lama
-	// memvalidasinya di request dengan usia dari basis data; di sini usia
-	// datang bersama permintaan, dan aturannya milik mesin yang memakai
-	// angkanya - satu tempat, bukan satu per pemanggil.
+	// D6: a diagnosis cannot happen after today. The legacy system validated
+	// it in the request using the age from the database; here the age arrives
+	// with the request, and the rule belongs to the engine that uses the
+	// number - one place, not one per caller.
 	if int(dxAge) > req.Age {
 		return ClinicalInputs{}, fmt.Errorf("%w: diagnosed at %d, currently %d",
 			ErrDiabetesAgeAfterCurrentAge, int(dxAge), req.Age)
@@ -169,13 +170,13 @@ func (e *Engine) prepare(req Request) (ClinicalInputs, error) {
 	return inputs, nil
 }
 
-// pick memakai nilai manual bila jenis masukannya "manual", dan menebaknya
-// bila tidak.
+// pick uses the manual value when the input kind is "manual", and estimates
+// otherwise.
 //
-// Nilai manual yang hilang jatuh ke penebakan alih-alih menjadi nol. PHP
-// membaca kunci yang tidak ada sebagai null dan (float)null adalah 0.0, yang
-// akan menghasilkan tekanan darah nol - angka yang mustahil dan tetap
-// dihitung. Menebak lebih jujur daripada nol.
+// A missing manual value falls back to estimation rather than becoming zero.
+// PHP reads a missing key as null and (float)null is 0.0, which would yield
+// a blood pressure of zero - an impossible number that would still be
+// computed with. Estimating is more honest than zero.
 func pick(all answers, typeKey, valueKey string, estimate func() float64) float64 {
 	if all.str(typeKey, "") == "manual" {
 		if v, ok := all.num(valueKey); ok {
@@ -185,12 +186,13 @@ func pick(all answers, typeKey, valueKey string, estimate func() float64) float6
 	return estimate()
 }
 
-// EGFR menghitung laju filtrasi glomerulus dengan CKD-EPI Creatinine 2021.
+// EGFR computes the glomerular filtration rate with CKD-EPI Creatinine
+// 2021.
 //
-// Ia diekspor karena golden vector merekam nilai antaranya: eGFR masuk ke
-// logaritma di SCORE2-Diabetes, sehingga selisih kecil di sini membesar di
-// sana, dan memeriksanya langsung jauh lebih cepat menunjuk penyebab
-// daripada memeriksa angka akhirnya saja.
+// It is exported because the golden vectors record its intermediate value:
+// eGFR enters a logarithm in SCORE2-Diabetes, so a small difference here
+// grows there, and checking it directly points at the cause far faster than
+// checking only the final number.
 func EGFR(scr float64, age int, sex string) float64 {
 	var a, b float64
 	if sex == SexFemale {
@@ -212,8 +214,8 @@ func EGFR(scr float64, age int, sex string) float64 {
 		egfr *= 1.012
 	}
 
-	// Menjaga langkah berikutnya: log(0) adalah -Inf dan log(negatif) adalah
-	// NaN, dan keduanya mengalir ke angka risiko tanpa satu pun galat.
+	// Guards the next step: log(0) is -Inf and log(negative) is NaN, and both
+	// flow into the risk number without a single error.
 	if egfr > 0 {
 		return egfr
 	}
@@ -248,9 +250,9 @@ func (e *Engine) score2OP(in ClinicalInputs, region string) (float64, error) {
 	model := e.constants.Models["score2_op"]
 	coef := model.Coefficients[in.SexLabel]
 
-	// Transformasi SCORE2-OP memakai pengurangan langsung, bukan pembagian
-	// seperti SCORE2. Itu bukan kelalaian penyalinan: keduanya memang
-	// dikalibrasi pada skala yang berbeda.
+	// The SCORE2-OP transformation uses direct subtraction, not division as in
+	// SCORE2. That is no copying slip: the two really are calibrated on
+	// different scales.
 	cage := float64(in.Age) - 73
 	csbp := in.SBP - 150
 	ctchol := in.TChol - 6
@@ -270,9 +272,9 @@ func (e *Engine) score2OP(in ClinicalInputs, region string) (float64, error) {
 		coef.TCholAge*ctchol*cage +
 		coef.HDLAge*chdl*cage
 
-	// SCORE2-OP mengurangi mean linear predictor sebelum eksponensiasi.
-	// Menghilangkannya tidak menghasilkan galat apa pun, hanya risiko yang
-	// jauh lebih tinggi bagi setiap pengguna berusia 70 ke atas.
+	// SCORE2-OP subtracts the mean linear predictor before exponentiation.
+	// Dropping it produces no error at all, only a far higher risk for every
+	// user aged 70 and over.
 	mlp := model.MeanLinearPredictor[in.SexLabel]
 	uncalibrated := 1 - math.Pow(model.BaselineSurvival[in.SexLabel], math.Exp(x-mlp))
 
@@ -316,13 +318,13 @@ func (e *Engine) score2Diabetes(in ClinicalInputs, region string) (float64, erro
 	return e.calibrate(uncalibrated, "score2_diabetes", region, in.SexLabel)
 }
 
-// calibrate menerapkan kalibrasi wilayah dan mengembalikan persen.
+// calibrate applies the regional calibration and returns a percentage.
 //
-// Rumusnya: 1 - exp(-exp(scale1 + scale2 * ln(-ln(1 - risk)))).
+// The formula: 1 - exp(-exp(scale1 + scale2 * ln(-ln(1 - risk)))).
 //
-// Kedua penjaga di awal bukan hiasan: ln(-ln(0)) adalah ln(+Inf), dan
-// ln(-ln(1)) adalah ln(0) yang -Inf. Keduanya mengalir sampai ke angka yang
-// ditampilkan tanpa satu pun galat.
+// The two guards at the start are not decoration: ln(-ln(0)) is ln(+Inf),
+// and ln(-ln(1)) is ln(0), which is -Inf. Both flow all the way to the
+// displayed number without a single error.
 func (e *Engine) calibrate(uncalibrated float64, model, region, sex string) (float64, error) {
 	if uncalibrated >= 1.0 {
 		return 100.0, nil

@@ -6,15 +6,16 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
 )
 
-// TestTheRiskCategoryFollowsTheTable menguji KEDUA sisi setiap ambang.
+// TestTheRiskCategoryFollowsTheTable tests BOTH sides of every threshold.
 //
-// Ada enam ambang, dan setiap satunya adalah tempat aturan ini bisa salah.
-// Menguji hanya bagian tengah tiap rentang tidak membuktikan apa pun tentang
-// batasnya - dan batas itulah yang memutuskan apakah seseorang diberi tahu
-// risikonya tinggi atau sedang.
+// There are six thresholds, and each one is a place where this rule can go
+// wrong. Testing only the middle of each range proves nothing about the
+// boundaries - and the boundaries are what decide whether someone is told
+// their risk is high or moderate.
 //
-// Sumber angkanya: internal/llm/prompt/templates/personalization.v1.tmpl
-// bagian 4.1, salinan aturan sistem lama.
+// Source of the numbers:
+// internal/llm/prompt/templates/personalization.v1.tmpl section 4.1, a copy
+// of the legacy rule.
 func TestTheRiskCategoryFollowsTheTable(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -30,17 +31,17 @@ func TestTheRiskCategoryFollowsTheTable(t *testing.T) {
 		{"under 50, exactly on the second", 49, 7.5, score.CategoryVeryHigh},
 		{"under 50, far above", 49, 40, score.CategoryVeryHigh},
 
-		// Usia 50-69: < 5 rendah-sedang; 5-9.99 tinggi; >= 10 sangat tinggi.
-		// Usia 50 memakai tabel INI, bukan tabel di bawahnya.
+		// Age 50-69: < 5 low-moderate; 5-9.99 high; >= 10 very high. Age 50 uses
+		// THIS table, not the one below it.
 		{"exactly 50 uses the middle table", 50, 4.9, score.CategoryLowModerate},
 		{"50-69, exactly on the first threshold", 55, 5, score.CategoryHigh},
 		{"50-69, just below the second", 69, 9.99, score.CategoryHigh},
 		{"50-69, exactly on the second", 69, 10, score.CategoryVeryHigh},
 
-		// Usia >= 70: < 7.5 rendah-sedang; 7.5-14.99 tinggi; >= 15 sangat tinggi.
-		// Usia 70 memakai tabel INI, bukan tabel di atasnya - dan itulah beda
-		// yang paling mudah salah: pada 8% seseorang berusia 69 "sangat
-		// tinggi", sementara yang berusia 70 "tinggi".
+		// Age >= 70: < 7.5 low-moderate; 7.5-14.99 high; >= 15 very high. Age 70
+		// uses THIS table, not the one above it - and that is the difference
+		// easiest to get wrong: at 8% someone aged 69 is "very high", while
+		// someone aged 70 is "high".
 		{"exactly 70 uses the oldest table", 70, 7.4, score.CategoryLowModerate},
 		{"70+, exactly on the first threshold", 70, 7.5, score.CategoryHigh},
 		{"70+, just below the second", 80, 14.99, score.CategoryHigh},
@@ -55,13 +56,13 @@ func TestTheRiskCategoryFollowsTheTable(t *testing.T) {
 	}
 }
 
-// TestTheAgeBandsDoNotOverlap membuktikan ketiga tabelnya benar-benar berbeda.
+// TestTheAgeBandsDoNotOverlap proves the three tables really differ.
 //
-// Kalau ketiganya kebetulan sama, seluruh test di atas tetap lulus sambil tidak
-// menguji apa pun tentang pemilihan tabelnya.
+// If all three happened to be the same, every test above would still pass while
+// testing nothing about the choice of table.
 func TestTheAgeBandsDoNotOverlap(t *testing.T) {
-	// Delapan persen: sangat tinggi di bawah 50, tinggi pada 50-69, dan tetap
-	// tinggi pada 70+ - tetapi 7.4 persen memisahkan yang terakhir.
+	// Eight percent: very high below 50, high at 50-69, and still high at 70+
+	// - but 7.4 percent separates the last one.
 	const percent = 8
 
 	if got := score.CategoryFor(49, percent); got != score.CategoryVeryHigh {
@@ -71,7 +72,7 @@ func TestTheAgeBandsDoNotOverlap(t *testing.T) {
 		t.Errorf("at 50 with 8%% the category is %q", got)
 	}
 
-	// Dan pada 7.4 persen, ketiganya menjawab berbeda-beda.
+	// And at 7.4 percent, all three answer differently.
 	if a, b, c := score.CategoryFor(49, 7.4), score.CategoryFor(55, 7.4), score.CategoryFor(70, 7.4); //
 	a != score.CategoryHigh || b != score.CategoryHigh || c != score.CategoryLowModerate {
 		t.Errorf("at 7.4%% the three bands answer %q / %q / %q; the oldest band should be low-moderate", a, b, c)

@@ -2,21 +2,20 @@ package score
 
 import "math"
 
-// Estimator proksi. Ia menebak nilai laboratorium dari jawaban gaya hidup,
-// untuk pengguna yang tidak punya hasil labnya.
+// The proxy estimator. It estimates laboratory values from lifestyle
+// answers, for users who have no lab results.
 //
-// Seluruh angka di bawah dipertahankan PERSIS seperti sistem lama, termasuk
-// yang tampak sewenang-wenang. Ia bukan tempat memperbaiki apa pun: satu
-// koefisien yang "dirapikan" menggeser angka risiko setiap pengguna yang
-// memakai jalur proksi, dan tidak ada golden vector yang bisa membuktikan
-// angka baru itu benar.
+// Every number below is kept EXACTLY as in the legacy system, including
+// those that look arbitrary. This is not the place to fix anything: one
+// "tidied" coefficient shifts the risk number of every user on the proxy
+// path, and no golden vector can prove the new number correct.
 
-// answers membungkus jawaban mentah dengan pembacaan yang tidak panik.
+// answers wraps the raw answers with reads that do not panic.
 //
-// Jawaban datang dari JSON, jadi bentuknya tidak dijamin. PHP membaca kunci
-// yang tidak ada sebagai null dan melanjutkan; di sini setiap pembacaan
-// menyatakan nilai bawaannya, dan bawaan itu disalin dari `?? ...` di sisi
-// PHP - bukan dipilih ulang.
+// Answers come from JSON, so their shape is not guaranteed. PHP reads a
+// missing key as null and carries on; here every read states its default,
+// and that default is copied from the `?? ...` on the PHP side - not chosen
+// anew.
 type answers map[string]any
 
 func (a answers) str(key, fallback string) string {
@@ -64,12 +63,12 @@ func (a answers) list(key string) int {
 	return 0
 }
 
-// EstimateSBP menebak tekanan darah sistolik.
+// EstimateSBP estimates systolic blood pressure.
 //
-// B12 sudah diperbaiki di oracle dan ikut di sini: q_exercise dibaca dari akar
-// jawaban, bukan dari sub-map proksi. Sistem lama membacanya dari dua tempat
-// berbeda dengan dua nilai harapan berbeda, sehingga penyesuaian -7 tidak
-// pernah berlaku.
+// B12 was fixed in the oracle and is carried here: q_exercise is read from the
+// root of the answers, not from the proxy sub-map. The legacy system read it
+// from two different places with two different expected values, so the -7
+// adjustment never applied.
 func EstimateSBP(all answers, age int, sex string) float64 {
 	proxy := all.sub("sbp_proxy_answers")
 
@@ -100,9 +99,9 @@ func EstimateSBP(all answers, age int, sex string) float64 {
 		sbp -= 7
 	}
 
-	// PHP melakukan (int) round($sbp): pembulatan setengah-menjauh-dari-nol,
-	// lalu dipotong ke bilangan bulat. math.Round di Go melakukan hal yang
-	// sama, sehingga hasilnya identik.
+	// PHP does (int) round($sbp): rounding half away from zero, then
+	// truncation to an integer. Go's math.Round does the same, so the results
+	// are identical.
 	return math.Round(sbp)
 }
 
@@ -198,18 +197,18 @@ func EstimateSCr(all answers, sex string) float64 {
 		stressor += 0.25
 	}
 
-	// Batas bawahnya adalah nilai dasar itu sendiri, bukan nol: penyesuaian
-	// di atas hanya menambah, jadi max() di sini tidak pernah mengubah apa
-	// pun. Ia dipertahankan karena ada di sistem lama, dan menghapusnya
-	// berarti mengubah kode yang paritasnya sedang dibuktikan.
+	// The lower bound is the base value itself, not zero: the adjustments
+	// above only add, so max() here never changes anything. It is kept because
+	// the legacy system had it, and removing it would mean changing code whose
+	// parity is being proven.
 	final := base + damage + stressor
 	return round2(math.Max(base, math.Min(4.0, final)))
 }
 
-// EstimateHbA1c menebak HbA1c dalam mmol/mol.
+// EstimateHbA1c estimates HbA1c in mmol/mol.
 //
-// B12 juga menyentuh fungsi ini: q_exercise dibaca dari akar, sama seperti
-// EstimateSBP. Di sistem lama keduanya membaca dari tempat yang berbeda.
+// B12 touches this function too: q_exercise is read from the root, just as
+// in EstimateSBP. In the legacy system the two read from different places.
 func EstimateHbA1c(all answers) float64 {
 	proxy := all.sub("hba1c_proxy_answers")
 
@@ -237,13 +236,13 @@ func EstimateHbA1c(all answers) float64 {
 	return math.Round(math.Max(42, math.Min(160, hba1c)))
 }
 
-// round2 membulatkan ke dua desimal, seperti round($x, 2) di PHP.
+// round2 rounds to two decimals, like round($x, 2) in PHP.
 //
-// PHP membulatkan setengah menjauh dari nol; math.Round melakukan hal yang
-// sama. Perkalian dan pembagian dengan 100 memperkenalkan galat representasi
-// yang sangat kecil, dan itu justru yang juga dilakukan PHP - meniru
-// urutannya persis adalah cara membuat kedua sisi menghasilkan angka yang
-// sama, bukan angka yang sama-sama benar secara matematis.
+// PHP rounds half away from zero; math.Round does the same. Multiplying and
+// dividing by 100 introduces a tiny representation error, and that is
+// exactly what PHP does too - mimicking the sequence precisely is how both
+// sides produce the same number, not a number that is equally correct
+// mathematically.
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
 }

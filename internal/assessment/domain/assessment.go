@@ -22,7 +22,7 @@ var (
 	ErrSlugTaken          = errors.New("slug already taken")
 )
 
-// ID adalah kunci internal. Ia tidak pernah muncul di API publik.
+// ID is the internal key. It never appears in the public API.
 type ID struct{ v uuid.UUID }
 
 func NewID() (ID, error) {
@@ -44,7 +44,7 @@ func ParseID(raw string) (ID, error) {
 func (id ID) String() string { return id.v.String() }
 func (id ID) IsZero() bool   { return id.v == uuid.Nil }
 
-// ProfileID menunjuk ke profile.user_profiles.
+// ProfileID points at profile.user_profiles.
 type ProfileID struct{ v uuid.UUID }
 
 func ParseProfileID(raw string) (ProfileID, error) {
@@ -58,16 +58,16 @@ func ParseProfileID(raw string) (ProfileID, error) {
 func (id ProfileID) String() string { return id.v.String() }
 func (id ProfileID) IsZero() bool   { return id.v == uuid.Nil }
 
-// slugBytes adalah 10 byte, 80 bit.
+// slugBytes is 10 bytes, 80 bits.
 //
-// Slug adalah id publik dan satu-satunya yang melindunginya dari ditebak.
-// Id berurutan akan membiarkan siapa pun menelusuri penilaian orang lain
-// hanya dengan menghitung - dan otorisasi yang benar pun tidak menghapus
-// fakta bahwa jumlahnya jadi bisa dihitung.
+// The slug is the public id and the only thing protecting it from being
+// guessed. A sequential id would let anyone walk through other people's
+// assessments just by counting - and even correct authorisation does not
+// remove the fact that their number becomes countable.
 const slugBytes = 10
 
-// slugEncoding memakai base32 huruf kecil tanpa padding: aman di URL, dan
-// tidak punya pasangan karakter yang mudah tertukar saat dibacakan.
+// slugEncoding uses lowercase base32 without padding: URL-safe, and free of
+// character pairs that are easily confused when read aloud.
 var slugEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
 // NewSlug menghasilkan id publik baru.
@@ -79,12 +79,12 @@ func NewSlug() (string, error) {
 	return slugEncoding.EncodeToString(raw), nil
 }
 
-// Assessment adalah satu penilaian risiko yang sudah selesai dihitung.
+// Assessment is one risk assessment that has been fully computed.
 //
-// Ia tidak menyimpan ulang perhitungannya: yang disimpan adalah hasilnya
-// beserta seluruh masukan yang menghasilkannya. Angka risiko tanpa masukannya
-// tidak bisa dibantah siapa pun, termasuk oleh kami sendiri saat menyelidiki
-// keluhan.
+// It does not store the computation again: what is stored is the result
+// together with every input that produced it. A risk number without its
+// inputs cannot be disputed by anyone, including ourselves when investigating
+// a complaint.
 type Assessment struct {
 	ID              ID
 	UserProfileID   ProfileID
@@ -94,25 +94,25 @@ type Assessment struct {
 	Inputs          map[string]any
 	GeneratedValues map[string]any
 
-	// ResultDetails diisi belakangan oleh llm-worker. Kosong berarti belum
-	// ada, dan penilaiannya tetap sah tanpanya.
+	// ResultDetails is filled in later by llm-worker. Empty means not yet
+	// there, and the assessment is valid without it.
 	ResultDetails map[string]any
 
-	// PersonalizationStatus dibaca dari kolomnya sendiri, bukan diturunkan
-	// dari ada tidaknya ResultDetails. Yang diturunkan hanya bisa membedakan
-	// dua keadaan; klien butuh empat - dan yang paling penting di antaranya,
-	// "gagal", tidak bisa dinyatakan sama sekali tanpa kolom ini.
+	// PersonalizationStatus is read from its own column, not derived from
+	// whether ResultDetails exists. A derived value can only distinguish two
+	// states; clients need four - and the most important of them, "failed",
+	// cannot be expressed at all without this column.
 	PersonalizationStatus PersonalizationStatus
 
-	// PersonalizationError menjelaskan kegagalannya. Kosong saat statusnya
-	// bukan failed.
+	// PersonalizationError explains the failure. Empty when the status is not
+	// failed.
 	PersonalizationError string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-// New membangun penilaian dari hasil mesin risiko.
+// New builds an assessment from the risk engine's result.
 func New(
 	profileID ProfileID,
 	result score.Result,
@@ -138,9 +138,9 @@ func New(
 		Slug:           slug,
 		ModelUsed:      result.ModelUsed,
 		RiskPercentage: result.RiskPercent,
-		// Jawaban asli disimpan apa adanya, termasuk yang tidak dipakai
-		// perhitungan. Pertanyaan bisa berubah, dan cuplikan yang sudah
-		// disaring tidak bisa dibaca ulang dengan pertanyaan yang lama.
+		// The original answers are stored as they are, including those the
+		// computation does not use. Questions can change, and a snapshot that was
+		// already filtered cannot be re-read with the old questions.
 		Inputs:          rawAnswers,
 		GeneratedValues: generatedFrom(result),
 		CreatedAt:       now,
@@ -148,10 +148,10 @@ func New(
 	}, nil
 }
 
-// generatedFrom menyusun cuplikan nilai klinis yang benar-benar dipakai.
+// generatedFrom assembles the snapshot of the clinical values actually used.
 //
-// Nama kuncinya mengikuti sistem lama supaya riwayat yang sudah ada dan yang
-// baru bisa dibaca satu pembaca yang sama.
+// Its key names follow the legacy system so existing history and new history
+// can be read by one and the same reader.
 func generatedFrom(result score.Result) map[string]any {
 	in := result.ClinicalInputs
 
@@ -166,9 +166,9 @@ func generatedFrom(result score.Result) map[string]any {
 		"hdl":                    in.HDL,
 	}
 
-	// Ketiga nilai ini hanya ada pada jalur diabetes. Menyertakannya sebagai
-	// nol untuk yang lain akan membuat cuplikannya berbohong: nol adalah
-	// nilai yang mungkin, bukan penanda ketiadaan.
+	// These three values only exist on the diabetes path. Including them as
+	// zero for the others would make the snapshot lie: zero is a possible
+	// value, not a marker of absence.
 	if in.HasDiabetes {
 		values["age_at_diabetes_diagnosis"] = in.AgeAtDiabetesDiagnosis
 		values["hba1c"] = in.HbA1c
@@ -178,21 +178,21 @@ func generatedFrom(result score.Result) map[string]any {
 	return values
 }
 
-// BelongsTo benar bila penilaian ini milik profil yang disebutkan.
+// BelongsTo is true when this assessment belongs to the named profile.
 //
-// Ia ada sebagai metode, bukan perbandingan langsung di handler, supaya
-// pemeriksaan kepemilikan punya satu tempat. Tersebar, akan selalu ada satu
-// jalur yang lupa memeriksanya.
+// It exists as a method, not an inline comparison in the handler, so the
+// ownership check has one home. Scattered, there would always be one path
+// that forgets it.
 func (a *Assessment) BelongsTo(profileID ProfileID) bool {
 	return a.UserProfileID == profileID
 }
 
-// PersonalizationStatus adalah keadaan laporan personalisasi.
+// PersonalizationStatus is the state of the personalisation report.
 //
-// Empat keadaan, bukan dua. Yang diturunkan dari ada tidaknya laporan hanya
-// bisa membedakan "ada" dan "tidak ada", dan keduanya menyembunyikan keadaan
-// yang paling perlu diketahui klien: pekerjaannya gagal, dan menunggu lebih
-// lama tidak akan mengubah apa pun.
+// Four states, not two. A value derived from whether a report exists can
+// only distinguish "present" from "absent", and both hide the state the
+// client most needs to know: the job failed, and waiting longer will change
+// nothing.
 type PersonalizationStatus string
 
 const (
@@ -202,38 +202,38 @@ const (
 	PersonalizationFailed       PersonalizationStatus = "failed"
 )
 
-// Repository adalah port penyimpanan penilaian.
+// Repository is the storage port for assessments.
 type Repository interface {
-	// Create menyimpan penilaian baru. Slug yang bentrok menghasilkan
-	// ErrSlugTaken, dan itu datang dari indeks unik - bukan dari pemeriksaan
-	// pendahuluan yang bisa dilewati dua permintaan serempak.
+	// Create stores a new assessment. A clashing slug yields ErrSlugTaken, and
+	// that comes from the unique index - not from a preliminary check that two
+	// concurrent requests could slip past.
 	Create(ctx context.Context, a *Assessment) error
 
 	// FindBySlug mencari lewat id publiknya.
 	FindBySlug(ctx context.Context, slug string) (*Assessment, error)
 
-	// ListForProfile mengembalikan riwayat satu profil, terbaru lebih dulu.
+	// ListForProfile returns one profile's history, newest first.
 	ListForProfile(ctx context.Context, profileID ProfileID, limit int) ([]*Assessment, error)
 
-	// SetResultDetails menyimpan laporan personalisasi.
+	// SetResultDetails stores the personalisation report.
 	//
-	// stored bernilai false kalau laporannya SUDAH ADA - dan itu bukan galat.
-	// Event bisa tiba dua kali (relay outbox at-least-once), dan menimpa
-	// laporan yang sudah ada dengan yang datang belakangan akan mengganti isi
-	// yang mungkin sudah dibaca pengguna.
+	// stored is false when the report ALREADY EXISTS - and that is not an
+	// error. An event can arrive twice (the outbox relay is at-least-once),
+	// and overwriting an existing report with the one arriving later would
+	// replace content the user may already have read.
 	SetResultDetails(ctx context.Context, id ID, report map[string]any) (stored bool, err error)
 
-	// SetPersonalizationStatus mencatat keadaan pekerjaan personalisasi.
+	// SetPersonalizationStatus records the state of the personalisation job.
 	//
-	// from membatasi perpindahan yang boleh terjadi: kosong berarti dari
-	// keadaan mana pun. Ia yang menahan event yang tiba terlambat mengubah
-	// pekerjaan yang sudah selesai kembali menjadi pending.
+	// from restricts which transitions may happen: empty means from any state.
+	// It is what keeps a late-arriving event from turning a completed job back
+	// into pending.
 	SetPersonalizationStatus(
 		ctx context.Context, id ID, to PersonalizationStatus, from []PersonalizationStatus, failure string,
 	) (changed bool, err error)
 }
 
-// NormaliseSlug membersihkan slug yang datang dari URL.
+// NormaliseSlug cleans up a slug that came from a URL.
 func NormaliseSlug(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }

@@ -11,21 +11,20 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
 )
 
-// goldenPath menunjuk ke vektor yang dihasilkan sistem lama.
+// goldenPath points at the vectors produced by the legacy system.
 //
-// Ia hidup di test/golden dan bukan di paket ini dengan sengaja: ia BUKAN
-// milik kode ini. Ia bukti dari luar, dihasilkan branch oracle yang tidak
-// pernah digabung, dan satu-satunya perannya adalah membantah.
+// It lives in test/golden and not in this package on purpose: it does NOT
+// belong to this code. It is evidence from outside, produced by an oracle
+// branch that was never merged, and its only role is to contradict.
 const goldenPath = "../../../../test/golden/golden_vectors.json"
 
-// tolerance adalah selisih maksimum yang diterima antara angka Laravel dan
-// angka Go, dalam poin persentase.
+// tolerance is the largest accepted difference between the Laravel number
+// and the Go number, in percentage points.
 //
-// Keduanya membulatkan ke dua desimal di akhir, jadi selisih yang wajar
-// hanyalah pembulatan pada digit terakhir. Toleransi lebih longgar akan
-// menyembunyikan kekeliruan koefisien yang nyata; toleransi nol akan
-// menyalakan alarm untuk perbedaan representasi floating point yang tidak
-// berarti secara klinis.
+// Both round to two decimals at the end, so the only reasonable difference
+// is rounding in the last digit. A looser tolerance would hide a real
+// coefficient mistake; a zero tolerance would raise alarms for
+// floating-point representation differences with no clinical meaning.
 const tolerance = 0.005
 
 type goldenFile struct {
@@ -66,18 +65,18 @@ type vector struct {
 		} `json:"final_clinical_inputs"`
 	} `json:"expected"`
 
-	// Oracle merekam nilai antara sebagai objek bernama. Untuk sekarang hanya
-	// eGFR yang ada di dalamnya - dan itu yang paling perlu, karena ia masuk
-	// ke logaritma.
+	// The oracle records intermediate values as a named object. For now only
+	// eGFR is in it - and that is the one most needed, because it enters a
+	// logarithm.
 	Intermediate intermediateValues `json:"intermediate"`
 }
 
-// intermediateValues membaca kedua bentuk yang dihasilkan PHP.
+// intermediateValues reads both shapes PHP produces.
 //
-// json_encode menulis array PHP yang KOSONG sebagai [] dan yang berisi
-// sebagai {} - dua bentuk untuk satu bidang. Itu bukan kejanggalan oracle
-// melainkan sifat PHP, dan pembacanya harus menerima keduanya alih-alih
-// memaksa oracle mengubah keluarannya setelah vektornya dihasilkan.
+// json_encode writes an EMPTY PHP array as [] and a populated one as {} -
+// two shapes for one field. That is not an oddity of the oracle but a
+// property of PHP, and the reader has to accept both rather than forcing
+// the oracle to change its output after the vectors were generated.
 type intermediateValues map[string]float64
 
 func (m *intermediateValues) UnmarshalJSON(data []byte) error {
@@ -114,9 +113,9 @@ func loadGolden(t *testing.T) goldenFile {
 	return file
 }
 
-// Paritas hanya berarti bila kedua sisi memakai konstanta yang SAMA. Vektor
-// yang dihasilkan dari koefisien lain akan lulus atau gagal karena alasan
-// yang tidak ada hubungannya dengan port ini.
+// Parity only means anything when both sides use the SAME constants.
+// Vectors generated from other coefficients would pass or fail for reasons
+// unrelated to this port.
 func TestTheVectorsCameFromTheConstantsWeEmbed(t *testing.T) {
 	file := loadGolden(t)
 	constants := score.MustLoad()
@@ -129,12 +128,11 @@ func TestTheVectorsCameFromTheConstantsWeEmbed(t *testing.T) {
 	}
 }
 
-// TestGoldenVectors adalah gerbang keluar F2.
+// TestGoldenVectors is the F2 exit gate.
 //
-// Ia melaporkan selisih TERBESAR, bukan hanya yang pertama gagal: satu vektor
-// yang meleset jauh dan lima puluh yang meleset sedikit adalah dua masalah
-// yang sangat berbeda, dan hanya yang pertama yang menunjuk ke koefisien yang
-// salah.
+// It reports the LARGEST difference, not just the first failure: one vector
+// far off and fifty slightly off are two very different problems, and only
+// the first points at a wrong coefficient.
 func TestGoldenVectors(t *testing.T) {
 	file := loadGolden(t)
 	engine := score.NewEngine(score.MustLoad())
@@ -207,8 +205,8 @@ func TestGoldenVectors(t *testing.T) {
 	t.Errorf("%d of %d vectors failed (%d wrong model, %d wrong region)",
 		len(failures), len(file.Vectors), modelMiss, regionMiss)
 
-	// Sepuluh terburuk saja. Menumpahkan 288 kegagalan mengubur yang satu
-	// yang benar-benar menunjuk ke penyebabnya.
+	// Only the worst ten. Dumping 288 failures buries the one that actually
+	// points at the cause.
 	for i, f := range failures {
 		if i >= 10 {
 			t.Logf("... and %d more", len(failures)-10)
@@ -226,11 +224,12 @@ func TestGoldenVectors(t *testing.T) {
 	}
 }
 
-// Nilai klinis yang masuk ke model diperiksa terpisah dari hasilnya.
+// The clinical values entering the model are checked separately from the
+// result.
 //
-// Dua kekeliruan bisa saling menutupi: estimator yang meleset dan koefisien
-// yang meleset ke arah berlawanan menghasilkan angka akhir yang benar. Kalau
-// hanya angka akhir yang diuji, keduanya lolos bersama.
+// Two mistakes can cancel each other out: an estimator that is off and a
+// coefficient that is off in the opposite direction produce a correct final
+// number. If only the final number were tested, both would pass together.
 func TestTheClinicalInputsMatchBeforeAnyModelRuns(t *testing.T) {
 	file := loadGolden(t)
 	engine := score.NewEngine(score.MustLoad())
@@ -245,7 +244,7 @@ func TestTheClinicalInputsMatchBeforeAnyModelRuns(t *testing.T) {
 			Answers:            v.Input.Answers,
 		})
 		if err != nil {
-			continue // dilaporkan oleh test di atas
+			continue // reported by the test above
 		}
 
 		want := v.Expected.FinalClinicalInputs
@@ -294,10 +293,10 @@ func TestTheClinicalInputsMatchBeforeAnyModelRuns(t *testing.T) {
 	}
 }
 
-// Nilai antara yang direkam oracle diperiksa langsung. eGFR masuk ke
-// logaritma di SCORE2-Diabetes, sehingga kekeliruan kecil di sana membesar -
-// dan memeriksanya sendiri jauh lebih cepat menunjuk penyebab daripada
-// memeriksa angka akhirnya saja.
+// The intermediate values recorded by the oracle are checked directly. eGFR
+// enters a logarithm in SCORE2-Diabetes, so a small mistake there grows -
+// and checking it on its own points at the cause far faster than checking
+// only the final number.
 func TestRecordedIntermediateValues(t *testing.T) {
 	file := loadGolden(t)
 
@@ -309,8 +308,8 @@ func TestRecordedIntermediateValues(t *testing.T) {
 			continue
 		}
 
-		// scr yang dipakai oracle adalah yang tercatat di final_clinical_inputs,
-		// entah diketik pengguna atau ditebak dari proksi.
+		// The scr the oracle used is the one recorded in final_clinical_inputs,
+		// whether typed by the user or estimated from proxies.
 		got := score.EGFR(v.Expected.FinalClinicalInputs.SCr, v.Expected.FinalClinicalInputs.Age, v.Input.Sex)
 		if math.Abs(got-want) > 1e-9 {
 			t.Errorf("vector %d egfr(scr=%.2f, age=%d, %s) = %.10f; want %.10f",

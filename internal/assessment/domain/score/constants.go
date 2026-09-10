@@ -1,10 +1,10 @@
-// Package score memuat mesin risiko SCORE2 dan turunannya.
+// Package score holds the SCORE2 risk engine and its derivatives.
 //
-// Ini bagian paling bernilai dan paling berbahaya dari seluruh migrasi:
-// keluarannya adalah angka klinis yang dibaca orang tentang jantungnya
-// sendiri. Karena itu ia tidak dianggap benar sampai dibuktikan benar - oleh
-// 288 golden vector yang dihasilkan sistem lama, bukan oleh test yang ditulis
-// dari pemahaman kode ini.
+// This is the most valuable and the most dangerous part of the whole
+// migration: its output is a clinical number people read about their own
+// heart. That is why it is not considered correct until proven correct - by
+// 288 golden vectors produced by the legacy system, not by tests written from
+// an understanding of this code.
 package score
 
 import (
@@ -15,12 +15,12 @@ import (
 	"sync"
 )
 
-// Konstanta di-embed, bukan dibaca dari berkas saat berjalan.
+// The constants are embedded, not read from a file at runtime.
 //
-// Sebuah service yang membaca koefisien klinis dari cakram saat menyala bisa
-// menyala dengan koefisien yang keliru - atau tidak menyala sama sekali di
-// container yang berkasnya tidak ikut. Di-embed, ia menjadi bagian dari
-// binernya: satu artefak, satu perilaku.
+// A service that reads clinical coefficients from disk at start-up can start
+// with the wrong coefficients - or not start at all in a container where the
+// file was not shipped. Embedded, they become part of the binary: one
+// artefact, one behaviour.
 var (
 	//go:embed score_models.json
 	scoreModelsJSON []byte
@@ -29,12 +29,12 @@ var (
 	regionMappingJSON []byte
 )
 
-// Coefficients adalah koefisien satu model untuk satu jenis kelamin.
+// Coefficients are the coefficients of one model for one sex.
 //
-// Setiap bidang disebutkan, tidak memakai map[string]float64. Map akan
-// menerima koefisien yang namanya salah ketik sebagai nol dan menghitung
-// terus; bidang yang disebutkan membuat konstanta yang hilang terlihat saat
-// pemuatan, bukan sebagai risiko yang meleset diam-diam.
+// Every field is named, rather than using map[string]float64. A map would
+// accept a misspelled coefficient as zero and keep computing; named fields
+// make a missing constant visible at load time, not as a risk that silently
+// drifts.
 type Coefficients struct {
 	Age      float64 `json:"age"`
 	Smoking  float64 `json:"smoking"`
@@ -49,7 +49,7 @@ type Coefficients struct {
 	HDLAge      float64 `json:"hdl_age"`
 	DiabetesAge float64 `json:"diabetes_age"`
 
-	// Hanya dipakai SCORE2-Diabetes.
+	// Only used by SCORE2-Diabetes.
 	AgeAtDiabetesDiagnosis float64 `json:"age_at_diabetes_diagnosis"`
 	HbA1c                  float64 `json:"hba1c"`
 	EGFR                   float64 `json:"egfr"`
@@ -58,7 +58,7 @@ type Coefficients struct {
 	EGFRAge                float64 `json:"egfr_age"`
 }
 
-// Model adalah satu model risiko lengkap.
+// Model is one complete risk model.
 type Model struct {
 	Coefficients        map[string]Coefficients         `json:"coefficients"`
 	BaselineSurvival    map[string]float64              `json:"baseline_survival"`
@@ -78,15 +78,15 @@ type regionsDocument struct {
 	Regions      map[string][]string `json:"regions"`
 }
 
-// Constants adalah seluruh konstanta yang dipakai mesin risiko.
+// Constants are all the constants the risk engine uses.
 type Constants struct {
 	Models  map[string]Model
 	Regions map[string][]string
 
-	// Checksum berkas PHP asalnya. Golden vector merekam angka yang sama, dan
-	// harness membandingkannya: kalau keduanya berbeda, vektornya dihasilkan
-	// dari konstanta yang berbeda dari yang sedang diuji, dan seluruh
-	// pembuktian paritasnya tidak berarti apa-apa.
+	// Checksum of the PHP source file. The golden vectors record the same
+	// number, and the harness compares them: if the two differ, the vectors
+	// were generated from constants other than the ones under test, and the
+	// whole parity proof means nothing.
 	ModelsSHA256  string
 	RegionsSHA256 string
 }
@@ -97,7 +97,7 @@ var (
 	loadError error
 )
 
-// Load mengurai konstanta yang di-embed, sekali.
+// Load parses the embedded constants, once.
 func Load() (Constants, error) {
 	loadOnce.Do(func() {
 		loaded, loadError = parse()
@@ -105,8 +105,8 @@ func Load() (Constants, error) {
 	return loaded, loadError
 }
 
-// MustLoad dipakai saat kegagalannya tidak bisa ditangani secara berarti -
-// konstanta yang rusak berarti biner yang rusak, dan itu harus terlihat.
+// MustLoad is used where the failure cannot be handled meaningfully -
+// corrupt constants mean a corrupt binary, and that has to be visible.
 func MustLoad() Constants {
 	c, err := Load()
 	if err != nil {
@@ -138,25 +138,25 @@ func parse() (Constants, error) {
 	return c, nil
 }
 
-// ModelNames adalah ketiga model yang harus ada. Ia daftar tertutup: model
-// yang hilang berarti sebagian pengguna tidak bisa dihitung sama sekali, dan
-// itu harus ketahuan saat pemuatan.
+// ModelNames are the three models that must exist. It is a closed list: a
+// missing model means some users cannot be computed at all, and that has to
+// be discovered at load time.
 var ModelNames = []string{"score2", "score2_op", "score2_diabetes"}
 
-// Sexes adalah dua nilai yang dikenal model. Bukan pernyataan tentang
-// manusia - SCORE2 dikalibrasi terpisah untuk keduanya dan tidak punya
-// koefisien untuk yang lain.
+// Sexes are the two values the models know. Not a statement about people -
+// SCORE2 is calibrated separately for the two and has no coefficients for
+// others.
 var Sexes = []string{SexMale, SexFemale}
 
-// Regions adalah keempat wilayah kalibrasi SCORE2.
+// Regions are the four SCORE2 calibration regions.
 var Regions = []string{"low", "moderate", "high", "very_high"}
 
-// validate memeriksa bahwa setiap kombinasi yang bisa diminta mesin memang
-// ada.
+// validate checks that every combination the engine could ask for actually
+// exists.
 //
-// Tanpa ini, koefisien yang hilang muncul sebagai nol di tengah perhitungan,
-// dan hasilnya adalah angka risiko yang tampak masuk akal tetapi salah - jenis
-// kegagalan yang paling sulit disadari.
+// Without this, a missing coefficient shows up as zero in the middle of a
+// computation, and the result is a risk number that looks plausible but is
+// wrong - the hardest kind of failure to notice.
 func (c Constants) validate() error {
 	var problems []string
 
@@ -188,9 +188,9 @@ func (c Constants) validate() error {
 		}
 	}
 
-	// SCORE2-OP memakai mean linear predictor; kedua model lain tidak.
-	// Ketiadaannya di sana bukan kekeliruan, tetapi ketiadaannya di sini
-	// adalah - ia masuk langsung ke eksponen.
+	// SCORE2-OP uses a mean linear predictor; the other two models do not. Its
+	// absence there is not a mistake, but its absence here would be - it goes
+	// straight into the exponent.
 	if op, ok := c.Models["score2_op"]; ok {
 		for _, sex := range Sexes {
 			if _, ok := op.MeanLinearPredictor[sex]; !ok {
@@ -209,12 +209,12 @@ func (c Constants) validate() error {
 	return nil
 }
 
-// RegionFor memetakan negara tempat tinggal ke wilayah risiko.
+// RegionFor maps the country of residence to a risk region.
 //
-// Padanan getRiskRegionAttribute di sistem lama, termasuk nilai bawaannya:
-// negara yang tidak ada di peta menjadi "high". Itu pilihan yang konservatif
-// dan dipertahankan apa adanya - mengubahnya akan menggeser angka risiko
-// setiap pengguna dari negara yang belum terdaftar.
+// The counterpart of getRiskRegionAttribute in the legacy system, including
+// its default: a country absent from the map becomes "high". That is the
+// conservative choice and it is kept as it is - changing it would shift the
+// risk number of every user from a country not yet listed.
 func (c Constants) RegionFor(country string) string {
 	needle := strings.ToLower(strings.TrimSpace(country))
 
@@ -228,22 +228,21 @@ func (c Constants) RegionFor(country string) string {
 	return "high"
 }
 
-// Nilai literal yang muncul di banyak tempat dikumpulkan di sini.
+// Literal values that appear in many places are gathered here.
 //
-// Bukan demi kerapian: "Perokok aktif" adalah string yang harus cocok PERSIS
-// dengan yang dikirim frontend, dan satu salah ketik di salah satu dari lima
-// tempat pemakaiannya akan membuat perokok dihitung sebagai bukan perokok -
-// tanpa satu pun galat, hanya angka risiko yang terlalu rendah.
+// Not for tidiness: "Perokok aktif" is a string that has to match EXACTLY
+// what the frontend sends, and one typo in any of its five uses would count
+// a smoker as a non-smoker - with not a single error, just a risk number
+// that is too low.
 const (
 	SexMale   = "male"
 	SexFemale = "female"
 
-	// AnswerActiveSmoker adalah jawaban yang menandai perokok aktif.
+	// AnswerActiveSmoker is the answer that marks an active smoker.
 	AnswerActiveSmoker = "Perokok aktif"
 
-	// AnswerIntenseExercise memicu penyesuaian -7 pada SBP dan HbA1c.
-	// Temuan B12 adalah tentang string ini: sistem lama mengharapkan dua
-	// nilai berbeda di dua tempat, sehingga penyesuaiannya tidak pernah
-	// berlaku.
+	// AnswerIntenseExercise triggers the -7 adjustment on SBP and HbA1c.
+	// Finding B12 is about this string: the legacy system expected two
+	// different values in two places, so the adjustment never applied.
 	AnswerIntenseExercise = "Rutin & Intens"
 )
