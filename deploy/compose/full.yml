@@ -1,9 +1,9 @@
-# Lapisan observability. Dipakai BERSAMA core.yml, bukan menggantikannya:
-#   task up:full  (core.yml + apps.yml + full.yml, dengan alamat collector diisi)
+# The observability layer. Used TOGETHER with core.yml, not instead of it:
+#   task up:full  (core.yml + apps.yml + full.yml, with the collector address filled in)
 #
-# Dipisah karena WSL punya plafon memori dan sebagian besar pekerjaan
-# sehari-hari tidak membutuhkannya (R4). Konfigurasi tiap komponen diisi
-# pada fase F9; di sini yang dikunci adalah versi dan batas memorinya.
+# Split off because WSL has a memory ceiling and most day-to-day work does not
+# need it (R4). Each component's configuration was filled in during phase F9;
+# what is pinned here is the versions and memory limits.
 name: selaras-core
 
 services:
@@ -38,9 +38,9 @@ services:
         limits:
           memory: 512M
 
-  # Alert yang menyala dikirim sebagai surel ke Mailpit (http://127.0.0.1:18025).
-  # Aturannya di observability/alerts.yml, diuji promtool di CI dan lewat
-  # `task alerts:test`; bukti alert hidup ada di docs/observability.md.
+  # Firing alerts are sent as email to Mailpit (http://127.0.0.1:18025). The
+  # rules are in observability/alerts.yml, tested by promtool in CI and through
+  # `task alerts:test`; proof of live alerts is in docs/observability.md.
   alertmanager:
     image: prom/alertmanager:v0.34.0
     container_name: selaras-alertmanager
@@ -90,9 +90,9 @@ services:
       - /etc/alloy/config.alloy
     volumes:
       - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
-      # Socket daemon, hanya baca: Alloy membaca log container lewat API
-      # Docker. Ini berarti Alloy bisa melihat SEMUA container di daemon ini,
-      # dan itulah alasan konfigurasinya menyaring ke proyek ini saja.
+      # The daemon socket, read-only: Alloy reads container logs through the
+      # Docker API. This means Alloy can see ALL containers on this daemon,
+      # and that is why its configuration filters down to this project only.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
     depends_on: [loki]

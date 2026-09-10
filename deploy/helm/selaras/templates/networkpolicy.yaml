@@ -43,9 +43,9 @@ spec:
       {{- include "selaras.selector" $ctx | nindent 6 }}
   policyTypes: [Ingress]
   ingress:
-    # Port probe/metrik: hanya dari namespace observability (Prometheus).
-    # kubelet menjalankan probe dari node, bukan dari pod, dan NetworkPolicy
-    # tidak menghalanginya.
+    # The probe/metrics port: only from the observability namespace
+    # (Prometheus). The kubelet runs probes from the node, not from a pod,
+    # and NetworkPolicy does not block it.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -54,8 +54,8 @@ spec:
         - port: {{ $u.healthPort }}
           protocol: TCP
     {{- if $u.httpPort }}
-    # HTTP publik gateway: dari mana pun - ia memang pintu masuknya, dan yang
-    # menjaganya adalah token, bukan alamat asal.
+    # The gateway's public HTTP: from anywhere - it is the front door, and
+    # what guards it is the token, not the source address.
     - ports:
         - port: {{ $u.httpPort }}
           protocol: TCP
@@ -71,7 +71,7 @@ spec:
       {{- end }}
     {{- end }}
     {{- if $callers }}
-    # gRPC: hanya dari unit yang menyebut {{ $unit }} sebagai target-nya.
+    # gRPC: only from the units that name {{ $unit }} as their target.
     - from:
         {{- range $caller := $callers | uniq | sortAlpha }}
         - podSelector:

@@ -1,6 +1,7 @@
 #!/bin/bash
-# Lint chart untuk kedua profil nilai, render, lalu validasi terhadap skema
-# Kubernetes. Dipanggil `task helm:lint` (dari WSL) dan job `helm chart` di CI.
+# Lint the chart for both value profiles, render, then validate against the
+# Kubernetes schemas. Called by `task helm:lint` (from WSL) and the `helm
+# chart` job in CI.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 cd "$(dirname "$0")/../.."

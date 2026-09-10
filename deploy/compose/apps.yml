@@ -1,9 +1,9 @@
-# Unit aplikasi. Dipakai BERSAMA core.yml, bukan menggantikannya:
+# The application units. Used TOGETHER with core.yml, not instead of it:
 #   docker compose -f core.yml -f apps.yml up -d
 #
-# Dipisah dari core.yml karena keduanya punya siklus hidup yang berbeda:
-# dependensi menyala sekali dan dibiarkan, sementara unit aplikasi dibangun
-# ulang setiap kali kodenya berubah.
+# Split from core.yml because the two have different lifecycles: the
+# dependencies are started once and left alone, while the application units
+# are rebuilt every time their code changes.
 name: selaras-core
 
 services:
@@ -15,11 +15,11 @@ services:
     restart: unless-stopped
     container_name: selaras-identity
     environment:
-      # Nama host berasal dari jaringan compose, bukan localhost: di dalam
-      # container, localhost adalah container itu sendiri.
-      # Seluruh unit menyambung lewat PgBouncer (F9-27), bukan langsung ke
-      # Postgres: angka koneksinya di docs/db-connections.md. search_path di
-      # DSN diabaikan PgBouncer; yang berlaku adalah bawaan peran dari initdb.
+      # Host names come from the compose network, not localhost: inside a
+      # container, localhost is the container itself. Every unit connects
+      # through PgBouncer (F9-27), not directly to Postgres: the connection
+      # numbers are in docs/db-connections.md. The search_path in the DSN is
+      # ignored by PgBouncer; what applies is the role default from initdb.
       IDENTITY_DATABASE_DSN: >-
         postgres://svc_identity:${SVC_IDENTITY_PASSWORD:?set SVC_IDENTITY_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=identity
       REDIS_URL: redis://redis:6379/0
@@ -29,8 +29,8 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       KAFKA_BROKERS: kafka:9092
 
-      # Mailpit di dalam jaringan compose. Alur reset karena itu bisa
-      # BENAR-BENAR dijalankan di mesin sendiri, dan surelnya dibaca di
+      # Mailpit inside the compose network. The reset flow can therefore be
+      # REALLY run on one's own machine, and the email is read at
       # http://127.0.0.1:18025.
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
@@ -42,17 +42,17 @@ services:
       IDENTITY_GRPC_ADDR: ":9101"
       IDENTITY_HEALTH_ADDR: ":9102"
 
-      # argon2id memegang 64 MiB per derivasi dan hasher membatasinya ke dua
-      # serentak (crypto.DefaultMaxConcurrent). GOMEMLIMIT membuat GC Go
-      # mengembalikan memori sebelum menabrak plafon container, bukan
-      # sesudahnya: tanpa ini RSS menempel di plafon sepanjang k6 (F9-10).
+      # argon2id holds 64 MiB per derivation and the hasher caps it at two
+      # concurrent (crypto.DefaultMaxConcurrent). GOMEMLIMIT makes the Go GC
+      # return memory before hitting the container ceiling, not after:
+      # without it the RSS stuck to the ceiling throughout k6 (F9-10).
       GOMEMLIMIT: 256MiB
 
-      # Alamat collector OTLP. KOSONG berarti trace tidak dikirim - dan itu
-      # dinyatakan di log saat start, bukan gagal diam-diam. Diisi oleh
-      # `task up:full`, yang juga menyalakan collectornya; tanpa collector,
-      # alamat yang terisi hanya menghasilkan galat ekspor setiap beberapa
-      # detik di setiap unit.
+      # The OTLP collector address. EMPTY means traces are not sent - and
+      # that is stated in the log at start, not a silent failure. Filled in
+      # by `task up:full`, which also starts the collector; without a
+      # collector, a filled-in address only produces an export error every
+      # few seconds in every unit.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
     ports:
       - "127.0.0.1:19101:9101"
@@ -71,10 +71,10 @@ services:
       topics:
         condition: service_completed_successfully
     healthcheck:
-      # Image-nya distroless dan tidak punya shell, curl, atau wget. Probe
-      # HTTP dikerjakan dari luar oleh siapa pun yang memerlukannya; di sini
-      # yang bisa diperiksa hanyalah apakah prosesnya masih hidup, dan itu
-      # sudah dilakukan Docker sendiri.
+      # The image is distroless and has no shell, curl, or wget. HTTP probes
+      # are done from outside by whoever needs them; the only thing
+      # checkable here is whether the process is still alive, and Docker
+      # already does that itself.
       disable: true
     deploy:
       resources:
@@ -92,11 +92,12 @@ services:
       PROFILE_DATABASE_DSN: >-
         postgres://svc_profile:${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=profile
       PROFILE_GRPC_ADDR: ":9201"
-      # Tanpa ini, event profile.updated menumpuk di outbox tanpa terkirim,
-      # dan cache di assessment-svc tidak pernah terisi (F2-16).
+      # Without this, profile.updated events pile up in the outbox unsent,
+      # and the cache in assessment-svc never fills (F2-16).
       KAFKA_BROKERS: kafka:9092
-      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
-      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      # The token public key: every service verifies for itself who is
+      # asking (ADR-026), rather than trusting the user_id the gateway
+      # sends.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
       PROFILE_HEALTH_ADDR: ":9202"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -133,11 +134,12 @@ services:
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
-      # Tanpa ini, permintaan personalisasi DITOLAK alih-alih diterima lalu
-      # hilang - lihat startEventing di cmd/assessment-svc.
+      # Without this, personalisation requests are REFUSED instead of
+      # accepted and then lost - see startEventing in cmd/assessment-svc.
       KAFKA_BROKERS: kafka:9092
-      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
-      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      # The token public key: every service verifies for itself who is
+      # asking (ADR-026), rather than trusting the user_id the gateway
+      # sends.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19301:9301"
@@ -172,8 +174,9 @@ services:
       CHAT_HEALTH_ADDR: ":9503"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
-      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
-      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      # The token public key: every service verifies for itself who is
+      # asking (ADR-026), rather than trusting the user_id the gateway
+      # sends.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19501:9501"
@@ -208,8 +211,9 @@ services:
       NUTRITION_HEALTH_ADDR: ":9603"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
-      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
-      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      # The token public key: every service verifies for itself who is
+      # asking (ADR-026), rather than trusting the user_id the gateway
+      # sends.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19601:9601"
@@ -242,14 +246,15 @@ services:
         postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       DASHBOARD_GRPC_ADDR: ":9701"
       DASHBOARD_HEALTH_ADDR: ":9703"
-      # Replika baca (F9-32): langsung ke replika, bukan lewat PgBouncer -
-      # kolam bacanya kecil dan replika-nya satu.
+      # The read replica (F9-32): straight to the replica, not through
+      # PgBouncer - its read pool is small and there is one replica.
       DASHBOARD_READ_DSN: >-
         postgres://svc_dashboard:${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=dashboard
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
-      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
-      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      # The token public key: every service verifies for itself who is
+      # asking (ADR-026), rather than trusting the user_id the gateway
+      # sends.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19701:9701"
@@ -284,8 +289,9 @@ services:
       COACHING_HEALTH_ADDR: ":9403"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
-      # Kunci publik token: setiap service memverifikasi sendiri siapa yang
-      # meminta (ADR-026), bukan mempercayai user_id yang dikirim gateway.
+      # The token public key: every service verifies for itself who is
+      # asking (ADR-026), rather than trusting the user_id the gateway
+      # sends.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
       - "127.0.0.1:19401:9401"
@@ -317,12 +323,13 @@ services:
       LLM_POSTGRES_DSN: >-
         postgres://svc_llm:${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=llm
       KAFKA_BROKERS: kafka:9092
-      # Mode fake HARUS diminta eksplisit. Nilai bawaan yang jatuh ke fake
-      # berarti ada keadaan di mana pengguna dijawab teks yang dibuat-buat
-      # tanpa ada yang tahu - lihat buildProvider di cmd/llm-worker.
+      # The fake mode MUST be requested explicitly. A default that falls
+      # back to fake means there is a state in which users are answered with
+      # made-up text without anyone knowing - see buildProvider in
+      # cmd/llm-worker.
       LLM_PROVIDER: ${LLM_PROVIDER:?set LLM_PROVIDER to gemini or fake}
-      # Gangguan penyedia palsu untuk chaos F9-14 (slow=<durasi>, flaky=<n>,
-      # error). Kosong berarti tidak ada gangguan; diisi oleh test/chaos/llm.sh.
+      # The fake provider's fault for chaos F9-14 (slow=<duration>, flaky=<n>,
+      # error). Empty means no fault; set by test/chaos/llm.sh.
       LLM_FAKE_FAULT: ${LLM_FAKE_FAULT:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
@@ -354,8 +361,8 @@ services:
     restart: unless-stopped
     container_name: selaras-edge
     environment:
-      # Gateway memegang kunci PUBLIK saja. Itu inti ADR-020: ia bisa
-      # memverifikasi token dan tidak bisa menerbitkan satu pun.
+      # The gateway holds the PUBLIC key only. That is the core of ADR-020:
+      # it can verify tokens and cannot issue a single one.
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
       IDENTITY_GRPC_TARGET: identity-svc:9101
       PROFILE_GRPC_TARGET: profile-svc:9201
@@ -364,27 +371,27 @@ services:
       CHAT_GRPC_TARGET: chat-svc:9501
       NUTRITION_GRPC_TARGET: nutrition-svc:9601
       DASHBOARD_GRPC_TARGET: dashboard-svc:9701
-      # Kosong berarti masuk lewat penyedia sosial tidak dipasang, dan
-      # rutenya tidak ada. Terisi sebagian menggagalkan start-up.
+      # Empty means sign-in through a social provider is not mounted, and
+      # the routes do not exist. Partially filled fails start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-}
       FRONTEND_URL: ${FRONTEND_URL:-}
       ASSESSMENT_GRPC_TARGET: assessment-svc:9301
       EDGE_HTTP_ADDR: ":8080"
-      # Metrik dan probe di port terpisah dari API publik.
+      # Metrics and probes on a port separate from the public API.
       EDGE_ADMIN_ADDR: ":8081"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
 
-      # Batas laju DINAIKKAN di lingkungan pengembangan, bukan dimatikan.
+      # Rate limits are RAISED in the development environment, not switched off.
       #
-      # Batas produksi - lima percobaan masuk per menit per IP - membuat suite
-      # test ujung ke ujung mustahil dijalankan: ia mendaftarkan puluhan akun
-      # dari satu alamat dalam hitungan detik, dan itu memang bentuk yang ingin
-      # ditolak di produksi.
+      # The production limit - five login attempts per minute per IP - makes the
+      # end-to-end test suite impossible to run: it registers dozens of accounts
+      # from one address within seconds, and that is precisely the shape
+      # production wants to refuse.
       #
-      # Yang dinaikkan hanya angkanya; jalurnya tetap dilalui setiap permintaan,
-      # sehingga pembatasan itu sendiri tetap teruji di sini.
+      # Only the numbers are raised; every request still passes through the
+      # path, so the limiter itself stays tested here.
       RATE_LIMIT_AUTH_REQUESTS: ${RATE_LIMIT_AUTH_REQUESTS:-500}
       RATE_LIMIT_LLM_REQUESTS: ${RATE_LIMIT_LLM_REQUESTS:-500}
     ports:
@@ -393,9 +400,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      # Tidak menunggu identity-svc dan profile-svc siap: koneksi gRPC
-      # dibuka malas, dan gateway yang menolak menyala karena tetangganya
-      # belum siap akan membuat urutan start-up menjadi rantai yang rapuh.
+      # Does not wait for identity-svc and profile-svc to be ready: gRPC
+      # connections are opened lazily, and a gateway that refuses to start
+      # because its neighbours are not ready would turn the start-up order
+      # into a fragile chain.
     healthcheck:
       disable: true
     deploy:
@@ -403,13 +411,13 @@ services:
         limits:
           memory: 128M
 
-  # Topic Kafka dibuat SEBELUM unit mana pun menyala - padanan Job `topics`
-  # di k3d (deploy/k3d/infra.sh), yang selama ini tidak punya kembaran di
-  # compose. Yang mengajarkannya: perbaikan B23 (KAFKA_LOG_DIRS) membuat
-  # container Kafka dibuat ulang dengan volume kosong, seluruh topic hilang,
-  # dan setiap relay outbox gagal dengan UNKNOWN_TOPIC_OR_PARTITION sampai
-  # `task topics` dijalankan tangan. cmd/topics idempoten, jadi ia aman
-  # berjalan pada setiap `up`; unit menunggu ia SELESAI, bukan sekadar mulai.
+  # The Kafka topics are created BEFORE any unit starts - the counterpart of
+  # the `topics` Job on k3d (deploy/k3d/infra.sh), which until now had no
+  # twin in compose. What taught it: the B23 fix (KAFKA_LOG_DIRS) made the
+  # Kafka container be recreated with an empty volume, every topic vanished,
+  # and every outbox relay failed with UNKNOWN_TOPIC_OR_PARTITION until `task
+  # topics` was run by hand. cmd/topics is idempotent, so it is safe to run
+  # on every `up`; the units wait for it to FINISH, not merely to start.
   topics:
     build:
       context: ../..

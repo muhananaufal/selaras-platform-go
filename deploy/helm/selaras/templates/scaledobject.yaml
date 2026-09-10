@@ -2,29 +2,28 @@
 {{- if and $u.keda $u.keda.enabled }}
 {{- $ctx := dict "root" $ "unit" $unit }}
 ---
-# KEDA ScaledObject berbasis lag konsumen untuk llm-worker (F9-22, ADR-014).
+# A KEDA ScaledObject based on consumer lag for llm-worker (F9-22, ADR-014).
 #
-# CPU adalah proksi yang buruk untuk pekerjaan yang didominasi menunggu
-# jawaban Gemini: worker yang tertinggal 500 job bisa punya CPU rendah. Sinyal
-# yang benar adalah LAG.
+# CPU is a poor proxy for work dominated by waiting for Gemini's answer: a
+# worker 500 jobs behind can have low CPU. The right signal is LAG.
 #
-# Lag dibaca KEDA LANGSUNG dari broker (scaler kafka), BUKAN dari metrik
-# kafka_consumer_lag milik F3-15. Keduanya angka yang sama; sumbernya yang
-# berbeda, dan perbedaannya menentukan segalanya untuk scale-to-zero: metrik
-# F3-15 diterbitkan oleh worker, jadi saat worker 0 replika metriknya tidak
-# ada dan tidak ada yang bisa membangunkannya. Itu benar-benar terjadi saat
-# suite e2e dijalankan di k3d (F9-23): ScaledObject "triggers are not
-# active" selamanya, balasan chat tidak pernah datang. Broker tahu lag-nya
-# sekalipun tidak ada satu pun konsumen yang hidup.
+# KEDA reads the lag DIRECTLY from the broker (the kafka scaler), NOT from
+# F3-15's kafka_consumer_lag metric. The two are the same number; the source
+# differs, and the difference decides everything for scale-to-zero: the F3-15
+# metric is published by the worker, so with the worker at 0 replicas the
+# metric does not exist and nothing can wake it. That really happened when the
+# e2e suite ran on k3d (F9-23): the ScaledObject's "triggers are not active"
+# forever, chat replies never came. The broker knows the lag even when not a
+# single consumer is alive.
 #
-# maxReplicaCount TIDAK melebihi jumlah partisi llm.jobs (ADR-014 aturan 1):
-# konsumen ke-13 pada topic 12 partisi menganggur - scaling yang terlihat
-# bekerja padahal tidak menambah apa pun. allowIdleConsumers=false membuat
-# KEDA menegakkannya juga.
+# maxReplicaCount does NOT exceed the llm.jobs partition count (ADR-014 rule
+# 1): a 13th consumer on a 12-partition topic sits idle - scaling that looks
+# like it works while adding nothing. allowIdleConsumers=false makes KEDA
+# enforce that too.
 #
-# minReplicaCount 0 = scale-to-zero saat antrean kosong (F9-23). Harganya
-# adalah cold-start job pertama, dan angkanya DIUKUR di docs/performance-
-# report.md (ADR-014 aturan 5) - bukan diabaikan.
+# minReplicaCount 0 = scale-to-zero when the queue is empty (F9-23). The price
+# is the cold start of the first job, and that number is MEASURED in
+# docs/performance-report.md (ADR-014 rule 5) - not ignored.
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -41,21 +40,22 @@ spec:
   triggers:
     - type: kafka
       metadata:
-        # Nama LENGKAP, bukan "kafka:9092" seperti yang dipakai unit: KEDA hidup
-        # di namespace keda, dan nama pendek tidak diterjemahkan lintas
-        # namespace. Broker juga mengumumkan nama lengkap ini
-        # (deploy/k8s/infra/kafka.yaml), kalau tidak klien di luar namespace
-        # selaras dialihkan ke alamat yang tidak bisa ia temukan.
+        # The FULL name, not "kafka:9092" as the units use: KEDA lives in the
+        # keda namespace, and short names do not translate across namespaces.
+        # The broker announces this full name too (deploy/k8s/infra/kafka.yaml),
+        # otherwise a client outside the selaras namespace is directed to an
+        # address it cannot find.
         bootstrapServers: {{ printf "kafka.%s.svc.cluster.local:9092" $.Release.Namespace | quote }}
         consumerGroup: {{ $u.keda.consumerGroup | quote }}
         topic: {{ $u.keda.topic | quote }}
-        # Satu replika per lagThreshold job yang menunggu; satu job yang
-        # menunggu sudah cukup untuk membangunkan worker dari nol.
+        # One replica per lagThreshold waiting jobs; one waiting job is
+        # enough to wake the worker from zero.
         lagThreshold: {{ $u.keda.lagThreshold | quote }}
         activationLagThreshold: "0"
         allowIdleConsumers: "false"
-        # Group yang belum pernah komit (worker baru) dihitung dari akhir
-        # topic, bukan dari awal riwayat - lag lama bukan pekerjaan baru.
+        # A group that has never committed (a new worker) is counted from
+        # the end of the topic, not from the start of the history - old lag
+        # is not new work.
         offsetResetPolicy: latest
 {{- end }}
 {{- end }}

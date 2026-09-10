@@ -1,16 +1,16 @@
 # syntax=docker/dockerfile:1
 
-# Satu Dockerfile untuk seluruh unit. Unit yang dibangun dipilih lewat
-# build arg, sehingga tidak ada sembilan berkas yang harus dijaga tetap
-# sinkron satu sama lain.
+# One Dockerfile for every unit. The unit built is chosen through a build
+# arg, so there are not nine files that have to be kept in sync with each
+# other.
 ARG UNIT
 
 # ---------------------------------------------------------------- build
 FROM golang:1.27.1-alpine AS build
 WORKDIR /src
 
-# Dependensi disalin lebih dulu dan sendirian: selama go.mod tidak
-# berubah, layer ini tetap terpakai meski seluruh source berubah.
+# The dependencies are copied first and on their own: as long as go.mod does
+# not change, this layer stays cached even when all of the source changes.
 COPY go.mod go.sum* ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
@@ -21,10 +21,10 @@ ARG UNIT
 ARG VERSION=dev
 ARG REVISION=unknown
 
-# CGO dimatikan supaya binernya benar-benar statis. Itu syarat mutlak
-# untuk distroless static: tidak ada libc di sana untuk ditautkan.
-# -s -w membuang tabel simbol dan DWARF; ukurannya turun banyak dan
-# profil pprof tetap bekerja karena pclntab tidak ikut dibuang.
+# CGO is switched off so the binary is truly static. That is an absolute
+# requirement for distroless static: there is no libc there to link against.
+# -s -w drops the symbol table and DWARF; the size drops a lot and pprof
+# profiles still work because pclntab is not dropped.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux \
@@ -33,9 +33,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -o /out/app ./cmd/${UNIT}
 
 # ---------------------------------------------------------------- runtime
-# static-debian12 tidak punya shell, package manager, maupun libc.
-# Yang dibawanya hanya CA certificates, tzdata, dan /etc/passwd - dan CA
-# itulah alasan `scratch` tidak dipakai: tanpanya TLS ke Gemini gagal.
+# static-debian12 has no shell, package manager, or libc. All it carries is
+# the CA certificates, tzdata, and /etc/passwd - and those CAs are the
+# reason `scratch` is not used: without them TLS to Gemini fails.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 ARG UNIT
@@ -49,18 +49,17 @@ LABEL org.opencontainers.image.title="selaras-${UNIT}" \
 
 COPY --from=build /out/app /app
 
-# Berkas migrasi ikut di SETIAP image (beberapa puluh KB), supaya image
-# `migrate` bisa dibangun dari Dockerfile yang sama dan berjalan sebagai Job
-# di klaster (deploy/k8s/jobs/migrate.yaml). cmd/migrate membaca
-# file://migrations/<service> relatif terhadap WORKDIR.
+# The migration files come along in EVERY image (a few dozen KB), so the
+# `migrate` image can be built from the same Dockerfile and run as a Job in
+# the cluster (deploy/k8s/jobs/migrate.yaml). cmd/migrate reads
+# file://migrations/<service> relative to WORKDIR.
 COPY migrations /migrations
 WORKDIR /
 
-# Berjalan sebagai nonroot (uid 65532) yang sudah disediakan image dasar.
+# Runs as the nonroot user (uid 65532) the base image already provides.
 USER nonroot:nonroot
 EXPOSE 8080
 
-# Tidak ada HEALTHCHECK: image ini tidak punya shell maupun curl untuk
-# menjalankannya. Kesehatan diperiksa Kubernetes lewat probe HTTP ke
-# /healthz dan /readyz.
+# No HEALTHCHECK: this image has no shell or curl to run one. Health is
+# checked by Kubernetes through HTTP probes to /healthz and /readyz.
 ENTRYPOINT ["/app"]

@@ -1,5 +1,6 @@
-# Setiap perubahan ditinjau pemelihara; kontrak dan keputusan arsitektur
-# disebut eksplisit supaya perubahannya tidak lewat tanpa disadari.
+# Every change is reviewed by the maintainer; the contracts and architecture
+# decisions are named explicitly so a change to them does not slip through
+# unnoticed.
 *                     @muhananaufal
 /api/                 @muhananaufal
 /docs/adr/            @muhananaufal

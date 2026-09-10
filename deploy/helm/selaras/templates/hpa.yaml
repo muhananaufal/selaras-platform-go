@@ -2,13 +2,13 @@
 {{- if and $u.autoscaling $u.autoscaling.enabled }}
 {{- $ctx := dict "root" $ "unit" $unit }}
 ---
-# HPA berbasis CPU untuk unit HTTP/gRPC (ADR-014 opsi c, bagian HPA).
+# CPU-based HPA for the HTTP/gRPC units (ADR-014 option c, HPA section).
 #
-# Ambangnya BUKAN angka bulat sembarang (ADR-014 aturan 2): ia diturunkan
-# dari pengukuran di docs/performance-report.md - CPU per permintaan dan
-# titik saat p95 mulai melewati SLO. Angkanya ada di values-*.yaml supaya
-# lingkungan yang mesinnya berbeda bisa mengukur ulang tanpa menyentuh
-# template.
+# The threshold is NOT an arbitrary round number (ADR-014 rule 2): it is
+# derived from the measurements in docs/performance-report.md - CPU per
+# request and the point where p95 starts exceeding the SLO. The numbers live
+# in values-*.yaml so an environment with different machines can re-measure
+# without touching the template.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -30,11 +30,10 @@ spec:
           type: Utilization
           averageUtilization: {{ $u.autoscaling.targetCPUUtilizationPercentage }}
   behavior:
-    # Naik cepat, turun pelan: burst adalah bentuk beban yang nyata (E4),
-    # sementara turun terlalu cepat membuat replika dibuang tepat sebelum
-    # gelombang berikutnya. Turun dibatasi satu replika per menit supaya
-    # grafik F9-24 memperlihatkan "naik lalu turun kembali" sebagai
-    # keputusan, bukan getaran.
+    # Up fast, down slow: bursts are the real shape of the load (E4), while
+    # scaling down too fast throws replicas away right before the next wave.
+    # Scaling down is limited to one replica per minute so the F9-24 graph
+    # shows "up and back down" as a decision, not jitter.
     scaleUp:
       stabilizationWindowSeconds: 0
       policies:

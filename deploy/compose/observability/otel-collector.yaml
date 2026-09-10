@@ -1,8 +1,8 @@
-# OpenTelemetry Collector - satu pintu masuk untuk trace dari sembilan unit.
+# The OpenTelemetry Collector - one entry point for traces from nine units.
 #
-# Unit TIDAK mengirim langsung ke Tempo, dan itu disengaja: alamat yang
-# diketahui unit hanya satu, sehingga mengganti backend trace - atau
-# menambahkan yang kedua - tidak menyentuh satu pun unit.
+# The units do NOT send directly to Tempo, and that is deliberate: the units
+# know only one address, so replacing the trace backend - or adding a second
+# one - touches not a single unit.
 
 receivers:
   otlp:
@@ -13,8 +13,9 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
-  # memory_limiter di depan batch: collector yang kehabisan memori menjatuhkan
-  # data dengan tertib, bukan di-OOM-kill bersama seluruh antreannya.
+  # memory_limiter in front of batch: a collector running out of memory drops
+  # data in an orderly way, rather than being OOM-killed along with its whole
+  # queue.
   memory_limiter:
     check_interval: 1s
     limit_mib: 180
@@ -33,9 +34,10 @@ service:
   telemetry:
     metrics:
       level: basic
-      # Metrik internal collector dibuka ke jaringan compose supaya
-      # Prometheus bisa menariknya; bawaannya hanya mendengar di localhost
-      # container, dan target itu terlihat "down" - itu terjadi di sini.
+      # The collector's internal metrics are opened to the compose network
+      # so Prometheus can scrape them; the default listens only on the
+      # container's localhost, and that target showed "down" - it happened
+      # here.
       readers:
         - pull:
             exporter:

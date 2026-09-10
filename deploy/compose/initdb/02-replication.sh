@@ -1,14 +1,14 @@
 #!/bin/bash
-# Peran replikasi untuk replika baca (F9-32).
+# The replication role for the read replica (F9-32).
 #
-# Berjalan sekali saat initdb, setelah 01-schemas.sh. Peran `replicator`
-# hanya boleh REPLICATION dan LOGIN - ia tidak bisa membaca satu pun tabel,
-# jadi kata sandinya yang bocor tidak membuka data, hanya aliran WAL.
+# Runs once during initdb, after 01-schemas.sh. The `replicator` role may
+# only REPLICATION and LOGIN - it cannot read a single table, so a leaked
+# password opens no data, only the WAL stream.
 #
-# pg_hba bawaan image hanya memuat `host all all all scram-sha-256`, dan
-# koneksi replikasi TIDAK tercakup oleh "all" - ia butuh baris `replication`
-# sendiri. Ditambahkan di sini dan dimuat ulang, supaya replika bisa
-# menyambung tanpa menyunting berkas di volume secara manual.
+# The image's default pg_hba holds only `host all all all scram-sha-256`,
+# and replication connections are NOT covered by "all" - they need their own
+# `replication` line. Added here and reloaded, so the replica can connect
+# without editing a file on the volume by hand.
 set -euo pipefail
 
 if [ -z "${REPLICATION_PASSWORD:-}" ]; then
@@ -21,7 +21,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-S
 SQL
 
 echo "host replication replicator all scram-sha-256" >> "$PGDATA/pg_hba.conf"
-# pg_reload_conf lewat psql, bukan pg_ctl: pg_ctl menolak berjalan sebagai
-# root, dan skrip ini juga dipakai manual di primer yang sudah ada.
+# pg_reload_conf through psql, not pg_ctl: pg_ctl refuses to run as root,
+# and this script is also used by hand on an existing primary.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "SELECT pg_reload_conf();" >/dev/null
 echo "  replication role and pg_hba entry created"

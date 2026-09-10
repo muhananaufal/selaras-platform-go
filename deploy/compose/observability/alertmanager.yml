@@ -1,11 +1,11 @@
-# Alertmanager untuk lingkungan lokal: penerimanya SUREL KE MAILPIT.
+# Alertmanager for the local environment: its receiver is EMAIL TO MAILPIT.
 #
-# Bukan receiver kosong. Alert yang tidak pernah sampai ke mana pun tidak
-# bisa dibuktikan bekerja; dengan Mailpit, setiap alert yang menyala terlihat
-# di http://127.0.0.1:18025 seperti surel reset kata sandi - dan chaos yang
-# mematikan satu unit (test/chaos/service.sh) bisa dituntut menghasilkan
-# satu surel. Di klaster, receiver-nya diganti lewat ConfigMap
-# (deploy/k8s/observability/stack.yaml) tanpa mengubah aturannya.
+# Not an empty receiver. An alert that never reaches anywhere cannot be
+# proven to work; with Mailpit, every firing alert shows up at
+# http://127.0.0.1:18025 like a password reset email - and the chaos that
+# kills one unit (test/chaos/service.sh) can be required to produce one
+# email. In the cluster, the receiver is replaced through a ConfigMap
+# (deploy/k8s/observability/stack.yaml) without changing the rules.
 global:
   smtp_smarthost: mailpit:1025
   smtp_from: alerts@selaras.local
@@ -15,8 +15,8 @@ global:
 route:
   receiver: mailpit
   group_by: [alertname, unit]
-  # Page dikirim segera dan diulang tiap jam selama masih menyala; ticket
-  # dikumpulkan lima menit supaya satu insiden menjadi satu surel.
+  # Pages are sent immediately and repeated hourly while still firing;
+  # tickets are batched for five minutes so one incident becomes one email.
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 1h

@@ -1,18 +1,18 @@
-# Nilai BERSAMA untuk chart selaras (F9-01, F9-02).
+# SHARED values for the selaras chart (F9-01, F9-02).
 #
-# Perbedaan lokal dan cloud hanya berupa NILAI (values-local.yaml,
-# values-cloud.yaml), bukan template terpisah (ADR-010). Berkas ini memuat
-# yang sama di kedua lingkungan: katalog unit, port, probe, dan bentuk
-# resource - angkanya diambil dari pengukuran compose (docs/performance-
-# report.md, docs/finops.md), bukan dikosongkan (F9-03).
+# The difference between local and cloud is only VALUES (values-local.yaml,
+# values-cloud.yaml), not separate templates (ADR-010). This file holds what
+# is the same in both environments: the unit catalogue, ports, probes, and
+# resource shapes - the numbers taken from the compose measurements
+# (docs/performance-report.md, docs/finops.md), not left blank (F9-03).
 #
-# Tidak ada kredensial di sini, di values-*.yaml, atau di template (ADR-016).
-# Seluruh rahasia dibaca dari satu Secret yang dibuat DI LUAR chart
-# (secrets.existingSecret); kunci yang dibutuhkan tiap unit disebut di
-# `secretEnv` supaya yang hilang gagal saat start, bukan diam-diam kosong.
+# There are no credentials here, in values-*.yaml, or in the templates
+# (ADR-016). Every secret is read from one Secret created OUTSIDE the chart
+# (secrets.existingSecret); the keys each unit needs are named in `secretEnv`
+# so a missing one fails at start rather than being silently empty.
 
 image:
-  registry: ""          # kosong = image lokal yang di-import ke k3d
+  registry: "" # empty = a local image imported into k3d
   repository: selaras   # <registry>/<repository>/<unit>:<tag>
   tag: dev
   pullPolicy: IfNotPresent
@@ -20,29 +20,30 @@ image:
 secrets:
   existingSecret: selaras-secrets
 
-# Variabel yang sama untuk semua unit. Nama host mengikuti nama Service di
-# namespace yang sama.
+# The same variables for every unit. Host names follow the Service names in
+# the same namespace.
 env:
   KAFKA_BROKERS: kafka:9092
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
   REDIS_URL: redis://redis:6379/0
 
-# Batas laju gateway. Produksi memakai bawaan kode (5 dan 10 per menit);
-# lokal menaikkannya supaya suite e2e bisa berjalan (docs/runbook/rate-limits.md).
+# The gateway rate limits. Production uses the code defaults (5 and 10 per
+# minute); local raises them so the e2e suite can run
+# (docs/runbook/rate-limits.md).
 rateLimit:
   authRequests: ""
   llmRequests: ""
 
-# Batas jaringan (templates/networkpolicy.yaml): ingress ditolak untuk semua
-# unit, lalu dibuka hanya sesuai grafik *_GRPC_TARGET di atas dan port probe
-# dari namespace observability. Egress terbuka, alasannya di template-nya.
-# Membutuhkan CNI yang menegakkan NetworkPolicy (k3s: ya, lewat pengendali
-# bawaannya).
+# Network limits (templates/networkpolicy.yaml): ingress is denied for every
+# unit, then opened only along the *_GRPC_TARGET graph above and the probe
+# port from the observability namespace. Egress is open, for reasons given
+# in the template. Requires a CNI that enforces NetworkPolicy (k3s: yes,
+# through its built-in controller).
 networkPolicy:
   enabled: true
   observabilityNamespace: observability
 
-# Satu pod boleh pergi kapan pun; pada tiga replika, dua tetap melayani.
+# One pod may leave at any time; with three replicas, two keep serving.
 podDisruptionBudget:
   enabled: true
   maxUnavailable: 1
@@ -60,11 +61,11 @@ units:
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply.local
       FRONTEND_URL: http://localhost:3000
-      # argon2id 64 MiB x dua derivasi serentak, di atas RSS dasar ~30 MiB dan
-      # ruang kerja GC. 192 MiB di-OOM-kill dua kali saat suite e2e mendaftar
-      # akun berurutan di k3d (cgroup menghitung RSS penuh, bukan heap Go);
-      # 320 MiB memberi ruang, dan GOMEMLIMIT membuat GC bekerja jauh sebelum
-      # plafon.
+      # argon2id 64 MiB x two concurrent derivations, on top of a base RSS of
+      # ~30 MiB and the GC's working room. 192 MiB was OOM-killed twice while
+      # the e2e suite registered accounts back to back on k3d (the cgroup
+      # counts the full RSS, not the Go heap); 320 MiB leaves room, and
+      # GOMEMLIMIT makes the GC work well before the ceiling.
       GOMEMLIMIT: 256MiB
     secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY]
     resources:
@@ -147,7 +148,8 @@ units:
     autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
 
   llm-worker:
-    # Tanpa port gRPC: ia konsumen. healthPort melayani /metrics dan probe.
+    # No gRPC port: it is a consumer. healthPort serves /metrics and the
+    # probes.
     healthPort: 9402
     env:
       METRICS_ADDR: ":9402"
@@ -157,15 +159,17 @@ units:
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
-    # Di-scale KEDA menurut lag (F9-22), bukan HPA CPU (ADR-014).
+    # Scaled by KEDA on lag (F9-22), not by the CPU HPA (ADR-014).
     autoscaling: { enabled: false }
     keda:
       enabled: true
-      # maxReplicaCount TIDAK melebihi jumlah partisi llm.jobs (ADR-014 aturan 1).
+      # maxReplicaCount does NOT exceed the llm.jobs partition count (ADR-014 rule
+      # 1).
       maxReplicaCount: 12
       minReplicaCount: 0
-      # Lag dibaca KEDA langsung dari broker untuk group dan topic ini -
-      # sumber yang tetap ada saat worker 0 replika (lihat scaledobject.yaml).
+      # KEDA reads the lag directly from the broker for this group and topic -
+      # a source that still exists when the worker is at 0 replicas (see
+      # scaledobject.yaml).
       consumerGroup: llm-worker
       topic: llm.jobs
       lagThreshold: "5"

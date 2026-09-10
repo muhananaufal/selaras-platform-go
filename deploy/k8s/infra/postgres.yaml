@@ -1,10 +1,10 @@
-# Postgres untuk klaster lokal (F9-04). Satu instance, skema per service
-# (ADR-006) - initdb yang SAMA dengan compose: ConfigMap postgres-initdb
-# dibuat dari deploy/compose/initdb/01-schemas.sh oleh task k3d:infra, supaya
-# hanya ada satu sumber untuk aturan isolasi skema.
+# Postgres for the local cluster (F9-04). One instance, a schema per service
+# (ADR-006) - the SAME initdb as compose: the postgres-initdb ConfigMap is
+# created from deploy/compose/initdb/01-schemas.sh by task k3d:infra, so
+# there is only one source for the schema isolation rules.
 #
-# Kredensial dari Secret selaras-infra yang dibuat di luar manifest ini
-# (task k3d:secrets, membaca .env). Tidak ada nilai bawaan (ADR-016).
+# Credentials from the selaras-infra Secret created outside this manifest
+# (task k3d:secrets, reading .env). No defaults (ADR-016).
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,8 +1,8 @@
-# Grafana Loki - penyimpanan log, mode satu proses, backend berkas lokal.
+# Grafana Loki - log storage, single-process mode, local file backend.
 #
-# Retensi 7 hari, dipangkas oleh compactor. Log dikirim Alloy dari daemon
-# Docker (lihat alloy.alloy), jadi unit TIDAK tahu apa-apa soal Loki: mereka
-# menulis JSON ke stdout dan berhenti di situ.
+# 7-day retention, pruned by the compactor. Logs are sent by Alloy from the
+# Docker daemon (see alloy.alloy), so the units know NOTHING about Loki:
+# they write JSON to stdout and stop there.
 
 auth_enabled: false
 
@@ -32,9 +32,9 @@ schema_config:
 
 limits_config:
   retention_period: 168h
-  # Alloy mengirim seluruh riwayat log container saat pertama menyala, dan
-  # bawaan 4 MB/detik menolaknya sebagai "rate limit exceeded". Dinaikkan
-  # supaya backlog awal masuk, bukan hilang.
+  # Alloy sends the whole container log history when it first starts, and
+  # the default 4 MB/second refuses it as "rate limit exceeded". Raised so
+  # the initial backlog gets in rather than lost.
   ingestion_rate_mb: 16
   ingestion_burst_size_mb: 32
 

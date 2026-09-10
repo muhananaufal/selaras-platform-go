@@ -1,13 +1,14 @@
 #!/bin/bash
-# Replika baca Postgres lewat streaming replication (F9-32).
+# A Postgres read replica through streaming replication (F9-32).
 #
-# Saat direktori data kosong, salinan dasar diambil dari primer dengan
-# pg_basebackup (-R menulis standby.signal dan primary_conninfo), lalu
-# server dinyalakan sebagai hot standby. Saat data sudah ada, server
-# dinyalakan apa adanya dan melanjutkan aliran WAL dari tempat ia berhenti.
+# When the data directory is empty, a base copy is taken from the primary
+# with pg_basebackup (-R writes standby.signal and primary_conninfo), and
+# the server is then started as a hot standby. When data already exists, the
+# server is started as it is and resumes the WAL stream from where it
+# stopped.
 #
-# Berjalan lewat entrypoint image resmi supaya hak berkas, locale, dan
-# pengguna `postgres` ditangani cara yang sama dengan primer.
+# Runs through the official image's entrypoint so file permissions, locale,
+# and the `postgres` user are handled the same way as on the primary.
 set -euo pipefail
 
 : "${PRIMARY_HOST:?set PRIMARY_HOST}"
@@ -20,13 +21,13 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
   mkdir -p "$PGDATA"
   chown postgres:postgres "$PGDATA"
   chmod 700 "$PGDATA"
-  # gosu, bukan su-exec: image postgres:*-alpine membawa gosu (diperiksa
-  # di dalam image-nya, bukan diingat).
+  # gosu, not su-exec: the postgres:*-alpine image ships gosu (checked
+  # inside the image, not remembered).
   PGPASSWORD="$REPLICATION_PASSWORD" gosu postgres \
     pg_basebackup -h "$PRIMARY_HOST" -U replicator -D "$PGDATA" -Fp -Xs -R -c fast
   echo "replica: base backup done; starting as hot standby"
 fi
 
-# hot_standby=on sudah bawaan; -c memastikan replika menolak menulis
-# sekalipun seseorang mengarahkan DSN tulis ke sini.
+# hot_standby=on is already the default; -c makes sure the replica refuses
+# writes even if someone points a write DSN here.
 exec docker-entrypoint.sh postgres -c hot_standby=on

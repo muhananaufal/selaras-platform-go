@@ -1,5 +1,5 @@
-# Redis, Mailpit, dan PgBouncer untuk klaster lokal (F9-04). Salinan dari
-# deploy/compose/core.yml dengan bentuk Kubernetes; nilainya sama.
+# Redis, Mailpit, and PgBouncer for the local cluster (F9-04). A copy of
+# deploy/compose/core.yml in Kubernetes form; the values are the same.
 apiVersion: v1
 kind: Service
 metadata: { name: redis, namespace: selaras }
@@ -56,8 +56,8 @@ spec:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { memory: 128Mi }
 ---
-# PgBouncer, mode transaksi (F9-27). Nilainya identik dengan compose;
-# kredensial admin dari Secret selaras-infra.
+# PgBouncer, transaction mode (F9-27). The values are identical to compose;
+# the admin credentials come from the selaras-infra Secret.
 apiVersion: v1
 kind: Service
 metadata: { name: pgbouncer, namespace: selaras }

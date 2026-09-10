@@ -1,6 +1,6 @@
-# Pembaruan dependensi otomatis, dikelompokkan supaya tidak menjadi
-# puluhan PR per minggu. Setiap PR tetap melewati CI penuh; action dipin
-# ke SHA di workflow, dan Dependabot memperbarui SHA beserta komentar tag-nya.
+# Automated dependency updates, grouped so they do not become dozens of PRs a
+# week. Every PR still goes through the full CI; actions are pinned to a SHA
+# in the workflows, and Dependabot updates the SHA along with its tag comment.
 version: 2
 updates:
   - package-ecosystem: gomod

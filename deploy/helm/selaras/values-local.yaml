@@ -1,16 +1,17 @@
-# Nilai LOKAL (k3d, satu node) - hanya yang berbeda dari values.yaml (ADR-010).
+# LOCAL values (k3d, single node) - only what differs from values.yaml
+# (ADR-010).
 #
-# Batas k3d dinyatakan terbuka (ADR-014 aturan 4, F9-25): pada satu node,
-# replika tambahan berbagi CPU host yang sama. Yang dibuktikan di sini adalah
-# MEKANISME autoscaling bekerja, bukan kapasitasnya bertambah.
+# The k3d limit is stated openly (ADR-014 rule 4, F9-25): on one node, extra
+# replicas share the same host CPU. What is proven here is that the autoscaling
+# MECHANISM works, not that capacity grows.
 
 image:
-  registry: ""      # image di-import langsung ke node k3d (task k3d:import)
+  registry: "" # the image is imported straight into the k3d node (task k3d:import)
   tag: dev
-  pullPolicy: Never # kalau image belum di-import, gagal sekarang - bukan menarik dari registri yang tidak ada
+  pullPolicy: Never # if the image is not imported yet, fail now - do not pull from a registry that does not exist
 
-# Suite e2e mendaftarkan puluhan akun dari satu alamat dalam hitungan detik
-# (docs/runbook/rate-limits.md). Dinaikkan, bukan dimatikan.
+# The e2e suite registers dozens of accounts from one address within seconds
+# (docs/runbook/rate-limits.md). Raised, not switched off.
 rateLimit:
   authRequests: "500"
   llmRequests: "500"
@@ -18,7 +19,7 @@ rateLimit:
 units:
   edge-gateway:
     service:
-      # NodePort supaya k3d bisa memetakannya ke host (deploy/k3d/cluster.yaml).
+      # NodePort so k3d can map it to the host (deploy/k3d/cluster.yaml).
       type: NodePort
       nodePort: 30080
   llm-worker:

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Membangun image setiap unit (plus migrate dan topics) dan mengimpornya
-# ke node k3d (F9-04). Tanpa registri: image lokal masuk langsung ke
-# containerd node, dan chart memakai pullPolicy Never.
+# Builds the image of every unit (plus migrate and topics) and imports them
+# into the k3d node (F9-04). No registry: local images go straight into the
+# node's containerd, and the chart uses pullPolicy Never.
 #
-# Dua image dibangun berurutan, bukan sembilan sekaligus: mesin ini empat
-# core dan plafon WSL 8 GB, dan membangun sembilan sekaligus pernah
-# di-OOM-kill di tengah (catatan F8).
+# Two images are built in sequence, not nine at once: this machine has four
+# cores and an 8 GB WSL ceiling, and building nine at once was once
+# OOM-killed halfway (F8 notes).
 
 set -euo pipefail
-# k3d, kubectl, dan helm dipasang di ~/.local/bin milik pengguna WSL.
+# k3d, kubectl, and helm are installed in the WSL user's ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TAG="${TAG:-dev}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Memasang atau memperbarui chart selaras dengan nilai lokal (F9-04).
+# Installs or upgrades the selaras chart with the local values (F9-04).
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

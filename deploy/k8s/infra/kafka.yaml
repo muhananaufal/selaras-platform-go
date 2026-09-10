@@ -1,7 +1,7 @@
-# Kafka KRaft satu node untuk klaster lokal (F9-04). Konfigurasinya salinan
-# dari deploy/compose/core.yml: satu proses broker+controller, tanpa
-# ZooKeeper, heap ditahan 512 MB. Listener HOST dari compose tidak ada -
-# tidak ada klien di luar klaster.
+# Single-node KRaft Kafka for the local cluster (F9-04). Its configuration
+# is a copy of deploy/compose/core.yml: one broker+controller process, no
+# ZooKeeper, heap kept at 512 MB. The HOST listener from compose is absent -
+# there are no clients outside the cluster.
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,10 +9,10 @@ metadata:
   namespace: selaras
 spec:
   clusterIP: None
-  # Alamat pod dipublikasikan SEBELUM ia siap: KRaft membutuhkan nama DNS-nya
-  # sendiri (kafka-0.kafka) untuk membentuk kuorum, dan tanpa ini nama itu
-  # baru ada setelah readiness - yang tidak pernah tercapai. Itu terjadi:
-  # "kafka-0.kafka: Name does not resolve", pod restart terus.
+  # The pod address is published BEFORE it is ready: KRaft needs its own DNS
+  # name (kafka-0.kafka) to form a quorum, and without this that name only
+  # exists after readiness - which is never reached. It happened:
+  # "kafka-0.kafka: Name does not resolve", the pod restarting endlessly.
   publishNotReadyAddresses: true
   selector: { app: kafka }
   ports:
@@ -52,9 +52,9 @@ spec:
             - { name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1" }
             - { name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0" }
             - { name: KAFKA_HEAP_OPTS, value: "-Xms256m -Xmx512m" }
-            # Tanpa ini image apache/kafka menulis log ke /tmp di dalam container,
-            # dan volume yang dipasang di /var/lib/kafka/data kosong: pod yang
-            # dibuat ulang kehilangan SELURUH topic. Itu terjadi di sini.
+            # Without this the apache/kafka image writes its logs to /tmp inside
+            # the container, and the volume mounted at /var/lib/kafka/data stays
+            # empty: a recreated pod loses EVERY topic. It happened here.
             - { name: KAFKA_LOG_DIRS, value: "/var/lib/kafka/data" }
           ports:
             - { name: broker, containerPort: 9092 }

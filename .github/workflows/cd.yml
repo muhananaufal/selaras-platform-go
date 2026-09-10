@@ -1,11 +1,11 @@
 name: cd
 
-# Pipeline CD (F9-17): bangun image setiap unit, pindai, dorong bertag, lalu
-# deploy chart ke overlay yang dipilih. Rollback dijelaskan di
+# The CD pipeline (F9-17): build the image of every unit, scan, push tagged,
+# then deploy the chart to the chosen overlay. Rollback is described in
 # docs/runbook/deploy.md.
 #
-# Dipicu oleh tag rilis (v*) atau manual dengan tag image yang sudah ada.
-# Push ke main TIDAK men-deploy apa pun: CI hijau bukan izin rilis.
+# Triggered by a release tag (v*) or manually with an existing image tag. A
+# push to main deploys NOTHING: a green CI is not a release permission.
 
 on:
   push:
@@ -35,9 +35,9 @@ env:
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/selaras
 
 jobs:
-  # Sebelas image dari satu Dockerfile (UNIT=...), dibangun berurutan per
-  # runner supaya cache layer dependensi dipakai bersama; matriks membuat
-  # kegagalan satu unit terlihat sendiri, bukan tersembunyi di satu log.
+  # Eleven images from one Dockerfile (UNIT=...), built in sequence per
+  # runner so the dependency layer cache is shared; the matrix makes the
+  # failure of one unit visible on its own, not buried in one log.
   build:
     name: build ${{ matrix.unit }}
     if: github.event_name == 'push'
@@ -74,8 +74,8 @@ jobs:
             type=ref,event=tag
             type=sha,format=short
 
-      # Dibangun dan dimuat lokal dulu, dipindai, BARU didorong. Image yang
-      # gagal pindai tidak pernah ada di registri.
+      # Built and loaded locally first, scanned, and ONLY THEN pushed. An
+      # image that fails the scan never exists in the registry.
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -102,10 +102,10 @@ jobs:
       - name: Push
         run: docker push --all-tags ${{ env.IMAGE_PREFIX }}/${{ matrix.unit }}
 
-  # Deploy: helm upgrade --install --atomic ke overlay cloud dengan tag yang
-  # baru dibangun (atau tag yang diberikan manual). --atomic membuat
-  # rilis yang gagal --wait dibatalkan sendiri ke revisi sebelumnya - itu
-  # rollback otomatis pertama; yang manual ada di runbook.
+  # Deploy: helm upgrade --install --atomic to the cloud overlay with the
+  # freshly built tag (or the tag given manually). --atomic makes a release
+  # that fails --wait roll itself back to the previous revision - that is
+  # the first automatic rollback; the manual one is in the runbook.
   deploy:
     name: deploy ${{ github.event.inputs.environment || 'cloud' }}
     needs: [build]
@@ -120,9 +120,9 @@ jobs:
         with:
           version: v4.2.4
 
-      # Kubeconfig datang dari Secret lingkungan GitHub, bukan dari repositori
-      # (ADR-016). Tanpa Secret ini job gagal di sini - bukan diam-diam
-      # men-deploy ke klaster yang salah.
+      # The kubeconfig comes from a GitHub environment Secret, not from the
+      # repository (ADR-016). Without this Secret the job fails here - rather
+      # than silently deploying to the wrong cluster.
       - name: Kubeconfig
         run: |
           [ -n "${{ secrets.KUBECONFIG_B64 }}" ] || { echo "KUBECONFIG_B64 is not set for this environment" >&2; exit 1; }

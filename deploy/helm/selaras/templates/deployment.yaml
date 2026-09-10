@@ -21,22 +21,24 @@ spec:
       labels:
         {{- include "selaras.labels" $ctx | nindent 8 }}
       annotations:
-        # Prometheus menemukan /metrics lewat anotasi ini (deploy/k8s/observability).
+        # Prometheus finds /metrics through this annotation
+        # (deploy/k8s/observability).
         prometheus.io/scrape: "true"
         prometheus.io/port: {{ $u.healthPort | quote }}
         prometheus.io/path: /metrics
     spec:
-      # Distroless, tanpa shell, non-root: tidak ada yang bisa di-exec ke dalamnya,
-      # dan itu memang yang diinginkan.
+      # Distroless, no shell, non-root: nothing can exec into it, and that is
+      # exactly what is wanted.
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 20
-      # Replika disebar antar node bila ada lebih dari satu; di k3d satu node
-      # ini tidak berpengaruh (ScheduleAnyway), di cloud ia mencegah dua
-      # replika unit yang sama berbagi node yang mati bersama.
+      # Replicas are spread across nodes when there is more than one; on
+      # single-node k3d this has no effect (ScheduleAnyway), in the cloud it
+      # keeps two replicas of the same unit from sharing a node that dies
+      # together.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -84,18 +86,19 @@ spec:
             {{- end }}
             {{- end }}
             {{- range $key := $u.secretEnv }}
-            # Rahasia dibaca dari Secret yang dibuat di luar chart (ADR-016).
-            # Kunci yang tidak ada membuat pod gagal start - bukan berjalan
-            # dengan nilai kosong.
+            # Secrets are read from a Secret created outside the chart
+            # (ADR-016). A missing key makes the pod fail to start - rather
+            # than run with an empty value.
             - name: {{ $key }}
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.secrets.existingSecret }}
                   key: {{ $key }}
             {{- end }}
-          # Tiga probe, tiga pertanyaan berbeda (F9-03): startup menunggu
-          # proses selesai menyambung ke dependensinya; readiness mengatur
-          # trafik; liveness hanya menjawab "apakah prosesnya masih hidup".
+          # Three probes, three different questions (F9-03): startup waits
+          # for the process to finish connecting to its dependencies;
+          # readiness controls traffic; liveness only answers "is the
+          # process still alive".
           startupProbe:
             httpGet:
               path: /readyz

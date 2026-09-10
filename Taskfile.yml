@@ -7,15 +7,16 @@ vars:
   COMPOSE_FULL: deploy/compose/full.yml
   COMPOSE_BACKUP: deploy/compose/backup.yml
 
-  # Docker daemon hidup di dalam WSL. Perintah yang memakai bind mount
-  # WAJIB dijalankan dari dalam WSL juga.
+  # The Docker daemon lives inside WSL. Commands that use bind mounts MUST
+  # be run from inside WSL as well.
   #
-  # Terbukti di B0-08: CLI Windows yang diberi path /mnt/c menerima
-  # perintahnya, keluar dengan exit 0, lalu me-mount direktori KOSONG.
-  # Tidak ada pesan galat. Itu kegagalan senyap - `compose up` akan
-  # tampak berhasil sementara initdb tidak pernah dijalankan.
+  # Proven in B0-08: the Windows CLI given a /mnt/c path accepted the
+  # command, exited with 0, and then mounted an EMPTY directory. No error
+  # message. That is a silent failure - `compose up` would appear to succeed
+  # while initdb never ran.
   #
-  # Perintah tanpa bind mount (ps, logs, version) tetap aman dari Windows.
+  # Commands without bind mounts (ps, logs, version) remain safe from
+  # Windows.
   WSL_DISTRO: Ubuntu
   PROJECT_WSL:
     sh: wsl -d Ubuntu -- wslpath -a '{{.ROOT_DIR}}'
@@ -29,9 +30,9 @@ tasks:
   # ---------------------------------------------------------------- quality
   fmt:
     desc: Format hand-written Go code
-    # gen/ sengaja dilewati. goimports mengelompokkan ulang import di sana,
-    # sementara buf generate mengembalikannya - hasilnya diff yang berayun
-    # bolak-balik setiap kali salah satunya dijalankan.
+    # gen/ is deliberately skipped. goimports regroups the imports there,
+    # while buf generate puts them back - the result is a diff that swings
+    # back and forth every time either one is run.
     cmds:
       - gofmt -l -w cmd internal
       - goimports -local {{.MODULE}} -w cmd internal
@@ -83,8 +84,8 @@ tasks:
 
   image:build:
     desc: Build a unit image (UNIT=edge-gateway task image:build)
-    # Lewat WSL: buildx tidak tersedia pada CLI statis Windows, sementara
-    # BuildKit dibutuhkan untuk cache mount pada layer dependensi.
+    # Through WSL: buildx is not available on the static Windows CLI, while
+    # BuildKit is needed for the cache mount on the dependency layer.
     vars:
       UNIT: '{{.UNIT | default "edge-gateway"}}'
       VERSION: '{{.VERSION | default "dev"}}'
@@ -101,9 +102,9 @@ tasks:
   # ---------------------------------------------------------------- test
   test:
     desc: Run unit tests
-    # Tanpa -race: detektor itu menuntut cgo, dan mesin Windows ini tidak
-    # punya toolchain C. CI berjalan di Linux dan tetap memakai -race, jadi
-    # data race tetap tertangkap sebelum merge.
+    # Without -race: the detector demands cgo, and this Windows machine has
+    # no C toolchain. CI runs on Linux and still uses -race, so data races
+    # are still caught before merge.
     cmds: [go test ./... -count=1]
 
   test:race:
@@ -112,8 +113,8 @@ tasks:
 
   test:e2e:
     desc: Run the end-to-end suite against the running local stack
-    # Suite ini membutuhkan seluruh unit menyala (task up:apps atau up:full).
-    # TEST_DSN_LLM dipakai test outbox untuk membaca tabel job worker.
+    # This suite needs every unit running (task up:apps or up:full).
+    # TEST_DSN_LLM is used by the outbox test to read the worker's job table.
     dotenv: [".env"]
     cmds:
       - >-
@@ -123,18 +124,18 @@ tasks:
 
   test:integration:
     desc: Run every test against the running local stack, Postgres included
-    # -p 1 menjalankan paket satu per satu. Beberapa paket test berbagi satu
-    # skema Postgres dan mengosongkan tabel yang sama, jadi menjalankannya
-    # bersamaan membuat keduanya saling menghapus data - kegagalan yang
-    # bergantung pada penjadwalan, dan karena itu kadang lolos.
-    # dotenv memuat berkas ke environment proses, tetapi nilainya TIDAK
-    # tersedia untuk templating {{...}} - karena itu DSN dirakit oleh shell.
+    # -p 1 runs the packages one at a time. Several test packages share one
+    # Postgres schema and truncate the same tables, so running them concurrently
+    # makes them wipe each other's data - a scheduling-dependent failure, and
+    # therefore one that sometimes slips through. dotenv loads the file into the
+    # process environment, but the values are NOT available to {{...}} templating
+    # - which is why the DSNs are assembled by the shell.
     #
-    # Unit aplikasi WAJIB mati (task down:apps) saat suite ini berjalan:
-    # relay outbox unit yang hidup membaca tabel yang sama dengan test relay
-    # (FOR UPDATE SKIP LOCKED) dan mencuri barisnya - kegagalan yang bergantung
-    # pada penjadwalan, terlihat di gerbang keluar F9. Job unit CI tidak
-    # menyalakan unit; e2e dan acceptance yang membutuhkannya punya task sendiri.
+    # The application units MUST be down (task down:apps) while this suite runs:
+    # a live unit's outbox relay reads the same table as the relay test (FOR
+    # UPDATE SKIP LOCKED) and steals its rows - a scheduling-dependent failure,
+    # seen at the F9 exit gate. The CI unit job does not start the units; the e2e
+    # and acceptance suites that need them have their own tasks.
     dotenv: ['.env']
     cmds:
       - >-
@@ -178,10 +179,10 @@ tasks:
 
   up:full:
     desc: Start everything including the application units and the observability stack
-    # OTEL_COLLECTOR_ENDPOINT diisi di sini, bukan di .env: alamat ini hanya
-    # berlaku bila collectornya ikut menyala, dan profil inilah yang
-    # menyalakannya. Tanpa collector, alamat yang terisi hanya menghasilkan
-    # galat ekspor di setiap unit.
+    # OTEL_COLLECTOR_ENDPOINT is set here, not in .env: this address only
+    # applies when the collector is started too, and this profile is the one
+    # that starts it. Without a collector, a filled-in address only produces
+    # export errors in every unit.
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4317 docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} -f {{.COMPOSE_FULL}} -f {{.COMPOSE_BACKUP}} up -d --build"
 
@@ -267,18 +268,18 @@ tasks:
 
   partitions:
     desc: Maintain monthly partitions for every partitioned table (F9-29)
-    # DSN admin yang boleh menyentuh kedelapan skema: partisi dibuat dengan
-    # pemilik yang sama dengan tabel induknya, jadi peran per-service tetap
-    # memilikinya setelah itu.
+    # An admin DSN allowed to touch all eight schemas: partitions are
+    # created with the same owner as their parent table, so the per-service
+    # roles still own them afterwards.
     dotenv: [".env"]
     cmds:
       - go run ./cmd/partitions -dsn "postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable" {{.CLI_ARGS}}
 
   k6:
     desc: "Run a k6 scenario against the local stack. Usage: task k6 -- read (or write, mixed)"
-    # k6 berjalan sebagai container di jaringan compose, bukan dipasang di
-    # host: satu versi yang sama untuk semua orang, dan ia memanggil gateway
-    # lewat nama service - jalur yang sama dengan unit lain.
+    # k6 runs as a container on the compose network, not installed on the
+    # host: one and the same version for everyone, and it calls the gateway
+    # by service name - the same path as the other units.
     requires:
       vars: [CLI_ARGS]
     cmds:

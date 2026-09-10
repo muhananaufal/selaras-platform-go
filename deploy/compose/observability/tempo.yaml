@@ -1,10 +1,11 @@
-# Grafana Tempo - penyimpanan trace, mode satu proses, backend berkas lokal.
+# Grafana Tempo - trace storage, single-process mode, local file backend.
 #
-# Retensi blok memakai bawaan Tempo 3 (336 jam, block_retention di blok
-# compaction). Blok `compactor` tingkat atas dari Tempo 2 SUDAH TIDAK ADA di
-# 3.x - container menolak start dengan "field compactor not found", dan itu
-# terjadi di sini. Volume-nya kecil untuk lingkungan pengembangan, jadi
-# bawaannya cukup; yang penting adalah ia dinyatakan, bukan diasumsikan.
+# Block retention uses the Tempo 3 default (336 hours, block_retention in
+# the compaction block). The top-level `compactor` block from Tempo 2 NO
+# LONGER EXISTS in 3.x - the container refuses to start with "field
+# compactor not found", and that happened here. The volume is small for a
+# development environment, so the default is enough; what matters is that it
+# is stated, not assumed.
 
 server:
   http_listen_port: 3200

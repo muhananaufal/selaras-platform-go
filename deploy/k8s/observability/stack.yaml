@@ -1,13 +1,14 @@
-# Observability di klaster lokal (F9-06): collector, Tempo, Prometheus,
-# Grafana. Loki dan Alloy TIDAK dipasang di k3d - keduanya ~600 MB yang lebih
-# berguna untuk KEDA, metrics-server, dan replika saat pembuktian autoscaling;
-# log dibaca lewat kubectl logs. Di compose (deploy/compose/full.yml)
-# keduanya ada.
+# Observability in the local cluster (F9-06): collector, Tempo, Prometheus,
+# Grafana. Loki and Alloy are NOT installed on k3d - the two are ~600 MB more
+# useful to KEDA, metrics-server, and the replicas during the autoscaling
+# proof; logs are read through kubectl logs. In compose
+# (deploy/compose/full.yml) both are present.
 #
-# Konfigurasi collector dan Tempo identik dengan compose; Prometheus memakai
-# penemuan pod lewat anotasi prometheus.io/* yang dipasang chart. Dashboard
-# Grafana datang dari ConfigMap grafana-dashboards yang dibuat infra.sh dari
-# deploy/grafana/dashboards/ - satu sumber, dua lingkungan.
+# The collector and Tempo configuration is identical to compose; Prometheus
+# uses pod discovery through the prometheus.io/* annotations the chart sets.
+# The Grafana dashboards come from the grafana-dashboards ConfigMap that
+# infra.sh creates from deploy/grafana/dashboards/ - one source, two
+# environments.
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: otel-collector, namespace: observability }
@@ -47,9 +48,10 @@ spec:
     - { name: otlp-http, port: 4318 }
     - { name: metrics, port: 8888 }
 ---
-# Alamat yang dipakai unit di namespace selaras: otel-collector:4317 (values.yaml).
-# Service tanpa selector di namespace selaras meneruskannya ke namespace
-# observability lewat ExternalName - unit tidak perlu tahu namespace-nya.
+# The address the units use in the selaras namespace: otel-collector:4317
+# (values.yaml). A selector-less Service in the selaras namespace forwards it to
+# the observability namespace through ExternalName - the units need not know the
+# namespace.
 apiVersion: v1
 kind: Service
 metadata: { name: otel-collector, namespace: selaras }
@@ -165,9 +167,9 @@ data:
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
-    # Aturan yang SAMA dengan compose (deploy/compose/observability/alerts.yml),
-    # dimuat dari ConfigMap prometheus-rules yang dibuat infra.sh dari berkas
-    # itu - satu sumber, dua lingkungan.
+    # The SAME rules as compose (deploy/compose/observability/alerts.yml),
+    # loaded from the prometheus-rules ConfigMap that infra.sh creates from that
+    # file - one source, two environments.
     rule_files:
       - /etc/prometheus/rules/alerts.yml
     alerting:
@@ -175,9 +177,9 @@ data:
         - static_configs:
             - targets: ["alertmanager:9093"]
     scrape_configs:
-      # Setiap pod beranotasi prometheus.io/scrape=true, di namespace mana pun.
-      # Label `unit` diisi dari app.kubernetes.io/name supaya dashboard yang
-      # sama dengan compose bekerja tanpa diubah.
+      # Every pod annotated prometheus.io/scrape=true, in any namespace. The
+      # `unit` label is filled from app.kubernetes.io/name so the same
+      # dashboards as compose work unchanged.
       - job_name: kubernetes-pods
         kubernetes_sd_configs: [{ role: pod }]
         relabel_configs:
@@ -308,10 +310,10 @@ spec:
         - name: dashboards
           configMap: { name: grafana-dashboards }
 ---
-# Alertmanager: penerima surel ke Mailpit di namespace selaras, sama dengan
-# compose - alert yang menyala di klaster terlihat di UI Mailpit (port
-# 30825 di k3d), bukan diasumsikan. Di cloud, receiver ini diganti (PagerDuty,
-# Slack) lewat ConfigMap ini saja; aturannya tidak berubah.
+# Alertmanager: the email receiver goes to Mailpit in the selaras namespace,
+# the same as compose - an alert firing in the cluster is seen in the Mailpit
+# UI (port 30825 on k3d), not assumed. In the cloud, this receiver is replaced
+# (PagerDuty, Slack) through this ConfigMap alone; the rules do not change.
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: alertmanager, namespace: observability }

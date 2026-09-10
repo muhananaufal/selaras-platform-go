@@ -1,10 +1,12 @@
-# Sumber data Grafana, disediakan dari berkas supaya tidak ada langkah klik
-# yang harus diulang setiap kali volume-nya dibuang.
+# Grafana data sources, provisioned from files so there is no clicking step
+# to repeat every time the volume is thrown away.
 #
-# Tiga tautan silang yang membuat ketiganya berguna bersama:
-#   - Loki: bidang trace_id di log menjadi tautan ke Tempo.
-#   - Tempo: satu span bisa dibawa ke log unitnya lewat label service.
-#   - Tempo: metrik span dan graf service dihitung dari Prometheus.
+# Three cross-links that make the three useful together:
+#   - Loki: the trace_id field in a log becomes a link to Tempo.
+#   - Tempo: one span can be taken to its unit's logs through the service
+#     label.
+#   - Tempo: span metrics and the service graph are computed from
+#     Prometheus.
 
 apiVersion: 1
 

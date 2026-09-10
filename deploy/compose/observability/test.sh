@@ -1,7 +1,7 @@
 #!/bin/bash
-# Uji aturan alert dan konfigurasi Alertmanager dengan image yang sama
-# dengan yang dijalankan compose dan k8s. Dipanggil `task alerts:test`
-# (dari WSL, karena bind mount) dan job `alert rules` di CI.
+# Tests the alert rules and Alertmanager configuration with the same images
+# compose and k8s run. Called by `task alerts:test` (from WSL, because of
+# the bind mount) and the `alert rules` job in CI.
 set -euo pipefail
 cd "$(dirname "$0")"
 docker run --rm -v "$PWD:/rules:ro" --entrypoint promtool prom/prometheus:v3.14.0 check rules /rules/alerts.yml

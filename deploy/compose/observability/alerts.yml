@@ -1,24 +1,23 @@
-# Aturan alert Prometheus - diturunkan dari SLO, bukan dikarang.
+# Prometheus alert rules - derived from the SLOs, not made up.
 #
-# Sumber ambangnya adalah test/k6/lib/slo.js (F9-11): kegagalan < 1 %, p95
-# campuran < 50 ms, pendaftaran p95 < 1,5 s. Alert di sini menyala saat
-# sistem yang HIDUP melanggar angka yang sama yang membuat k6 gagal di CI.
-# Aturan yang tidak punya SLO di belakangnya - unit mati, pekerjaan mati,
-# antrean diparkir - menyebut alasannya sendiri.
+# The source of the thresholds is test/k6/lib/slo.js (F9-11): failures < 1
+# %, mixed p95 < 50 ms, registration p95 < 1.5 s. The alerts here fire when
+# the LIVE system breaks the same numbers that make k6 fail in CI. Rules
+# with no SLO behind them - a unit down, dead jobs, a parked queue - state
+# their own reason.
 #
-# Setiap aturan punya unit test di alerts_test.yml (promtool test rules) dan
-# dijalankan di CI; aturan yang tidak pernah terbukti menyala adalah aturan
-# yang tidak ada. Berkas ini dipakai apa adanya oleh compose (full.yml) dan
-# disalin ke ConfigMap di deploy/k8s/observability/stack.yaml.
+# Every rule has a unit test in alerts_test.yml (promtool test rules) run in
+# CI; a rule never proven to fire is a rule that does not exist. This file
+# is used as-is by compose (full.yml) and copied into the ConfigMap in
+# deploy/k8s/observability/stack.yaml.
 groups:
   - name: selaras-availability
     rules:
-      # Multi-window burn rate (Google SRE Workbook, bab 5) untuk SLO
-      # ketersediaan 99 %: rasio galat 5xx terhadap seluruh permintaan.
-      # Jendela pendek (5m) menangkap ledakan, jendela panjang (1h)
-      # memastikan ia bukan satu batch k6 yang kebetulan; keduanya harus
-      # menyala. Burn rate 14,4 berarti seluruh anggaran galat sebulan
-      # habis dalam dua hari.
+      # Multi-window burn rate (Google SRE Workbook, chapter 5) for the 99 %
+      # availability SLO: the ratio of 5xx errors to all requests. The short
+      # window (5m) catches a burst, the long window (1h) confirms it is not
+      # one k6 batch that happened along; both have to fire. A burn rate of
+      # 14.4 means the whole month's error budget is spent in two days.
       - record: selaras:http_error_ratio:5m
         expr: |
           sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
@@ -39,9 +38,9 @@ groups:
         annotations:
           summary: "5xx di atas 14,4 kali anggaran galat (SLO 99 %)"
           description: "Rasio 5xx 5m={{ $value | humanizePercentage }}; anggaran sebulan habis dalam dua hari pada laju ini. Lihat docs/runbook/edge-gateway.md."
-      # Jendela panjang untuk pembakaran lambat: 6 kali anggaran (habis dalam
-      # lima hari) selama enam jam dengan konfirmasi 30 menit. Ini yang
-      # menangkap "3 % galat terus-menerus" yang tidak cukup untuk page.
+      # The long window for slow burn: 6 times the budget (spent in five
+      # days) over six hours with a 30-minute confirmation. This is what
+      # catches the "3 % errors continuously" that is not enough for a page.
       - record: selaras:http_error_ratio:30m
         expr: |
           sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[30m]))
@@ -65,9 +64,9 @@ groups:
 
   - name: selaras-latency
     rules:
-      # p95 seluruh rute selain pendaftaran, dibandingkan dengan SLO
-      # campuran k6 (50 ms). Pendaftaran dikecualikan karena argon2id
-      # memang 375 ms (slo.js), dan punya alert sendiri.
+      # The p95 of every route except registration, compared against the k6
+      # mixed SLO (50 ms). Registration is excluded because argon2id really
+      # takes 375 ms (slo.js), and has an alert of its own.
       - alert: SelarasLatencyAboveSLO
         expr: |
           histogram_quantile(0.95,
@@ -91,8 +90,8 @@ groups:
 
   - name: selaras-units
     rules:
-      # `up` adalah satu-satunya sinyal yang tidak butuh lalu lintas: unit
-      # yang mati pada pukul tiga pagi tanpa pengguna tetap terlihat.
+      # `up` is the only signal that needs no traffic: a unit that dies at
+      # three in the morning with no users is still seen.
       - alert: SelarasUnitDown
         expr: up{job=~"selaras|kubernetes-pods"} == 0
         for: 2m
@@ -103,9 +102,9 @@ groups:
 
   - name: selaras-llm
     rules:
-      # Pekerjaan yang mati adalah pekerjaan pengguna yang hilang; sejak
-      # ADR-025 kuota TIDAK lagi mematikan pekerjaan, jadi setiap `dead`
-      # berarti prompt/jawaban yang memang bermasalah dan layak dilihat.
+      # A dead job is a user's lost work; since ADR-025 quota NO LONGER
+      # kills jobs, so every `dead` means a genuinely problematic prompt or
+      # answer worth a look.
       - alert: SelarasLLMJobsDying
         expr: increase(llm_jobs_total{outcome="dead"}[15m]) > 0
         for: 0m
@@ -113,9 +112,9 @@ groups:
         annotations:
           summary: "{{ $value | humanize }} pekerjaan LLM mati dalam 15 menit"
           description: "SELECT id, kind, last_error FROM llm.llm_jobs WHERE status='dead' ORDER BY updated_at DESC; runbook docs/runbook/llm-worker.md gejala 2."
-      # Antrean yang diparkir terus-menerus berarti kuota harian, bukan
-      # per-menit (ADR-025): tidak ada yang bisa dilakukan worker, hanya
-      # manusia yang bisa menaikkan tingkat penagihan.
+      # A queue parked continuously means the daily quota, not the
+      # per-minute one (ADR-025): there is nothing the worker can do, only a
+      # human can raise the billing tier.
       - alert: SelarasLLMQueueParked
         expr: |
           sum(increase(llm_jobs_total{outcome="parked"}[30m])) > 0
@@ -126,9 +125,9 @@ groups:
         annotations:
           summary: "Worker LLM diparkir 30 menit tanpa satu pun pekerjaan selesai"
           description: "Kuota penyedia habis dan tidak pulih; nama kuotanya ada di log worker (`quota ...`). Pekerjaan menunggu, tidak mati."
-      # Lag yang tumbuh sementara worker hidup: throughput penyedia lebih
-      # rendah dari laju permintaan. KEDA menambah replika sampai 12
-      # (jumlah partisi); di atas itu hanya kuota penyedia yang menentukan.
+      # Lag growing while the worker is alive: the provider's throughput is
+      # lower than the request rate. KEDA adds replicas up to 12 (the
+      # partition count); above that only the provider quota decides.
       - alert: SelarasLLMBacklogGrowing
         expr: sum(kafka_consumer_lag) > 100 and delta(sum(kafka_consumer_lag)[15m:1m]) > 0
         for: 15m

@@ -1,23 +1,25 @@
-# Dependensi minimum untuk pengembangan sehari-hari.
-# Profil ini sengaja tidak memuat stack observability: sebagian besar
-# pekerjaan tidak membutuhkannya, dan WSL punya plafon memori.
-# Seluruh port host digeser +10000 dari nilai bawaannya. Mesin ini sudah
-# menjalankan postgres di 5432 milik proyek lain; merebut port default
-# adalah cara termudah membuat dua proyek saling mematikan.
+# The minimum dependencies for day-to-day development. This profile
+# deliberately leaves out the observability stack: most work does not need
+# it, and WSL has a memory ceiling. Every host port is shifted +10000 from
+# its default. This machine already runs another project's postgres on 5432;
+# grabbing default ports is the easiest way to make two projects kill each
+# other.
 name: selaras-core
 
 services:
   postgres:
     image: postgres:18.6-alpine
-    # Daemon Docker di WSL pada mesin ini sesekali dimulai ulang, dan tanpa
-    # kebijakan ini dependensi lokal mati diam-diam di tengah test.
+    # The Docker daemon in WSL on this machine occasionally restarts, and
+    # without this policy the local dependencies die silently in the middle
+    # of a test.
     restart: unless-stopped
     container_name: selaras-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-selaras}
-      # initdb membuat satu role per service; tanpa ini script menolak jalan.
+      # initdb creates one role per service; without this the script refuses
+      # to run.
       SVC_IDENTITY_PASSWORD: ${SVC_IDENTITY_PASSWORD:?set SVC_IDENTITY_PASSWORD}
       SVC_PROFILE_PASSWORD: ${SVC_PROFILE_PASSWORD:?set SVC_PROFILE_PASSWORD}
       SVC_ASSESSMENT_PASSWORD: ${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}
@@ -26,7 +28,8 @@ services:
       SVC_NUTRITION_PASSWORD: ${SVC_NUTRITION_PASSWORD:?set SVC_NUTRITION_PASSWORD}
       SVC_DASHBOARD_PASSWORD: ${SVC_DASHBOARD_PASSWORD:?set SVC_DASHBOARD_PASSWORD}
       SVC_LLM_PASSWORD: ${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}
-      # Peran replikasi untuk replika baca (initdb/02-replication.sh, F9-32).
+      # The replication role for the read replica (initdb/02-replication.sh,
+      # F9-32).
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
     ports:
       - "127.0.0.1:15432:5432"
@@ -44,10 +47,10 @@ services:
           memory: 512M
 
   postgres-replica:
-    # Replika baca lewat streaming replication (F9-32). Hanya dashboard-svc
-    # yang membacanya (DASHBOARD_READ_DSN); penulisan tetap ke primer, dan
-    # replika menolak menulis. Lag replikasinya diukur di
-    # docs/db-connections.md.
+    # A read replica through streaming replication (F9-32). Only
+    # dashboard-svc reads from it (DASHBOARD_READ_DSN); writes still go to
+    # the primary, and the replica refuses writes. Its replication lag is
+    # measured in docs/db-connections.md.
     image: postgres:18.6-alpine
     restart: unless-stopped
     container_name: selaras-postgres-replica
@@ -55,8 +58,9 @@ services:
     environment:
       PRIMARY_HOST: postgres
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
-      # Dibaca entrypoint image hanya saat initdb - yang tidak pernah terjadi
-      # di replika (datanya salinan primer) - tetapi ia menolak start tanpanya.
+      # Read by the image entrypoint only during initdb - which never happens
+      # on a replica (its data is a copy of the primary) - but it refuses to
+      # start without it.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     ports:
       - "127.0.0.1:15433:5432"
@@ -77,17 +81,18 @@ services:
           memory: 512M
 
   pgbouncer:
-    # PgBouncer di depan Postgres, mode transaksi (F9-27).
+    # PgBouncer in front of Postgres, transaction mode (F9-27).
     #
-    # Sembilan unit x kolam 10 x replika saat HPA aktif melampaui
-    # max_connections=100 Postgres jauh sebelum bebannya berarti - angkanya di
-    # docs/db-connections.md. PgBouncer memberi setiap (peran, basis data)
-    # kolam server kecil dan membiarkan klien membuka sebanyak yang ia mau.
+    # Nine units x a pool of 10 x replicas while the HPA is active exceeds
+    # Postgres's max_connections=100 long before the load matters - the
+    # numbers are in docs/db-connections.md. PgBouncer gives every (role,
+    # database) a small server pool and lets clients open as many as they
+    # like.
     #
-    # Peran per-service dan isolasi skema (ADR-006) TETAP: klien menyambung
-    # sebagai svc_<skema> dan PgBouncer memverifikasi kata sandinya lewat
-    # auth_query ke Postgres memakai auth_user - tidak ada daftar kata sandi
-    # kedua yang bisa menyimpang.
+    # The per-service roles and schema isolation (ADR-006) REMAIN: clients
+    # connect as svc_<schema> and PgBouncer verifies the password through an
+    # auth_query to Postgres using auth_user - there is no second password
+    # list that could drift.
     image: edoburu/pgbouncer:v1.25.2-p0
     restart: unless-stopped
     container_name: selaras-pgbouncer
@@ -102,14 +107,15 @@ services:
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 1000
       DEFAULT_POOL_SIZE: 8
-      # search_path dikirim pgx sebagai parameter startup; PgBouncer menolak
-      # yang tidak dikenalnya. Diabaikan di sini, dan itu aman: setiap peran
-      # svc_* punya search_path bawaan dari initdb (ALTER ROLE ... SET).
+      # search_path is sent by pgx as a startup parameter; PgBouncer refuses
+      # ones it does not know. Ignored here, and that is safe: every svc_*
+      # role has a default search_path from initdb (ALTER ROLE ... SET).
       IGNORE_STARTUP_PARAMETERS: search_path
-      # pgx memakai prepared statement; mode transaksi hanya mendukungnya bila
-      # PgBouncer melacaknya sendiri (1.21+).
+      # pgx uses prepared statements; transaction mode only supports them when
+      # PgBouncer tracks them itself (1.21+).
       MAX_PREPARED_STATEMENTS: 200
-      # Konsol admin (SHOW POOLS, SHOW STATS) untuk pengukuran F9-26/27.
+      # The admin console (SHOW POOLS, SHOW STATS) for the F9-26/27
+      # measurements.
       STATS_USERS: ${POSTGRES_USER:?set POSTGRES_USER}
     ports:
       - "127.0.0.1:16432:5432"
@@ -131,17 +137,17 @@ services:
     restart: unless-stopped
     container_name: selaras-kafka
     environment:
-      # Mode KRaft: satu proses, tanpa ZooKeeper. Kafka 4.x tidak lagi
-      # mendukung ZooKeeper sama sekali.
+      # KRaft mode: one process, no ZooKeeper. Kafka 4.x no longer supports
+      # ZooKeeper at all.
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      # Dua listener yang melayani klien, dan itu perlu.
+      # Two client-facing listeners, and that is necessary.
       #
-      # Kafka menjawab setiap sambungan dengan alamat yang harus dipakai klien
-      # selanjutnya, bukan alamat yang barusan dipakai untuk menyambung. Dengan
-      # satu listener yang mengumumkan "kafka:9092", klien di host berhasil
-      # menyambung ke port yang dipetakan lalu diarahkan ke nama yang tidak bisa
-      # ia resolusi - dan gagal setelah terlihat berhasil.
+      # Kafka answers every connection with the address the client has to use
+      # next, not the address it just used to connect. With one listener
+      # announcing "kafka:9092", a client on the host connects successfully to
+      # the mapped port and is then directed to a name it cannot resolve - and
+      # fails after appearing to succeed.
       KAFKA_LISTENERS: PLAINTEXT://:9092,HOST://:19092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://127.0.0.1:19092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -152,11 +158,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # Heap ditahan rendah: WSL dibatasi 8GB untuk SELURUH Docker.
+      # The heap is kept low: WSL is capped at 8GB for ALL of Docker.
       KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
-      # Tanpa ini image apache/kafka menulis log ke /tmp di dalam container,
-      # bukan ke volume kafka-data: container yang dibuat ulang (bukan sekadar
-      # restart) kehilangan seluruh topic. Ditemukan di k3d (F9-04).
+      # Without this the apache/kafka image writes its logs to /tmp inside the
+      # container, not to the kafka-data volume: a container that is recreated
+      # (not merely restarted) loses every topic. Found on k3d (F9-04).
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     ports:
       - "127.0.0.1:19092:19092"
@@ -190,12 +196,12 @@ services:
         limits:
           memory: 192M
 
-  # Mailpit menangkap seluruh surel keluar dan menyajikannya lewat HTTP.
+  # Mailpit captures every outgoing email and serves it over HTTP.
   #
-  # Ia ada supaya alur reset kata sandi bisa BENAR-BENAR dijalankan di mesin
-  # sendiri, bukan diandaikan bekerja. Alur yang tokennya tidak pernah
-  # terkirim adalah alur yang diam-diam tidak bekerja, dan satu-satunya cara
-  # mengetahuinya adalah dengan melihat surelnya.
+  # It exists so the password reset flow can be REALLY run on one's own
+  # machine, not assumed to work. A flow whose token is never sent is a flow
+  # that silently does not work, and the only way to know is to look at the
+  # email.
   mailpit:
     image: axllent/mailpit:v1.28.2
     restart: unless-stopped

@@ -5,12 +5,12 @@ on:
     branches: [main, develop]
   pull_request:
 
-# Hak akses minimum. Job apa pun yang butuh lebih harus memintanya
-# sendiri, bukan mewarisi izin tulis secara diam-diam.
+# Minimum permissions. Any job that needs more has to ask for it itself,
+# rather than silently inheriting write permissions.
 permissions:
   contents: read
 
-# Run lama pada ref yang sama dibatalkan; hanya yang terbaru yang berarti.
+# Older runs on the same ref are cancelled; only the latest one matters.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -23,10 +23,10 @@ jobs:
     name: build and test
     runs-on: ubuntu-latest
 
-    # Postgres dan Redis sungguhan, bukan mock. Repository diuji terhadap
-    # basis data karena mock hanya membuktikan mock-nya berperilaku seperti
-    # yang ditulis - ia tidak tahu apa-apa tentang batasan CHECK, indeks unik
-    # parsial, atau perilaku NULL, dan justru di situlah kekeliruan bersembunyi.
+    # A real Postgres and Redis, not mocks. The repositories are tested against
+    # the database because a mock only proves that the mock behaves as written -
+    # it knows nothing about CHECK constraints, partial unique indexes, or NULL
+    # behaviour, and that is precisely where the mistakes hide.
     services:
       postgres:
         image: postgres:18.6-alpine
@@ -46,9 +46,9 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
 
-      # Mailpit menangkap surel keluar dan menyajikannya lewat HTTP, sehingga
-      # test bisa membuktikan tautan resetnya benar-benar terkirim dengan
-      # tokennya - bukan mengandaikannya.
+      # Mailpit captures outgoing email and serves it over HTTP, so a test
+      # can prove the reset link was really sent with its token - not assume
+      # it.
       mailpit:
         image: axllent/mailpit:v1.28.2
         ports: ['1025:1025', '8025:8025']
@@ -56,10 +56,10 @@ jobs:
           --health-cmd "/mailpit readyz"
           --health-interval 5s --health-timeout 3s --health-retries 20
 
-      # Broker yang sama dengan lokal, dalam mode KRaft.
+      # The same broker as locally, in KRaft mode.
       #
-      # Ia ada di sini karena test integrasi Kafka MENGGAGALKAN dirinya saat
-      # CI=true dan brokernya tidak ada, alih-alih melewatinya diam-diam.
+      # It is here because the Kafka integration tests FAIL themselves when
+      # CI=true and the broker is absent, instead of silently skipping.
       kafka:
         image: apache/kafka:4.3.1
         ports: ['9092:9092']
@@ -109,10 +109,10 @@ jobs:
       - run: go vet ./...
       - run: go build ./...
 
-      # Skema dan peran dibuat dengan skrip yang sama seperti di lokal, bukan
-      # dengan salinan terpisah. Dua salinan berarti CI dan mesin pengembang
-      # bisa berbeda diam-diam, dan yang ketahuan belakangan adalah yang
-      # paling mahal.
+      # The schemas and roles are created with the same script as locally,
+      # not with a separate copy. Two copies mean CI and a developer machine
+      # can differ silently, and what is found out late is the most
+      # expensive.
       - name: Create schemas and service roles
         env:
           SVC_IDENTITY_PASSWORD: ci-not-a-secret
@@ -127,9 +127,9 @@ jobs:
           POSTGRES_DB: selaras
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-          # PGHOST sudah ditetapkan di tingkat job, dan psql menghormatinya.
-          # Membungkus psql dengan fungsi shell akan rapuh: skripnya berjalan
-          # di proses bash terpisah dan fungsi tidak ikut terbawa.
+          # PGHOST is already set at the job level, and psql honours it.
+          # Wrapping psql in a shell function would be fragile: the script
+          # runs in a separate bash process and functions do not carry over.
           bash deploy/compose/initdb/01-schemas.sh
 
       - name: Apply migrations
@@ -152,17 +152,16 @@ jobs:
               -dsn "pgx5://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
 
-      # Topic dibuat lewat alat yang sama dengan yang dipakai di lokal, bukan
-      # lewat skrip terpisah. Dua salinan akan menyimpang diam-diam.
+      # The topics are created through the same tool used locally, not
+      # through a separate script. Two copies would drift silently.
       - name: Create Kafka topics
         run: go run ./cmd/topics -brokers 127.0.0.1:9092
-      # -p 1: beberapa paket test berbagi satu skema Postgres dan
-      # mengosongkan tabel yang sama, jadi menjalankannya bersamaan membuat
-      # keduanya saling menghapus data.
-      # CI menetapkan CI=true, dan pgtest MENGGAGALKAN test integrasi yang
-      # DSN-nya tidak ada alih-alih melewatinya. Test integrasi yang
-      # diam-diam melewati dirinya sendiri di CI lebih buruk daripada tidak
-      # ada test sama sekali: pipeline-nya hijau dan tidak ada yang diperiksa.
+      # -p 1: several test packages share one Postgres schema and truncate the
+      # same tables, so running them concurrently makes them wipe each other's
+      # data. CI sets CI=true, and pgtest FAILS the integration tests whose
+      # DSN is absent instead of skipping them. An integration test that
+      # silently skips itself in CI is worse than no test at all: the pipeline
+      # is green and nothing was checked.
       - name: Test
         env:
           SVC_IDENTITY_PASSWORD: ci-not-a-secret
@@ -182,10 +181,10 @@ jobs:
           for s in coaching chat nutrition dashboard; do
             export "TEST_DSN_$(echo $s | tr a-z A-Z)=postgres://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
-          # test/e2e dan test/acceptance membutuhkan stack yang menyala; job e2e
-          # di bawah yang menjalankannya. Di sini keduanya dikeluarkan secara
-          # EKSPLISIT, bukan dibiarkan melewati diri - dengan CI=true keduanya
-          # akan gagal, dan itu memang perilaku yang diinginkan.
+          # test/e2e and test/acceptance need a running stack; the e2e job below
+          # runs them. Here both are EXPLICITLY excluded, not left to skip
+          # themselves - with CI=true both would fail, and that is precisely the
+          # intended behaviour.
           go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance") -race -count=1 -p 1
 
   lint:
@@ -201,11 +200,10 @@ jobs:
         with:
           version: v2.12.2
 
-  # Kerentanan yang diketahui pada dependensi DAN jalur kode yang benar-benar
-  # memanggilnya - govulncheck menyaring yang tidak terjangkau, jadi temuannya
-  # layak ditindaklanjuti, bukan sekadar daftar CVE. Versi dipin karena
-  # `@latest` menuntut Go yang lebih baru daripada go.mod di bawah
-  # GOTOOLCHAIN=local.
+  # Known vulnerabilities in the dependencies AND the code paths that actually
+  # call them - govulncheck filters out the unreachable ones, so its findings
+  # are worth acting on, not merely a list of CVEs. The version is pinned
+  # because `@latest` demands a newer Go than go.mod under GOTOOLCHAIN=local.
   vuln:
     name: known vulnerabilities
     runs-on: ubuntu-latest
@@ -220,10 +218,10 @@ jobs:
       - name: Scan the module
         run: govulncheck ./...
 
-  # Aturan alert diperlakukan seperti kode: sintaksnya diperiksa, setiap
-  # alert dibuktikan menyala dan diam pada deret uji (promtool test rules),
-  # dan konfigurasi Alertmanager divalidasi. Image yang sama dengan yang
-  # dijalankan compose/k8s, supaya versi PromQL-nya sama.
+  # The alert rules are treated like code: their syntax is checked, every
+  # alert is proven to fire and stay quiet on the test series (promtool test
+  # rules), and the Alertmanager configuration is validated. The same images
+  # compose/k8s run, so the PromQL version is the same.
   alerts:
     name: alert rules
     runs-on: ubuntu-latest
@@ -238,9 +236,9 @@ jobs:
         working-directory: deploy/compose/observability
         run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
 
-  # Chart Helm diperlakukan seperti kode: lint ketat untuk kedua profil nilai,
-  # lalu manifest hasil render divalidasi terhadap skema Kubernetes
-  # (kubeconform). CRD KEDA tidak punya skema di sana dan dilewati eksplisit.
+  # The Helm chart is treated like code: strict lint for both value profiles,
+  # then the rendered manifests are validated against the Kubernetes schemas
+  # (kubeconform). The KEDA CRD has no schema there and is skipped explicitly.
   chart:
     name: helm chart
     runs-on: ubuntu-latest
@@ -266,17 +264,18 @@ jobs:
       - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
         with:
           version: 1.72.0
-          # Kontrak dikunci di B1: perubahan yang merusak konsumen harus
-          # datang sebagai versi paket baru, bukan suntingan di tempat.
+          # The contracts were locked in B1: a change that breaks consumers has to
+          # come as a new package version, not an in-place edit.
           #
-          # breaking_against TIDAK ditimpa: bawaan buf-action sudah membandingkan
-          # dengan cabang dasar PR (dan commit sebelumnya pada push). Dua
-          # timpaan sebelumnya sama-sama merah di PR Dependabot - github.repositoryUrl
-          # berbentuk git:// yang tidak lagi dilayani GitHub, dan .git#branch=main
-          # menuntut ref lokal yang tidak dibuat checkout PR.
+          # breaking_against is NOT overridden: buf-action's default already compares
+          # against the PR's base branch (and the previous commit on push). Two
+          # earlier overrides were both red on Dependabot PRs - github.repositoryUrl
+          # has the git:// form GitHub no longer serves, and .git#branch=main demands
+          # a local ref a PR checkout does not create.
           #
-          # Komentar di PR dimatikan: workflow ini sengaja hanya contents: read,
-          # dan buf-action gagal saat mencoba menulis komentar dengan izin itu.
+          # PR comments are switched off: this workflow is deliberately contents: read
+          # only, and buf-action fails when it tries to write a comment with that
+          # permission.
           pr_comment: false
 
   openapi:
@@ -289,9 +288,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Install vacuum
-        # Biner rilis, bukan `go install`: go.mod vacuum menuntut Go 1.25.7
-        # sementara GOTOOLCHAIN=local menahan toolchain pada go.mod repo ini,
-        # dan `go install` menolak dengan galat yang hanya terlihat di runner.
+        # The release binary, not `go install`: vacuum's go.mod demands Go
+        # 1.25.7 while GOTOOLCHAIN=local holds the toolchain at this repo's
+        # go.mod, and `go install` refuses with an error only visible on the
+        # runner.
         run: |
           curl -sSfL -o /tmp/vacuum.tar.gz https://github.com/daveshanley/vacuum/releases/download/v0.30.1/vacuum_0.30.1_linux_x86_64.tar.gz
           tar -xzf /tmp/vacuum.tar.gz -C /tmp vacuum
@@ -311,12 +311,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Seluruh sistem menyala di runner lewat compose - profil yang sama dengan
-  # `task up:apps` - lalu suite e2e, daftar periksa aturan (D1-D12, S1-S11),
-  # dan skenario k6 baca dengan ambang SLO (F9-11) dijalankan terhadapnya.
-  # Kredensial dibuat di runner dan dibuang bersamanya; tidak ada yang berasal
-  # dari Secret repositori (ADR-016 melarang bawaan, bukan melarang nilai
-  # sekali pakai).
+  # The whole system starts on the runner through compose - the same profile
+  # as `task up:apps` - and then the e2e suite, the rule checklist (D1-D12,
+  # S1-S11), and the k6 read scenario with the SLO thresholds (F9-11) run
+  # against it. Credentials are created on the runner and thrown away with it;
+  # none come from a repository Secret (ADR-016 forbids defaults, not
+  # throwaway values).
   e2e:
     name: e2e, acceptance, k6
     runs-on: ubuntu-latest

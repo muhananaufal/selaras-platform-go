@@ -1,22 +1,22 @@
 #!/bin/sh
-# Backup Postgres terjadwal (F9-30).
+# Scheduled Postgres backup (F9-30).
 #
-# Berjalan di container dengan image Postgres yang SAMA versinya dengan
-# server, supaya pg_dump selalu sepadan. Setiap putaran:
+# Runs in a container with the SAME Postgres image version as the server, so
+# pg_dump always matches. Every round:
 #
-#   1. pg_dumpall --globals-only  -> peran dan kata sandinya (svc_*), tanpa
-#      ini pemulihan menghasilkan skema tanpa pemilik.
-#   2. pg_dump -Fc                -> seluruh basis data (delapan skema) dalam
-#      format custom: terkompresi, dan bisa dipulihkan sebagian.
-#   3. pg_restore --list          -> memverifikasi arsipnya bisa dibaca. Backup
-#      yang tidak diverifikasi adalah harapan, bukan backup.
-#   4. Membuang arsip yang lebih tua dari BACKUP_KEEP hari.
+#   1. pg_dumpall --globals-only -> the roles and their passwords (svc_*);
+#      without this a restore produces schemas without owners.
+#   2. pg_dump -Fc -> the whole database (eight schemas) in the custom format:
+#      compressed, and partially restorable.
+#   3. pg_restore --list -> verifies the archive is readable. A backup that is
+#      not verified is a hope, not a backup.
+#   4. Removes archives older than BACKUP_KEEP days.
 #
-# Hasilnya ditulis ke /backups (volume). Log ke stdout, satu baris per
-# langkah, supaya "apakah backup semalam berjalan" terjawab dari log.
+# The output is written to /backups (a volume). Logs go to stdout, one line per
+# step, so "did last night's backup run" is answered from the log.
 #
-# Dengan BACKUP_ONCE=1 ia berjalan sekali lalu keluar - dipakai `task
-# backup:now` dan latihan pemulihan.
+# With BACKUP_ONCE=1 it runs once and exits - used by `task backup:now` and the
+# recovery drill.
 
 set -eu
 
@@ -42,7 +42,7 @@ run_once() {
   pg_dump --format=custom --compress=6 --file="$dump.tmp" "$PGDATABASE"
   mv "$dump.tmp" "$dump"
 
-  # Verifikasi: arsip harus bisa dibaca dan memuat kedelapan skema.
+  # Verification: the archive has to be readable and hold all eight schemas.
   schemas=$(pg_restore --list "$dump" | grep -c ' SCHEMA - ' || true)
   if [ "$schemas" -lt 8 ]; then
     log "FAILED verification: archive lists $schemas schemas, want at least 8"
@@ -51,7 +51,7 @@ run_once() {
   size=$(wc -c < "$dump")
   log "verified stamp=$stamp schemas=$schemas bytes=$size file=$dump"
 
-  # Retensi menurut umur berkas.
+  # Retention by file age.
   find "$BACKUP_DIR" -maxdepth 1 -type f \( -name '*.dump' -o -name 'globals-*.sql' \) -mtime +"$BACKUP_KEEP" -print -delete \
     | while read -r old; do log "retired $old"; done
   log "done stamp=$stamp"

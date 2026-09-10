@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Membuat dua Secret di klaster dari .env (F9-01, ADR-016).
+# Creates two Secrets in the cluster from .env (F9-01, ADR-016).
 #
-#   selaras-infra   : kredensial Postgres dan peran per-service, dibaca
-#                     Postgres (initdb) dan PgBouncer.
-#   selaras-secrets : yang dibutuhkan unit - satu DSN per unit, kunci token,
-#                     kunci Gemini. Nama kuncinya sama dengan variabel
-#                     lingkungan unit, dan chart merujuknya lewat secretEnv.
+#   selaras-infra   : the Postgres credentials and per-service roles, read by
+#                     Postgres (initdb) and PgBouncer.
+#   selaras-secrets : what the units need - one DSN per unit, the token keys,
+#                     the Gemini key. The key names match the units' environment
+#                     variables, and the chart references them through secretEnv.
 #
-# Chart TIDAK pernah memuat kredensial; ia hanya tahu NAMA Secret-nya. Skrip
-# ini adalah satu-satunya tempat .env menyeberang ke klaster, dan ia
-# menolak berjalan bila ada variabel wajib yang kosong.
+# The chart NEVER holds credentials; it only knows the NAME of the Secret.
+# This script is the only place .env crosses into the cluster, and it
+# refuses to run when any required variable is empty.
 
 set -euo pipefail
-# k3d, kubectl, dan helm dipasang di ~/.local/bin milik pengguna WSL.
+# k3d, kubectl, and helm are installed in the WSL user's ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 set -a; . "$ROOT/.env"; set +a
@@ -21,19 +21,19 @@ need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "FATAL: $v is not set in .
 need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY LLM_PROVIDER \
   SVC_IDENTITY_PASSWORD SVC_PROFILE_PASSWORD SVC_ASSESSMENT_PASSWORD SVC_COACHING_PASSWORD \
   SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD
-# Kunci dan nama model Gemini hanya wajib bila penyedianya Gemini; dengan
-# penyedia palsu keduanya kosong dan tidak pernah dibaca (llm-worker
-# memeriksanya sendiri saat start, F3-16).
+# The Gemini key and model name are required only when the provider is
+# Gemini; with the fake provider both are empty and never read (llm-worker
+# checks them itself at start, F3-16).
 [ "$LLM_PROVIDER" != "gemini" ] || need GEMINI_API_KEY GEMINI_MODEL
 
 kubectl get namespace selaras >/dev/null 2>&1 || kubectl create namespace selaras
 
-# DSN menunjuk ke PgBouncer, bukan Postgres (F9-27). search_path di DSN
-# diabaikan PgBouncer; peran punya bawaannya dari initdb.
+# The DSNs point at PgBouncer, not Postgres (F9-27). The search_path in the
+# DSN is ignored by PgBouncer; the roles have their default from initdb.
 dsn() { echo "postgres://svc_$1:$2@pgbouncer:5432/${POSTGRES_DB}?sslmode=disable"; }
-# Migrasi LANGSUNG ke Postgres: golang-migrate memegang advisory lock
-# tingkat sesi, dan mode transaksi PgBouncer memutus sesi di antara
-# pernyataan - kuncinya hilang diam-diam.
+# Migrations go STRAIGHT to Postgres: golang-migrate holds a session-level
+# advisory lock, and PgBouncer's transaction mode cuts the session between
+# statements - the lock is silently lost.
 direct() { echo "postgres://svc_$1:$2@postgres:5432/${POSTGRES_DB}?sslmode=disable&search_path=$1"; }
 
 kubectl -n selaras create secret generic selaras-infra \

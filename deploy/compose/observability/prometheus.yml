@@ -1,8 +1,8 @@
-# Prometheus menarik metrik dari port probe/admin setiap unit.
+# Prometheus scrapes metrics from every unit's probe/admin port.
 #
-# Target statis, bukan penemuan otomatis: di compose, nama service adalah
-# nama host, dan daftar unitnya tetap. Di klaster, daftar ini digantikan
-# oleh ServiceMonitor (F9-06 sisi k8s).
+# Static targets, not discovery: in compose, the service name is the host
+# name, and the unit list is fixed. In the cluster, this list is replaced by
+# a ServiceMonitor (F9-06, k8s side).
 
 global:
   scrape_interval: 15s
@@ -38,9 +38,9 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-# Aturan alert (alerts.yml) dan ke mana alert dikirim. Aturannya diuji
-# promtool di CI; penerimanya Mailpit (alertmanager.yml), supaya alert yang
-# menyala benar-benar terlihat, bukan diasumsikan.
+# The alert rules (alerts.yml) and where alerts are sent. The rules are
+# tested by promtool in CI; the receiver is Mailpit (alertmanager.yml), so a
+# firing alert is really seen, not assumed.
 rule_files:
   - /etc/prometheus/alerts.yml
 

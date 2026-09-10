@@ -1,6 +1,6 @@
-# Penyedia dashboard Grafana dari berkas. Dashboard-nya sendiri ada di
-# deploy/grafana/dashboards/ - di luar direktori compose, karena berkas yang
-# sama dipakai lagi oleh ConfigMap di klaster.
+# The Grafana dashboard provider from files. The dashboards themselves are
+# in deploy/grafana/dashboards/ - outside the compose directory, because the
+# same files are reused by the ConfigMap in the cluster.
 
 apiVersion: 1
 

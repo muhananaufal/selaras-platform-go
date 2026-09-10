@@ -1,13 +1,14 @@
-# Unit test aturan alert (promtool test rules). Setiap alert dibuktikan
-# MENYALA pada deret yang melanggar dan DIAM pada deret yang sehat; aturan
-# yang hanya diperiksa sintaksnya tidak membuktikan apa pun.
+# Unit tests for the alert rules (promtool test rules). Every alert is
+# proven to FIRE on a violating series and STAY QUIET on a healthy one; a
+# rule whose syntax alone is checked proves nothing.
 rule_files:
   - alerts.yml
 
 evaluation_interval: 1m
 
 tests:
-  # --- Ketersediaan: 5xx 20 % selama satu jam menyalakan page (14,4 x anggaran 1 %); 0,5 % tidak.
+  # --- Availability: 20 % 5xx for one hour fires the page (14.4 x the 1 % budget); 0.5 % does
+  # not.
   - interval: 1m
     input_series:
       - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
@@ -34,9 +35,10 @@ tests:
         alertname: SelarasErrorBudgetBurningFast
         exp_alerts: []
 
-  # --- Latensi: seluruh permintaan di bucket 100 ms (p95 ~ 100 ms) selama
-  # 15 menit menyalakan ticket; seluruhnya di bucket 10 ms tidak. Bucket
-  # mengikuti bawaan OpenTelemetry (0.005, 0.01, 0.025, 0.05, 0.1, ...).
+  # --- Latency: every request in the 100 ms bucket (p95 ~ 100 ms) for 15
+  # minutes fires the ticket; every request in the 10 ms bucket does not.
+  # The buckets follow the OpenTelemetry defaults (0.005, 0.01, 0.025, 0.05,
+  # 0.1, ...).
   - interval: 1m
     input_series:
       - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.05"}'
@@ -67,8 +69,8 @@ tests:
         alertname: SelarasLatencyAboveSLO
         exp_alerts: []
 
-  # --- Pendaftaran lambat TIDAK menyalakan alert latensi umum (ia
-  # dikecualikan), tetapi menyalakan alert pendaftaran bila > 1,5 s.
+  # --- Slow registration does NOT fire the general latency alert (it is
+  # excluded), but fires the registration alert when > 1.5 s.
   - interval: 1m
     input_series:
       - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="1"}'
@@ -89,7 +91,7 @@ tests:
               summary: "p95 pendaftaran di atas 1,5 s"
               description: "Hasher argon2id dibatasi dua derivasi serentak (identity-svc); antrean di belakangnya berarti identity-svc butuh replika, bukan CPU."
 
-  # --- Unit mati 2 menit menyalakan page dengan nama unitnya.
+  # --- A unit down for 2 minutes fires the page naming the unit.
   - interval: 1m
     input_series:
       - series: 'up{job="selaras",unit="coaching-svc"}'
@@ -105,8 +107,8 @@ tests:
               summary: "Unit coaching-svc tidak bisa ditarik metriknya selama 2 menit"
               description: "Runbook: docs/runbook/coaching-svc.md. Di compose: docker compose ps; di klaster: kubectl -n selaras get pods."
 
-  # --- LLM: satu pekerjaan mati menyala seketika; parkir 30 menit tanpa
-  # yang selesai menyala; parkir yang diselingi pekerjaan selesai tidak.
+  # --- LLM: one dead job fires immediately; 30 minutes parked with nothing
+  # finishing fires; parking interleaved with finished jobs does not.
   - interval: 1m
     input_series:
       - series: 'llm_jobs_total{job="selaras",unit="llm-worker",outcome="dead"}'
@@ -146,8 +148,8 @@ tests:
         alertname: SelarasLLMQueueParked
         exp_alerts: []
 
-  # --- Pembakaran lambat: 8 % galat selama tujuh jam menyalakan ticket
-  # (bukan page), dan 0,5 % tidak.
+  # --- Slow burn: 8 % errors for seven hours fires the ticket (not the
+  # page), and 0.5 % does not.
   - interval: 1m
     input_series:
       - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
@@ -166,8 +168,8 @@ tests:
         alertname: SelarasErrorBudgetBurningFast
         exp_alerts: []
 
-  # --- Backlog llm.jobs yang tumbuh selama 15 menit menyalakan ticket;
-  # backlog besar yang datar tidak (worker sedang mengejar, bukan tertinggal).
+  # --- An llm.jobs backlog growing for 15 minutes fires the ticket; a large
+  # flat backlog does not (the worker is catching up, not falling behind).
   - interval: 1m
     input_series:
       - series: 'kafka_consumer_lag{job="selaras",unit="llm-worker",topic="llm.jobs",partition="0"}'

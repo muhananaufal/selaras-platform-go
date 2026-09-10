@@ -1,12 +1,12 @@
-# Job migrasi per skema dan Job pembuat topic (F9-04).
+# The migration Job per schema and the topic-creating Job (F9-04).
 #
-# Satu Job per service, memakai image `migrate` yang dibangun dari Dockerfile
-# yang sama (UNIT=migrate) dan DSN LANGSUNG ke Postgres dari Secret
-# selaras-secrets (MIGRATE_DSN_<SVC>) - bukan lewat PgBouncer, karena
-# golang-migrate memegang advisory lock tingkat sesi.
+# One Job per service, using the `migrate` image built from the same
+# Dockerfile (UNIT=migrate) and a DSN STRAIGHT to Postgres from the
+# selaras-secrets Secret (MIGRATE_DSN_<SVC>) - not through PgBouncer, because
+# golang-migrate holds a session-level advisory lock.
 #
-# Job bersifat sekali jalan; `kubectl apply` ulang setelah ada migrasi baru
-# menuntut Job lama dihapus dulu (deploy/k3d/infra.sh melakukannya).
+# Jobs are run-once; re-running `kubectl apply` after a new migration
+# requires the old Job to be deleted first (deploy/k3d/infra.sh does that).
 apiVersion: batch/v1
 kind: Job
 metadata: { name: migrate-identity, namespace: selaras }
@@ -143,7 +143,7 @@ spec:
             - name: MIGRATE_DSN
               valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_LLM } }
 ---
-# Topic Kafka dengan jumlah partisi yang ditetapkan F3-01 (cmd/topics).
+# The Kafka topics with the partition counts fixed in F3-01 (cmd/topics).
 apiVersion: batch/v1
 kind: Job
 metadata: { name: topics, namespace: selaras }

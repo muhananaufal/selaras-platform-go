@@ -1,9 +1,10 @@
-# Backup Postgres terjadwal (F9-30). Dipakai BERSAMA core.yml:
+# Scheduled Postgres backup (F9-30). Used TOGETHER with core.yml:
 #   docker compose -f core.yml -f backup.yml up -d
 #
-# Terpisah dari core.yml karena siklus hidupnya lain: ia boleh tidak ada di
-# mesin pengembang yang datanya dibuang setiap hari, dan WAJIB ada di mana pun
-# datanya berarti. Image-nya SAMA dengan server supaya pg_dump sepadan.
+# Separate from core.yml because its lifecycle differs: it may be absent on a
+# developer machine whose data is thrown away every day, and MUST be present
+# wherever the data matters. Its image is the SAME as the server's so pg_dump
+# matches.
 name: selaras-core
 
 services:
@@ -21,10 +22,10 @@ services:
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
     volumes:
       - ./backup/backup.sh:/backup.sh:ro
-      # Volume terpisah dari data Postgres. Backup yang tinggal di disk yang
-      # sama dengan datanya menjawab "salah hapus", bukan "disk mati";
-      # lokasi luar (bucket) adalah langkah berikutnya, dan dicatat di
-      # docs/runbook/backup.md sebagai yang BELUM ada.
+      # A volume separate from the Postgres data. A backup living on the
+      # same disk as its data answers "deleted by mistake", not "disk died";
+      # an external location (a bucket) is the next step, and is recorded in
+      # docs/runbook/backup.md as NOT yet there.
       - backups:/backups
     depends_on:
       postgres:

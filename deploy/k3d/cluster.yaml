@@ -1,9 +1,9 @@
-# Klaster k3d lokal (F9-04). Satu perintah: task k3d:up
+# The local k3d cluster (F9-04). One command: task k3d:up
 #
-# Satu node server, tanpa agent: mesin ini punya empat processor logis dan
-# plafon WSL 8 GB, dan node kedua hanya menggandakan overhead k3s tanpa
-# menambah CPU. Konsekuensinya dinyatakan di ADR-014 aturan 4: yang terbukti
-# di sini adalah mekanisme autoscaling, bukan kapasitasnya.
+# One server node, no agents: this machine has four logical processors and
+# an 8 GB WSL ceiling, and a second node would only double the k3s overhead
+# without adding CPU. The consequence is stated in ADR-014 rule 4: what is
+# proven here is the autoscaling mechanism, not its capacity.
 apiVersion: k3d.io/v1alpha5
 kind: Simple
 metadata:
@@ -11,39 +11,39 @@ metadata:
 servers: 1
 agents: 0
 image: rancher/k3s:v1.36.4-k3s1
-# API server dipublikasikan HANYA di loopback host dengan port tetap. Tanpa
-# ini, k3d (yang melihat DOCKER_HOST tcp:// di WSL) menulis kubeconfig ke
-# kubernetes.docker.internal:6443 sementara portnya acak - dan menunggu
-# selamanya. Itu terjadi di sini.
+# The API server is published ONLY on the host loopback with a fixed port.
+# Without this, k3d (which sees DOCKER_HOST tcp:// in WSL) writes the
+# kubeconfig to kubernetes.docker.internal:6443 while the port is random -
+# and waits forever. It happened here.
 kubeAPI:
   host: "127.0.0.1"
   hostIP: "127.0.0.1"
   hostPort: "26443"
 ports:
-  # NodePort edge-gateway (values-local.yaml) -> host, hanya loopback.
+  # The edge-gateway NodePort (values-local.yaml) -> host, loopback only.
   - port: 127.0.0.1:28080:30080
     nodeFilters: [server:0]
-  # Grafana di klaster, hanya loopback.
+  # Grafana in the cluster, loopback only.
   - port: 127.0.0.1:23000:30300
     nodeFilters: [server:0]
 options:
   k3s:
     extraArgs:
-      # Traefik dan ServiceLB tidak dipakai: gateway dijangkau lewat NodePort
-      # dan tidak ada Ingress di lingkungan lokal. Keduanya hanya memakan
-      # memori yang lebih berguna untuk KEDA dan metrics-server.
+      # Traefik and ServiceLB are not used: the gateway is reached through a
+      # NodePort and there is no Ingress in the local environment. Both only
+      # consume memory more useful to KEDA and metrics-server.
       - arg: --disable=traefik
         nodeFilters: [server:0]
       - arg: --disable=servicelb
         nodeFilters: [server:0]
-      # WSL2 di mesin ini menjalankan cgroup v1 untuk Docker, dan kubelet 1.36
-      # menolak cgroup v1 kecuali diminta secara eksplisit. Ini keputusan yang
-      # SALAH untuk produksi dan benar untuk laptop ini; dinyatakan di RFC
-      # penutup sebagai batas lingkungan lokal.
+      # WSL2 on this machine runs cgroup v1 for Docker, and kubelet 1.36
+      # refuses cgroup v1 unless explicitly asked. This is the WRONG decision
+      # for production and the right one for this laptop; stated in the
+      # closing RFC as a limit of the local environment.
       - arg: --kubelet-arg=fail-cgroupv1=false
         nodeFilters: [server:0]
-      # /proc/sys/net/netfilter/nf_conntrack_max hanya-baca di WSL2; kube-proxy
-      # diminta tidak mengaturnya alih-alih gagal.
+      # /proc/sys/net/netfilter/nf_conntrack_max is read-only in WSL2;
+      # kube-proxy is asked not to set it instead of failing.
       - arg: --kube-proxy-arg=conntrack-max-per-core=0
         nodeFilters: [server:0]
   kubeconfig:
