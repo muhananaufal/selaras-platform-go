@@ -1,4 +1,5 @@
--- Mengembalikan chat_messages menjadi tabel biasa. Isinya disalin utuh.
+-- Turns chat_messages back into an ordinary table. The contents are copied
+-- whole.
 BEGIN;
 
 CREATE TABLE chat_messages_plain (

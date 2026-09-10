@@ -1,25 +1,26 @@
--- Skema chat-svc.
+-- The chat-svc schema.
 --
--- Dua tabel, sama seperti bentuk akhir sistem lama: percakapan, dan pesan yang
--- menggantung padanya. Sistem lama sampai ke sana lewat dua migrasi - pesan
--- semula menggantung pada profil, lalu dipindahkan ke percakapan. Yang ditulis
--- di sini adalah bentuk akhirnya; riwayat migrasinya tidak perlu ikut.
+-- Two tables, the same as the legacy system's final shape: conversations, and
+-- the messages hanging off them. The legacy system got there through two
+-- migrations - messages first hung off profiles, then moved to conversations.
+-- What is written here is the final shape; the migration history need not come
+-- along.
 
 CREATE TABLE conversations (
-    -- UUIDv7, seragam dengan seluruh platform (E16).
+    -- UUIDv7, uniform across the whole platform (E16).
     id UUID PRIMARY KEY,
 
-    -- Pemiliknya PENGGUNA, bukan profilnya (ADR-024).
+    -- The owner is the USER, not their profile (ADR-024).
     --
-    -- Sistem lama sudah memakai user_id di ChatController sementara
-    -- CoachingController memakai profile->id - dua pola untuk satu pertanyaan,
-    -- separuh temuan S9. Yang dipilih di sini adalah pola yang benar, dan
-    -- kebetulan itu pola yang sudah dipakai chat.
+    -- The legacy system already used user_id in ChatController while
+    -- CoachingController used profile->id - two patterns for one question,
+    -- half of finding S9. The one chosen here is the correct pattern, and it
+    -- happens to be the one chat already used.
     user_id UUID NOT NULL,
 
-    -- Slug publik. Klien tidak pernah melihat id internalnya, dan id berurutan
-    -- membiarkan siapa pun menelusuri percakapan orang lain hanya dengan
-    -- menghitung.
+    -- The public slug. Clients never see the internal id, and sequential ids
+    -- would let anyone walk through other people's conversations just by
+    -- counting.
     slug TEXT NOT NULL UNIQUE,
 
     title TEXT NOT NULL,
@@ -28,7 +29,7 @@ CREATE TABLE conversations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Daftar percakapan selalu dibaca per pengguna, terbaru lebih dulu.
+-- The conversation list is always read per user, newest first.
 CREATE INDEX conversations_by_user ON conversations (user_id, updated_at DESC);
 
 CREATE TABLE chat_messages (
@@ -37,15 +38,15 @@ CREATE TABLE chat_messages (
     conversation_id UUID NOT NULL
         REFERENCES conversations (id) ON DELETE CASCADE,
 
-    -- Hanya dua peran, ditegakkan basis data. Peran ketiga yang menyelinap
-    -- masuk akan dikirim ke penyedia LLM sebagai peran yang tidak dikenalnya.
+    -- Only two roles, enforced by the database. A third role that slipped in
+    -- would be sent to the LLM provider as a role it does not recognise.
     role TEXT NOT NULL,
 
-    -- TEXT, bukan JSONB, mengikuti sistem lama.
+    -- TEXT, not JSONB, following the legacy system.
     --
-    -- Percakapan umum menyimpan teks biasa; yang berstruktur adalah thread
-    -- coaching. Menyimpannya sebagai JSONB akan memaksa setiap pesan lama
-    -- dibungkus ulang tanpa ada yang membacanya sebagai struktur.
+    -- General conversations store plain text; the structured ones are
+    -- coaching threads. Storing it as JSONB would force every old message
+    -- to be re-wrapped without anyone reading it as structure.
     content TEXT NOT NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -53,11 +54,11 @@ CREATE TABLE chat_messages (
 
     CONSTRAINT chat_messages_role_known CHECK (role IN ('user', 'model')),
 
-    -- Pesan kosong bukan pesan. Batas atasnya ada di Go - kolom TEXT tidak
-    -- membatasi apa pun - tetapi batas bawahnya ditegakkan di sini, karena ia
-    -- tidak bergantung pada konfigurasi apa pun.
+    -- An empty message is not a message. The upper bound lives in Go - a TEXT
+    -- column bounds nothing - but the lower bound is enforced here, because
+    -- it does not depend on any configuration.
     CONSTRAINT chat_messages_not_empty CHECK (length(btrim(content)) > 0)
 );
 
--- Percakapan dibaca berurutan waktu, dari yang paling lama.
+-- A conversation is read in time order, oldest first.
 CREATE INDEX chat_messages_by_conversation ON chat_messages (conversation_id, created_at);

@@ -1,43 +1,42 @@
--- Skema nutrition-svc.
+-- The nutrition-svc schema.
 --
--- Dua tabel. Yang pertama, culinary_preferences, adalah bagian "expand" dari
--- pemisahan expand-contract: di sistem lama preferensi kuliner menumpang
--- sebagai SATU KOLOM JSON di user_profiles, sehingga sebuah agregat yang tidak
--- ada hubungannya dengan identitas atau demografi ikut terkunci setiap kali
--- profil disentuh, dan tidak ada satu pun batasan basis data yang menjaga
--- isinya. Di sini ia menjadi tabel dengan kolom sungguhan dan batasan
--- sungguhan.
+-- Two tables. The first, culinary_preferences, is the "expand" half of an
+-- expand-contract split: in the legacy system culinary preferences rode along
+-- as ONE JSON COLUMN in user_profiles, so an aggregate with nothing to do with
+-- identity or demographics was locked every time a profile was touched, and
+-- not a single database constraint guarded its content. Here it becomes a
+-- table with real columns and real constraints.
 
 CREATE TABLE culinary_preferences (
-    -- UUIDv7, seragam dengan seluruh platform (E16).
+    -- UUIDv7, uniform across the whole platform (E16).
     id UUID PRIMARY KEY,
 
-    -- Pemiliknya PENGGUNA, bukan profilnya (ADR-024).
+    -- The owner is the USER, not their profile (ADR-024).
     --
-    -- UNIQUE: satu pengguna punya satu himpunan preferensi. Di sistem lama
-    -- keunikan itu datang gratis karena ia sebuah kolom; setelah dipisah ia
-    -- harus dinyatakan, kalau tidak dua baris untuk satu orang akan muncul dan
-    -- tidak ada yang tahu mana yang berlaku.
+    -- UNIQUE: one user has one set of preferences. In the legacy system that
+    -- uniqueness came for free because it was a column; once split out it has
+    -- to be declared, otherwise two rows for one person will appear and nobody
+    -- will know which one applies.
     user_id UUID NOT NULL UNIQUE,
 
-    -- Teks bebas: alergi tidak bisa dienumerasi, dan mencoba melakukannya
-    -- hanya membuat pengguna dengan alergi yang tidak ada di daftar berbohong.
+    -- Free text: allergies cannot be enumerated, and trying to only makes
+    -- users with an allergy not on the list lie.
     allergies TEXT,
 
-    -- NULL berarti "belum dipilih", dan itu berbeda dari nilai mana pun.
-    -- Batasannya ditegakkan di sini, bukan hanya di Go: kolom TEXT tanpa CHECK
-    -- akan menerima apa pun yang berhasil melewati satu jalur penulisan yang
-    -- terlupakan, dan nilai itu akan bertahan selamanya.
+    -- NULL means "not chosen yet", and that differs from any value. The
+    -- constraint is enforced here, not only in Go: a TEXT column without a
+    -- CHECK accepts anything that gets through one forgotten write path, and
+    -- that value stays forever.
     budget_level  TEXT CHECK (budget_level  IN ('thrifty', 'standard', 'flexible')),
     cooking_style TEXT CHECK (cooking_style IN ('quick_every_time', 'batch_meal_prep')),
 
-    -- Array asli PostgreSQL, bukan JSON.
+    -- A native PostgreSQL array, not JSON.
     --
-    -- Isinya daftar string pendek tanpa struktur di dalamnya, dan array bisa
-    -- diindeks serta ditanyai tanpa membongkar dokumen. DEFAULT '{}' dengan
-    -- NOT NULL: "belum pernah diisi" dan "diisi kosong" sengaja disamakan di
-    -- sini - keduanya berarti tidak ada preferensi - sehingga pembacanya tidak
-    -- perlu menangani NULL dan array kosong secara terpisah.
+    -- The content is a list of short strings with no structure inside, and an
+    -- array can be indexed and queried without unpacking a document. DEFAULT
+    -- '{}' with NOT NULL: "never filled in" and "filled in empty" are
+    -- deliberately made the same here - both mean no preference - so readers
+    -- need not handle NULL and an empty array separately.
     taste_profiles    TEXT[] NOT NULL DEFAULT '{}',
     kitchen_equipment TEXT[] NOT NULL DEFAULT '{}',
 
@@ -50,68 +49,69 @@ CREATE TABLE daily_meal_guides (
 
     user_id UUID NOT NULL,
 
-    -- Tanggal panduan, di zona waktu server. DATE, bukan TIMESTAMPTZ: yang
-    -- ditanyakan adalah "panduan hari apa", dan jam pembuatannya sudah ada di
-    -- created_at.
+    -- The guide date, in the server's time zone. DATE, not TIMESTAMPTZ: the
+    -- question is "the guide for which day", and the creation time is already
+    -- in created_at.
     guide_date DATE NOT NULL,
 
-    -- Waktu makan ditentukan dari jam server saat panduan DIMINTA (D10), lalu
-    -- DIBEKUKAN di sini.
+    -- The meal time is determined from the server clock when the guide is
+    -- REQUESTED (D10), then FROZEN here.
     --
-    -- Menghitungnya ulang saat panduan dibaca akan membuat saran sarapan
-    -- muncul sebagai saran makan malam hanya karena pengguna membuka aplikasi
-    -- lagi malam harinya. Yang disimpan adalah konteks saat ia dibuat.
+    -- Recomputing it when the guide is read would make a breakfast suggestion
+    -- show up as a dinner suggestion just because the user opened the app
+    -- again in the evening. What is stored is the context at the time it was
+    -- created.
     meal_time TEXT NOT NULL
         CHECK (meal_time IN ('breakfast', 'lunch', 'afternoon_snack', 'dinner')),
 
-    -- Pembuatannya ASINKRON, berbeda dari sistem lama.
+    -- Generation is ASYNCHRONOUS, unlike the legacy system.
     --
-    -- Di sistem lama panggilan Gemini terjadi di dalam permintaan HTTP dengan
-    -- timeout 180 detik (B14), sehingga baris ini hanya pernah ada dalam
-    -- keadaan sudah jadi. Di sini baris ditulis lebih dulu dalam keadaan
-    -- pending, dan worker mengisinya belakangan.
+    -- In the legacy system the Gemini call happened inside the HTTP request
+    -- with a 180-second timeout (B14), so this row only ever existed in the
+    -- finished state. Here the row is written first in the pending state, and
+    -- the worker fills it in later.
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'ready', 'failed')),
 
-    -- Masukan harian ditambah konteks yang dirakit saat permintaan dibuat.
-    -- Disimpan supaya sebuah saran bisa dijelaskan kembali kemudian: tanpa ini,
-    -- "mengapa saya disarankan ini" tidak punya jawaban.
+    -- The daily input plus the context assembled when the request was made.
+    -- Stored so a suggestion can be explained again later: without it, "why was
+    -- I suggested this" has no answer.
     generation_context JSONB NOT NULL,
 
-    -- NULL sampai panduannya tiba.
+    -- NULL until the guide arrives.
     guide_data JSONB,
 
-    -- Invarian statusnya ditegakkan STRUKTURAL, bukan dengan disiplin.
+    -- The status invariant is enforced STRUCTURALLY, not by discipline.
     --
-    -- Panduan berstatus ready tanpa isi akan tampil sebagai halaman kosong yang
-    -- mengaku selesai; panduan pending yang isinya sudah ada berarti ada
-    -- penulis yang lupa memindahkan statusnya. Keduanya mustahil di sini.
+    -- A ready guide without content would show up as an empty page claiming to
+    -- be done; a pending guide whose content already exists means a writer
+    -- forgot to move its status. Both are impossible here.
     CONSTRAINT daily_meal_guides_ready_has_data
         CHECK ((status = 'ready') = (guide_data IS NOT NULL)),
 
-    -- Ditandai pengguna sebagai menu yang benar-benar ia pilih.
+    -- Marked by the user as a menu they actually chose.
     --
-    -- Kolom ini ada di sistem lama pula, tetapi TIDAK ADA satu baris kode pun
-    -- yang pernah menulisnya (B17). Di sini ia dipakai sungguhan sebagai
-    -- saringan riwayat pembelajaran, dan selama belum ada yang menandainya,
-    -- riwayat itu memang kosong - jauh lebih jujur daripada menyuapkan kembali
-    -- saran model sendiri kepada model seolah pengguna menyukainya.
+    -- This column existed in the legacy system too, but NOT ONE line of code
+    -- ever wrote it (B17). Here it is really used as the filter of the
+    -- learning history, and until something marks it, that history is indeed
+    -- empty - far more honest than feeding the model's own suggestions back to
+    -- the model as if the user liked them.
     chosen BOOLEAN NOT NULL DEFAULT FALSE,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Riwayat hub dibaca per pengguna, terbaru lebih dulu. created_at ikut sebagai
--- pemecah seri: beberapa panduan dalam satu hari punya guide_date yang sama,
--- dan tanpa kolom kedua urutannya ditentukan PostgreSQL sesukanya - sehingga
--- halaman kedua bisa mengulang baris yang sudah muncul di halaman pertama.
+-- The hub history is read per user, newest first. created_at joins as a
+-- tie-breaker: several guides in one day share the same guide_date, and
+-- without a second column PostgreSQL orders them however it likes - so the
+-- second page can repeat rows that already appeared on the first.
 CREATE INDEX daily_meal_guides_by_user
     ON daily_meal_guides (user_id, guide_date DESC, created_at DESC);
 
--- Riwayat pembelajaran hanya membaca yang ready DAN dipilih. Indeks parsial:
--- ia hanya memuat baris yang benar-benar ditanyakan, dan tetap kecil walau
--- tabelnya tumbuh dengan panduan yang tidak pernah dipilih siapa pun.
+-- The learning history reads only what is ready AND chosen. A partial index:
+-- it holds only the rows actually asked about, and stays small even as the
+-- table grows with guides nobody ever chose.
 CREATE INDEX daily_meal_guides_chosen
     ON daily_meal_guides (user_id, created_at DESC)
     WHERE chosen AND status = 'ready';

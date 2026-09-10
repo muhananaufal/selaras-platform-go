@@ -1,94 +1,92 @@
--- Pelacakan saga penghapusan akun (F8-01).
+-- Account deletion saga tracking (F8-01).
 --
--- Penghapusan akun menyentuh ENAM unit yang masing-masing memiliki basis
--- datanya sendiri, dan tidak ada transaksi yang bisa merangkul keenamnya.
--- Yang menggantikannya adalah saga: satu permintaan, enam konfirmasi, dan
--- catatan tentang siapa yang belum menjawab.
+-- Account deletion touches SIX units that each own their own database, and
+-- no transaction can span all six. What replaces it is a saga: one request,
+-- six confirmations, and a record of who has not answered yet.
 --
--- Tanpa catatan itu, penghapusan yang berhenti di tengah tidak meninggalkan
--- jejak apa pun. Datanya tetap ada di unit yang tidak dituju siapa pun lagi,
--- dan tidak seorang pun tahu ia di sana - termasuk pengguna yang memintanya
--- dihapus.
+-- Without that record, a deletion that stops halfway leaves no trace at all.
+-- The data stays in units nobody addresses any more, and nobody knows it is
+-- there - including the user who asked for it to be deleted.
 
 CREATE TABLE deletion_sagas (
-    -- UUIDv7: terurut waktu, sehingga saga yang menggantung paling lama ada di
-    -- awal daftar tanpa perlu kolom urutan terpisah.
+    -- UUIDv7: time-ordered, so the saga that has hung the longest is at the
+    -- top of the list without a separate sequence column.
     id UUID PRIMARY KEY,
 
     user_id UUID NOT NULL,
 
-    -- Id profil ikut dibawa karena beberapa unit menyimpan datanya dengan
-    -- kunci itu, bukan dengan user_id. Ia disalin SEKARANG, saat profilnya
-    -- masih ada: setelah profile-svc menghapus barisnya, tidak ada lagi yang
-    -- bisa menerjemahkannya.
+    -- The profile id comes along because some units store their data under
+    -- that key, not under user_id. It is copied NOW, while the profile still
+    -- exists: once profile-svc has deleted its row, nothing can translate it
+    -- any more.
     user_profile_id UUID,
 
-    -- Keadaan saga secara keseluruhan.
+    -- The state of the saga as a whole.
     --
-    -- 'requested'  : sudah diumumkan, menunggu konfirmasi
-    -- 'completed'  : keenam unit mengonfirmasi, akun sudah dihapus
-    -- 'failed'     : satu unit atau lebih menyatakan gagal
+    -- 'requested' : announced, waiting for confirmations 'completed' : all
+    -- six units confirmed, the account has been deleted 'failed' : one unit
+    -- or more reported failure
     --
-    -- Tidak ada 'compensating'. Penghapusan TIDAK bisa dibatalkan - data yang
-    -- sudah hilang tidak kembali - jadi kompensasinya bukan mengembalikan
-    -- keadaan, melainkan membuat kegagalannya TERLIHAT dan bisa diselesaikan
-    -- manusia. Lihat docs/runbook/account-deletion.md.
+    -- There is no 'compensating'. A deletion CANNOT be undone - data that is
+    -- gone does not come back - so the compensation is not restoring the
+    -- state, but making the failure VISIBLE and resolvable by a human. See
+    -- docs/runbook/account-deletion.md.
     status TEXT NOT NULL DEFAULT 'requested'
         CHECK (status IN ('requested', 'completed', 'failed')),
 
     requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at  TIMESTAMPTZ,
 
-    -- finished_at HANYA ada saat saganya sudah berakhir, dan selalu ada saat
-    -- ia berakhir. Ditegakkan di sini supaya "sudah selesai kapan" tidak
-    -- pernah menjadi pertanyaan yang tidak bisa dijawab barisnya sendiri.
+    -- finished_at exists ONLY once the saga has ended, and always exists
+    -- once it has. Enforced here so "when did it finish" is never a question
+    -- the row itself cannot answer.
     CONSTRAINT deletion_sagas_finished_when_over
         CHECK ((status = 'requested') = (finished_at IS NULL))
 );
 
--- Saga yang menggantung harus bisa ditemukan tanpa memindai seluruh tabel.
--- Indeks parsial: hanya yang belum selesai yang pernah ditanyakan seperti ini.
+-- A hanging saga has to be findable without scanning the whole table. A
+-- partial index: only unfinished ones are ever asked about this way.
 CREATE INDEX deletion_sagas_outstanding
     ON deletion_sagas (requested_at)
     WHERE status = 'requested';
 
--- Satu pengguna tidak boleh punya dua saga berjalan sekaligus.
+-- One user must not have two sagas running at once.
 --
--- Dua saga berarti dua rangkaian konfirmasi untuk satu akun, dan yang kedua
--- akan mengira dirinya belum lengkap karena unit-unitnya sudah menjawab yang
--- pertama. Indeks unik PARSIAL: setelah selesai, saga lama boleh berdampingan
--- dengan yang baru - meski dalam praktiknya akunnya sudah tidak ada.
+-- Two sagas mean two chains of confirmations for one account, and the second
+-- would think it is incomplete because its units have already answered the
+-- first. A PARTIAL unique index: once finished, an old saga may sit beside a
+-- new one - even though in practice the account no longer exists.
 CREATE UNIQUE INDEX deletion_sagas_one_per_user
     ON deletion_sagas (user_id)
     WHERE status = 'requested';
 
--- Konfirmasi per unit.
+-- Confirmations per unit.
 --
--- Tabel terpisah, bukan kolom boolean per unit di deletion_sagas: menambah
--- unit ketujuh nanti akan menjadi migrasi ALTER TABLE, dan yang lupa
--- menambahkannya menghasilkan saga yang selesai tanpa unit itu pernah
--- dihubungi.
+-- A separate table, not one boolean column per unit in deletion_sagas:
+-- adding a seventh unit later would become an ALTER TABLE migration, and
+-- forgetting to add it produces sagas that complete without that unit ever
+-- being contacted.
 CREATE TABLE deletion_confirmations (
     saga_id UUID NOT NULL REFERENCES deletion_sagas (id) ON DELETE CASCADE,
 
-    -- Nama unit yang mengonfirmasi: 'profile', 'assessment', dan seterusnya.
+    -- The name of the confirming unit: 'profile', 'assessment', and so on.
     service TEXT NOT NULL,
 
     succeeded BOOLEAN NOT NULL,
 
-    -- Alasan kegagalan, bila ada. Ia yang dibaca manusia saat menyelesaikan
-    -- saga yang macet.
+    -- The reason for the failure, if any. It is what a human reads when
+    -- resolving a stuck saga.
     failure_reason TEXT,
 
     confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Satu unit satu konfirmasi. Inilah gerbang idempotensinya: relay outbox
-    -- bersifat at-least-once, jadi konfirmasi yang sama BISA tiba dua kali,
-    -- dan yang kedua tidak boleh membuat saga mengira ada tujuh unit menjawab.
+    -- One unit, one confirmation. This is the idempotency gate: the outbox
+    -- relay is at-least-once, so the same confirmation CAN arrive twice, and
+    -- the second must not make the saga think seven units answered.
     PRIMARY KEY (saga_id, service),
 
-    -- Alasan kegagalan HANYA ada saat gagal. Yang berhasil tetapi membawa
-    -- alasan adalah baris yang menceritakan dua hal berbeda sekaligus.
+    -- A failure reason exists ONLY on failure. A success that carries a
+    -- reason is a row telling two different stories at once.
     CONSTRAINT deletion_confirmations_reason_when_failed
         CHECK (succeeded OR failure_reason IS NOT NULL)
 );

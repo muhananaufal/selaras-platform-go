@@ -1,45 +1,44 @@
--- Tabel idempotensi untuk nutrition.
+-- The idempotency table for nutrition.
 --
--- Isinya identik di setiap service dan berasal dari satu sumber:
+-- Its contents are identical in every service and come from one source:
 -- internal/platform/idempotency/schema.sql.
 
--- Tabel idempotensi. Satu per skema service.
+-- The idempotency table. One per service schema.
 --
--- Ia menjawab satu pertanyaan: "pekerjaan dengan kunci ini sudah pernah
--- dikerjakan atau belum?" Jawabannya harus benar meski dua proses bertanya
--- pada saat yang sama, dan itulah sebabnya jawabannya datang dari kunci primer
--- basis data - bukan dari SELECT lalu INSERT, yang di antara keduanya ada
--- celah tempat keduanya membaca "belum".
+-- It answers one question: "has the work with this key been done yet or not?"
+-- The answer has to be correct even when two processes ask at the same moment,
+-- and that is why it comes from the database's primary key - not from SELECT
+-- then INSERT, which has a gap between the two where both read "not yet".
 
 CREATE TABLE processed_messages (
-    -- Kunci idempotensi. Ia kunci primer, dan itu bukan pilihan gaya:
-    -- INSERT ... ON CONFLICT DO NOTHING hanya bisa menjadi penjaga kalau
-    -- basis data yang menegakkan keunikannya.
+    -- The idempotency key. It is the primary key, and that is not a matter
+    -- of style: INSERT ... ON CONFLICT DO NOTHING can only act as a guard
+    -- if the database enforces the uniqueness.
     key TEXT PRIMARY KEY,
 
-    -- Ruang lingkup pemakainya - nama konsumen atau use case.
+    -- The scope of its user - the name of a consumer or a use case.
     --
-    -- Dua konsumen berbeda yang memproses event yang sama tidak boleh saling
-    -- meniadakan: penulis cache yang sudah menangani sebuah event tidak berarti
-    -- pengirim notifikasi juga sudah. Ia ikut ke dalam kuncinya di sisi Go,
-    -- dan disimpan terpisah di sini supaya bisa disaring saat menyelidiki.
+    -- Two different consumers processing the same event must not cancel each
+    -- other out: a cache writer that has handled an event does not mean the
+    -- notification sender has too. It is folded into the key on the Go side,
+    -- and stored separately here so it can be filtered on while investigating.
     scope TEXT NOT NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Hasil pekerjaannya, bila ada.
+    -- The result of the work, if any.
     --
-    -- Tanpa ini, permintaan ulang hanya bisa dijawab "sudah pernah" - dan
-    -- pemanggil yang kehilangan jawaban pertamanya tidak punya cara mendapatkan
-    -- jawaban yang sama. Dengan ini, ia mendapat jawaban yang sama persis.
+    -- Without it, a repeated request can only be answered "already done" - and
+    -- a caller that lost its first answer has no way to obtain the same answer.
+    -- With it, it gets exactly the same answer.
     result BYTEA
 );
 
--- Tabel ini SENGAJA tidak dipartisi, berbeda dari outbox.
+-- This table is DELIBERATELY not partitioned, unlike the outbox.
 --
--- Partisi mensyaratkan kunci partisi ikut ke dalam setiap batasan unik, jadi
--- kunci primernya harus menjadi (key, created_at) - dan keunikan key sendiri
--- berhenti ditegakkan lintas partisi. Justru itu satu-satunya hal yang
--- dijanjikan tabel ini. Pertumbuhannya ditangani dengan menyapu baris lama
--- (Sweep), bukan dengan melepas partisi.
+-- Partitioning requires the partition key to be part of every unique
+-- constraint, so the primary key would have to become (key, created_at) -
+-- and the uniqueness of key alone would stop being enforced across
+-- partitions. That is precisely the one thing this table promises. Growth is
+-- handled by sweeping old rows (Sweep), not by dropping partitions.
 CREATE INDEX processed_messages_by_age ON processed_messages (created_at);

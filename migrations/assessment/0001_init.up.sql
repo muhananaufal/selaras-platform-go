@@ -1,50 +1,50 @@
--- Skema assessment. Dijalankan oleh peran svc_assessment, yang hanya punya
--- hak di skema ini (deploy/compose/initdb/01-schemas.sh).
+-- The assessment schema. Run by the svc_assessment role, which has rights
+-- only in this schema (deploy/compose/initdb/01-schemas.sh).
 
 CREATE TABLE risk_assessments (
     id              UUID PRIMARY KEY,
 
-    -- Menunjuk ke profile.user_profiles, TANPA foreign key lintas skema -
-    -- alasannya sama seperti di skema profile (ADR-006): kunci asing lintas
-    -- skema membatalkan isolasi yang ditegakkan basis datanya sendiri.
+    -- Points at profile.user_profiles, WITHOUT a cross-schema foreign key -
+    -- for the same reason as in the profile schema (ADR-006): a
+    -- cross-schema foreign key undoes the isolation the database itself
+    -- enforces.
     user_profile_id UUID NOT NULL,
 
-    -- Slug adalah id publik. Ia berbeda dari kunci primer supaya id internal
-    -- tidak pernah muncul di URL, dan supaya ia bisa dicari tanpa
-    -- mengungkapkan berapa banyak penilaian yang pernah dibuat.
+    -- The slug is the public id. It differs from the primary key so the
+    -- internal id never appears in a URL, and so it can be looked up without
+    -- revealing how many assessments have ever been made.
     slug            TEXT NOT NULL,
 
     model_used      TEXT NOT NULL,
 
-    -- NUMERIC, bukan FLOAT seperti sistem lama.
+    -- NUMERIC, not FLOAT as in the legacy system.
     --
-    -- Angka ini dibaca orang tentang jantungnya sendiri dan dibandingkan
-    -- antar waktu. Float biner tidak bisa mewakili 66.85 dengan tepat,
-    -- sehingga nilai yang disimpan dan nilai yang dihitung bisa berbeda di
-    -- digit terakhir - dan perbedaan itu muncul sebagai riwayat yang
-    -- berubah sendiri.
+    -- This is a number people read about their own heart and compare over
+    -- time. Binary floats cannot represent 66.85 exactly, so the stored
+    -- value and the computed value can differ in the last digit - and that
+    -- difference shows up as a history that changes on its own.
     final_risk_percentage NUMERIC(5,2) NOT NULL,
 
-    -- Cuplikan lengkap sesi analisis. inputs adalah jawaban asli pengguna;
-    -- generated_values adalah nilai klinis yang benar-benar masuk ke model,
-    -- entah diketik atau ditebak.
+    -- The full snapshot of the analysis session. inputs is the user's
+    -- original answers; generated_values is the clinical values that
+    -- actually entered the model, whether typed or estimated.
     --
-    -- Keduanya disimpan karena angka risiko tanpa masukannya tidak bisa
-    -- dibantah siapa pun - termasuk oleh kami sendiri saat menyelidiki
-    -- keluhan.
+    -- Both are stored because a risk number without its inputs cannot be
+    -- disputed by anyone - including ourselves when investigating a
+    -- complaint.
     inputs           JSONB NOT NULL,
     generated_values JSONB NOT NULL,
 
-    -- Diisi belakangan oleh llm-worker (F3). NULL berarti belum ada, dan itu
-    -- keadaan yang sah: penilaian selesai tanpanya.
+    -- Filled in later by llm-worker (F3). NULL means not there yet, and that
+    -- is a valid state: the assessment is complete without it.
     result_details   JSONB,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Risiko di luar 0-100 tidak mungkin benar. Batasnya di basis data
-    -- karena kolom ini dibaca unit lain - dashboard dan coaching - yang
-    -- tidak akan memeriksa ulang.
+    -- A risk outside 0-100 cannot be right. The bound is in the database
+    -- because this column is read by other units - dashboard and coaching -
+    -- which will not re-check it.
     CONSTRAINT risk_assessments_percentage_in_range
         CHECK (final_risk_percentage >= 0 AND final_risk_percentage <= 100),
 
@@ -54,8 +54,8 @@ CREATE TABLE risk_assessments (
 
 CREATE UNIQUE INDEX risk_assessments_slug_unique ON risk_assessments (slug);
 
--- Riwayat selalu dibaca per pengguna dan terurut waktu. Indeks gabungan ini
--- melayani keduanya sekaligus; dua indeks terpisah akan memaksa pengurutan
--- setelah pembacaan.
+-- The history is always read per user and ordered by time. This composite
+-- index serves both at once; two separate indexes would force a sort after
+-- the read.
 CREATE INDEX risk_assessments_by_profile_recent
     ON risk_assessments (user_profile_id, created_at DESC);

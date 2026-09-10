@@ -1,36 +1,36 @@
--- Bahasa pengguna, disalin dari event profile.updated.
+-- The user's language, copied from profile.updated events.
 --
--- Alasannya sama dengan cache profil di assessment-svc (ADR-007): membuat
--- panduan menu tidak boleh memanggil profile-svc pada setiap permintaan.
--- Panggilan itu menambah kegagalan yang bisa dihindari - profile-svc yang mati
--- membuat panduan menu ikut mati - untuk data yang berubah beberapa kali
--- setahun.
+-- The reason is the same as for the profile cache in assessment-svc (ADR-007):
+-- producing a menu guide must not call profile-svc on every request. That call
+-- adds avoidable failures - a dead profile-svc makes menu guides dead too - for
+-- data that changes a few times a year.
 --
--- Ini CACHE, bukan sumber kebenaran. profile-svc tetap pemiliknya. Yang di sini
--- boleh basi, boleh hilang, dan boleh dibangun ulang dari awal topic. Yang
--- TIDAK boleh adalah menjadi satu-satunya tempat sebuah fakta ada - dan
--- bahasanya memang tidak: ia selalu punya nilai bawaan yang bisa dipakai.
+-- This is a CACHE, not the source of truth. profile-svc remains the owner. What
+-- lives here may be stale, may be lost, and may be rebuilt from the start of
+-- the topic. What it must NOT become is the only place a fact exists - and the
+-- language indeed is not: it always has a usable default.
 --
--- Hanya bahasa yang disalin, bukan seluruh profil. Menyalin lebih banyak dari
--- yang dipakai berarti menyimpan salinan yang tidak pernah dibaca siapa pun,
--- lalu harus ikut dihapus saat akun dihapus.
+-- Only the language is copied, not the whole profile. Copying more than is used
+-- means storing copies nobody ever reads, which then have to be deleted along
+-- with the account.
 
 CREATE TABLE user_languages (
-    -- Dikunci pada user_id: itu identitas yang sudah terverifikasi di setiap
-    -- permintaan (ADR-023, ADR-024).
+    -- Keyed on user_id: that is the identity verified on every request
+    -- (ADR-023, ADR-024).
     user_id UUID PRIMARY KEY,
 
     language TEXT NOT NULL,
 
-    -- Waktu event yang menghasilkan baris ini, BUKAN waktu penulisannya.
+    -- The time of the event that produced this row, NOT the time it was
+    -- written.
     --
-    -- Ia yang menahan event yang tiba terlambat menimpa yang lebih baru: Kafka
-    -- menjamin urutan per partisi, tetapi partisi bisa berubah dan konsumen
-    -- bisa diputar ulang.
+    -- It is what keeps a late-arriving event from overwriting a newer one:
+    -- Kafka guarantees order per partition, but partitions can change and
+    -- consumers can be replayed.
     observed_at TIMESTAMPTZ NOT NULL,
 
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Cache yang basi harus bisa ditemukan tanpa memindai seluruh tabel.
+-- A stale cache has to be findable without scanning the whole table.
 CREATE INDEX user_languages_by_age ON user_languages (observed_at);

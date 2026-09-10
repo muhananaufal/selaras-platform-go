@@ -1,24 +1,25 @@
--- Referensi lunak ke hasil analisis (F4-06; ADR-004 kopling #2).
+-- Soft references to analysis results (F4-06; ADR-004 coupling no. 2).
 --
--- assessment-svc menyiarkan assessment.completed; coaching menyimpan cuplikan
--- yang ia perlukan DI SINI, lalu StartProgram meresolusi slug dari tabel ini -
--- bukan dengan memanggil assessment-svc secara sinkron, dan bukan lewat FK
--- lintas skema yang ADR-006 larang. Sebelum tabel ini ada, slug yang dikirim
--- klien tidak pernah diterjemahkan menjadi apa pun: setiap program tersimpan
--- tanpa sumber analisisnya, dan D3 (satu program per analisis) tidak pernah
--- bisa ditegakkan. Test penerimaan D3-lah yang menemukannya.
+-- assessment-svc announces assessment.completed; coaching stores the snapshot
+-- it needs HERE, and StartProgram then resolves the slug from this table - not
+-- by calling assessment-svc synchronously, and not through the cross-schema FK
+-- ADR-006 forbids. Before this table existed, the slug a client sent was never
+-- translated into anything: every program was stored without its analysis
+-- source, and D3 (one program per analysis) could never be enforced. The D3
+-- acceptance test is what found it.
 CREATE TABLE coaching_assessments (
-    -- Id analisis milik assessment-svc. Kunci primer, supaya event yang tiba
-    -- dua kali (relay at-least-once) berhenti di ON CONFLICT DO NOTHING.
+    -- The analysis id owned by assessment-svc. The primary key, so an event
+    -- arriving twice (the at-least-once relay) stops at ON CONFLICT DO
+    -- NOTHING.
     id UUID PRIMARY KEY,
 
     user_id UUID NOT NULL,
 
-    -- Slug publik yang dikirim klien saat memulai program.
+    -- The public slug the client sends when starting a program.
     slug TEXT NOT NULL UNIQUE,
 
-    -- Cuplikan yang disalin ke coaching_programs.assessment_snapshot saat
-    -- program dimulai: slug, risk_percentage, risk_category, model_used.
+    -- The snapshot copied into coaching_programs.assessment_snapshot when a
+    -- program starts: slug, risk_percentage, risk_category, model_used.
     snapshot JSONB NOT NULL,
 
     completed_at TIMESTAMPTZ NOT NULL,

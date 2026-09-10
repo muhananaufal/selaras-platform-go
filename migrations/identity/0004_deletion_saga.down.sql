@@ -1,4 +1,4 @@
--- Konfirmasi lebih dulu: ia merujuk ke saga lewat foreign key, dan urutan
--- terbalik akan ditolak Postgres.
+-- Confirmations first: they reference the saga through a foreign key, and
+-- the reverse order would be refused by Postgres.
 DROP TABLE IF EXISTS deletion_confirmations;
 DROP TABLE IF EXISTS deletion_sagas;

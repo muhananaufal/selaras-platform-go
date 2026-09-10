@@ -1,12 +1,11 @@
--- Status personalisasi, sebagai kolom tersendiri.
+-- The personalisation status, as a column of its own.
 --
--- Sebelum ini, statusnya DITURUNKAN dari ada tidaknya result_details - yang
--- hanya bisa membedakan dua keadaan: belum diminta, dan selesai. Klien tidak
--- bisa membedakan "sedang dikerjakan" dari "belum pernah diminta", dan tidak
--- bisa tahu sama sekali kalau pekerjaannya gagal: keduanya terlihat sebagai
--- laporan yang tidak ada.
+-- Before this, the status was DERIVED from the presence of result_details -
+-- which can only tell two states apart: not requested, and done. A client
+-- could not tell "in progress" from "never requested", and could not know at
+-- all when the job had failed: both looked like a report that is not there.
 --
--- Kolom ini yang membuat F3-12 mungkin.
+-- This column is what makes F3-12 possible.
 
 ALTER TABLE risk_assessments
     ADD COLUMN personalization_status TEXT NOT NULL DEFAULT 'not_requested';
@@ -16,21 +15,22 @@ ALTER TABLE risk_assessments
         personalization_status IN ('not_requested', 'pending', 'completed', 'failed')
     );
 
--- Baris yang sudah punya laporan berstatus completed.
+-- Rows that already have a report get the completed status.
 --
--- Tanpa ini, penilaian lama yang laporannya sudah ada akan berstatus
--- not_requested, dan klien akan menawarkan tombol "buat laporan" untuk laporan
--- yang sudah di layar.
+-- Without this, old assessments whose report already exists would be
+-- not_requested, and the client would offer a "create report" button for a
+-- report already on screen.
 UPDATE risk_assessments
 SET personalization_status = 'completed'
 WHERE result_details IS NOT NULL;
 
--- Alasan gagalnya, supaya kegagalan bisa dijelaskan alih-alih hanya dihitung.
+-- The reason for the failure, so a failure can be explained instead of merely
+-- counted.
 ALTER TABLE risk_assessments
     ADD COLUMN personalization_error TEXT;
 
--- Pekerjaan yang menggantung, untuk pemantauan: pending yang tidak pernah
--- berubah adalah gejala worker yang mati atau event yang hilang.
+-- Hanging jobs, for monitoring: a pending that never changes is a symptom
+-- of a dead worker or a lost event.
 CREATE INDEX risk_assessments_personalization_pending
     ON risk_assessments (updated_at)
     WHERE personalization_status = 'pending';

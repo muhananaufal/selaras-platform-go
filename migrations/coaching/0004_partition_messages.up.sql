@@ -1,10 +1,11 @@
--- F9-28: coaching_messages dipartisi menurut rentang waktu.
+-- F9-28: coaching_messages is partitioned by time range.
 --
--- Alasannya sama dengan chat_messages (lihat migrations/chat/0004): tabel
--- yang tumbuh paling cepat diubah selagi kecil, dibaca lewat indeks
--- (coaching_thread_id, created_at) yang tetap ada per partisi, dan partisi
--- lama bisa dilepas utuh bila ada kebijakan retensi. PRIMARY KEY memuat kunci
--- partisi; tidak ada tabel lain yang merujuk ke coaching_messages.
+-- The reason is the same as for chat_messages (see migrations/chat/0004): the
+-- fastest-growing table is converted while small, is read through the
+-- (coaching_thread_id, created_at) index that remains per partition, and old
+-- partitions can be detached whole if a retention policy exists. The PRIMARY
+-- KEY contains the partition key; no other table references
+-- coaching_messages.
 
 BEGIN;
 

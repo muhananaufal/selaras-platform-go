@@ -1,64 +1,67 @@
--- Tabel outbox untuk chat.
+-- The outbox table for chat.
 --
--- Isinya identik di setiap service dan berasal dari satu sumber:
+-- Its contents are identical in every service and come from one source:
 -- internal/platform/outbox/schema.sql.
 
--- Tabel outbox. Satu per skema service; isinya identik.
+-- The outbox table. One per service schema; the contents are identical.
 --
--- Ia di-embed dan dipakai generator migrasi supaya tidak ada delapan salinan
--- yang perlahan menyimpang. Satu salinan yang berbeda berarti satu service
--- yang eventnya berperilaku lain, dan perbedaannya baru terlihat saat ada
--- yang hilang.
+-- It is embedded and used by the migration generator so there are not eight
+-- copies slowly drifting apart. One copy that differs means one service
+-- whose events behave differently, and the difference only shows once
+-- something goes missing.
 
 CREATE TABLE outbox (
-    -- UUIDv7: terurut waktu, sehingga relay membacanya dalam urutan yang
-    -- sama dengan urutan penulisannya tanpa perlu kolom urutan terpisah.
+    -- UUIDv7: time-ordered, so the relay reads rows in the same order they
+    -- were written without a separate sequence column.
     id UUID NOT NULL,
 
-    -- created_at ikut kunci primer karena ia kunci partisi. PostgreSQL
-    -- mensyaratkannya: tanpa itu, kunci primer tidak bisa ditegakkan lintas
-    -- partisi.
+    -- created_at is part of the primary key because it is the partition
+    -- key. PostgreSQL requires it: without that, the primary key cannot be
+    -- enforced across partitions.
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Agregat yang berubah. Dipakai sebagai kunci partisi Kafka, sehingga
-    -- seluruh event satu agregat mendarat di partisi yang sama dan urutannya
-    -- terjaga - urutan global tidak dijamin Kafka, urutan per kunci dijamin.
+    -- The aggregate that changed. Used as the Kafka partition key, so every
+    -- event of one aggregate lands on the same partition and its ordering is
+    -- preserved - Kafka does not guarantee global ordering, it guarantees
+    -- ordering per key.
     aggregate_type TEXT NOT NULL,
     aggregate_id   TEXT NOT NULL,
 
     event_type TEXT NOT NULL,
 
-    -- Envelope protobuf yang sudah diserialkan. BYTEA, bukan JSONB: yang
-    -- disimpan adalah bentuk yang akan dikirim apa adanya, sehingga tidak ada
-    -- penyandian ulang antara yang tersimpan dan yang terkirim.
+    -- The serialised protobuf envelope. BYTEA, not JSONB: what is stored is
+    -- the exact form that will be sent, so there is no re-encoding between
+    -- what is stored and what is delivered.
     payload BYTEA NOT NULL,
 
-    -- NULL berarti belum terkirim. Baris yang sudah terkirim disimpan
-    -- sebentar untuk penyelidikan, lalu disapu bersama partisinya.
+    -- NULL means not published yet. Published rows are kept for a while for
+    -- investigation, then swept away with their partition.
     published_at TIMESTAMPTZ,
 
-    -- Berapa kali pengiriman dicoba. Ia ada supaya baris yang selalu gagal
-    -- bisa ditemukan, bukan hanya menyumbat antrean diam-diam.
+    -- How many delivery attempts were made. It exists so that rows that
+    -- always fail can be found, instead of silently clogging the queue.
     attempts INT NOT NULL DEFAULT 0,
 
-    -- Galat terakhir. Tanpa ini, satu-satunya cara mengetahui mengapa sebuah
-    -- event tidak terkirim adalah membaca log pada saat yang tepat.
+    -- The last error. Without it, the only way to learn why an event was not
+    -- delivered is to be reading the log at the right moment.
     last_error TEXT,
 
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
--- Partisi dipasang SEKARANG, bukan nanti (F3-17).
+-- Partitioning is set up NOW, not later (F3-17).
 --
--- Mengubah tabel yang sudah terisi menjadi terpartisi berarti menyalin
--- seluruh isinya sambil menahan kunci - operasi yang di tabel yang tumbuh
--- monoton seperti ini akan memakan waktu yang tidak bisa diterima.
+-- Turning a populated table into a partitioned one means copying its entire
+-- contents while holding a lock - an operation that, on a table growing
+-- monotonically like this one, would take an unacceptable amount of time.
 --
--- Partisi bawaan menangkap apa pun yang jatuh di luar rentang yang sudah
--- dibuat. Tanpa ia, INSERT untuk bulan yang partisinya belum ada akan GAGAL -
--- dan kegagalan itu akan menggagalkan transaksi bisnisnya juga.
+-- The default partition catches anything that falls outside the ranges
+-- already created. Without it, an INSERT for a month whose partition does not
+-- exist yet would FAIL - and that failure would take the business transaction
+-- down with it.
 CREATE TABLE outbox_default PARTITION OF outbox DEFAULT;
 
--- Relay hanya membaca yang belum terkirim, terurut waktu. Indeks parsial
--- hanya memuat baris itu, sehingga ia tetap kecil walau tabelnya tumbuh.
+-- The relay only reads what has not been published, in time order. The
+-- partial index holds only those rows, so it stays small even as the table
+-- grows.
 CREATE INDEX outbox_unpublished ON outbox (created_at) WHERE published_at IS NULL;

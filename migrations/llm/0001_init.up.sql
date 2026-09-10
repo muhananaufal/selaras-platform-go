@@ -1,47 +1,50 @@
--- Skema llm-worker.
+-- The llm-worker schema.
 --
--- Worker ini menyimpan keadaannya sendiri, bukan menumpang skema assessment.
--- Sekat per skema itulah yang membuat kesalahan di satu service tidak bisa
--- menyentuh data service lain (ADR-006), dan menumpang akan membuang sekatnya
--- justru di tempat yang paling banyak memanggil pihak luar.
+-- This worker keeps its own state rather than riding on the assessment
+-- schema. Per-schema separation is what keeps a mistake in one service from
+-- touching another service's data (ADR-006), and riding along would throw
+-- that separation away precisely where the most calls to outside parties are
+-- made.
 
 -- Pekerjaan LLM beserta hasilnya.
 CREATE TABLE llm_jobs (
-    -- UUIDv7: terurut waktu, sehingga pekerjaan bisa dibaca dalam urutan
-    -- kedatangannya tanpa kolom urutan terpisah.
+    -- UUIDv7: time-ordered, so jobs can be read in order of arrival without
+    -- a separate sequence column.
     id UUID NOT NULL,
 
-    -- created_at ikut kunci primer karena ia kunci partisi (F3-17).
+    -- created_at is part of the primary key because it is the partition key
+    -- (F3-17).
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Kunci idempotensi yang datang bersama permintaannya. Ia yang membuat
-    -- pesan yang tiba dua kali menghasilkan satu pekerjaan.
+    -- The idempotency key that came with the request. It is what makes a
+    -- message arriving twice produce one job.
     idempotency_key TEXT NOT NULL,
 
-    -- Jenis pekerjaan: personalization, curriculum, chat_reply, meal_guide.
+    -- The job kind: personalization, curriculum, chat_reply, meal_guide.
     kind TEXT NOT NULL,
 
-    -- Agregat yang meminta, sehingga hasilnya bisa dikembalikan ke tempat yang
-    -- benar tanpa menebak.
+    -- The requesting aggregate, so the result can be returned to the right
+    -- place without guessing.
     aggregate_type TEXT NOT NULL,
     aggregate_id   TEXT NOT NULL,
 
     status TEXT NOT NULL DEFAULT 'pending',
 
-    -- Versi prompt yang menghasilkan hasilnya (F3-09).
+    -- The prompt version that produced the result (F3-09).
     --
-    -- Tanpa ini, laporan lama yang terlihat aneh tidak bisa dijelaskan: tidak
-    -- ada cara mengetahui apakah modelnya yang menjawab begitu atau templatnya
-    -- yang sudah diganti sejak itu.
+    -- Without it, an old report that looks strange cannot be explained: there
+    -- is no way to know whether the model answered like that or the template
+    -- has been replaced since.
     prompt_version TEXT,
 
-    -- Nama model yang benar-benar menjawab, sebagaimana dilaporkan penyedia -
-    -- bukan yang diminta. Keduanya bisa berbeda saat penyedia mengalihkan
-    -- permintaan, dan yang perlu dicatat adalah yang menjawab.
+    -- The name of the model that actually answered, as reported by the
+    -- provider - not the one requested. The two can differ when the provider
+    -- reroutes a request, and what has to be recorded is the one that
+    -- answered.
     model TEXT,
 
-    -- Hasilnya. BYTEA, bukan JSONB: yang disimpan adalah persis yang dikirim
-    -- kembali, tanpa penyandian ulang yang bisa mengubah bentuknya.
+    -- The result. BYTEA, not JSONB: what is stored is exactly what was sent
+    -- back, without a re-encoding that could change its shape.
     result BYTEA,
 
     attempts INT NOT NULL DEFAULT 0,
@@ -56,33 +59,33 @@ CREATE TABLE llm_jobs (
         status IN ('pending', 'running', 'completed', 'failed', 'dead')
     ),
 
-    -- Pekerjaan yang selesai wajib membawa hasil dan asal-usulnya. Tanpa
-    -- batasan ini, baris berstatus completed dengan result NULL akan terlihat
-    -- seperti keberhasilan sampai ada yang membacanya.
+    -- A finished job has to carry its result and its provenance. Without this
+    -- constraint, a row with status completed and a NULL result would look
+    -- like a success until someone read it.
     CONSTRAINT llm_jobs_completed_has_a_result CHECK (
         status <> 'completed'
         OR (result IS NOT NULL AND prompt_version IS NOT NULL AND model IS NOT NULL)
     )
 ) PARTITION BY RANGE (created_at);
 
--- Partisi dipasang saat tabel dibuat (F3-17), sama seperti outbox. Mengubah
--- tabel yang sudah terisi menjadi terpartisi berarti menyalin seluruh isinya
--- sambil menahan kunci.
+-- Partitioning is set up when the table is created (F3-17), the same as the
+-- outbox. Turning a populated table into a partitioned one means copying its
+-- entire contents while holding a lock.
 --
--- Partisi bawaan menangkap apa pun di luar rentang yang sudah dibuat, sehingga
--- INSERT untuk bulan yang belum diprovisikan tidak gagal dan menyeret
--- transaksinya ikut gagal.
+-- The default partition catches anything outside the ranges already created,
+-- so an INSERT for a month not yet provisioned does not fail and drag its
+-- transaction down with it.
 CREATE TABLE llm_jobs_default PARTITION OF llm_jobs DEFAULT;
 
--- Satu pekerjaan per kunci idempotensi.
+-- One job per idempotency key.
 --
--- Keunikannya TIDAK bisa ditegakkan di tabel terpartisi tanpa memasukkan kunci
--- partisi, jadi penjaganya bukan indeks ini melainkan processed_messages, yang
--- sengaja tidak dipartisi. Indeks di sini untuk pencarian, bukan untuk jaminan
--- - dan komentar ini ada supaya tidak ada yang mengira sebaliknya.
+-- Uniqueness CANNOT be enforced on a partitioned table without including the
+-- partition key, so the guard is not this index but processed_messages, which
+-- is deliberately not partitioned. The index here is for lookups, not for a
+-- guarantee - and this comment exists so nobody assumes otherwise.
 CREATE INDEX llm_jobs_by_idempotency_key ON llm_jobs (idempotency_key);
 
--- Pekerjaan yang belum selesai, untuk pemantauan dan pemulihan.
+-- Unfinished jobs, for monitoring and recovery.
 CREATE INDEX llm_jobs_unfinished ON llm_jobs (created_at)
     WHERE status IN ('pending', 'running');
 

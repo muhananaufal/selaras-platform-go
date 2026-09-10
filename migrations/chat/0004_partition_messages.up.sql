@@ -1,19 +1,20 @@
--- F9-28: chat_messages dipartisi menurut rentang waktu.
+-- F9-28: chat_messages is partitioned by time range.
 --
--- Mengapa sekarang, bukan nanti: mengubah tabel yang sudah besar menjadi
--- terpartisi berarti menyalin seluruh isinya sambil menahan kunci, dan pesan
--- adalah tabel yang tumbuh paling cepat di seluruh sistem. Di lingkungan yang
--- datanya masih kecil, salinannya milidetik; di produksi setahun kemudian,
--- ia jam.
+-- Why now, not later: turning an already large table into a partitioned one
+-- means copying its entire contents while holding a lock, and messages are
+-- the fastest-growing table in the whole system. In an environment where the
+-- data is still small, the copy takes milliseconds; in production a year
+-- later, hours.
 --
--- Mengapa rentang waktu, bukan hash percakapan: yang dibaca selalu "pesan
--- terbaru satu percakapan" (indeks conversation_id, created_at), dan yang
--- akan dipelihara adalah usia - partisi lama bisa dilepas utuh bila suatu
--- saat ada kebijakan retensi, bukan dihapus baris per baris (F9-29).
+-- Why time range, not a hash of the conversation: what is read is always "the
+-- newest messages of one conversation" (the conversation_id, created_at
+-- index), and what will be maintained is age - old partitions can be detached
+-- whole if a retention policy ever exists, rather than deleted row by row
+-- (F9-29).
 --
--- PRIMARY KEY harus memuat kunci partisi; karena itu (id, created_at). id
--- tetap UUID unik secara praktis, dan tidak ada tabel lain yang merujuk ke
--- chat_messages, jadi tidak ada FK yang perlu diubah.
+-- The PRIMARY KEY has to contain the partition key; hence (id, created_at).
+-- id remains a practically unique UUID, and no other table references
+-- chat_messages, so no FK has to change.
 
 BEGIN;
 
@@ -30,13 +31,14 @@ CREATE TABLE chat_messages_partitioned (
     PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
--- Partisi bawaan menangkap bulan yang partisinya belum dibuat; tanpa ia,
--- INSERT untuk bulan baru akan GAGAL dan membawa transaksi bisnisnya.
--- Partisi bulanan dibuat oleh cmd/partitions (F9-29).
+-- The default partition catches months whose partition has not been created
+-- yet; without it, an INSERT for a new month would FAIL and take the
+-- business transaction with it. Monthly partitions are created by
+-- cmd/partitions (F9-29).
 CREATE TABLE chat_messages_default PARTITION OF chat_messages_partitioned DEFAULT;
 
--- Indeks pada induk diwariskan ke setiap partisi, termasuk yang dibuat
--- kemudian.
+-- An index on the parent is inherited by every partition, including those
+-- created later.
 CREATE INDEX chat_messages_by_conversation_p
     ON chat_messages_partitioned (conversation_id, created_at);
 

@@ -1,35 +1,36 @@
--- Skema profile. Dijalankan oleh peran svc_profile, yang hanya punya hak di
--- skema ini (deploy/compose/initdb/01-schemas.sh).
+-- The profile schema. Run by the svc_profile role, which has rights only in
+-- this schema (deploy/compose/initdb/01-schemas.sh).
 
 CREATE TABLE user_profiles (
     id         UUID PRIMARY KEY,
 
-    -- Menunjuk ke identity.users, TANPA foreign key, dan itu disengaja.
+    -- Points at identity.users, WITHOUT a foreign key, and that is
+    -- deliberate.
     --
-    -- Kunci asing lintas skema akan memaksa peran svc_profile punya hak baca
-    -- di skema identity, dan dengan itu membatalkan isolasi yang justru
-    -- ditegakkan basis datanya sendiri (ADR-006). Ia juga menjadikan kedua
-    -- service satu satuan penyebaran: migrasi salah satunya bisa memblokir
-    -- tulisan di yang lain.
+    -- A cross-schema foreign key would force the svc_profile role to have
+    -- read rights in the identity schema, and with that undo the isolation
+    -- the database itself enforces (ADR-006). It would also make the two
+    -- services one deployment unit: a migration in either could block writes
+    -- in the other.
     --
-    -- Harganya nyata dan diterima sadar: baris yatim mungkin ada. Yang
-    -- membersihkannya adalah saga penghapusan akun (F8), bukan basis data.
+    -- The price is real and accepted knowingly: orphan rows may exist. What
+    -- cleans them up is the account deletion saga (F8), not the database.
     user_id    UUID NOT NULL,
 
-    -- Semuanya boleh NULL. Sistem lama juga begitu, tetapi lalu menjalankan
-    -- Carbon::parse(null) di lapisan penyajian sehingga tanggal lahir yang
-    -- kosong tampil sebagai hari ini dan umur tampil 0 (temuan B6). Yang
-    -- diperbaiki bukan kolomnya - kolomnya memang benar - melainkan
-    -- kejujuran pemetaannya.
+    -- All of them may be NULL. So could the legacy system's, but it then
+    -- ran Carbon::parse(null) at the presentation layer, so an empty date
+    -- of birth showed as today and the age showed as 0 (finding B6). What
+    -- is fixed is not the column - the column was right - but the honesty
+    -- of the mapping.
     first_name           TEXT,
     last_name            TEXT,
     date_of_birth        DATE,
     sex                  TEXT,
     country_of_residence TEXT,
 
-    -- language punya nilai bawaan dan tidak boleh NULL, sama seperti sistem
-    -- lama. Antarmuka harus memilih bahasa untuk setiap pengguna, jadi
-    -- "belum ditentukan" bukan keadaan yang berguna di sini.
+    -- language has a default and may not be NULL, the same as the legacy
+    -- system. The interface has to pick a language for every user, so "not
+    -- determined yet" is not a useful state here.
     language   TEXT        NOT NULL DEFAULT 'id',
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -38,14 +39,14 @@ CREATE TABLE user_profiles (
     CONSTRAINT user_profiles_sex_known CHECK (sex IS NULL OR sex IN ('male', 'female')),
     CONSTRAINT user_profiles_language_known CHECK (language IN ('id', 'en')),
 
-    -- Tanggal lahir di masa depan tidak mungkin benar. Batasnya di basis
-    -- data, bukan hanya di validasi permintaan, karena mesin risiko membaca
-    -- kolom ini dan umur negatif akan mengalir diam-diam ke perhitungan
-    -- klinis.
+    -- A date of birth in the future cannot be right. The bound is in the
+    -- database, not only in request validation, because the risk engine
+    -- reads this column and a negative age would flow silently into a
+    -- clinical computation.
     CONSTRAINT user_profiles_dob_in_the_past CHECK (date_of_birth IS NULL OR date_of_birth < CURRENT_DATE)
 );
 
--- Satu profil per pengguna. Sistem lama memberlakukannya lewat unique pada
--- kolom foreign key; di sini indeksnya berdiri sendiri karena kunci asingnya
--- memang tidak ada.
+-- One profile per user. The legacy system enforced it with a unique on the
+-- foreign key column; here the index stands on its own because the foreign
+-- key does not exist.
 CREATE UNIQUE INDEX user_profiles_user_id_unique ON user_profiles (user_id);

@@ -1,4 +1,5 @@
--- Mengembalikan coaching_messages menjadi tabel biasa. Isinya disalin utuh.
+-- Turns coaching_messages back into an ordinary table. The contents are
+-- copied whole.
 BEGIN;
 
 CREATE TABLE coaching_messages_plain (
