@@ -66,9 +66,9 @@ func TestAFirstTimeGoogleSignInCreatesAnAccount(t *testing.T) {
 	}
 }
 
-// Menutup B7 di jalur sosial. Sistem lama tidak pernah membuat profil untuk
-// pendaftaran lewat Google sama sekali, sehingga kedua jalur pendaftaran
-// menghasilkan keadaan yang berbeda tanpa alasan.
+// Closes B7 on the social path. The legacy system never created a profile
+// for Google registrations at all, so the two registration paths produced
+// different states for no reason.
 func TestAFirstTimeGoogleSignInAlsoAsksForAProfile(t *testing.T) {
 	f := newSocialFixture(t)
 
@@ -84,7 +84,7 @@ func TestAFirstTimeGoogleSignInAlsoAsksForAProfile(t *testing.T) {
 	}
 }
 
-// ADR-002 aturan 1 berlaku di jalur ini juga.
+// ADR-002 rule 1 applies on this path too.
 func TestAFirstTimeGoogleSignInSurvivesADeadProfileService(t *testing.T) {
 	f := newSocialFixture(t)
 	f.profiles.err = errors.New("profile-svc is unreachable")
@@ -98,9 +98,9 @@ func TestAFirstTimeGoogleSignInSurvivesADeadProfileService(t *testing.T) {
 	}
 }
 
-// S5. Sistem lama memakai updateOrCreate dan menimpa kata sandi akun yang
-// sudah ada dengan 32 karakter acak setiap kali login sosial, menghancurkan
-// kredensial yang berfungsi tanpa memberi tahu siapa pun.
+// S5. The legacy system used updateOrCreate and overwrote an existing
+// account's password with 32 random characters on every social login,
+// destroying a working credential without telling anyone.
 func TestSigningInWithGoogleNeverDestroysAnExistingPassword(t *testing.T) {
 	f := newSocialFixture(t)
 	existing := seedUser(t, f.users, "person@contoh.test")
@@ -124,8 +124,8 @@ func TestSigningInWithGoogleNeverDestroysAnExistingPassword(t *testing.T) {
 	}
 }
 
-// Satu akun, bukan dua. Menautkan ke akun yang sudah ada berarti tidak ada
-// akun kedua yang dibuat untuk alamat yang sama.
+// One account, not two. Linking to an existing account means no second
+// account is created for the same address.
 func TestLinkingDoesNotCreateASecondAccount(t *testing.T) {
 	f := newSocialFixture(t)
 	seedUser(t, f.users, "person@contoh.test")
@@ -138,10 +138,10 @@ func TestLinkingDoesNotCreateASecondAccount(t *testing.T) {
 	}
 }
 
-// Alamat yang belum diverifikasi penyedia DILARANG dipakai untuk menautkan.
-// Siapa pun bisa membuat akun di penyedia dengan alamat orang lain; kalau
-// penyedianya tidak menyatakan alamat itu terbukti miliknya, menautkan
-// berdasarkan alamat adalah cara mengambil alih akun orang.
+// An address the provider has not verified MUST NOT be used for linking.
+// Anyone can create an account at a provider with someone else's address;
+// if the provider does not state the address is proven theirs, linking by
+// address is a way to take over someone's account.
 func TestAnUnverifiedAddressCannotLinkToAnExistingAccount(t *testing.T) {
 	f := newSocialFixture(t)
 	victim := seedUser(t, f.users, "person@contoh.test")
@@ -162,9 +162,9 @@ func TestAnUnverifiedAddressCannotLinkToAnExistingAccount(t *testing.T) {
 	}
 }
 
-// Alamat yang belum diverifikasi juga tidak boleh membuat akun baru: kelak
-// pemilik alamat yang sebenarnya akan mendaftar dan menemukan akunnya sudah
-// ditempati.
+// An unverified address may not create a new account either: one day the
+// real owner of the address will register and find their account already
+// taken.
 func TestAnUnverifiedAddressCannotCreateAnAccountEither(t *testing.T) {
 	f := newSocialFixture(t)
 
@@ -179,8 +179,8 @@ func TestAnUnverifiedAddressCannotCreateAnAccountEither(t *testing.T) {
 	}
 }
 
-// Identitas Google dikenali lewat sub-nya, bukan lewat alamatnya. Alamat di
-// penyedia bisa berubah; sub tidak.
+// A Google identity is recognised by its sub, not by its address. The
+// address at the provider can change; the sub cannot.
 func TestAReturningUserIsFoundByProviderIdNotByEmail(t *testing.T) {
 	f := newSocialFixture(t)
 
@@ -202,9 +202,9 @@ func TestAReturningUserIsFoundByProviderIdNotByEmail(t *testing.T) {
 	}
 }
 
-// Satu identitas Google menunjuk ke satu akun. Kalau alamatnya kini cocok
-// dengan akun lain yang sudah menautkan Google yang berbeda, menimpanya akan
-// memindahkan kepemilikan diam-diam.
+// One Google identity points at one account. If the address now matches
+// another account that has linked a different Google identity, overwriting
+// it would move ownership silently.
 func TestASecondGoogleIdentityCannotOverwriteTheFirst(t *testing.T) {
 	f := newSocialFixture(t)
 
@@ -220,8 +220,8 @@ func TestASecondGoogleIdentityCannotOverwriteTheFirst(t *testing.T) {
 	}
 }
 
-// D1 berlaku di jalur ini juga: sistem lama memanggil tokens()->delete()
-// setiap kali login sosial berhasil.
+// D1 applies on this path too: the legacy system called tokens()->delete()
+// on every successful social login.
 func TestASocialSignInEndsEveryPreviousSession(t *testing.T) {
 	f := newSocialFixture(t)
 	existing := seedUser(t, f.users, "person@contoh.test")

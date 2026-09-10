@@ -10,9 +10,9 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// RegisterCommand adalah masukan mentah dari pemanggil. Ia memakai string
-// biasa karena inilah batas tempat masukan yang belum dipercaya masuk;
-// tipe domain baru terbentuk setelah divalidasi di bawah.
+// RegisterCommand is the raw input from the caller. It uses plain strings
+// because this is the boundary where untrusted input enters; domain types
+// only come into being after validation below.
 type RegisterCommand struct {
 	Email                string
 	Password             string
@@ -28,11 +28,11 @@ type Register struct {
 	now      func() time.Time
 }
 
-// NewRegister menolak ketergantungan yang kosong.
+// NewRegister refuses empty dependencies.
 //
-// Sebuah service yang tersusun setengah akan berjalan sampai permintaan
-// pertama yang kebetulan menyentuh bagian yang hilang, lalu panik di
-// produksi. Lebih baik gagal saat start-up, saat belum ada yang dirugikan.
+// A half-assembled service runs until the first request that happens to
+// touch the missing part, then panics in production. Better to fail at
+// start-up, while nobody is affected yet.
 func NewRegister(
 	uow UnitOfWork,
 	hasher domain.PasswordHasher,
@@ -56,10 +56,10 @@ func NewRegister(
 }
 
 func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult, error) {
-	// Perbandingan konfirmasi dibuat waktu-tetap. Ia membandingkan dua
-	// masukan dari orang yang sama, jadi tidak ada rahasia yang bocor -
-	// tetapi membandingkan kata sandi dengan == di mana pun adalah kebiasaan
-	// yang cepat menular ke tempat yang benar-benar penting.
+	// The confirmation comparison is constant-time. It compares two inputs
+	// from the same person, so no secret leaks - but comparing passwords with
+	// == anywhere is a habit that quickly spreads to the places that really
+	// matter.
 	if subtle.ConstantTimeCompare([]byte(cmd.Password), []byte(cmd.PasswordConfirmation)) != 1 {
 		return AuthResult{}, ErrPasswordMismatch
 	}
@@ -83,17 +83,16 @@ func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult
 		return AuthResult{}, err
 	}
 
-	// Penyimpanan pengguna berjalan di dalam satu satuan kerja. Hari ini ia
-	// hanya membungkus satu tulisan; nanti baris outbox `user.registered`
-	// menyusul ke dalam satuan yang sama (F3-03), dan use case ini tidak
-	// perlu berubah bentuk untuk menerimanya.
+	// The user is stored inside one unit of work. Today it wraps a single
+	// write; later the `user.registered` outbox row joins the same unit
+	// (F3-03), and this use case does not have to change shape to accept it.
 	if err := r.uow.Do(ctx, func(repos Repositories) error {
 		users := repos.Users()
 		return users.Create(ctx, user)
 	}); err != nil {
-		// ErrEmailTaken diteruskan apa adanya: pada registrasi, pemanggil
-		// memang perlu tahu alamatnya sudah dipakai, kalau tidak ia tidak
-		// bisa menjelaskan apa pun kepada penggunanya.
+		// ErrEmailTaken is passed through as it is: at registration the caller
+		// genuinely needs to know the address is taken, otherwise it cannot
+		// explain anything to its user.
 		if errors.Is(err, domain.ErrEmailTaken) || errors.Is(err, domain.ErrGoogleIDTaken) {
 			return AuthResult{}, err
 		}
@@ -110,9 +109,9 @@ func (r *Register) Execute(ctx context.Context, cmd RegisterCommand) (AuthResult
 		Generation:    user.TokenGeneration(),
 	})
 	if err != nil {
-		// Penggunanya sudah tersimpan, jadi ini bukan kegagalan registrasi -
-		// tetapi ia tidak punya token, dan satu-satunya jawaban jujur adalah
-		// galat. Mencoba masuk akan berhasil.
+		// The user is already stored, so this is not a registration failure - but
+		// they have no token, and the only honest answer is an error. Signing in
+		// will succeed.
 		return AuthResult{}, fmt.Errorf("issuing token: %w", err)
 	}
 

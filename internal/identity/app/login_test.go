@@ -40,7 +40,7 @@ func newLoginFixture(t *testing.T) *loginFixture {
 	}
 }
 
-// seed menaruh satu pengguna berkata sandi ke dalam penyimpanan palsu.
+// seed puts one password-bearing user into the fake store.
 func (f *loginFixture) seed(t *testing.T, email, password string) *domain.User {
 	t.Helper()
 
@@ -82,9 +82,9 @@ func TestLoginReturnsATokenForCorrectCredentials(t *testing.T) {
 	}
 }
 
-// D1 lewat ADR-012: satu login berhasil membatalkan seluruh sesi sebelumnya,
-// dan token yang baru terbit WAJIB membawa generasi yang baru - kalau tidak,
-// ia mencabut dirinya sendiri.
+// D1 through ADR-012: one successful login invalidates every previous
+// session, and the newly issued token MUST carry the new generation -
+// otherwise it revokes itself.
 func TestLoginRevokesEveryPreviousSession(t *testing.T) {
 	f := newLoginFixture(t)
 	u := f.seed(t, "known@user.co", "a-long-enough-password")
@@ -108,8 +108,8 @@ func TestLoginRevokesEveryPreviousSession(t *testing.T) {
 	}
 }
 
-// Pesan yang membedakan "email tidak terdaftar" dari "kata sandi salah"
-// mengubah halaman masuk menjadi alat pencacahan akun.
+// A message that separates "email not registered" from "wrong password"
+// turns the sign-in page into an account-enumeration tool.
 func TestLoginGivesTheSameAnswerForEveryFailure(t *testing.T) {
 	f := newLoginFixture(t)
 	f.seed(t, "known@user.co", "a-long-enough-password")
@@ -134,9 +134,9 @@ func TestLoginGivesTheSameAnswerForEveryFailure(t *testing.T) {
 	}
 }
 
-// Jawaban yang seragam tidak ada gunanya bila waktunya membocorkan
-// jawabannya. Melewatkan verifikasi hash saat email tidak dikenal membuat
-// jalur itu jauh lebih cepat, dan selisihnya cukup untuk mencacah akun.
+// A uniform answer is useless if its timing leaks the answer. Skipping hash
+// verification when the email is unknown makes that path far faster, and
+// the difference is enough to enumerate accounts.
 func TestLoginHashesEvenWhenTheEmailIsUnknown(t *testing.T) {
 	f := newLoginFixture(t)
 	f.seed(t, "known@user.co", "a-long-enough-password")
@@ -153,8 +153,8 @@ func TestLoginHashesEvenWhenTheEmailIsUnknown(t *testing.T) {
 	}
 }
 
-// Pengguna yang hanya punya Google memang tidak punya kata sandi. Ia harus
-// ditolak lewat jalur yang sama, dan dengan biaya waktu yang sama.
+// A Google-only user genuinely has no password. They must be refused
+// through the same path, and at the same time cost.
 func TestLoginRejectsAGoogleOnlyUserWithoutLeakingThat(t *testing.T) {
 	f := newLoginFixture(t)
 
@@ -178,9 +178,9 @@ func TestLoginRejectsAGoogleOnlyUserWithoutLeakingThat(t *testing.T) {
 	}
 }
 
-// Kredensial yang salah DILARANG menyentuh generasi. Kalau ia menaikkannya,
-// siapa pun yang tahu alamat email seseorang bisa mengeluarkan orang itu
-// dari sesinya berulang kali.
+// Wrong credentials MUST NOT touch the generation. If they bumped it,
+// anyone who knows a person's email address could sign that person out of
+// their session over and over.
 func TestAFailedLoginDoesNotEndTheExistingSession(t *testing.T) {
 	f := newLoginFixture(t)
 	u := f.seed(t, "known@user.co", "a-long-enough-password")
@@ -204,7 +204,8 @@ func TestAFailedLoginDoesNotEndTheExistingSession(t *testing.T) {
 	}
 }
 
-// ADR-002 aturan 2: profil yang belum ada berarti klaim kosong, bukan galat.
+// ADR-002 rule 2: a profile that does not exist yet means an empty claim,
+// not an error.
 func TestLoginSucceedsWhenTheProfileServiceIsDown(t *testing.T) {
 	f := newLoginFixture(t)
 	f.seed(t, "known@user.co", "a-long-enough-password")
@@ -248,13 +249,13 @@ func mustPassword(t *testing.T, raw string) domain.Password {
 	return p
 }
 
-// Generasi yang baru WAJIB diumumkan ke pemeriksa pencabutan.
+// The new generation MUST be announced to the revocation checker.
 //
-// Tanpa itu, cache masih memegang generasi lama: token yang BARU saja
-// diterbitkan ditolak, sementara token lama - yang justru dimaksudkan mati
-// oleh login ini - tetap diterima sampai salinannya kedaluwarsa. Persis
-// kebalikan dari yang seharusnya, dan hanya test end-to-end yang
-// menemukannya; test unit yang tidak memeriksa publikasi tetap hijau.
+// Without that, the cache still holds the old generation: the token JUST
+// issued is refused, while the old token - the very one this login was
+// meant to kill - keeps being accepted until the cached copy expires.
+// Exactly the opposite of what should happen, and only the end-to-end test
+// found it; a unit test that does not check the publish stays green.
 func TestASuccessfulLoginPublishesTheNewGeneration(t *testing.T) {
 	f := newLoginFixture(t)
 	u := f.seed(t, "known@user.co", "a-long-enough-password")
@@ -278,7 +279,7 @@ func TestASuccessfulLoginPublishesTheNewGeneration(t *testing.T) {
 	}
 }
 
-// Login yang gagal DILARANG mengumumkan apa pun: tidak ada yang berubah.
+// A failed login MUST NOT announce anything: nothing changed.
 func TestAFailedLoginPublishesNothing(t *testing.T) {
 	f := newLoginFixture(t)
 	f.seed(t, "known@user.co", "a-long-enough-password")

@@ -12,12 +12,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// Palsuan, bukan mock. Ia menyimpan pengguna sungguhan dan menegakkan aturan
-// keunikan yang sama seperti basis data, sehingga test use case memeriksa
-// perilaku alurnya - bukan urutan pemanggilan yang kebetulan ditulis.
+// A fake, not a mock. It stores real users and enforces the same uniqueness
+// rules as the database, so the use-case tests check the flow's behaviour -
+// not whatever call sequence happened to be written.
 //
-// Repository yang sebenarnya sudah diuji terpisah terhadap Postgres
-// sungguhan; yang diuji di sini adalah keputusan use case-nya.
+// The real repository is tested separately against a real Postgres; what is
+// tested here are the use case's decisions.
 type fakeUsers struct {
 	mu      sync.Mutex
 	byID    map[string]domain.UserState
@@ -95,9 +95,9 @@ func (f *fakeUsers) count() int {
 	return len(f.byID)
 }
 
-// fakeUnitOfWork menjalankan fn langsung. Ia tidak berpura-pura punya
-// transaksi: atomicity yang sesungguhnya dibuktikan oleh test integrasi
-// repository, bukan di sini.
+// fakeUnitOfWork runs fn directly. It does not pretend to have a
+// transaction: real atomicity is proven by the repository integration
+// tests, not here.
 type fakeUnitOfWork struct {
 	users  domain.UserRepository
 	resets domain.PasswordResetRepository
@@ -112,8 +112,8 @@ func (f *fakeUnitOfWork) PasswordResets() domain.PasswordResetRepository { retur
 
 func (f *fakeUnitOfWork) Sagas() app.SagaRepository { return f.sagas }
 
-// Events mengembalikan penulis palsu, dibuat malas supaya test yang tidak
-// menyentuh event tidak perlu menyiapkannya.
+// Events returns the fake writer, created lazily so tests that never touch
+// events need not set it up.
 func (f *fakeUnitOfWork) Events() app.EventWriter {
 	if f.events == nil {
 		f.events = &fakeEvents{}
@@ -121,7 +121,7 @@ func (f *fakeUnitOfWork) Events() app.EventWriter {
 	return f.events
 }
 
-// fakeEvents mencatat event yang ditulis, tanpa mengirimkannya ke mana pun.
+// fakeEvents records the events written, without sending them anywhere.
 type fakeEvents struct {
 	written []*eventsv1.Envelope
 	err     error
@@ -156,8 +156,8 @@ func (f *fakeProfiles) CreateEmptyProfile(context.Context, domain.UserID) (strin
 	return f.id, nil
 }
 
-// fakeTokens menerbitkan token yang bisa dibaca kembali oleh test tanpa
-// kriptografi, sehingga test use case tidak ikut menguji penandatanganan.
+// fakeTokens issues tokens the test can read back without cryptography, so
+// the use-case tests do not also test signing.
 type fakeTokens struct {
 	issued []domain.Claims
 	err    error
@@ -175,9 +175,8 @@ func (f *fakeTokens) last() domain.Claims {
 	return f.issued[len(f.issued)-1]
 }
 
-// fakeHasher membalik urutan huruf. Cukup untuk membuktikan use case
-// menyimpan hasil hashing dan bukan kata sandinya, tanpa membayar argon2 di
-// setiap test.
+// fakeHasher reverses the letters. Enough to prove the use case stores the
+// hash and not the password, without paying for argon2 in every test.
 type fakeHasher struct{ err error }
 
 func (f fakeHasher) Hash(p domain.Password) (domain.PasswordHash, error) {
@@ -198,9 +197,9 @@ var errStorage = errors.New("storage is unwell")
 
 func fixedClock(t time.Time) func() time.Time { return func() time.Time { return t } }
 
-// countingHasher mencatat berapa kali ia dipanggil, supaya test bisa
-// membuktikan verifikasi tetap berjalan pada jalur yang gagal - jalur cepat
-// yang melewatinya adalah orakel waktu untuk mencacah akun.
+// countingHasher records how many times it was called, so a test can prove
+// verification still runs on the failing path - a fast path that skips it
+// is a timing oracle for enumerating accounts.
 type countingHasher struct {
 	hashes   int
 	verifies int
@@ -249,8 +248,8 @@ func (f *fakeRevocations) PublishGeneration(_ context.Context, userID domain.Use
 	return nil
 }
 
-// fakeResets menegakkan aturan yang sama seperti tabelnya: hash adalah kunci
-// primer, dan penandaan terpakai bertahan.
+// fakeResets enforces the same rules as its table: the hash is the primary
+// key, and the used mark persists.
 type fakeResets struct {
 	mu     sync.Mutex
 	byHash map[domain.ResetTokenHash]domain.PasswordReset
@@ -309,8 +308,8 @@ func (f *fakeResets) count() int {
 	return len(f.byHash)
 }
 
-// only mengembalikan satu-satunya permintaan yang tersimpan, dan gagal bila
-// jumlahnya bukan satu.
+// only returns the single stored request, and fails when there is not
+// exactly one.
 func (f *fakeResets) only(t *testing.T) domain.PasswordReset {
 	t.Helper()
 	f.mu.Lock()
@@ -342,10 +341,10 @@ func (f *fakeResetLinks) SendResetLink(_ context.Context, email domain.Email, to
 	return nil
 }
 
-// Delete menghapus akun dari penyimpanan palsu.
+// Delete removes the account from the fake store.
 //
-// Baris yang tidak ada bukan galat, sama seperti adapter sungguhannya: saga
-// bisa mengulangi langkah terakhirnya setelah proses mati.
+// A missing row is not an error, just as in the real adapter: the saga can
+// repeat its last step after the process died.
 func (f *fakeUsers) Delete(_ context.Context, id domain.UserID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

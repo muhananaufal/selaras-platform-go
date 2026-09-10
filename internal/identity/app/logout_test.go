@@ -37,8 +37,8 @@ func seedUser(t *testing.T, users *fakeUsers, email string) *domain.User {
 	return u
 }
 
-// Logout yang tidak mengubah apa pun adalah tipuan: tokennya tetap sah
-// sampai kedaluwarsa, dan pengguna mengira ia sudah keluar.
+// A logout that changes nothing is a sham: the token stays valid until it
+// expires, and the user thinks they have signed out.
 func TestLogoutAdvancesTheGeneration(t *testing.T) {
 	logout, users, _ := newLogoutFixture(t)
 	u := seedUser(t, users, "known@user.co")
@@ -56,8 +56,9 @@ func TestLogoutAdvancesTheGeneration(t *testing.T) {
 	}
 }
 
-// Generasi yang baru harus sampai ke pemeriksa pencabutan, kalau tidak
-// token lama tetap diterima di edge sampai cache-nya kedaluwarsa sendiri.
+// The new generation has to reach the revocation checker, otherwise the old
+// token keeps being accepted at the edge until its cache expires on its
+// own.
 func TestLogoutPublishesTheNewGeneration(t *testing.T) {
 	logout, users, revocations := newLogoutFixture(t)
 	u := seedUser(t, users, "known@user.co")
@@ -78,9 +79,9 @@ func TestLogoutPublishesTheNewGeneration(t *testing.T) {
 	}
 }
 
-// Publikasi berjalan SETELAH penyimpanan berhasil. Mengumumkan generasi yang
-// gagal disimpan akan mengeluarkan pengguna dari sesinya berdasarkan
-// perubahan yang tidak pernah terjadi.
+// The publish runs AFTER the store succeeded. Announcing a generation that
+// failed to be stored would sign the user out of their session on the basis
+// of a change that never happened.
 func TestLogoutPublishesNothingWhenTheWriteFails(t *testing.T) {
 	logout, users, revocations := newLogoutFixture(t)
 	u := seedUser(t, users, "known@user.co")
@@ -94,10 +95,9 @@ func TestLogoutPublishesNothingWhenTheWriteFails(t *testing.T) {
 	}
 }
 
-// Sebaliknya, publikasi yang gagal DILARANG membatalkan logout. Barisnya
-// sudah tersimpan, jadi pencabutannya nyata; yang tertinggal hanyalah
-// cache, dan pembacaan berikutnya yang meleset akan mengambilnya dari
-// sumbernya.
+// Conversely, a failed publish MUST NOT undo the logout. The row is already
+// stored, so the revocation is real; all that lags is a cache, and the next
+// read that misses fetches it from the source.
 func TestLogoutSucceedsWhenPublishingFails(t *testing.T) {
 	logout, users, revocations := newLogoutFixture(t)
 	u := seedUser(t, users, "known@user.co")
@@ -128,8 +128,8 @@ func TestLogoutOfAnUnknownUserIsRejected(t *testing.T) {
 	}
 }
 
-// Menekan keluar dua kali bukan galat, dan generasi yang naik dua kali tetap
-// benar - tidak ada token yang selamat dari keduanya.
+// Pressing sign out twice is not an error, and a generation bumped twice is
+// still correct - no token survives either.
 func TestLogoutTwiceIsNotAnError(t *testing.T) {
 	logout, users, _ := newLogoutFixture(t)
 	u := seedUser(t, users, "known@user.co")

@@ -14,7 +14,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// fakeSagas menyimpan saga di memori.
+// fakeSagas keeps sagas in memory.
 type fakeSagas struct {
 	byID    map[string]*domain.DeletionSaga
 	closed  map[string]domain.SagaStatus
@@ -92,7 +92,8 @@ func (f *fakeSagas) Outstanding(_ context.Context, _ int) ([]*domain.DeletionSag
 	return out, nil
 }
 
-// deletionHarness merakit use case penghapusan beserta akun yang bisa dihapus.
+// deletionHarness assembles the deletion use case together with an account
+// that can be deleted.
 type deletionHarness struct {
 	uc      *app.DeleteAccount
 	sagas   *fakeSagas
@@ -144,15 +145,15 @@ func newDeletionHarness(t *testing.T) *deletionHarness {
 	return &deletionHarness{uc: uc, sagas: sagas, users: users, uow: uow, revokes: revokes, userID: user.ID()}
 }
 
-// TestTheWrongPasswordDeletesNothing adalah S2, temuan yang paling langsung
-// merugikan di seluruh sistem lama.
+// TestTheWrongPasswordDeletesNothing is S2, the most directly damaging
+// finding in the whole legacy system.
 //
-// Di sana, DeleteAccountRequest MEWAJIBKAN bidang password ada, lalu tidak
-// pernah membandingkannya dengan apa pun - authorize() mengembalikan true,
-// aturannya hanya 'required|string', dan DeleteUserAccountAction langsung
-// memanggil forceDelete(). Siapa pun yang memegang token sah - termasuk token
-// yang dicuri dari perangkat yang tidak terkunci - bisa menghapus akun secara
-// permanen dengan mengirim string apa pun.
+// There, DeleteAccountRequest REQUIRED the password field to be present and
+// then never compared it with anything - authorize() returned true, the rule
+// was just 'required|string', and DeleteUserAccountAction went straight to
+// forceDelete(). Anyone holding a valid token - including one stolen from an
+// unlocked device - could permanently delete the account by sending any
+// string at all.
 func TestTheWrongPasswordDeletesNothing(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -164,7 +165,7 @@ func TestTheWrongPasswordDeletesNothing(t *testing.T) {
 		t.Fatalf("a wrong password was reported as %v", err)
 	}
 
-	// Tidak ada saga, tidak ada event, dan akunnya masih ada.
+	// No saga, no event, and the account is still there.
 	if got := len(h.sagas.byID); got != 0 {
 		t.Errorf("%d sagas were started by a wrong password", got)
 	}
@@ -176,11 +177,11 @@ func TestTheWrongPasswordDeletesNothing(t *testing.T) {
 	}
 }
 
-// TestAnEmptyPasswordDeletesNothing menutup jalur yang paling mudah terlewat.
+// TestAnEmptyPasswordDeletesNothing closes the path that is easiest to miss.
 //
-// Kata sandi kosong tidak memenuhi bentuk minimal, jadi ia gagal SEBELUM
-// verifikasi. Yang penting: ia gagal dengan jawaban yang SAMA, bukan dengan
-// galat validasi yang bisa dibedakan penyerang dari kata sandi yang salah.
+// An empty password fails the minimum shape, so it fails BEFORE verification.
+// What matters: it fails with the SAME answer, not with a validation error an
+// attacker could tell apart from a wrong password.
 func TestAnEmptyPasswordDeletesNothing(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -195,12 +196,12 @@ func TestAnEmptyPasswordDeletesNothing(t *testing.T) {
 	}
 }
 
-// TestTheRightPasswordStartsTheSagaButDeletesNothingYet adalah urutan yang
-// menjaga akun tetap bisa ditemukan.
+// TestTheRightPasswordStartsTheSagaButDeletesNothingYet is the order that
+// keeps the account findable.
 //
-// Akun TIDAK dihapus di sini. Menghapusnya lebih dulu akan menghilangkan
-// satu-satunya tempat yang tahu penghapusan itu sedang berjalan, dan unit yang
-// gagal menghapus datanya tidak punya siapa pun untuk dilapori.
+// The account is NOT deleted here. Deleting it first would remove the only
+// place that knows a deletion is in progress, and a unit that fails to delete
+// its data would have nobody to report to.
 func TestTheRightPasswordStartsTheSagaButDeletesNothingYet(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -219,12 +220,12 @@ func TestTheRightPasswordStartsTheSagaButDeletesNothingYet(t *testing.T) {
 		t.Errorf("the saga waits on %d units, want %d", got, len(domain.DeletionParticipants))
 	}
 
-	// Akunnya masih ada - keenam unit belum menjawab.
+	// The account is still there - the six units have not answered.
 	if h.users.count() != 1 {
 		t.Error("the account was deleted before any unit confirmed")
 	}
 
-	// Eventnya diumumkan, di dalam transaksi yang sama.
+	// The event is announced, in the same transaction.
 	if h.uow.events == nil || len(h.uow.events.written) != 1 {
 		t.Fatalf("the saga was recorded without announcing it")
 	}
@@ -250,7 +251,7 @@ func TestASecondRequestIsRefusedWhileTheFirstRuns(t *testing.T) {
 	}
 }
 
-// TestTheAccountIsDeletedOnlyAfterEveryUnitConfirms adalah gerbang keluar F8.
+// TestTheAccountIsDeletedOnlyAfterEveryUnitConfirms is the F8 exit gate.
 func TestTheAccountIsDeletedOnlyAfterEveryUnitConfirms(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -287,13 +288,13 @@ func TestTheAccountIsDeletedOnlyAfterEveryUnitConfirms(t *testing.T) {
 	}
 }
 
-// TestAFailingUnitKeepsTheAccount adalah jalur kompensasinya (F8-03).
+// TestAFailingUnitKeepsTheAccount is the compensation path (F8-03).
 //
-// Penghapusan tidak bisa dibatalkan - data yang sudah hilang di lima unit tidak
-// kembali - jadi kompensasinya bukan mengembalikan keadaan. Yang dilakukannya:
-// MENAHAN akun. Menghapus akun sementara datanya masih ada di suatu unit
-// berarti tidak ada lagi yang bisa menemukan data itu: tidak ada user_id yang
-// hidup untuk mencarinya, dan tidak ada orang yang bisa memintanya.
+// Deletion cannot be undone - data already gone from five units does not come
+// back - so the compensation is not restoring state. What it does: HOLD the
+// account. Deleting the account while its data still exists in some unit means
+// nothing can find that data any more: no live user_id to look it up by, and no
+// person who can ask for it.
 func TestAFailingUnitKeepsTheAccount(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -323,7 +324,7 @@ func TestAFailingUnitKeepsTheAccount(t *testing.T) {
 	}
 }
 
-// TestARepeatedConfirmationDoesNotCloseTheSagaEarly adalah at-least-once.
+// TestARepeatedConfirmationDoesNotCloseTheSagaEarly is at-least-once.
 func TestARepeatedConfirmationDoesNotCloseTheSagaEarly(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -334,8 +335,8 @@ func TestARepeatedConfirmationDoesNotCloseTheSagaEarly(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	// Satu unit menjawab enam kali. Tanpa penjagaan, itu terlihat seperti enam
-	// unit dan akunnya dihapus sementara lima unit belum tersentuh.
+	// One unit answers six times. Without the guard, that looks like six units
+	// and the account is deleted while five units were never touched.
 	for range len(domain.DeletionParticipants) {
 		if err := h.uc.ConfirmDeletion(context.Background(), saga.ID.String(), domain.Confirmation{
 			Service: "profile", Succeeded: true, ConfirmedAt: time.Now(),
@@ -352,17 +353,16 @@ func TestARepeatedConfirmationDoesNotCloseTheSagaEarly(t *testing.T) {
 	}
 }
 
-// TestDeletingAnAccountRevokesItsTokens adalah kemunduran yang ditemukan test
-// e2e, bukan pembacaan kode.
+// TestDeletingAnAccountRevokesItsTokens is the regression found by the e2e
+// test, not by reading code.
 //
-// Gateway memverifikasi tanda tangan token tanpa menanyai siapa pun; yang
-// menghentikan token yang sudah terbit hanyalah generasi yang naik. Tanpa
-// menaikkannya, akun yang sudah dihapus TETAP menjawab permintaan sampai
-// tokennya kedaluwarsa sendiri - dan test e2e mengamati persis itu selama empat
-// puluh detik penuh.
+// The gateway verifies a token's signature without asking anyone; the only
+// thing that stops an already issued token is a bumped generation. Without the
+// bump, a deleted account KEPT answering requests until its token expired on
+// its own - and the e2e test watched exactly that for a full forty seconds.
 //
-// Sistem lama menghapus seluruh token sebelum forceDelete(). Melewatkannya di
-// sini adalah kemunduran, bukan penyederhanaan.
+// The legacy system deleted every token before forceDelete(). Skipping it here
+// is a regression, not a simplification.
 func TestDeletingAnAccountRevokesItsTokens(t *testing.T) {
 	h := newDeletionHarness(t)
 
@@ -391,8 +391,8 @@ func TestDeletingAnAccountRevokesItsTokens(t *testing.T) {
 		t.Fatal("the account survived a complete saga")
 	}
 
-	// Generasi BARU diumumkan, dan ia lebih tinggi dari sebelumnya - itulah
-	// yang membuat token yang sudah terbit ditolak gateway.
+	// The NEW generation is announced, and it is higher than before - that is
+	// what makes the gateway refuse tokens already issued.
 	if len(h.revokes.published) == 0 {
 		t.Fatal("no new token generation was published; every outstanding token stays valid")
 	}
@@ -406,11 +406,11 @@ func TestDeletingAnAccountRevokesItsTokens(t *testing.T) {
 	}
 }
 
-// TestAnIncompleteSagaDoesNotRevokeAnything menjaga sisi lainnya.
+// TestAnIncompleteSagaDoesNotRevokeAnything guards the other side.
 //
-// Saga yang belum lengkap TIDAK boleh mencabut token: penghapusannya belum
-// terjadi, dan mengeluarkan orang dari sesinya untuk penghapusan yang mungkin
-// berakhir gagal adalah kerugian tanpa manfaat.
+// An incomplete saga must NOT revoke tokens: the deletion has not happened,
+// and signing people out of their session for a deletion that may end in
+// failure is harm without benefit.
 func TestAnIncompleteSagaDoesNotRevokeAnything(t *testing.T) {
 	h := newDeletionHarness(t)
 

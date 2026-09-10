@@ -77,9 +77,9 @@ func TestRegisterStoresTheUserAndReturnsAToken(t *testing.T) {
 	}
 }
 
-// Yang disimpan WAJIB hasil hashing, bukan kata sandinya. Palsuan hasher di
-// sini memberi awalan "hashed:", jadi kesamaan persis dengan masukan berarti
-// use case melewatkan langkah hashing sama sekali.
+// What is stored MUST be the hash, not the password. The fake hasher here
+// adds a "hashed:" prefix, so exact equality with the input means the use
+// case skipped the hashing step entirely.
 func TestRegisterStoresTheHashNotThePassword(t *testing.T) {
 	f := newRegisterFixture(t)
 
@@ -127,7 +127,7 @@ func TestRegisterRejectsAnEmailAlreadyTaken(t *testing.T) {
 	}
 }
 
-// Alamat yang hanya berbeda besar-kecil huruf adalah orang yang sama.
+// Addresses that differ only in case are the same person.
 func TestRegisterTreatsCaseVariantsAsTheSameAddress(t *testing.T) {
 	f := newRegisterFixture(t)
 
@@ -163,9 +163,9 @@ func TestRegisterRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// ADR-002 aturan 1, menutup B7. Profil yang gagal dibuat DILARANG
-// menggagalkan registrasi: pengguna tanpa profil adalah keadaan yang sudah
-// sah hari ini, dan event rekonsiliasi yang memperbaikinya belakangan.
+// ADR-002 rule 1, closing B7. A profile that fails to be created MUST NOT
+// fail the registration: a user without a profile is a state that is
+// already valid today, and the reconciliation event fixes it later.
 func TestRegisterSucceedsEvenWhenTheProfileServiceIsDown(t *testing.T) {
 	f := newRegisterFixture(t)
 	f.profiles.err = errors.New("profile-svc is unreachable")
@@ -206,8 +206,8 @@ func TestRegisterPutsTheProfileIdInTheTokenWhenItExists(t *testing.T) {
 	}
 }
 
-// Sebaliknya, penyimpanan yang gagal WAJIB menggagalkan registrasi. Tanpa ini
-// pengguna diberi token untuk akun yang tidak pernah tersimpan.
+// Conversely, a failing store MUST fail the registration. Without this the
+// user is handed a token for an account that was never stored.
 func TestRegisterFailsWhenTheUserCannotBeStored(t *testing.T) {
 	f := newRegisterFixture(t)
 	f.users.failNow = errStorage
@@ -220,8 +220,8 @@ func TestRegisterFailsWhenTheUserCannotBeStored(t *testing.T) {
 	}
 }
 
-// Ketergantungan yang hilang harus menggagalkan penyusunan service, bukan
-// permintaan pertama yang kebetulan menyentuhnya.
+// A missing dependency has to fail the service's construction, not the
+// first request that happens to touch it.
 func TestNewRegisterRefusesMissingDependencies(t *testing.T) {
 	users := newFakeUsers()
 	uow := &fakeUnitOfWork{users: users}

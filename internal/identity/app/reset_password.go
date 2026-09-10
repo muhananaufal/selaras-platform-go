@@ -11,26 +11,26 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// ResetLinkSender mengirim tautan reset ke alamat pemiliknya.
+// ResetLinkSender sends the reset link to its owner's address.
 //
-// Seluruh keamanan alur ini bertumpu pada satu andaian: tokennya hanya sampai
-// ke orang yang menguasai kotak masuk itu. Tanpa pengiriman yang benar-benar
-// bekerja, sisanya hanya upacara.
+// The whole security of this flow rests on one assumption: the token reaches
+// only the person who controls that inbox. Without delivery that actually
+// works, the rest is ceremony.
 type ResetLinkSender interface {
 	SendResetLink(ctx context.Context, to domain.Email, token domain.ResetToken) error
 }
 
-// RequestPasswordResetCommand adalah masukan mentah dari pemanggil.
+// RequestPasswordResetCommand is the raw input from the caller.
 type RequestPasswordResetCommand struct {
 	Email string
 }
 
-// RequestPasswordReset menerbitkan token reset dan mengirimkannya.
+// RequestPasswordReset issues a reset token and sends it.
 //
-// Menutup separuh S1. Di sistem lama, `PATCH /reset-password` berada di blok
-// rute publik dan langsung mengganti kata sandi milik alamat mana pun yang
-// disebutkan - tanpa token, tanpa verifikasi apa pun. Tabel
-// `password_reset_tokens` ada di migrasinya tetapi tidak pernah dibaca.
+// Closes half of S1. In the legacy system, `PATCH /reset-password` sat in
+// the public route block and changed the password of whatever address was
+// named - no token, no verification of any kind. The `password_reset_tokens`
+// table existed in its migrations but was never read.
 type RequestPasswordReset struct {
 	uow   UnitOfWork
 	links ResetLinkSender
@@ -49,29 +49,28 @@ func NewRequestPasswordReset(uow UnitOfWork, links ResetLinkSender, now func() t
 	return &RequestPasswordReset{uow: uow, links: links, now: now}, nil
 }
 
-// Execute selalu mengembalikan nil kecuali penyimpanannya sendiri bermasalah.
+// Execute always returns nil unless the store itself fails.
 //
-// Alamat yang tidak terdaftar, alamat yang cacat, dan surel yang gagal
-// terkirim semuanya menghasilkan jawaban yang sama seperti keberhasilan.
-// Sistem lama memakai aturan `exists:users,email`, yang berarti endpoint-nya
-// menjawab berbeda untuk alamat yang terdaftar - dan dengan itu menjadi alat
-// pencacahan akun bagi siapa pun.
+// An unregistered address, a malformed address, and an email that failed to
+// send all produce the same answer as success. The legacy system used the
+// `exists:users,email` rule, which meant the endpoint answered differently
+// for registered addresses - and thereby became an account-enumeration tool
+// for anyone.
 //
-// BATAS YANG DIAKUI: yang diseragamkan di sini baru jawabannya, belum
-// waktunya. Jalur yang terdaftar mengerjakan pembuatan token, satu tulisan,
-// dan satu pengiriman surel; jalur yang tidak terdaftar berhenti setelah satu
-// pembacaan. Selisih itu masih bisa diukur. Yang menutupnya adalah pengiriman
-// yang diantrikan sehingga permintaannya pulang seketika di kedua jalur - dan
-// antrian itu belum ada.
+// AN ACKNOWLEDGED LIMIT: only the answer is uniform here, not yet the timing.
+// The registered path performs token creation, one write, and one email send;
+// the unregistered path stops after one read. That difference is still
+// measurable. What closes it is queued delivery so the request returns
+// immediately on both paths - and that queue does not exist yet.
 func (r *RequestPasswordReset) Execute(ctx context.Context, cmd RequestPasswordResetCommand) error {
 	email, err := domain.NewEmail(cmd.Email)
 	if err != nil {
-		// Alamat yang cacat tidak mungkin terdaftar, jadi jawabannya harus
-		// sama dengan alamat yang tidak terdaftar. Linter benar bahwa
-		// membuang galat itu mencurigakan - di sini justru itu yang
-		// diinginkan, karena galat yang bocor keluar akan membedakan kedua
-		// jalur dan mengembalikan lubang pencacahan yang sedang ditutup.
-		//nolint:nilerr // menyeragamkan jawaban adalah maksudnya (S1)
+		// A malformed address cannot possibly be registered, so its answer must
+		// equal that of an unregistered address. The linter is right that
+		// discarding the error looks suspicious - here that is exactly what is
+		// wanted, because an error leaking out would separate the two paths and
+		// reopen the enumeration hole being closed.
+		//nolint:nilerr // making the answer uniform is the point (S1)
 		return nil
 	}
 
@@ -107,13 +106,13 @@ func (r *RequestPasswordReset) Execute(ctx context.Context, cmd RequestPasswordR
 		return nil
 	}
 
-	// Pengiriman berjalan setelah transaksi ditutup. Menahan transaksi selama
-	// panggilan jaringan ke penyedia surel akan membuat penyedia yang lambat
-	// menahan koneksi basis data, dan itu menular ke seluruh service.
+	// Sending happens after the transaction is closed. Holding a transaction
+	// across a network call to the mail provider would let a slow provider
+	// hold a database connection, and that spreads to the whole service.
 	//
-	// Kegagalannya dicatat, bukan dikembalikan: pengiriman hanya pernah
-	// dicoba untuk alamat yang terdaftar, jadi galat yang sampai ke pemanggil
-	// akan mengumumkan justru hal yang sedang disembunyikan.
+	// Its failure is logged, not returned: sending is only ever attempted for
+	// registered addresses, so an error reaching the caller would announce the
+	// very thing being hidden.
 	if err := r.links.SendResetLink(ctx, email, token); err != nil {
 		slog.ErrorContext(ctx, "could not send the password reset link",
 			"user_id", user.ID().String(), "error", err)
@@ -121,14 +120,14 @@ func (r *RequestPasswordReset) Execute(ctx context.Context, cmd RequestPasswordR
 	return nil
 }
 
-// ConfirmPasswordResetCommand adalah masukan mentah dari pemanggil.
+// ConfirmPasswordResetCommand is the raw input from the caller.
 type ConfirmPasswordResetCommand struct {
 	Token                string
 	Password             string
 	PasswordConfirmation string
 }
 
-// ConfirmPasswordReset menukar token yang sah dengan kata sandi baru.
+// ConfirmPasswordReset exchanges a valid token for a new password.
 type ConfirmPasswordReset struct {
 	uow         UnitOfWork
 	hasher      domain.PasswordHasher
@@ -160,9 +159,9 @@ func (c *ConfirmPasswordReset) Execute(ctx context.Context, cmd ConfirmPasswordR
 		return ErrPasswordMismatch
 	}
 
-	// Kata sandi divalidasi SEBELUM token ditebus. Kata sandi yang ditolak
-	// tidak boleh menghanguskan tautan yang sah - pengguna yang salah ketik
-	// masih berhak memakai tautan yang ia terima.
+	// The password is validated BEFORE the token is redeemed. A rejected
+	// password must not burn a valid link - a user who mistyped is still
+	// entitled to use the link they received.
 	password, err := domain.NewPassword(cmd.Password)
 	if err != nil {
 		return err
@@ -179,19 +178,19 @@ func (c *ConfirmPasswordReset) Execute(ctx context.Context, cmd ConfirmPasswordR
 		generation int64
 	)
 
-	// Penebusan token, penggantian kata sandi, pencabutan sesi, dan
-	// pembatalan permintaan lain berada di SATU transaksi. Bila salah satunya
-	// bisa gagal sendiri, ada keadaan di mana kata sandi sudah berganti
-	// sementara tokennya masih bisa dipakai lagi - persis kelemahan yang
-	// sedang ditutup.
+	// Redeeming the token, changing the password, revoking sessions, and
+	// cancelling the other requests sit in ONE transaction. If any of them
+	// could fail alone, there would be a state in which the password has
+	// changed while the token can still be used again - precisely the weakness
+	// being closed.
 	if err := c.uow.Do(ctx, func(repos Repositories) error {
 		resets := repos.PasswordResets()
 
 		reset, err := resets.FindByTokenHash(ctx, hash)
 		if err != nil {
-			// Token yang tidak ditemukan disamakan dengan yang tidak sah.
-			// "Token ini pernah ada tetapi sudah dipakai" memberi tahu
-			// penyerang bahwa tebakannya benar.
+			// A token that is not found is treated the same as an invalid one. "This
+			// token existed but was already used" tells an attacker their guess was
+			// right.
 			return domain.ErrResetTokenInvalid
 		}
 
@@ -213,9 +212,9 @@ func (c *ConfirmPasswordReset) Execute(ctx context.Context, cmd ConfirmPasswordR
 			return err
 		}
 
-		// Kalau akunnya memang sudah direbut, sesi si perebut mati bersama
-		// kata sandi lamanya. Reset yang tidak mencabut sesi hanya mengganti
-		// kata sandi sambil membiarkan penyerangnya tetap masuk.
+		// If the account had indeed been seized, the seizer's session dies
+		// together with the old password. A reset that does not revoke sessions
+		// only changes the password while leaving the attacker signed in.
 		user.RevokeAllTokens(c.now())
 
 		if err := users.Update(ctx, user); err != nil {
@@ -224,9 +223,9 @@ func (c *ConfirmPasswordReset) Execute(ctx context.Context, cmd ConfirmPasswordR
 		if err := resets.MarkUsed(ctx, hash, c.now()); err != nil {
 			return fmt.Errorf("marking the token used: %w", err)
 		}
-		// Permintaan lain yang masih beredar adalah kredensial yang masih
-		// berlaku atas akun yang baru saja diamankan, dan yang paling mungkin
-		// menerbitkannya adalah orang yang sedang mencoba merebutnya.
+		// Any other outstanding request is a still-valid credential for an
+		// account that was just secured, and the most likely issuer of it is the
+		// person trying to seize it.
 		if err := resets.InvalidateAllFor(ctx, user.ID(), c.now()); err != nil {
 			return fmt.Errorf("invalidating outstanding requests: %w", err)
 		}

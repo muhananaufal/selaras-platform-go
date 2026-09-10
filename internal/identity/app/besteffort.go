@@ -7,22 +7,22 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// Dua langkah di bawah ini muncul di lebih dari satu use case, dan keduanya
-// punya sifat yang sama: gagalnya tidak boleh membatalkan pekerjaan yang
-// sudah tersimpan, tetapi juga tidak boleh hilang tanpa jejak. Ia dikumpulkan
-// di sini supaya keputusan itu diambil sekali, bukan diulang - dan diulang
-// berarti suatu saat ada satu tempat yang menelannya diam-diam.
+// The two steps below appear in more than one use case, and both share the
+// same nature: their failure must not undo work that is already stored, but
+// it must not vanish without a trace either. They are gathered here so that
+// decision is made once, not repeated - and repeated means that one day some
+// place swallows it silently.
 
-// createProfileBestEffort meminta profile-svc membuat profil kosong, dan
-// mengembalikan string kosong bila gagal.
+// createProfileBestEffort asks profile-svc to create an empty profile, and
+// returns an empty string when that fails.
 //
-// ADR-002 aturan 1: kegagalannya DILARANG menggagalkan pendaftaran. "Pengguna
-// tanpa profil" sudah menjadi keadaan yang sah hari ini (B7) - jalur
-// pendaftaran lewat Google di sistem lama tidak pernah membuat profil sama
-// sekali, dan sistemnya tetap berjalan.
+// ADR-002 rule 1: its failure MUST NOT fail the registration. "A user without
+// a profile" is already a valid state today (B7) - the legacy system's Google
+// registration path never created a profile at all, and the system kept
+// working.
 //
-// Kegagalannya dicatat: tanpa catatan, profile-svc bisa mati berhari-hari dan
-// yang terlihat hanya pengguna yang profilnya kosong tanpa sebab.
+// The failure is logged: without a record, profile-svc could be down for days
+// and all anyone would see is users with empty profiles for no reason.
 func createProfileBestEffort(ctx context.Context, profiles ProfileCreator, userID domain.UserID) string {
 	profileID, err := profiles.CreateEmptyProfile(ctx, userID)
 	if err != nil {
@@ -33,16 +33,16 @@ func createProfileBestEffort(ctx context.Context, profiles ProfileCreator, userI
 	return profileID
 }
 
-// publishGenerationBestEffort mengumumkan generasi token yang baru ke
-// pemeriksa pencabutan.
+// publishGenerationBestEffort announces the new token generation to the
+// revocation checker.
 //
-// Ia dipanggil SETELAH perubahannya tersimpan. Mengumumkan generasi yang
-// gagal disimpan akan mengeluarkan pengguna dari sesinya berdasarkan
-// perubahan yang tidak pernah terjadi.
+// It is called AFTER the change is stored. Announcing a generation that
+// failed to be stored would sign the user out of their session on the basis
+// of a change that never happened.
 //
-// Sebaliknya, publikasi yang gagal tidak membatalkan apa pun: barisnya sudah
-// tersimpan, jadi pencabutannya nyata, dan yang tertinggal hanya cache -
-// pemeriksa yang meleset mengambilnya dari sumber aslinya.
+// Conversely, a failed publish undoes nothing: the row is already stored, so
+// the revocation is real, and all that lags is a cache - a checker that
+// misses fetches it from the source.
 func publishGenerationBestEffort(
 	ctx context.Context,
 	revocations domain.RevocationPublisher,

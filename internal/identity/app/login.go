@@ -10,36 +10,34 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// ErrInvalidCredentials adalah satu-satunya jawaban bagi setiap kegagalan
-// masuk: email tidak terdaftar, kata sandi keliru, akun terhapus, akun tanpa
-// kata sandi. Membedakannya mengubah halaman masuk menjadi alat pencacahan
-// akun - penyerang cukup mencoba satu alamat untuk tahu apakah orangnya
-// terdaftar.
+// ErrInvalidCredentials is the only answer for every sign-in failure:
+// unregistered email, wrong password, deleted account, account without a
+// password. Telling them apart turns the sign-in page into an
+// account-enumeration tool - an attacker only has to try an address to learn
+// whether the person is registered.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
-// decoyHash adalah hash sungguhan atas kata sandi yang tidak akan pernah
-// dipakai siapa pun.
+// decoyHash is a real hash of a password nobody will ever use.
 //
-// Ia diverifikasi saat email tidak dikenal atau akunnya tidak punya kata
-// sandi, supaya jalur yang gagal membayar biaya waktu yang sama dengan jalur
-// yang berhasil. Tanpa ini, jawaban yang seragam tidak ada gunanya: hanya
-// dengan mengukur waktu jawab, penyerang tetap bisa membedakan alamat yang
-// terdaftar dari yang tidak.
+// It is verified when the email is unknown or the account has no password,
+// so the failing path pays the same time cost as the succeeding one. Without
+// it, a uniform answer is useless: by timing the response alone, an attacker
+// can still tell a registered address from an unregistered one.
 //
-// Isinya sengaja bukan hash yang valid untuk kata sandi mana pun.
+// Its contents are deliberately not a valid hash for any password.
 const decoyHash = domain.PasswordHash(
 	"$argon2id$v=19$m=65536,t=3,p=2$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 
-// decoyPassword adalah masukan bagi verifikasi umpan di atas.
+// decoyPassword is the input for the decoy verification above.
 const decoyPassword = "not-a-real-password-anyone-uses"
 
-// LoginCommand adalah masukan mentah dari pemanggil.
+// LoginCommand is the raw input from the caller.
 type LoginCommand struct {
 	Email    string
 	Password string
 }
 
-// Login menukar kredensial dengan token akses.
+// Login exchanges credentials for an access token.
 type Login struct {
 	uow         UnitOfWork
 	hasher      domain.PasswordHasher
@@ -48,11 +46,10 @@ type Login struct {
 	revocations domain.RevocationPublisher
 	now         func() time.Time
 
-	// Kandidat umpan dibangun sekali saat penyusunan, bukan di setiap
-	// permintaan yang gagal. Konstantanya memang sah hari ini, dan kalau
-	// suatu saat ia diubah menjadi tidak sah, kegagalannya muncul di
-	// start-up - bukan sebagai galat yang dibuang diam-diam di jalur yang
-	// justru harus tetap seragam.
+	// The decoy candidate is built once at construction, not on every failed
+	// request. The constant is valid today, and if it is ever changed into an
+	// invalid one the failure surfaces at start-up - not as an error silently
+	// discarded on the very path that has to stay uniform.
 	decoy domain.Password
 }
 
@@ -97,11 +94,11 @@ func NewLogin(
 func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, error) {
 	var user *domain.User
 
-	// Seluruh pemeriksaan kredensial berjalan di dalam satu satuan kerja,
-	// karena login yang berhasil juga MENULIS: ia menaikkan generasi token
-	// dan dengan itu mengakhiri sesi sebelumnya (D1). Membaca lalu menulis di
-	// luar transaksi akan membuat dua login serempak sama-sama membaca
-	// generasi lama dan salah satunya hilang.
+	// The whole credential check runs inside one unit of work, because a
+	// successful login also WRITES: it bumps the token generation and thereby
+	// ends the previous session (D1). Reading and then writing outside a
+	// transaction would let two concurrent logins both read the old generation
+	// and one of them would be lost.
 	err := l.uow.Do(ctx, func(repos Repositories) error {
 		users := repos.Users()
 		found, err := l.authenticate(ctx, users, cmd)
@@ -109,9 +106,9 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 			return err
 		}
 
-		// D1: satu sesi per pengguna. Login berhasil mencabut seluruh token
-		// sebelumnya, dan token baru di bawah dibuat dengan generasi yang
-		// sudah dinaikkan - kalau tidak, ia akan mencabut dirinya sendiri.
+		// D1: one session per user. A successful login revokes every previous
+		// token, and the new token below is minted with the already bumped
+		// generation - otherwise it would revoke itself.
 		found.RevokeAllTokens(l.now())
 		if err := users.Update(ctx, found); err != nil {
 			return fmt.Errorf("ending previous sessions: %w", err)
@@ -137,12 +134,12 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 		return AuthResult{}, fmt.Errorf("issuing token: %w", err)
 	}
 
-	// Generasi yang baru diumumkan ke pemeriksa pencabutan.
+	// The new generation is announced to the revocation checker.
 	//
-	// Tanpa ini, cache masih memegang generasi lama: token yang BARU saja
-	// diterbitkan ditolak, sementara token lama - yang justru dimaksudkan
-	// mati oleh login ini - tetap diterima sampai salinannya kedaluwarsa.
-	// Persis kebalikan dari yang seharusnya.
+	// Without this, the cache still holds the old generation: the token JUST
+	// issued is refused, while the old token - the very one this login was
+	// meant to kill - keeps being accepted until the cached copy expires.
+	// Exactly the opposite of what should happen.
 	publishGenerationBestEffort(ctx, l.revocations, user.ID(), user.TokenGeneration())
 
 	return AuthResult{
@@ -152,21 +149,20 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 	}, nil
 }
 
-// authenticate mengembalikan penggunanya bila kredensialnya benar, dan
-// ErrInvalidCredentials untuk setiap kegagalan - tanpa kecuali.
+// authenticate returns the user when the credentials are right, and
+// ErrInvalidCredentials for every failure - no exceptions.
 //
-// Setiap jalur keluar yang gagal melewati verifikasi hash lebih dulu, dan itu
-// bukan pemborosan: itulah yang membuat jawaban yang seragam benar-benar
-// seragam. Argon2 sengaja lambat, jadi jalur yang melewatinya jauh lebih
-// cepat, dan selisih waktu itu sendiri sudah menjawab "apakah alamat ini
-// terdaftar".
+// Every failing exit passes through hash verification first, and that is not
+// waste: it is what makes the uniform answer genuinely uniform. Argon2 is
+// slow on purpose, so a path that skips it is far faster, and that time
+// difference alone answers "is this address registered".
 func (l *Login) authenticate(
 	ctx context.Context,
 	users domain.UserRepository,
 	cmd LoginCommand,
 ) (*domain.User, error) {
-	// Kata sandi yang cacat pun tetap diberi kandidat umpan, supaya
-	// panjangnya sendiri tidak menjadi jalan pintas keluar.
+	// Even a malformed password still gets the decoy candidate, so its length
+	// alone does not become a shortcut out.
 	candidate, err := domain.NewPassword(cmd.Password)
 	if err != nil {
 		candidate = l.decoy
@@ -181,18 +177,17 @@ func (l *Login) authenticate(
 	user, err := users.FindByEmail(ctx, email)
 	if err != nil {
 		if !errors.Is(err, domain.ErrUserNotFound) {
-			// Penyimpanan yang bermasalah bukan kredensial yang salah, dan
-			// menyamarkannya akan membuat gangguan basis data terlihat
-			// seperti gelombang salah kata sandi.
+			// A failing store is not a wrong credential, and disguising it would
+			// make a database outage look like a wave of wrong passwords.
 			return nil, fmt.Errorf("looking up user: %w", err)
 		}
 		l.burnTime(candidate)
 		return nil, ErrInvalidCredentials
 	}
 
-	// Akun tanpa kata sandi - hanya Google - tidak bisa masuk lewat jalur
-	// ini. Ia tetap membayar verifikasi umpan supaya waktunya tidak
-	// membedakannya dari akun yang punya kata sandi.
+	// An account without a password - Google only - cannot sign in through
+	// this path. It still pays for the decoy verification so its timing does
+	// not set it apart from an account that has a password.
 	if !user.CanAuthenticateWithPassword() {
 		l.burnTime(candidate)
 		return nil, ErrInvalidCredentials
@@ -208,24 +203,24 @@ func (l *Login) authenticate(
 	return user, nil
 }
 
-// burnTime menjalankan verifikasi terhadap hash umpan dan membuang hasilnya.
-// Yang dibeli di sini adalah waktunya, bukan jawabannya.
+// burnTime runs verification against the decoy hash and discards the result.
+// What is bought here is the time, not the answer.
 func (l *Login) burnTime(candidate domain.Password) {
 	if _, _, err := l.hasher.Verify(decoyHash, candidate); err != nil {
-		// Hash umpan memang tidak cocok dengan apa pun; galat di sini hanya
-		// berarti hasher-nya sendiri bermasalah, dan itu akan muncul lagi di
-		// permintaan yang sah.
+		// The decoy hash matches nothing by design; an error here only means the
+		// hasher itself is broken, and that will show up again on a legitimate
+		// request.
 		slog.Debug("decoy verification failed", "error", err)
 	}
 }
 
-// findProfileBestEffort mengambil id profil sekali per login (ADR-002 aturan
-// 2), dan mengembalikan string kosong bila tidak ada atau tidak terjangkau.
+// findProfileBestEffort fetches the profile id once per login (ADR-002 rule
+// 2), and returns an empty string when it does not exist or is unreachable.
 //
-// Profil yang belum ada memang keadaan yang sah (B7), jadi ketiadaannya bukan
-// galat. profile-svc yang sedang mati diperlakukan sama: menggagalkan login
-// karena layanan profil terganggu akan mengubah gangguan kecil menjadi
-// pemadaman autentikasi.
+// A profile that does not exist yet is a valid state (B7), so its absence is
+// not an error. A profile-svc that is down is treated the same: failing login
+// because the profile service is degraded would turn a minor outage into an
+// authentication outage.
 func (l *Login) findProfileBestEffort(ctx context.Context, userID domain.UserID) string {
 	profileID, err := l.profiles.FindProfileID(ctx, userID)
 	if err != nil {

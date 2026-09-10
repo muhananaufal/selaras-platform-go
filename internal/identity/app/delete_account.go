@@ -15,11 +15,11 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
 
-// ErrWrongPassword menolak penghapusan yang kata sandinya tidak cocok.
+// ErrWrongPassword refuses a deletion whose password does not match.
 //
-// Ia dibedakan dari ErrInvalidCredentials karena pemanggilnya SUDAH terautentikasi:
-// tidak ada akun yang bisa dicacah dari jawaban ini, dan pesan yang kabur hanya
-// membuat orang mengira aplikasinya rusak saat mereka salah ketik.
+// It is distinct from ErrInvalidCredentials because the caller is ALREADY
+// authenticated: no account can be enumerated from this answer, and a vague message
+// only makes people think the app is broken when they mistyped.
 var ErrWrongPassword = errors.New("the password does not match")
 
 // ErrDeletionInProgress menolak permintaan kedua.
@@ -30,40 +30,41 @@ type SagaRepository interface {
 	Create(ctx context.Context, s *domain.DeletionSaga) error
 	Find(ctx context.Context, id domain.SagaID) (*domain.DeletionSaga, error)
 
-	// FindOutstandingForUser mengembalikan ErrSagaNotFound bila pengguna itu
-	// tidak sedang dihapus.
+	// FindOutstandingForUser returns ErrSagaNotFound when that user is not
+	// being deleted.
 	FindOutstandingForUser(ctx context.Context, userID domain.UserID) (*domain.DeletionSaga, error)
 
-	// Confirm mencatat jawaban satu unit.
+	// Confirm records one unit's answer.
 	//
-	// IDEMPOTEN: jawaban yang sama dua kali menyisakan satu baris.
+	// IDEMPOTENT: the same answer twice leaves one row.
 	Confirm(ctx context.Context, id domain.SagaID, c domain.Confirmation) error
 
-	// Close menutup saga dengan keadaan akhirnya.
+	// Close closes the saga with its final state.
 	Close(ctx context.Context, id domain.SagaID, status domain.SagaStatus, at time.Time) error
 
-	// Outstanding menyebutkan saga yang belum selesai, terlama lebih dulu.
-	// Dipakai runbook dan perintah verifikasi.
+	// Outstanding names the sagas that have not finished, oldest first. Used
+	// by the runbook and the verification command.
 	Outstanding(ctx context.Context, limit int) ([]*domain.DeletionSaga, error)
 }
 
-// DeleteAccount memulai dan menyelesaikan saga penghapusan akun.
+// DeleteAccount starts and completes the account-deletion saga.
 //
-// Ia dipisahkan dari use case lain karena dependensinya berbeda: ia satu-satunya
-// yang membutuhkan penyimpanan saga sekaligus pembanding kata sandi.
+// It is separated from the other use cases because its dependencies differ: it
+// is the only one that needs the saga store as well as the password comparer.
 type DeleteAccount struct {
 	users    domain.UserRepository
 	sagas    SagaRepository
 	hasher   domain.PasswordHasher
 	profiles ProfileFinder
 
-	// revocations mengumumkan generasi token yang baru saat akun dihapus.
+	// revocations announces the new token generation when an account is
+	// deleted.
 	//
-	// Tanpanya, token yang sudah terbit TETAP BERLAKU sampai kedaluwarsa
-	// sendiri - gateway memverifikasi tanda tangan tanpa menanyai siapa pun,
-	// dan cache pencabutannya masih memegang generasi lama. Sistem lama
-	// menghapus seluruh token sebelum menghapus akun; melewatkannya di sini
-	// adalah kemunduran, bukan penyederhanaan.
+	// Without it, tokens already issued REMAIN VALID until they expire on
+	// their own - the gateway verifies signatures without asking anyone, and
+	// its revocation cache still holds the old generation. The legacy system
+	// deleted every token before deleting the account; skipping that here is a
+	// regression, not a simplification.
 	revocations domain.RevocationPublisher
 
 	uow UnitOfWork
@@ -105,30 +106,30 @@ func NewDeleteAccount(
 	}, nil
 }
 
-// DeleteAccountCommand adalah permintaan penghapusan.
+// DeleteAccountCommand is the deletion request.
 type DeleteAccountCommand struct {
-	// UserID datang dari token yang sudah diverifikasi, bukan dari badan
-	// permintaan (ADR-023).
+	// UserID comes from the verified token, not from the request body
+	// (ADR-023).
 	UserID string
 
-	// Password DIVERIFIKASI, bukan sekadar diwajibkan ada.
+	// Password is VERIFIED, not merely required to be present.
 	//
-	// Sistem lama mewajibkannya di aturan validasi lalu tidak pernah
-	// membandingkannya (temuan S2): siapa pun yang memegang token sah bisa
-	// menghapus akun secara permanen dengan mengirim string apa pun.
+	// The legacy system required it in the validation rules and then never
+	// compared it (finding S2): anyone holding a valid token could permanently
+	// delete the account by sending any string at all.
 	Password string
 }
 
-// Execute memulai saga penghapusan akun (F8-01).
+// Execute starts the account-deletion saga (F8-01).
 //
-// Ia TIDAK menghapus apa pun sendiri. Yang dilakukannya: memastikan orangnya
-// benar, mencatat sagalnya, dan mengumumkan permintaannya. Enam unit menghapus
-// datanya masing-masing lalu mengonfirmasi, dan akun barunya dihapus setelah
-// keenamnya menjawab.
+// It deletes NOTHING itself. What it does: makes sure the person is who they
+// say, records the saga, and announces the request. Six units delete their own
+// data and then confirm, and the account is deleted only once all six have
+// answered.
 //
-// Urutannya sengaja begitu. Menghapus akun lebih dulu akan menghilangkan
-// satu-satunya tempat yang tahu penghapusan itu sedang berjalan, dan unit yang
-// gagal menghapus datanya tidak punya siapa pun untuk dilapori.
+// The order is deliberate. Deleting the account first would remove the only
+// place that knows a deletion is in progress, and a unit that fails to delete
+// its data would have nobody to report to.
 func (d *DeleteAccount) Execute(
 	ctx context.Context, cmd DeleteAccountCommand,
 ) (*domain.DeletionSaga, error) {
@@ -142,13 +143,12 @@ func (d *DeleteAccount) Execute(
 		return nil, err
 	}
 
-	// Kata sandi diperiksa SEBELUM apa pun yang lain.
+	// The password is checked BEFORE anything else.
 	//
-	// Akun yang masuk lewat penyedia sosial tidak punya kata sandi. Ia tidak
-	// bisa membuktikan dirinya dengan cara ini, dan menerima penghapusan tanpa
-	// bukti apa pun justru mengembalikan lubang yang sedang ditutup - jadi
-	// jalur itu DITOLAK dengan pesan yang menyebutkan sebabnya, bukan
-	// diloloskan.
+	// An account that signed in through a social provider has no password. It
+	// cannot prove itself this way, and accepting a deletion without any proof
+	// would reopen the very hole being closed - so that path is REFUSED with a
+	// message naming the reason, not waved through.
 	if user.PasswordHash() == "" {
 		return nil, fmt.Errorf(
 			"%w: this account signs in through a provider and has no password to confirm with",
@@ -157,8 +157,8 @@ func (d *DeleteAccount) Execute(
 
 	candidate, err := domain.NewPassword(cmd.Password)
 	if err != nil {
-		// Kata sandi yang tidak memenuhi bentuk minimal pun TIDAK boleh
-		// melewatkan verifikasi; ia gagal di sini dengan jawaban yang sama.
+		// Even a password that fails the minimum shape must NOT skip
+		// verification; it fails here with the same answer.
 		return nil, ErrWrongPassword
 	}
 
@@ -170,9 +170,9 @@ func (d *DeleteAccount) Execute(
 		return nil, ErrWrongPassword
 	}
 
-	// Permintaan kedua ditolak, bukan memulai saga kedua. Dua rangkaian
-	// konfirmasi untuk satu akun akan membuat yang kedua mengira dirinya belum
-	// lengkap - unit-unitnya sudah menjawab yang pertama.
+	// A second request is refused, not the start of a second saga. Two
+	// confirmation sequences for one account would make the second think
+	// itself incomplete - its units have already answered the first.
 	switch _, err := d.sagas.FindOutstandingForUser(ctx, userID); {
 	case err == nil:
 		return nil, ErrDeletionInProgress
@@ -180,17 +180,16 @@ func (d *DeleteAccount) Execute(
 		return nil, err
 	}
 
-	// Id profil disalin SEKARANG, saat profilnya masih ada.
+	// The profile id is copied NOW, while the profile still exists.
 	//
-	// Beberapa unit menyimpan datanya dengan kunci itu, bukan dengan user_id.
-	// Setelah profile-svc menghapus barisnya, tidak ada lagi yang bisa
-	// menerjemahkannya - dan unit yang belum sempat menghapus kehilangan
-	// satu-satunya cara menemukan data yang harus dihapusnya.
+	// Several units key their data on it, not on user_id. Once profile-svc has
+	// deleted its row, nothing can translate it any more - and a unit that has
+	// not deleted yet loses the only way to find the data it has to delete.
 	//
-	// Kegagalan mencarinya TIDAK menghentikan penghapusan: profil yang belum
-	// pernah dibuat adalah keadaan yang sah (B7), dan menolak menghapus akun
-	// karena profilnya tidak ada akan menjebak orang di akun yang tidak bisa
-	// mereka tinggalkan.
+	// A failed lookup does NOT stop the deletion: a profile that was never
+	// created is a valid state (B7), and refusing to delete an account because
+	// its profile is missing would trap people in an account they cannot
+	// leave.
 	profileID, err := d.profiles.FindProfileID(ctx, userID)
 	if err != nil {
 		d.log.WarnContext(ctx, "could not resolve the profile id before deletion; the saga continues without it",
@@ -204,11 +203,11 @@ func (d *DeleteAccount) Execute(
 		return nil, err
 	}
 
-	// Saga dan eventnya ditulis dalam SATU transaksi (E10). Kalau keduanya bisa
-	// terpisah, sistem bisa punya saga yang tidak pernah diumumkan - menggantung
-	// selamanya menunggu enam unit yang tidak pernah diberi tahu - atau
-	// pengumuman tanpa saga, yang menghapus data pengguna tanpa satu pun catatan
-	// bahwa itu diminta.
+	// The saga and its event are written in ONE transaction (E10). If the two
+	// could come apart, the system could have a saga that was never announced -
+	// hanging forever waiting for six units that were never told - or an
+	// announcement without a saga, deleting a user's data without a single
+	// record that it was requested.
 	if err := d.uow.Do(ctx, func(r Repositories) error {
 		if err := r.Sagas().Create(ctx, saga); err != nil {
 			return err
@@ -224,7 +223,8 @@ func (d *DeleteAccount) Execute(
 	return saga, nil
 }
 
-// ConfirmDeletion mencatat jawaban satu unit dan menutup saga bila sudah lengkap.
+// ConfirmDeletion records one unit's answer and closes the saga once it is
+// complete.
 func (d *DeleteAccount) ConfirmDeletion(
 	ctx context.Context, sagaID string, c domain.Confirmation,
 ) error {
@@ -235,9 +235,9 @@ func (d *DeleteAccount) ConfirmDeletion(
 
 	now := d.now()
 
-	// generation diisi di dalam transaksi dan diumumkan sesudahnya - publikasi
-	// yang berjalan di dalam transaksi akan mengumumkan perubahan yang bisa
-	// batal.
+	// generation is filled inside the transaction and announced afterwards - a
+	// publish running inside the transaction would announce a change that can
+	// still be rolled back.
 	var (
 		generation  int64
 		deletedUser domain.UserID
@@ -249,8 +249,9 @@ func (d *DeleteAccount) ConfirmDeletion(
 			return err
 		}
 
-		// Jawaban yang tiba setelah saga ditutup bukan kegagalan: relay
-		// at-least-once, dan yang kedua tiba setelah yang pertama menutupnya.
+		// An answer arriving after the saga was closed is not a failure: the
+		// relay is at-least-once, and the second copy arrived after the first
+		// closed it.
 		status, err := saga.Confirm(c)
 		if errors.Is(err, domain.ErrSagaAlreadyClosed) {
 			return nil
@@ -270,29 +271,29 @@ func (d *DeleteAccount) ConfirmDeletion(
 			return err
 		}
 
-		// Akun BARU dihapus setelah keenam unit mengonfirmasi berhasil.
+		// The account is deleted ONLY once all six units confirmed success.
 		//
-		// Saga yang gagal meninggalkan akunnya utuh - dan itu disengaja.
-		// Menghapus akun sementara datanya masih ada di suatu unit berarti
-		// tidak ada lagi yang bisa menemukan data itu: tidak ada user_id yang
-		// hidup untuk mencarinya, dan tidak ada orang yang bisa memintanya.
+		// A failed saga leaves the account intact - and that is deliberate.
+		// Deleting the account while its data still exists in some unit means
+		// nothing can find that data any more: no live user_id to look it up by,
+		// and no person who can ask for it.
 		if status != domain.SagaCompleted {
 			d.log.ErrorContext(ctx, "a deletion saga finished with failures; the account is kept",
 				"saga_id", id.String(), "failures", saga.Failures())
 			return nil
 		}
 
-		// Token dicabut SEBELUM barisnya hilang.
+		// Tokens are revoked BEFORE the row disappears.
 		//
-		// Gateway memverifikasi tanda tangan tanpa menanyai siapa pun; yang
-		// menghentikan token yang sudah terbit hanyalah generasi yang naik.
-		// Menaikkannya setelah barisnya hilang mustahil - tidak ada lagi yang
-		// bisa dinaikkan - dan tokennya akan tetap diterima sampai cache
-		// pencabutan gateway kedaluwarsa sendiri.
+		// The gateway verifies signatures without asking anyone; the only thing
+		// that stops an already issued token is a bumped generation. Bumping it
+		// after the row is gone is impossible - there is nothing left to bump -
+		// and the token would keep being accepted until the gateway's revocation
+		// cache expires on its own.
 		//
-		// Sistem lama menghapus seluruh token sebelum forceDelete(). Melewatkan
-		// langkah itu adalah kemunduran, dan test e2e menangkapnya: akun yang
-		// sudah dihapus masih menjawab permintaan selama empat puluh detik.
+		// The legacy system deleted every token before forceDelete(). Skipping
+		// that step is a regression, and the e2e test caught it: a deleted
+		// account kept answering requests for forty seconds.
 		user, err := r.Users().FindByID(ctx, saga.UserID)
 		if err != nil {
 			return fmt.Errorf("reading the account before deleting it: %w", err)
@@ -316,25 +317,25 @@ func (d *DeleteAccount) ConfirmDeletion(
 		return err
 	}
 
-	// Publikasi berjalan SETELAH commit, dan kegagalannya tidak membatalkan
-	// penghapusan: barisnya sudah hilang, jadi pencabutannya nyata. Yang
-	// tertinggal hanya cache, dan gateway yang meleset menanyai sumbernya -
-	// yang kini menjawab "tidak ada akun itu", dan ia gagal-tertutup (ADR-020).
+	// The publish runs AFTER the commit, and its failure does not undo the
+	// deletion: the row is already gone, so the revocation is real. All that
+	// lags is a cache, and a gateway that misses asks the source - which now
+	// answers "no such account", and it fails closed (ADR-020).
 	if generation > 0 {
 		publishGenerationBestEffort(ctx, d.revocations, deletedUser, generation)
 	}
 	return nil
 }
 
-// deletionRequested menyusun event yang mengumumkan permintaannya.
+// deletionRequested composes the event that announces the request.
 func deletionRequested(s *domain.DeletionSaga, now time.Time) *eventsv1.Envelope {
 	return &eventsv1.Envelope{
 		EventId:       uuid.NewString(),
 		OccurredAt:    timestamppb.New(now),
 		SchemaVersion: 1,
 
-		// Kunci idempotensi diturunkan dari sagalnya: satu saga, satu
-		// pengumuman, selamanya.
+		// The idempotency key derives from the saga: one saga, one announcement,
+		// forever.
 		IdempotencyKey: &commonv1.IdempotencyKey{Value: "user-deletion:" + s.ID.String()},
 
 		Payload: &eventsv1.Envelope_UserDeletionRequested{
@@ -347,12 +348,12 @@ func deletionRequested(s *domain.DeletionSaga, now time.Time) *eventsv1.Envelope
 	}
 }
 
-// LogOutstandingSagas mencatat saga yang menggantung.
+// LogOutstandingSagas logs the sagas that are hanging.
 //
-// Dipanggil saat start-up. Saga yang menggantung dari proses sebelumnya tidak
-// akan pernah menyelesaikan dirinya sendiri - unit-unitnya sudah dihubungi, dan
-// yang belum menjawab tidak akan ditanya lagi - jadi satu-satunya cara ia
-// terlihat adalah kalau seseorang diberi tahu.
+// Called at start-up. A saga left hanging by a previous process will never
+// complete on its own - its units were already contacted, and the ones that did
+// not answer will not be asked again - so the only way it becomes visible is if
+// someone is told.
 func (d *DeleteAccount) LogOutstandingSagas(ctx context.Context, log *slog.Logger) {
 	sagas, err := d.sagas.Outstanding(ctx, 50)
 	if err != nil {

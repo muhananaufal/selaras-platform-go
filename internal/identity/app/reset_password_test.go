@@ -50,8 +50,8 @@ func (f *resetFixture) seedUser(t *testing.T, email string) *domain.User {
 	return seedUser(t, f.users, email)
 }
 
-// requestAndCapture menjalankan permintaan reset dan mengembalikan token yang
-// dikirim, seperti yang akan diterima pengguna lewat surel.
+// requestAndCapture runs a reset request and returns the token that was sent,
+// as the user would receive it by email.
 func (f *resetFixture) requestAndCapture(t *testing.T, email string) string {
 	t.Helper()
 
@@ -83,9 +83,9 @@ func TestRequestingAResetSendsALinkToAKnownAddress(t *testing.T) {
 	}
 }
 
-// Menutup separuh S1. Yang disimpan WAJIB hash-nya: sebuah dump basis data
-// tidak boleh langsung berarti kemampuan mengambil alih setiap akun yang
-// sedang punya permintaan reset yang beredar.
+// Closes half of S1. What is stored MUST be the hash: a database dump must
+// not directly mean the ability to take over every account with an
+// outstanding reset request.
 func TestTheTokenItselfIsNeverStored(t *testing.T) {
 	f := newResetFixture(t)
 	f.seedUser(t, "known@user.co")
@@ -102,15 +102,16 @@ func TestTheTokenItselfIsNeverStored(t *testing.T) {
 	}
 	for _, b := range stored.TokenHash {
 		if b != 0 {
-			return // hash-nya terisi, artinya bukan nilai nol
+			return // the hash is filled in, meaning it is not the zero value
 		}
 	}
 	t.Error("the stored hash is all zeroes")
 }
 
-// Endpoint ini menjawab sama untuk alamat yang terdaftar dan yang tidak.
-// Membedakannya mengubahnya menjadi alat pencacahan akun - dan itu justru
-// yang dilakukan sistem lama lewat aturan `exists:users,email`.
+// This endpoint answers the same for registered and unregistered addresses.
+// Telling them apart turns it into an account-enumeration tool - and that
+// is exactly what the legacy system did through the `exists:users,email`
+// rule.
 func TestRequestingAResetForAnUnknownAddressLooksIdentical(t *testing.T) {
 	f := newResetFixture(t)
 	f.seedUser(t, "known@user.co")
@@ -135,9 +136,9 @@ func TestRequestingAResetForAnUnknownAddressLooksIdentical(t *testing.T) {
 	}
 }
 
-// Surel yang gagal terkirim DILARANG dilaporkan ke pemanggil: pengiriman
-// hanya pernah dicoba untuk alamat yang terdaftar, jadi galatnya sendiri
-// mengumumkan bahwa alamatnya ada.
+// An email that failed to send MUST NOT be reported to the caller: sending
+// is only ever attempted for registered addresses, so the error itself
+// announces that the address exists.
 func TestAFailedSendIsNotReportedToTheCaller(t *testing.T) {
 	f := newResetFixture(t)
 	f.seedUser(t, "known@user.co")
@@ -171,9 +172,9 @@ func TestConfirmingAResetChangesThePassword(t *testing.T) {
 	}
 }
 
-// Kalau akunnya direbut, sesi si perebut WAJIB mati bersama kata sandinya.
-// Reset yang tidak mencabut sesi hanya mengubah kata sandi sambil membiarkan
-// penyerangnya tetap masuk.
+// If the account was seized, the seizer's session MUST die together with the
+// password. A reset that does not revoke sessions only changes the password
+// while leaving the attacker signed in.
 func TestConfirmingAResetEndsEverySession(t *testing.T) {
 	f := newResetFixture(t)
 	u := f.seedUser(t, "known@user.co")
@@ -199,7 +200,7 @@ func TestConfirmingAResetEndsEverySession(t *testing.T) {
 	}
 }
 
-// Menutup S1 sepenuhnya di sisi ini: token sekali pakai.
+// Closes S1 entirely on this side: a single-use token.
 func TestATokenCannotBeUsedTwice(t *testing.T) {
 	f := newResetFixture(t)
 	f.seedUser(t, "known@user.co")
@@ -221,9 +222,9 @@ func TestATokenCannotBeUsedTwice(t *testing.T) {
 	}
 }
 
-// Permintaan lain yang masih beredar adalah kredensial yang masih berlaku
-// atas akun yang baru saja diamankan, dan yang paling mungkin menerbitkannya
-// adalah orang yang sedang mencoba merebutnya.
+// Any other outstanding request is a still-valid credential for an account
+// that was just secured, and the most likely issuer of it is the person
+// trying to seize it.
 func TestConfirmingAResetKillsEveryOtherOutstandingRequest(t *testing.T) {
 	f := newResetFixture(t)
 	f.seedUser(t, "known@user.co")
@@ -280,7 +281,7 @@ func TestAnExpiredTokenIsRefused(t *testing.T) {
 	f.seedUser(t, "known@user.co")
 	token := f.requestAndCapture(t, "known@user.co")
 
-	// Konfirmasi dijalankan dengan jam yang sudah lewat masa berlakunya.
+	// The confirmation runs with a clock past the expiry.
 	confirm, err := app.NewConfirmPasswordReset(
 		&fakeUnitOfWork{users: f.users, resets: f.resets},
 		fakeHasher{},
@@ -314,8 +315,8 @@ func TestConfirmingRejectsAMismatchedConfirmation(t *testing.T) {
 	}
 }
 
-// Kata sandi yang ditolak DILARANG menghanguskan tokennya: pengguna yang
-// salah ketik masih berhak memakai tautan yang ia terima.
+// A rejected password MUST NOT burn the token: a user who mistyped is still
+// entitled to use the link they received.
 func TestARejectedPasswordLeavesTheTokenUsable(t *testing.T) {
 	f := newResetFixture(t)
 	f.seedUser(t, "known@user.co")
@@ -338,8 +339,8 @@ func TestARejectedPasswordLeavesTheTokenUsable(t *testing.T) {
 	}
 }
 
-// Pengguna yang selama ini hanya memakai Google boleh menetapkan kata sandi
-// lewat jalur ini - alamatnya sudah terbukti miliknya oleh Google.
+// A user who has only ever used Google may set a password through this path
+// - their address has already been proven theirs by Google.
 func TestAGoogleOnlyUserCanSetAPasswordThisWay(t *testing.T) {
 	f := newResetFixture(t)
 

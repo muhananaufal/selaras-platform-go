@@ -11,42 +11,44 @@ import (
 )
 
 var (
-	// ErrUnsupportedProvider menolak penyedia yang belum dipasang.
+	// ErrUnsupportedProvider refuses providers that are not deployed.
 	//
-	// Daftar putih, bukan daftar hitam: penyedia yang tidak dikenal ditolak,
-	// bukan diteruskan. Rute publiknya menerima {provider} sebagai parameter,
-	// jadi tanpa daftar ini nilai apa pun dari luar akan masuk ke pencarian.
+	// A whitelist, not a blacklist: an unknown provider is refused, not passed
+	// through. The public route takes {provider} as a parameter, so without
+	// this list any value from outside would end up in the lookup.
 	ErrUnsupportedProvider = errors.New("unsupported social provider")
 
-	// ErrEmailNotVerifiedByProvider menolak identitas yang alamatnya belum
-	// dibuktikan penyedianya.
+	// ErrEmailNotVerifiedByProvider refuses an identity whose address the
+	// provider has not proven.
 	ErrEmailNotVerifiedByProvider = errors.New("the provider has not verified this email address")
 )
 
-// providerGoogle adalah satu-satunya yang dipasang hari ini.
+// providerGoogle is the only one deployed today.
 const providerGoogle = "google"
 
-// SocialIdentity adalah yang sudah didapat edge dari penyedia.
+// SocialIdentity is what the edge has already obtained from the provider.
 //
-// Use case ini TIDAK berbicara dengan Google. Pertukaran kode OAuth,
-// pemeriksaan parameter state, dan pembacaan id_token adalah urusan adapter
-// di edge; yang sampai ke sini hanyalah hasilnya, sehingga alur akun bisa
-// diuji tanpa jaringan.
+// This use case does NOT talk to Google. Exchanging the OAuth code,
+// checking the state parameter, and reading the id_token are the edge
+// adapter's business; only the result reaches here, so the account flow can
+// be tested without a network.
 type SocialIdentity struct {
 	Provider   string
 	ProviderID string
 	Email      string
 
-	// EmailVerified adalah pernyataan penyedia bahwa alamat itu benar-benar
-	// milik orang yang baru saja masuk.
+	// EmailVerified is the provider's statement that the address really
+	// belongs to the person who just signed in.
 	//
-	// Ia dibawa terpisah dan bukan diandaikan benar. Siapa pun bisa membuat
-	// akun di sebuah penyedia memakai alamat orang lain; yang membedakan
-	// "alamat yang diketik" dari "alamat yang terbukti" hanya klaim ini.
+	// It is carried separately and not assumed true. Anyone can create an
+	// account at a provider using someone else's address; the only thing that
+	// separates "an address that was typed" from "an address that was proven"
+	// is this claim.
 	EmailVerified bool
 }
 
-// ExchangeSocialToken menukar identitas dari penyedia dengan token akses.
+// ExchangeSocialToken exchanges an identity from a provider for an access
+// token.
 type ExchangeSocialToken struct {
 	uow         UnitOfWork
 	tokens      domain.TokenIssuer
@@ -92,14 +94,14 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 		return AuthResult{}, err
 	}
 
-	// Alamat yang belum diverifikasi ditolak SEBELUM apa pun dicari.
+	// An unverified address is refused BEFORE anything is looked up.
 	//
-	// Alur ini memutuskan siapa Anda berdasarkan alamat surel saat sebuah
-	// identitas Google belum pernah terlihat. Kalau penyedianya tidak
-	// menyatakan alamat itu terbukti milik si penandatangan, seseorang bisa
-	// membuat akun Google dengan alamat orang lain lalu masuk sebagai orang
-	// itu. Membuat akun baru pun ditolak: kelak pemilik alamat yang sebenarnya
-	// akan mendaftar dan menemukan akunnya sudah ditempati.
+	// This flow decides who you are based on the email address when a Google
+	// identity has never been seen before. If the provider does not state that
+	// the address is proven to belong to the signer, someone could create a
+	// Google account with someone else's address and sign in as that person.
+	// Creating a new account is refused too: one day the real owner of the
+	// address will register and find their account already taken.
 	if !identity.EmailVerified {
 		return AuthResult{}, fmt.Errorf("%w: %s", ErrEmailNotVerifiedByProvider, email)
 	}
@@ -117,8 +119,8 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 			return err
 		}
 
-		// D1, seperti di login biasa: sistem lama memanggil
-		// tokens()->delete() setiap kali login sosial berhasil.
+		// D1, as in ordinary login: the legacy system called tokens()->delete()
+		// on every successful social login.
 		found.RevokeAllTokens(e.now())
 
 		if created {
@@ -135,9 +137,9 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 		return AuthResult{}, err
 	}
 
-	// Profil hanya diminta untuk akun yang baru dibuat. Menutup B7: sistem
-	// lama tidak pernah membuat profil di jalur ini sama sekali, sehingga dua
-	// cara mendaftar menghasilkan keadaan yang berbeda tanpa alasan.
+	// A profile is only requested for a newly created account. Closes B7: the
+	// legacy system never created a profile on this path at all, so two ways
+	// of registering produced different states for no reason.
 	profileID := ""
 	if isNewly {
 		profileID = createProfileBestEffort(ctx, e.profiles, user.ID())
@@ -163,19 +165,19 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 	}, nil
 }
 
-// findOrCreate menemukan akun yang cocok atau menyiapkan yang baru, dan
-// menyatakan mana dari keduanya lewat nilai balik kedua.
+// findOrCreate finds the matching account or prepares a new one, and says
+// which of the two through its second return value.
 func (e *ExchangeSocialToken) findOrCreate(
 	ctx context.Context,
 	users domain.UserRepository,
 	identity SocialIdentity,
 	email domain.Email,
 ) (*domain.User, bool, error) {
-	// Pencarian dimulai dari id penyedia, bukan dari alamat.
+	// The lookup starts from the provider id, not from the address.
 	//
-	// Sub milik Google tidak pernah berubah; alamat surel bisa. Sistem lama
-	// memakai updateOrCreate berkunci alamat, jadi seseorang yang mengganti
-	// alamat Google-nya akan mendapat akun kedua di sini.
+	// Google's sub never changes; an email address can. The legacy system used
+	// updateOrCreate keyed by address, so someone who changed their Google
+	// address would get a second account here.
 	switch found, err := users.FindByGoogleID(ctx, identity.ProviderID); {
 	case err == nil:
 		return found, false, nil
@@ -183,18 +185,18 @@ func (e *ExchangeSocialToken) findOrCreate(
 		return nil, false, fmt.Errorf("looking up by provider id: %w", err)
 	}
 
-	// Belum pernah terlihat. Alamatnya sudah terbukti di atas, jadi ia boleh
-	// dipakai untuk menemukan akun yang sudah ada.
+	// Never seen before. The address was proven above, so it may be used to
+	// find an existing account.
 	switch found, err := users.FindByEmail(ctx, email); {
 	case err == nil:
-		// S5. LinkGoogle satu-satunya jalan menautkan, dan ia tidak bisa
-		// menyentuh kata sandi. Sistem lama memakai updateOrCreate dengan
-		// password: Hash::make(Str::random(32)) di dalamnya, sehingga setiap
-		// login sosial menghancurkan kredensial yang berfungsi.
+		// S5. LinkGoogle is the only way to link, and it cannot touch the
+		// password. The legacy system used updateOrCreate with password:
+		// Hash::make(Str::random(32)) inside it, so every social login destroyed
+		// a working credential.
 		//
-		// Ia juga menolak menimpa identitas Google lain yang sudah tertaut:
-		// satu identitas menunjuk satu akun, dan menimpanya akan memindahkan
-		// kepemilikan tanpa siapa pun tahu.
+		// It also refuses to overwrite another Google identity already linked:
+		// one identity points at one account, and overwriting it would move
+		// ownership without anyone knowing.
 		if err := found.LinkGoogle(identity.ProviderID, e.now()); err != nil {
 			return nil, false, err
 		}
