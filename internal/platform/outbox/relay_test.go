@@ -176,7 +176,7 @@ func TestAKillMidFlightLosesNothing(t *testing.T) {
 		t.Fatalf("after the crash %d events are unpublished, want all 6", left)
 	}
 
-	// Dinyalakan lagi.
+	// Switched back on.
 	revived := newRecorder()
 	if _, err := newRelay(t, pool, revived, 10).Once(ctx); err != nil {
 		t.Fatalf("the revived relay failed: %v", err)
@@ -203,7 +203,7 @@ func TestAPartialFailureKeepsTheRestPublished(t *testing.T) {
 	seedEvents(t, ctx, pool, 5)
 
 	rec := newRecorder()
-	rec.failFrom = 3 // dua terakhir gagal
+	rec.failFrom = 3 // the last two fail
 
 	moved, err := newRelay(t, pool, rec, 10).Once(ctx)
 	if err != nil {
@@ -302,7 +302,7 @@ func TestNothingIsMarkedSentWhenTheBrokerRefusesEverything(t *testing.T) {
 	seedEvents(t, ctx, pool, 4)
 
 	refusing := newRecorder()
-	refusing.failFrom = 0 // semuanya ditolak
+	refusing.failFrom = 0 // everything is refused
 
 	moved, err := newRelay(t, pool, refusing, 10).Once(ctx)
 	if err != nil {

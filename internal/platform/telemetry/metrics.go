@@ -84,7 +84,7 @@ func New(serviceName string) (*Meters, error) {
 // Meter returns a meter for creating instruments.
 func (m *Meters) Meter() metric.Meter { return m.meter }
 
-// Handler menyajikan metriknya.
+// Handler serves the metrics.
 func (m *Meters) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
 		// An error while collecting metrics is reported as a 500, not hidden

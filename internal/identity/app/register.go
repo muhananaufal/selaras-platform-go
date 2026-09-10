@@ -19,7 +19,7 @@ type RegisterCommand struct {
 	PasswordConfirmation string
 }
 
-// Register mendaftarkan akun berbasis kata sandi.
+// Register registers a password-based account.
 type Register struct {
 	uow      UnitOfWork
 	hasher   domain.PasswordHasher

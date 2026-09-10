@@ -55,7 +55,7 @@ type Report struct {
 	Skipped []string
 }
 
-// Maintainer menjalankan pemeliharaan atas daftar tabel.
+// Maintainer runs maintenance over a list of tables.
 type Maintainer struct {
 	db  pg.Querier
 	log *slog.Logger
@@ -105,7 +105,7 @@ func (t Table) validate() error {
 	return nil
 }
 
-// PartitionName menamai partisi satu bulan: <tabel>_y2026m09.
+// PartitionName names a one-month partition: <table>_y2026m09.
 func PartitionName(table string, month time.Time) string {
 	return fmt.Sprintf("%s_y%04dm%02d", table, month.Year(), int(month.Month()))
 }
@@ -263,8 +263,8 @@ func (m *Maintainer) retire(ctx context.Context, t Table, now time.Time, report 
 	return nil
 }
 
-// ownerOf membaca pemilik tabel induk; namanya dipakai dalam DDL, jadi
-// bentuknya dibatasi seketat nama tabel.
+// ownerOf reads the owner of the parent table; the name is used in DDL, so
+// its shape is restricted as tightly as a table name.
 func (m *Maintainer) ownerOf(ctx context.Context, schema, name string) (string, error) {
 	var owner string
 	err := m.db.QueryRow(ctx, `

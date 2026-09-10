@@ -141,7 +141,7 @@ func TestAFailedJobCanBeRetried(t *testing.T) {
 	}
 }
 
-// TestTwoConsumersDoNotSilenceEachOther menjaga ruang lingkup.
+// TestTwoConsumersDoNotSilenceEachOther guards the scope.
 func TestTwoConsumersDoNotSilenceEachOther(t *testing.T) {
 	pool, ctx := setup(t)
 	key := uuid.NewString()
@@ -271,7 +271,7 @@ func TestSweepKeepsRecentClaims(t *testing.T) {
 	}
 }
 
-// TestSweepRefusesToEraseEverything menjaga kekeliruan pemanggil.
+// TestSweepRefusesToEraseEverything guards against a caller's mistake.
 func TestSweepRefusesToEraseEverything(t *testing.T) {
 	pool, ctx := setup(t)
 	if _, err := idempotency.Sweep(ctx, pool, 0); err == nil {
@@ -306,7 +306,7 @@ func TestAnEmptyKeyIsRefused(t *testing.T) {
 	}
 }
 
-// TestAGuardWithoutAScopeIsRefused menjaga pemisahan konsumen.
+// TestAGuardWithoutAScopeIsRefused guards the separation between consumers.
 func TestAGuardWithoutAScopeIsRefused(t *testing.T) {
 	pool, _ := setup(t)
 	if _, err := idempotency.NewGuard(pool, ""); err == nil {

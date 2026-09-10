@@ -1,4 +1,4 @@
-// Package mail mengirim surel keluar.
+// Package mail sends outgoing email.
 package mail
 
 import (
@@ -22,7 +22,7 @@ type Message struct {
 	Body    string
 }
 
-// Sender mengirim satu pesan.
+// Sender sends one message.
 type Sender interface {
 	Send(ctx context.Context, msg Message) error
 }

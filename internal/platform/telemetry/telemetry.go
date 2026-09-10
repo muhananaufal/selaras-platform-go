@@ -101,7 +101,7 @@ func Start(ctx context.Context, serviceName string, log *slog.Logger) (*Telemetr
 // Meter returns a meter for creating instruments.
 func (t *Telemetry) Meter() metric.Meter { return t.meters.Meter() }
 
-// Handler menyajikan metriknya dalam format Prometheus.
+// Handler serves the metrics in Prometheus format.
 func (t *Telemetry) Handler() http.Handler { return t.meters.Handler() }
 
 // Shutdown drains the span queue and then closes both providers.

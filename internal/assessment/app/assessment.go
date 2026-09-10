@@ -1,4 +1,4 @@
-// Package app memuat use case assessment.
+// Package app holds the assessment use cases.
 package app
 
 import (
@@ -57,7 +57,7 @@ var (
 	ErrNotYours = errors.New("this assessment belongs to someone else")
 )
 
-// Service melayani alur penilaian.
+// Service serves the assessment flow.
 type Service struct {
 	assessments domain.Repository
 	profiles    ProfileSource
@@ -265,7 +265,7 @@ func (s *Service) Get(ctx context.Context, slug, userID string) (*domain.Assessm
 	return assessment, nil
 }
 
-// History mengembalikan penilaian terbaru milik satu profil.
+// History returns the most recent assessments of one profile.
 func (s *Service) History(ctx context.Context, userID string, limit int) ([]*domain.Assessment, error) {
 	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
@@ -314,7 +314,7 @@ func (s *Service) WithStatusWriter(w StatusWriterFor) *Service {
 	return s
 }
 
-// WithRepositoryFor memasang pabrik repository transaksional.
+// WithRepositoryFor installs the transactional repository factory.
 func (s *Service) WithRepositoryFor(f RepositoryFor) *Service {
 	s.repoFor = f
 	return s

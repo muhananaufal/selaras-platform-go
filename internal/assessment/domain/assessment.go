@@ -1,4 +1,4 @@
-// Package domain memuat agregat penilaian risiko.
+// Package domain holds the risk assessment aggregate.
 package domain
 
 import (
@@ -70,7 +70,7 @@ const slugBytes = 10
 // character pairs that are easily confused when read aloud.
 var slugEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
-// NewSlug menghasilkan id publik baru.
+// NewSlug generates a new public id.
 func NewSlug() (string, error) {
 	raw := make([]byte, slugBytes)
 	if _, err := rand.Read(raw); err != nil {
@@ -209,7 +209,7 @@ type Repository interface {
 	// concurrent requests could slip past.
 	Create(ctx context.Context, a *Assessment) error
 
-	// FindBySlug mencari lewat id publiknya.
+	// FindBySlug looks an assessment up by its public slug.
 	FindBySlug(ctx context.Context, slug string) (*Assessment, error)
 
 	// ListForProfile returns one profile's history, newest first.

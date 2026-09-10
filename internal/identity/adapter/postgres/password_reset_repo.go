@@ -14,7 +14,7 @@ import (
 
 const resetColumns = `token_hash, user_id, expires_at, used_at, created_at`
 
-// PasswordResetRepository menyimpan permintaan reset kata sandi.
+// PasswordResetRepository stores password reset requests.
 type PasswordResetRepository struct {
 	db pg.Querier
 }

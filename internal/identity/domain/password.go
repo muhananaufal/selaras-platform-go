@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	// ErrPasswordTooShort mempertahankan batas minimum sistem lama.
+	// ErrPasswordTooShort keeps the legacy system's minimum length.
 	ErrPasswordTooShort = errors.New("password must be at least 8 characters")
 
 	// ErrPasswordTooLong keeps the hashing cost bounded.
@@ -47,7 +47,7 @@ func NewPassword(raw string) (Password, error) {
 	return Password{value: raw}, nil
 }
 
-// String memenuhi fmt.Stringer tanpa membocorkan isinya.
+// String implements fmt.Stringer without leaking the content.
 func (Password) String() string { return "[REDACTED]" }
 
 // GoString satisfies fmt.GoStringer, which the %#v verb uses.

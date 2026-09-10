@@ -59,7 +59,7 @@ type UseCases struct {
 	AccessTokenTTLSeconds int64
 }
 
-// Server melayani identity.v1.
+// Server serves identity.v1.
 type Server struct {
 	identityv1.UnimplementedIdentityServer
 	uc UseCases

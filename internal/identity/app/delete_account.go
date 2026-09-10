@@ -22,10 +22,10 @@ import (
 // only makes people think the app is broken when they mistyped.
 var ErrWrongPassword = errors.New("the password does not match")
 
-// ErrDeletionInProgress menolak permintaan kedua.
+// ErrDeletionInProgress refuses a second request.
 var ErrDeletionInProgress = errors.New("a deletion is already running for this account")
 
-// SagaRepository menyimpan saga penghapusan.
+// SagaRepository stores deletion sagas.
 type SagaRepository interface {
 	Create(ctx context.Context, s *domain.DeletionSaga) error
 	Find(ctx context.Context, id domain.SagaID) (*domain.DeletionSaga, error)

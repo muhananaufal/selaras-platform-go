@@ -23,7 +23,7 @@ func TestTheRiskCategoryFollowsTheTable(t *testing.T) {
 		percent float64
 		want    score.Category
 	}{
-		// Usia < 50: < 2.5 rendah-sedang; 2.5-7.49 tinggi; >= 7.5 sangat tinggi.
+		// Age < 50: < 2.5 low-moderate; 2.5-7.49 high; >= 7.5 very high.
 		{"under 50, well below", 30, 0.4, score.CategoryLowModerate},
 		{"under 50, just below the first threshold", 49, 2.49, score.CategoryLowModerate},
 		{"under 50, exactly on the first threshold", 49, 2.5, score.CategoryHigh},

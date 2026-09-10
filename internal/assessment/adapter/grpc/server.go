@@ -17,7 +17,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
 )
 
-// Server melayani assessment.v1.
+// Server serves assessment.v1.
 type Server struct {
 	assessmentv1.UnimplementedAssessmentServer
 	svc       *app.Service

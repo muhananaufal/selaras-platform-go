@@ -40,7 +40,7 @@ type ResetToken struct {
 	value string
 }
 
-// NewResetToken menghasilkan token acak baru.
+// NewResetToken generates a new random token.
 func NewResetToken() (ResetToken, error) {
 	raw := make([]byte, resetTokenBytes)
 	if _, err := rand.Read(raw); err != nil {
@@ -144,7 +144,7 @@ type PasswordResetRepository interface {
 	// let anyone's token be paired with anyone's address.
 	FindByTokenHash(ctx context.Context, hash ResetTokenHash) (PasswordReset, error)
 
-	// MarkUsed menyimpan penandaan terpakai.
+	// MarkUsed stores the used mark.
 	MarkUsed(ctx context.Context, hash ResetTokenHash, usedAt time.Time) error
 
 	// InvalidateAllFor cancels every outstanding request belonging to a user.

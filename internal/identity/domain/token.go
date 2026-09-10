@@ -76,8 +76,8 @@ type RevocationChecker interface {
 	IsCurrent(ctx context.Context, userID UserID, generation int64) (bool, error)
 }
 
-// RevocationPublisher mengumumkan generasi baru seorang pengguna setelah
-// perubahannya tersimpan.
+// RevocationPublisher announces a user's new generation after the change
+// has been stored.
 type RevocationPublisher interface {
 	PublishGeneration(ctx context.Context, userID UserID, generation int64) error
 }

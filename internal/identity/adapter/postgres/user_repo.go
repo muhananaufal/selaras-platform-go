@@ -27,7 +27,7 @@ const (
 const userColumns = `id, email, role, password_hash, google_id,
 	email_verified_at, token_generation, created_at, updated_at, deleted_at`
 
-// UserRepository memenuhi domain.UserRepository.
+// UserRepository implements domain.UserRepository.
 type UserRepository struct {
 	db pg.Querier
 }

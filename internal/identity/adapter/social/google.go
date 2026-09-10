@@ -32,7 +32,7 @@ var googleIssuers = []string{"https://accounts.google.com", "accounts.google.com
 const providerGoogle = "google"
 
 var (
-	// ErrUnsupportedProvider ditolak sebelum jaringan disentuh.
+	// ErrUnsupportedProvider is refused before the network is touched.
 	ErrUnsupportedProvider = errors.New("unsupported social provider")
 
 	// ErrInvalidIDToken covers every reason an ID token is refused. Callers

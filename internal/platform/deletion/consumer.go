@@ -78,7 +78,7 @@ func NewConsumer(
 	return &Consumer{client: client, pool: pool, service: service, erase: erase, log: log}, nil
 }
 
-// Run membaca sampai ctx selesai.
+// Run reads until ctx is done.
 func (c *Consumer) Run(ctx context.Context) error {
 	c.log.InfoContext(ctx, "deletion consumer started", "service", c.service)
 
@@ -162,7 +162,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 	}
 }
 
-// handle memproses satu permintaan penghapusan.
+// handle processes one deletion request.
 func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	var env eventsv1.Envelope
 	if err := proto.Unmarshal(rec.Value, &env); err != nil {
@@ -231,7 +231,7 @@ func (c *Consumer) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	return nil
 }
 
-// confirmed menyusun konfirmasi, berhasil maupun gagal.
+// confirmed composes the confirmation, for success and failure alike.
 func confirmed(sagaID, service string, cause error) *eventsv1.Envelope {
 	payload := &eventsv1.UserDeletionConfirmed{
 		SagaId:    sagaID,

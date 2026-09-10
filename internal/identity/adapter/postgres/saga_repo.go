@@ -13,7 +13,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// SagaRepository menyimpan saga penghapusan akun.
+// SagaRepository stores account deletion sagas.
 type SagaRepository struct {
 	db pg.Querier
 }

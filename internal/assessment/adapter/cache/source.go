@@ -39,7 +39,7 @@ func NewSource(pool *pgxpool.Pool, fallback app.ProfileSource, log *slog.Logger)
 
 var _ app.ProfileSource = (*Source)(nil)
 
-// Snapshot mengambil cuplikan profil.
+// Snapshot fetches a profile snapshot.
 func (s *Source) Snapshot(ctx context.Context, userID string) (app.ProfileSnapshot, error) {
 	snapshot, err := s.cache.Snapshot(ctx, userID)
 	switch {

@@ -166,7 +166,7 @@ func TestAnEnvelopeWithNoEventIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnEventWithoutAnAggregateIsRefused menjaga kunci partisi Kafka.
+// TestAnEventWithoutAnAggregateIsRefused guards the Kafka partition key.
 func TestAnEventWithoutAnAggregateIsRefused(t *testing.T) {
 	pool, ctx := setup(t)
 

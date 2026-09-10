@@ -26,7 +26,7 @@ const assessmentColumns = `id, user_profile_id, slug, model_used, final_risk_per
 // matching - a mistake only visible at runtime.
 const readColumns = assessmentColumns + `, personalization_status, coalesce(personalization_error, '')`
 
-// Repository memenuhi domain.Repository.
+// Repository implements domain.Repository.
 type Repository struct {
 	db pg.Querier
 }

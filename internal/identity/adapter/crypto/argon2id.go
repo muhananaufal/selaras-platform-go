@@ -1,4 +1,4 @@
-// Package crypto memasang port PasswordHasher milik domain.
+// Package crypto implements the domain's PasswordHasher port.
 package crypto
 
 import (
@@ -71,7 +71,7 @@ const DefaultMaxConcurrent = 2
 // deriveFunc is the shape of argon2.IDKey; swapped only by tests.
 type deriveFunc func(password, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte
 
-// Argon2idHasher memasang domain.PasswordHasher.
+// Argon2idHasher implements domain.PasswordHasher.
 type Argon2idHasher struct {
 	params Params
 	slots  chan struct{}

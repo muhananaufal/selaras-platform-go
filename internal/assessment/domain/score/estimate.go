@@ -47,7 +47,7 @@ func (a answers) boolean(key string) bool {
 	return false
 }
 
-// sub mengambil sub-map jawaban proksi.
+// sub fetches a sub-map of proxy answers.
 func (a answers) sub(key string) answers {
 	if v, ok := a[key].(map[string]any); ok {
 		return answers(v)
@@ -55,7 +55,7 @@ func (a answers) sub(key string) answers {
 	return answers{}
 }
 
-// list menghitung panjang jawaban pilihan-ganda.
+// list counts the length of a multiple-choice answer.
 func (a answers) list(key string) int {
 	if v, ok := a[key].([]any); ok {
 		return len(v)
@@ -105,7 +105,7 @@ func EstimateSBP(all answers, age int, sex string) float64 {
 	return math.Round(sbp)
 }
 
-// EstimateTotalChol menebak kolesterol total dalam mmol/L.
+// EstimateTotalChol estimates total cholesterol in mmol/L.
 func EstimateTotalChol(all answers) float64 {
 	proxy := all.sub("tchol_proxy_answers")
 	chol := 4.0
@@ -132,7 +132,7 @@ func EstimateTotalChol(all answers) float64 {
 	return round2(chol)
 }
 
-// EstimateHDL menebak kolesterol HDL dalam mmol/L.
+// EstimateHDL estimates HDL cholesterol in mmol/L.
 func EstimateHDL(all answers, sex string) float64 {
 	proxy := all.sub("hdl_proxy_answers")
 
@@ -160,7 +160,7 @@ func EstimateHDL(all answers, sex string) float64 {
 	return round2(hdl)
 }
 
-// EstimateSCr menebak kreatinin serum dalam mg/dL.
+// EstimateSCr estimates serum creatinine in mg/dL.
 func EstimateSCr(all answers, sex string) float64 {
 	proxy := all.sub("scr_proxy_answers")
 

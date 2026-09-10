@@ -161,8 +161,7 @@ func TestACallerSuppliedKeyWins(t *testing.T) {
 	}
 }
 
-// TestAnAssessmentThatAlreadyHasAReportIsNotQueuedAgain menghemat pekerjaan
-// berbayar.
+// TestAnAssessmentThatAlreadyHasAReportIsNotQueuedAgain saves paid work.
 func TestAnAssessmentThatAlreadyHasAReportIsNotQueuedAgain(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)
@@ -187,7 +186,7 @@ func TestAnAssessmentThatAlreadyHasAReportIsNotQueuedAgain(t *testing.T) {
 	}
 }
 
-// TestSomeoneElsesAssessmentIsNotFound menjaga ADR-023.
+// TestSomeoneElsesAssessmentIsNotFound guards ADR-023.
 func TestSomeoneElsesAssessmentIsNotFound(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)

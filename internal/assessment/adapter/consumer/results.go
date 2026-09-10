@@ -64,7 +64,7 @@ func NewResults(
 	return &Results{client: client, pool: pool, svc: svc, statuses: statuses, log: log}, nil
 }
 
-// Run membaca sampai ctx selesai.
+// Run reads until ctx is done.
 func (r *Results) Run(ctx context.Context) error {
 	r.log.InfoContext(ctx, "assessment result consumer started", "scope", Scope)
 
@@ -156,7 +156,7 @@ func isMine(rec *kgo.Record) bool {
 	return false
 }
 
-// handle memproses satu hasil.
+// handle processes one result.
 func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	// Filtered first, before anything is unpacked.
 	if !isMine(rec) {
@@ -191,7 +191,7 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	}
 }
 
-// complete menyimpan laporannya.
+// complete stores the report.
 func (r *Results) complete(
 	ctx context.Context, env *eventsv1.Envelope, done *eventsv1.PersonalizationCompleted,
 ) error {

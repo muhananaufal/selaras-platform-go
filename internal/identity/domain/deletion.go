@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Galat saga penghapusan.
+// Deletion saga errors.
 var (
 	ErrSagaNotFound      = errors.New("no such deletion saga")
 	ErrSagaAlreadyClosed = errors.New("this deletion saga has already finished")
@@ -96,7 +96,7 @@ type DeletionSaga struct {
 	Confirmations []Confirmation
 }
 
-// NewDeletionSaga memulai saga baru.
+// NewDeletionSaga starts a new saga.
 func NewDeletionSaga(userID UserID, userProfileID string, now time.Time) (*DeletionSaga, error) {
 	if userID.IsZero() {
 		return nil, fmt.Errorf("%w: a deletion saga needs a user", ErrInvalidUserID)

@@ -77,7 +77,7 @@ func TestASagaIsOnlyCompleteWhenEveryUnitHasAnswered(t *testing.T) {
 	}
 }
 
-// TestOneFailureBeatsFiveSuccesses menjaga urutan penyimpulannya.
+// TestOneFailureBeatsFiveSuccesses guards the order of its conclusion.
 func TestOneFailureBeatsFiveSuccesses(t *testing.T) {
 	s := newSaga(t)
 
@@ -161,7 +161,7 @@ func TestAFailureMustSayWhy(t *testing.T) {
 	}
 }
 
-// TestAClosedSagaRefusesLateAnswers menjaga keadaan akhirnya.
+// TestAClosedSagaRefusesLateAnswers guards its final state.
 func TestAClosedSagaRefusesLateAnswers(t *testing.T) {
 	s := newSaga(t)
 	s.Status = domain.SagaCompleted

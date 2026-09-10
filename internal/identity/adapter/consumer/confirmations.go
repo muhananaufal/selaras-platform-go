@@ -38,7 +38,7 @@ func NewConfirmations(
 	return &Confirmations{client: client, uc: uc, log: log}, nil
 }
 
-// Run membaca sampai ctx selesai.
+// Run reads until ctx is done.
 func (c *Confirmations) Run(ctx context.Context) error {
 	c.log.InfoContext(ctx, "deletion confirmation consumer started")
 

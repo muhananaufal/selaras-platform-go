@@ -234,7 +234,7 @@ func TestTheRightPasswordStartsTheSagaButDeletesNothingYet(t *testing.T) {
 	}
 }
 
-// TestASecondRequestIsRefusedWhileTheFirstRuns menjaga satu saga per akun.
+// TestASecondRequestIsRefusedWhileTheFirstRuns keeps one saga per account.
 func TestASecondRequestIsRefusedWhileTheFirstRuns(t *testing.T) {
 	h := newDeletionHarness(t)
 

@@ -64,7 +64,7 @@ type Result struct {
 	Category Category
 }
 
-// Engine menjalankan mesin risiko.
+// Engine runs the risk engine.
 type Engine struct {
 	constants Constants
 }
