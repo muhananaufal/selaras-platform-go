@@ -12,10 +12,11 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 )
 
-// brokers membaca alamat broker, atau melewati test-nya di mesin pengembang.
+// brokers reads the broker address, or skips the test on a developer
+// machine.
 //
-// Di CI ia GAGAL alih-alih dilewati: test integrasi yang diam-diam melewati
-// dirinya sendiri di CI lebih buruk daripada tidak ada test sama sekali.
+// In CI it FAILS instead of skipping: an integration test that quietly skips
+// itself in CI is worse than no test at all.
 func brokers(t *testing.T) string {
 	t.Helper()
 
@@ -29,11 +30,11 @@ func brokers(t *testing.T) string {
 	return addr
 }
 
-// TestAPublishedMessageComesBack adalah bukti ujung ke ujung yang sebenarnya.
+// TestAPublishedMessageComesBack is the real end-to-end proof.
 //
-// Publisher palsu membuktikan relay memperlakukan hasil dengan benar; ia tidak
-// membuktikan pesannya pernah sampai. Ini yang membuktikannya - dengan broker,
-// jaringan, dan penyandiannya yang sungguhan.
+// A fake publisher proves the relay handles results correctly; it does not
+// prove the message ever arrived. This is what proves it - with a real broker,
+// real network, and real encoding.
 func TestAPublishedMessageComesBack(t *testing.T) {
 	addr := brokers(t)
 
@@ -50,8 +51,8 @@ func TestAPublishedMessageComesBack(t *testing.T) {
 		t.Fatalf("Ping: %v", err)
 	}
 
-	// Group yang unik per jalankan: group yang dipakai bersama akan mewarisi
-	// offset jalankan sebelumnya dan melewatkan pesan yang baru dikirim.
+	// A group unique per run: a shared group would inherit the previous run's
+	// offsets and skip the message that was just sent.
 	group := "test-" + uuid.NewString()
 	consumer, err := kafka.NewConsumer(
 		kafka.Config{Brokers: addr, ClientID: "test-consumer"},
@@ -77,8 +78,8 @@ func TestAPublishedMessageComesBack(t *testing.T) {
 		t.Fatalf("the broker accepted %d of 1 messages", len(sent))
 	}
 
-	// Dibaca sampai pesannya ketemu atau waktunya habis. Topic ini dipakai
-	// bersama test lain, jadi yang dicari adalah penanda milik test ini.
+	// Read until the message turns up or time runs out. This topic is shared
+	// with other tests, so what is searched for is this test's own marker.
 	deadline, stop := context.WithTimeout(ctx, 30*time.Second)
 	defer stop()
 
@@ -117,8 +118,8 @@ func TestAPublishedMessageComesBack(t *testing.T) {
 	}
 }
 
-// TestAMessageWithoutAKeyIsRefused menjaga urutan per agregat di sisi klien,
-// sebelum broker pernah melihatnya.
+// TestAMessageWithoutAKeyIsRefused guards per-aggregate ordering on the
+// client side, before the broker ever sees the message.
 func TestAMessageWithoutAKeyIsRefused(t *testing.T) {
 	addr := brokers(t)
 

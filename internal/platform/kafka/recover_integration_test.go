@@ -11,13 +11,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 )
 
-// TestAConsumerSurvivesATopicBeingRecreated adalah B26.
+// TestAConsumerSurvivesATopicBeingRecreated is B26.
 //
-// Alurnya persis kejadian nyatanya: konsumen sedang membaca sebuah topic,
-// topic itu dihapus dan dibuat lagi dengan nama yang sama (id baru), lalu
-// produser menulis ke topic yang baru. franz-go menyerah dengan
-// UNKNOWN_TOPIC_ID selamanya; RecoverRecreatedTopics harus membuat konsumen
-// membaca record baru itu tanpa restart.
+// The flow is exactly the real incident: a consumer is reading a topic,
+// that topic is deleted and created again under the same name (new id), and
+// then a producer writes to the new topic. franz-go gives up with
+// UNKNOWN_TOPIC_ID forever; RecoverRecreatedTopics has to make the consumer
+// read that new record without a restart.
 func TestAConsumerSurvivesATopicBeingRecreated(t *testing.T) {
 	addr := brokers(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -45,9 +45,9 @@ func TestAConsumerSurvivesATopicBeingRecreated(t *testing.T) {
 	}
 	defer consumer.Close()
 
-	// produce menulis satu record; produser yang masih memegang id topic lama
-	// gagal UNKNOWN_TOPIC_ID sekali, melupakan topic itu, lalu berhasil -
-	// persis jalur yang dilalui relay outbox.
+	// produce writes one record; a producer still holding the old topic id
+	// fails once with UNKNOWN_TOPIC_ID, forgets the topic, and then succeeds -
+	// exactly the path the outbox relay takes.
 	produce := func(value string) (forgot bool) {
 		t.Helper()
 		for attempt := 0; attempt < 2; attempt++ {
@@ -66,9 +66,9 @@ func TestAConsumerSurvivesATopicBeingRecreated(t *testing.T) {
 		return forgot
 	}
 
-	// poll membaca sampai record dengan nilai yang diminta datang, memanggil
-	// pemulihan pada setiap galat fetch. Ia mengembalikan berapa kali topic
-	// dilanggani ulang.
+	// poll reads until a record with the requested value arrives, invoking the
+	// recovery on every fetch error. It returns how many times the topic was
+	// resubscribed.
 	poll := func(want string, timeout time.Duration) (recoveries int) {
 		t.Helper()
 		deadline := time.Now().Add(timeout)
@@ -95,14 +95,14 @@ func TestAConsumerSurvivesATopicBeingRecreated(t *testing.T) {
 		return recoveries
 	}
 
-	// 1. Keadaan normal: satu record dibaca dan offsetnya dikomit.
+	// 1. The normal state: one record read and its offset committed.
 	produce("before")
 	poll("before", 30*time.Second)
 	if err := consumer.CommitUncommittedOffsets(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	// 2. Topic dibuat ulang di bawah kaki konsumen.
+	// 2. The topic is recreated under the consumer's feet.
 	if err := kafka.DeleteTopics(ctx, admin, topic.Name); err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +110,9 @@ func TestAConsumerSurvivesATopicBeingRecreated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. Record baru di topic baru. Offset lama (1) mungkin melewati record
-	// pertama topic baru; yang dituntut adalah record SETELAH pemulihan.
+	// 3. A new record on the new topic. The old offset (1) may skip the new
+	//    topic's first record; what is demanded is the record written AFTER
+	//    the recovery.
 	produce("after-recreate-0")
 	produce("after-recreate-1")
 	recoveries := poll("after-recreate-1", 60*time.Second)

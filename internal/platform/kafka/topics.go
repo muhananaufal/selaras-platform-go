@@ -11,22 +11,23 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Topic adalah satu topic beserta alasan jumlah partisinya.
+// Topic is one topic together with the reasoning for its partition count.
 //
-// Alasannya ikut di sini, bukan hanya di dokumen, karena jumlah partisi adalah
-// batas atas paralelisme konsumen (ADR-014 aturan 1) dan menaikkannya kemudian
-// akan mengubah pemetaan kunci ke partisi - artinya urutan per kunci yang sudah
-// berjalan patah di titik perubahan.
+// The reasoning lives here, not only in the documents, because the partition
+// count is the upper bound on consumer parallelism (ADR-014 rule 1) and raising
+// it later changes the key-to-partition mapping - meaning per-key ordering
+// already in flight breaks at the point of change.
 type Topic struct {
 	Name       string
 	Partitions int32
 	Why        string
 }
 
-// Topics adalah seluruh topic platform.
+// Topics is every platform topic.
 //
-// Ia daftar tunggal: alat pembuat topic dan dokumennya membaca yang sama,
-// sehingga dokumen tidak bisa menyimpang dari yang benar-benar dibuat.
+// It is the single list: the topic-creation tool and the documentation read
+// the same one, so the documentation cannot drift from what was actually
+// created.
 func Topics() []Topic {
 	return []Topic{
 		{
@@ -80,12 +81,12 @@ func Topics() []Topic {
 	}
 }
 
-// EnsureTopics membuat topic yang belum ada.
+// EnsureTopics creates the topics that do not exist yet.
 //
-// Topic yang sudah ada DIBIARKAN, tidak diubah dan tidak dihapus. Menaikkan
-// jumlah partisi sebuah topic yang berisi akan mengubah pemetaan kunci ke
-// partisi: pesan untuk kunci yang sama tiba-tiba mendarat di tempat lain, dan
-// urutan yang selama ini terjaga patah tanpa satu pun galat.
+// Topics that already exist are LEFT ALONE, neither altered nor deleted.
+// Raising the partition count of a topic that holds data changes the
+// key-to-partition mapping: messages for the same key suddenly land somewhere
+// else, and ordering that has held so far breaks without a single error.
 func EnsureTopics(ctx context.Context, client *kgo.Client, topics []Topic, replicas int16) ([]string, error) {
 	if len(topics) == 0 {
 		return nil, errors.New("no topics were given")
@@ -98,17 +99,17 @@ func EnsureTopics(ctx context.Context, client *kgo.Client, topics []Topic, repli
 
 	var created []string
 	for _, t := range topics {
-		// kadm.CreateTopic mengembalikan penolakan broker lewat err, bukan hanya
-		// lewat resp.Err [kadm@v1.18.0/topics.go:139]. Memeriksa resp.Err saja
-		// membuat cabang "sudah ada" tidak pernah tercapai, dan alat ini gagal
-		// pada jalankan kedua - persis yang terjadi sebelum baris ini ditulis.
+		// kadm.CreateTopic returns the broker's refusal through err, not only
+		// through resp.Err [kadm@v1.18.0/topics.go:139]. Checking resp.Err alone
+		// makes the "already exists" branch unreachable, and this tool fails on
+		// its second run - exactly what happened before this line was written.
 		_, err := admin.CreateTopic(ctx, t.Partitions, replicas, nil, t.Name)
 		switch {
 		case err == nil:
 			created = append(created, t.Name)
 		case errors.Is(err, kerr.TopicAlreadyExists):
-			// Keadaan yang benar, bukan kegagalan: alat ini harus bisa
-			// dijalankan berkali-kali.
+			// The correct state, not a failure: this tool must be runnable
+			// repeatedly.
 		default:
 			return created, fmt.Errorf("creating %q: %w", t.Name, err)
 		}
@@ -116,11 +117,11 @@ func EnsureTopics(ctx context.Context, client *kgo.Client, topics []Topic, repli
 	return created, nil
 }
 
-// DescribeTopics membaca kembali apa yang benar-benar ada di broker.
+// DescribeTopics reads back what actually exists on the broker.
 //
-// Ia dipakai untuk membuktikan, bukan untuk mengasumsikan: membuat topic lalu
-// melapor sukses tanpa membacanya kembali akan menyembunyikan broker yang
-// menerima permintaannya lalu diam-diam membuat sesuatu yang lain.
+// It is used to prove, not to assume: creating topics and reporting success
+// without reading them back would hide a broker that accepted the request and
+// then quietly created something else.
 func DescribeTopics(ctx context.Context, client *kgo.Client) (map[string]int, error) {
 	admin := kadm.NewClient(client)
 
@@ -139,17 +140,17 @@ func DescribeTopics(ctx context.Context, client *kgo.Client) (map[string]int, er
 	return out, nil
 }
 
-// WaitForTopics menunggu sampai broker benar-benar mengumumkan topic-nya.
+// WaitForTopics waits until the broker actually announces the topics.
 //
-// CreateTopic yang berhasil TIDAK berarti topic itu langsung muncul di
-// metadata: broker menyebarkannya secara asinkron, dan pembacaan yang
-// dilakukan seketika setelahnya akan melaporkan topic yang baru saja berhasil
-// dibuat sebagai tidak ada. Sekali ini benar-benar terjadi di sini - empat dari
-// enam topic "hilang" pada pembacaan pertama.
+// A successful CreateTopic does NOT mean the topic shows up in metadata right
+// away: the broker propagates it asynchronously, and a read made immediately
+// afterwards reports a topic that was just created successfully as missing.
+// This really happened here once - four of six topics were "missing" on the
+// first read.
 //
-// Menunggu di sini lebih jujur daripada memperlonggar pemeriksaannya, karena
-// yang ingin dibuktikan tetap sama: topic itu ada, dengan jumlah partisi yang
-// diminta.
+// Waiting here is more honest than loosening the check, because what is being
+// proven stays the same: the topic exists, with the requested number of
+// partitions.
 func WaitForTopics(ctx context.Context, client *kgo.Client, topics []Topic) (map[string]int, error) {
 	const interval = 250 * time.Millisecond
 
@@ -174,24 +175,25 @@ func WaitForTopics(ctx context.Context, client *kgo.Client, topics []Topic) (map
 
 		select {
 		case <-ctx.Done():
-			// Deadline habis. Yang terakhir terbaca tetap dikembalikan supaya
-			// pemanggil bisa menyebutkan topic mana yang tidak pernah muncul.
+			// Deadline exhausted. The last thing read is still returned so the
+			// caller can name which topics never appeared.
 			return last, fmt.Errorf("the broker never announced every topic: %w", ctx.Err())
 		case <-time.After(interval):
 		}
 	}
 }
 
-// DeleteTopics menghapus topic. Dipakai TEST untuk membersihkan miliknya.
+// DeleteTopics deletes topics. Used by TESTS to clean up their own.
 //
-// Ia ada karena harness test membuat satu topic per test - itu benar, sebab
-// topic bersama membuat test saling mewarisi pesan - tetapi tanpa penghapusan,
-// setiap jalankan meninggalkan sisanya di broker. Dua ratus lima puluh topic
-// yatim sempat menumpuk di lingkungan pengembangan sesi ini sebelum ada yang
-// menyadarinya, dan metadata broker menanggung seluruhnya.
+// It exists because the test harness creates one topic per test - which is
+// right, since a shared topic makes tests inherit each other's messages - but
+// without deletion every run leaves its leftovers on the broker. Two hundred
+// and fifty orphan topics piled up in the development environment during this
+// session before anyone noticed, and the broker's metadata carried all of
+// them.
 //
-// Kegagalan menghapus TIDAK menggagalkan test: pembersihan yang menjatuhkan
-// test hijau membuat orang mematikan pembersihannya.
+// A failure to delete does NOT fail the test: cleanup that fails green tests
+// makes people switch the cleanup off.
 func DeleteTopics(ctx context.Context, client *kgo.Client, names ...string) error {
 	if len(names) == 0 {
 		return nil
@@ -202,8 +204,8 @@ func DeleteTopics(ctx context.Context, client *kgo.Client, names ...string) erro
 		return fmt.Errorf("deleting topics: %w", err)
 	}
 
-	// Sama seperti CreateTopic, penolakan per topic ada di dalam responsnya,
-	// bukan hanya di err.
+	// Just like CreateTopic, per-topic refusals are inside the response, not
+	// only in err.
 	for _, r := range responses {
 		if r.Err != nil && !errors.Is(r.Err, kerr.UnknownTopicOrPartition) {
 			return fmt.Errorf("deleting topic %s: %w", r.Topic, r.Err)

@@ -1,9 +1,9 @@
-// Package kafka membungkus franz-go menjadi satu cara menyambung ke broker.
+// Package kafka wraps franz-go into one way of connecting to the broker.
 //
-// Alasannya bukan kerapian. Setiap service yang menyusun kliennya sendiri akan
-// menyusunnya sedikit berbeda, dan perbedaan yang paling mahal - acks, idempoten,
-// ukuran batch - adalah perbedaan yang tidak terlihat sampai ada pesan yang
-// hilang di produksi.
+// The reason is not tidiness. Every service that assembles its own client
+// assembles it slightly differently, and the most expensive differences - acks,
+// idempotence, batch size - are the ones that stay invisible until a message goes
+// missing in production.
 package kafka
 
 import (
@@ -16,27 +16,29 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Config adalah yang dibutuhkan untuk menyambung.
+// Config is what is needed to connect.
 type Config struct {
-	// Brokers dipisah koma, mengikuti bentuk yang lazim di variabel lingkungan.
+	// Brokers is comma-separated, following the usual shape of environment
+	// variables.
 	Brokers string
 
-	// ClientID muncul di log broker. Ia dipakai untuk mengetahui service mana
-	// yang menghasilkan beban - tanpa itu, semua klien terlihat sama.
+	// ClientID shows up in the broker's logs. It is used to tell which service
+	// is producing load - without it, every client looks the same.
 	ClientID string
 }
 
-// NewProducer membuka klien yang hanya menerbitkan.
+// NewProducer opens a client that only publishes.
 //
-// Tiga pilihannya disengaja dan tidak boleh dilonggarkan tanpa alasan:
+// Its three choices are deliberate and must not be loosened without a reason:
 //
-//   - RequiredAcks(AllISRAcks): broker baru mengakui setelah seluruh replika
-//     yang tersinkron menyimpannya. Dengan acks=1, pesan yang sudah diakui bisa
-//     hilang saat leader-nya jatuh sebelum replikanya menyusul.
-//   - Idempotent (bawaan franz-go): percobaan ulang di dalam klien tidak
-//     menggandakan pesan. Tanpa ini, retry yang sehat menjadi duplikat.
-//   - ProducerLinger: menahan sebentar supaya pesan berkumpul menjadi batch.
-//     Nol berarti satu permintaan jaringan per pesan.
+//   - RequiredAcks(AllISRAcks): the broker acknowledges only after every
+//     in-sync replica has stored the message. With acks=1, an acknowledged
+//     message can be lost when its leader goes down before the replicas
+//     catch up.
+//   - Idempotent (franz-go's default): retries inside the client do not
+//     duplicate messages. Without it, a healthy retry becomes a duplicate.
+//   - ProducerLinger: holds on briefly so messages accumulate into a batch.
+//     Zero means one network request per message.
 func NewProducer(cfg Config) (*kgo.Client, error) {
 	brokers, err := parseBrokers(cfg.Brokers)
 	if err != nil {
@@ -59,13 +61,12 @@ func NewProducer(cfg Config) (*kgo.Client, error) {
 	return client, nil
 }
 
-// NewConsumer membuka klien yang tergabung dalam sebuah group.
+// NewConsumer opens a client that joins a group.
 //
-// DisableAutoCommit dipasang dengan sengaja. Auto-commit menandai pesan sudah
-// diproses berdasarkan waktu, bukan berdasarkan hasil: pekerjaan yang gagal di
-// tengah jalan tetap tercatat selesai, dan pesannya tidak pernah datang lagi.
-// Offset di sini dikomit oleh pemanggil, setelah pekerjaannya benar-benar
-// selesai.
+// DisableAutoCommit is set on purpose. Auto-commit marks a message as
+// processed based on time, not on outcome: work that fails halfway is still
+// recorded as done, and its message never comes back. Offsets here are
+// committed by the caller, after the work has actually finished.
 func NewConsumer(cfg Config, group string, topics ...string) (*kgo.Client, error) {
 	brokers, err := parseBrokers(cfg.Brokers)
 	if err != nil {
@@ -88,9 +89,9 @@ func NewConsumer(cfg Config, group string, topics ...string) (*kgo.Client, error
 		kgo.ConsumeTopics(topics...),
 		kgo.DisableAutoCommit(),
 
-		// Group baru mulai dari awal topic, bukan dari ujungnya. Yang kedua
-		// membuat consumer yang baru dipasang melewatkan seluruh pekerjaan
-		// yang sudah menunggu di sana.
+		// A new group starts from the beginning of the topic, not from its end.
+		// The latter makes a freshly deployed consumer skip all the work already
+		// waiting there.
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 	)
 	if err != nil {
@@ -99,11 +100,11 @@ func NewConsumer(cfg Config, group string, topics ...string) (*kgo.Client, error
 	return client, nil
 }
 
-// Ping memastikan brokernya benar-benar terjangkau.
+// Ping makes sure the broker is actually reachable.
 //
-// kgo.NewClient tidak menyambung; ia hanya menyiapkan. Tanpa ping, service akan
-// melapor sehat saat start dan baru gagal pada pesan pertama - jauh setelah
-// orang yang menjalankannya berhenti memperhatikan.
+// kgo.NewClient does not connect; it only prepares. Without a ping, the service
+// would report healthy at start and only fail on the first message - long after
+// whoever started it stopped watching.
 func Ping(ctx context.Context, client *kgo.Client) error {
 	if err := client.Ping(ctx); err != nil {
 		return fmt.Errorf("the kafka broker did not answer: %w", err)

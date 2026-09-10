@@ -8,32 +8,34 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// RecoverRecreatedTopics melanggani ulang topic yang dibuat ulang di broker.
+// RecoverRecreatedTopics resubscribes to topics that were recreated on the
+// broker.
 //
-// Topic Kafka punya id di samping namanya. Bila sebuah topic dihapus lalu
-// dibuat lagi dengan nama yang sama (broker kehilangan datanya - B23 - lalu
-// `topics` membuatnya kembali), klien yang masih memegang id lama menerima
-// UNKNOWN_TOPIC_ID pada SETIAP fetch. franz-go dengan sengaja tidak pulih
-// dari sini: setelah lima kegagalan beruntun ia membiarkan galatnya muncul
-// selamanya, "stall loudly" [franz-go@v1.21.6/pkg/kgo/source.go:1335-1352].
-// Tanpa penanganan, satu-satunya jalan keluar adalah restart proses - dan
-// itulah yang terjadi dua kali di F9 (B26).
+// A Kafka topic has an id alongside its name. When a topic is deleted and
+// created again under the same name (the broker lost its data - B23 - and
+// `topics` created it back), a client still holding the old id receives
+// UNKNOWN_TOPIC_ID on EVERY fetch. franz-go deliberately does not recover
+// from this: after five consecutive failures it lets the error surface
+// forever, "stall loudly" [franz-go@v1.21.6/pkg/kgo/source.go:1335-1352].
+// Without handling, the only way out is a process restart - and that is what
+// happened twice during F9 (B26).
 //
-// Pemulihannya mengikuti dokumentasi klien: PurgeTopicsFromClient membuang
-// seluruh pengetahuan tentang topic itu (termasuk id lamanya), lalu
-// AddConsumeTopics melanggani lagi dengan metadata yang segar
-// [franz-go@v1.21.6/pkg/kgo/client.go:680-693, consumer.go:872-880].
-// Pada consumer group ini memicu rebalance; itu harga yang jauh lebih murah
-// daripada restart.
+// The recovery follows the client's documentation: PurgeTopicsFromClient
+// discards all knowledge of the topic (including its old id), then
+// AddConsumeTopics subscribes again with fresh metadata
+// [franz-go@v1.21.6/pkg/kgo/client.go:680-693, consumer.go:872-880]. On a
+// consumer group this triggers a rebalance; that is a far cheaper price than
+// a restart.
 //
-// Yang TIDAK dipulihkan: offset yang sudah dikomit untuk nama topic itu.
-// Topic baru mulai dari nol, sementara group mengingat offset topic lama;
-// record di bawah offset lama pada topic baru dilewati. Restart pun tidak
-// mengubah itu, dan skenario ini memang bukan skenario produksi - tujuannya
-// adalah konsumen yang kembali membaca record BARU tanpa campur tangan.
+// What is NOT recovered: the offsets already committed for that topic name.
+// The new topic starts from zero while the group remembers the old topic's
+// offsets; records below the old offset on the new topic are skipped. A
+// restart would not change that either, and this scenario is not a production
+// one anyway - the goal is a consumer that goes back to reading NEW records
+// without intervention.
 //
-// Dikembalikan: nama topic yang dilanggani ulang, terurut; nil bila tidak ada
-// galat yang berkaitan dengan topic yang dibuat ulang.
+// Returned: the names of the topics that were resubscribed, sorted; nil when
+// no error related to a recreated topic was found.
 func RecoverRecreatedTopics(client *kgo.Client, errs []kgo.FetchError) []string {
 	seen := map[string]struct{}{}
 	for _, e := range errs {
@@ -56,16 +58,17 @@ func RecoverRecreatedTopics(client *kgo.Client, errs []kgo.FetchError) []string 
 	return topics
 }
 
-// ForgetRecreatedTopic adalah sisi PRODUSER dari pemulihan yang sama.
+// ForgetRecreatedTopic is the PRODUCER side of the same recovery.
 //
-// Klien yang pernah memproduksi ke sebuah topic menyimpan id-nya; setelah
-// topic dibuat ulang, setiap produce gagal UNKNOWN_TOPIC_ID sampai metadata
-// topic itu dibuang - dan franz-go tidak membuangnya sendiri. Relay outbox
-// memanggil ini pada galat itu supaya tick berikutnya menyambung ke topic
-// yang baru; tanpa ini relay mengulang galat yang sama setiap detik,
-// selamanya, seperti yang terlihat di B28.
+// A client that has produced to a topic keeps its id; after the topic is
+// recreated, every produce fails with UNKNOWN_TOPIC_ID until that topic's
+// metadata is discarded - and franz-go does not discard it on its own. The
+// outbox relay calls this on that error so its next tick connects to the
+// new topic; without it the relay repeats the same error every second,
+// forever, as seen in B28.
 //
-// true bila galatnya memang UNKNOWN_TOPIC_ID dan topic-nya dilupakan.
+// true when the error really was UNKNOWN_TOPIC_ID and the topic was
+// forgotten.
 func ForgetRecreatedTopic(client *kgo.Client, topic string, err error) bool {
 	if topic == "" || !errors.Is(err, kerr.UnknownTopicID) {
 		return false

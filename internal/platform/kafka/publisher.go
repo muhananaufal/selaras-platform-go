@@ -8,39 +8,41 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Message adalah satu pesan yang siap diterbitkan.
+// Message is one message ready to be published.
 type Message struct {
 	Topic string
 
-	// Key menentukan partisi. Ia wajib: tanpa kunci, Kafka menyebar pesan ke
-	// partisi mana pun dan urutan antar pesan satu agregat hilang.
+	// Key decides the partition. It is required: without a key, Kafka spreads
+	// messages across any partition and the ordering between messages of one
+	// aggregate is lost.
 	Key []byte
 
 	Value []byte
 
-	// Headers membawa metadata yang bisa dibaca konsumen tanpa membongkar
-	// isinya - jenis event dan id-nya, untuk pencatatan dan penyaringan.
+	// Headers carry metadata a consumer can read without unpacking the payload
+	// - the event kind and its id, for logging and filtering.
 	Headers map[string]string
 }
 
-// Publisher menerbitkan pesan dan menunggu broker mengakuinya.
+// Publisher publishes messages and waits for the broker to acknowledge
+// them.
 type Publisher struct {
 	client *kgo.Client
 }
 
 func NewPublisher(client *kgo.Client) *Publisher { return &Publisher{client: client} }
 
-// Publish menerbitkan sekumpulan pesan dan mengembalikan indeks yang berhasil.
+// Publish publishes a batch of messages and returns the indexes that succeeded.
 //
-// Ia mengembalikan keberhasilan PER PESAN, bukan satu boolean untuk seluruh
-// batch. Bedanya nyata: kalau sebuah batch dinyatakan gagal seluruhnya padahal
-// sebagian sudah diterima broker, percobaan berikutnya akan mengirim ulang
-// bagian yang sudah berhasil - dan setiap kegagalan sementara berubah menjadi
-// duplikat yang bisa dihindari.
+// It returns success PER MESSAGE, not one boolean for the whole batch. The
+// difference is real: if a batch is declared failed as a whole when part of it
+// was already accepted by the broker, the next attempt resends the part that
+// already succeeded - and every transient failure turns into an avoidable
+// duplicate.
 //
-// Menunggu (ProduceSync) juga disengaja. Menerbitkan tanpa menunggu berarti
-// baris outbox ditandai terkirim berdasarkan harapan, dan outbox-nya kehilangan
-// seluruh gunanya.
+// Waiting (ProduceSync) is deliberate too. Publishing without waiting means
+// outbox rows are marked as sent on hope, and the outbox loses its entire
+// purpose.
 func (p *Publisher) Publish(ctx context.Context, msgs []Message) ([]int, error) {
 	if len(msgs) == 0 {
 		return nil, nil
@@ -66,33 +68,32 @@ func (p *Publisher) Publish(ctx context.Context, msgs []Message) ([]int, error) 
 
 	results := p.client.ProduceSync(ctx, records...)
 
-	// Dipetakan balik lewat identitas pointer, BUKAN lewat indeks.
+	// Mapped back through pointer identity, NOT through the index.
 	//
-	// ProduceSync mengumpulkan hasilnya dari promise yang selesai secara
-	// asinkron [franz-go@v1.21.6/pkg/kgo/producer.go:359-366], sehingga
-	// urutannya adalah urutan penyelesaian - bukan urutan pengiriman. Membaca
-	// hasil ke-i sebagai hasil pesan ke-i akan menandai baris outbox yang salah
-	// sebagai terkirim, dan yang benar-benar gagal justru hilang diam-diam.
+	// ProduceSync collects its results from promises that complete
+	// asynchronously [franz-go@v1.21.6/pkg/kgo/producer.go:359-366], so their
+	// order is completion order - not send order. Reading result i as the
+	// result of message i would mark the wrong outbox row as sent, and the one
+	// that actually failed would silently disappear.
 	//
-	// ProduceResult.Record dijamin non-nil [ibid.:316-322], jadi pemetaannya
-	// selalu bisa dilakukan.
+	// ProduceResult.Record is guaranteed non-nil [ibid.:316-322], so the
+	// mapping can always be done.
 	var ok []int
 	var firstErr error
 	for _, res := range results {
 		i, found := index[res.Record]
 		if !found {
-			// Tidak mungkin terjadi selama kontraknya dipegang. Kalau toh
-			// terjadi, mendiamkannya berarti menandai baris terkirim tanpa
-			// dasar.
+			// Cannot happen as long as the contract holds. If it does anyway,
+			// staying silent would mean marking a row as sent with no basis.
 			if firstErr == nil {
 				firstErr = errors.New("the broker answered about a record that was never sent")
 			}
 			continue
 		}
 		if res.Err != nil {
-			// Topic yang dibuat ulang di broker (B26): id lamanya dibuang supaya
-			// percobaan berikutnya - tick relay berikutnya - menyambung ke yang
-			// baru, alih-alih mengulang galat yang sama setiap detik selamanya.
+			// A topic recreated on the broker (B26): its old id is discarded so the
+			// next attempt - the relay's next tick - connects to the new one,
+			// instead of repeating the same error every second forever.
 			ForgetRecreatedTopic(p.client, msgs[i].Topic, res.Err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("publishing to %s: %w", msgs[i].Topic, res.Err)

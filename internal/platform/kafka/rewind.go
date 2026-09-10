@@ -4,28 +4,29 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Rewinder mengingat record yang gagal diproses dan memundurkan konsumen ke
-// sana, supaya pesannya benar-benar dikirim ulang.
+// Rewinder remembers the record that failed to process and rewinds the consumer
+// to it, so the message is genuinely redelivered.
 //
-// Ia ada karena pola "gagal? jangan komit" TIDAK cukup, dan itu terbukti saat
-// dijalankan.
+// It exists because the "failed? don't commit" pattern is NOT enough, and that
+// was proven by running it.
 //
-// Yang terjadi tanpa ini: satu batch gagal, offsetnya tidak dikomit, konsumen
-// terus memanggil PollFetches dan menerima batch BERIKUTNYA - franz-go tidak
-// mengirim ulang apa pun di dalam sesi yang sama. Batch berikutnya berhasil,
-// CommitUncommittedOffsets dipanggil, dan ia mengomit SELURUH yang sudah
-// dikonsumsi - termasuk record yang gagal tadi. Record itu hilang selamanya,
-// dan tidak ada satu pun galat yang muncul saat itu terjadi.
+// What happens without it: one batch fails, its offset is not committed, the
+// consumer keeps calling PollFetches and receives the NEXT batch - franz-go
+// does not resend anything within the same session. The next batch succeeds,
+// CommitUncommittedOffsets is called, and it commits EVERYTHING consumed so far
+// - including the record that failed. That record is lost forever, and not a
+// single error appears when it happens.
 //
-// Persis itu yang terjadi pada saga penghapusan akun: dasbor gagal menulis
-// konfirmasinya, lalu lima konfirmasi dari unit lain lewat di topic yang sama,
-// batch itu berhasil, dan offsetnya melompati permintaan penghapusan yang belum
-// dikerjakan. Sagalnya menggantung tanpa siapa pun tahu sebabnya.
+// That is exactly what happened to the account-deletion saga: the dashboard
+// failed to write its confirmation, then five confirmations from other units
+// passed on the same topic, that batch succeeded, and the offset jumped over
+// the deletion request that had not been worked. The saga hung with nobody
+// knowing why.
 type Rewinder struct {
-	// lowest menyimpan offset TERKECIL yang gagal per topic dan partisi.
+	// lowest keeps the LOWEST failed offset per topic and partition.
 	//
-	// Terkecil, bukan terakhir: satu batch bisa memuat beberapa kegagalan, dan
-	// memundurkan ke yang terakhir akan melewati yang sebelumnya.
+	// Lowest, not last: one batch can hold several failures, and rewinding to
+	// the last one would skip the ones before it.
 	lowest map[string]map[int32]kgo.EpochOffset
 }
 
@@ -33,7 +34,7 @@ func NewRewinder() *Rewinder {
 	return &Rewinder{lowest: map[string]map[int32]kgo.EpochOffset{}}
 }
 
-// Failed mencatat satu record yang gagal diproses.
+// Failed records one record that failed to process.
 func (r *Rewinder) Failed(rec *kgo.Record) {
 	if rec == nil {
 		return
@@ -45,11 +46,11 @@ func (r *Rewinder) Failed(rec *kgo.Record) {
 		r.lowest[rec.Topic] = partitions
 	}
 
-	// Offset record itu SENDIRI, bukan satu sesudahnya.
+	// The offset of that record ITSELF, not one past it.
 	//
-	// EpochOffset.Offset adalah tempat konsumen mulai membaca; satu sesudahnya
-	// adalah yang dipakai saat mengomit. Memakai +1 di sini akan melewati
-	// justru record yang ingin diulang.
+	// EpochOffset.Offset is where the consumer starts reading; one past it is
+	// what is used when committing. Using +1 here would skip precisely the
+	// record meant to be retried.
 	candidate := kgo.EpochOffset{Epoch: rec.LeaderEpoch, Offset: rec.Offset}
 
 	if existing, seen := partitions[rec.Partition]; seen && existing.Less(candidate) {
@@ -58,17 +59,17 @@ func (r *Rewinder) Failed(rec *kgo.Record) {
 	partitions[rec.Partition] = candidate
 }
 
-// Any menyatakan ada kegagalan yang tercatat.
+// Any reports whether any failure has been recorded.
 func (r *Rewinder) Any() bool { return len(r.lowest) > 0 }
 
-// Rewind memundurkan konsumen ke record gagal yang paling awal.
+// Rewind moves the consumer back to the earliest failed record.
 //
-// Ia dipanggil SETELAH PollFetches selesai dan SEBELUM poll berikutnya, tanpa
-// commit yang berjalan bersamaan - itu syarat pemakaian SetOffsets yang
-// disebutkan franz-go, dan loop satu goroutine memenuhinya.
+// It is called AFTER PollFetches returns and BEFORE the next poll, with no
+// commit running concurrently - that is the condition franz-go states for
+// using SetOffsets, and a single-goroutine loop satisfies it.
 //
-// Setelah dipanggil, catatannya dikosongkan: putaran berikutnya mencatat
-// kegagalannya sendiri.
+// Once called, the record is cleared: the next round records its own
+// failures.
 func (r *Rewinder) Rewind(client *kgo.Client) {
 	if len(r.lowest) == 0 {
 		return
