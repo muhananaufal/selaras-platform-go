@@ -1,4 +1,4 @@
-// Package chat membaca konfigurasi chat-svc dari environment.
+// Package chat reads the chat-svc configuration from the environment.
 package chat
 
 import (
@@ -6,21 +6,21 @@ import (
 	"os"
 )
 
-// Config adalah seluruh yang dibutuhkan chat-svc untuk menyala.
+// Config is everything chat-svc needs to start.
 type Config struct {
 	GRPCAddr    string
 	HealthAddr  string
 	DatabaseDSN string
 
-	// KafkaBrokers kosong berarti service berjalan tanpa outbox: pembacaan
-	// tetap dilayani, dan setiap use case yang menerbitkan event DITOLAK
-	// dengan pesan yang menyebutkan sebabnya.
+	// An empty KafkaBrokers means the service runs without an outbox: reads
+	// are still served, and every use case that publishes an event is REFUSED
+	// with a message naming the reason.
 	KafkaBrokers string
 }
 
-// LoadConfig membaca konfigurasi dan menolak yang tidak lengkap.
+// LoadConfig reads the configuration and refuses an incomplete one.
 //
-// Tidak ada nilai bawaan untuk DSN (ADR-016).
+// There is no default for the DSN (ADR-016).
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		GRPCAddr:     envOr("CHAT_GRPC_ADDR", ":9501"),

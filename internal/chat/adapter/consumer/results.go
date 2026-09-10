@@ -18,10 +18,10 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
 )
 
-// Scope adalah ruang lingkup idempotensi konsumen ini.
+// Scope is the idempotency scope of this consumer.
 const Scope = "chat-results"
 
-// Results membaca llm.results dan menyimpan balasannya.
+// Results reads llm.results and stores the replies.
 type Results struct {
 	client *kgo.Client
 	svc    *app.Service
@@ -40,17 +40,16 @@ func NewResults(client *kgo.Client, svc *app.Service, log *slog.Logger) (*Result
 	return &Results{client: client, svc: svc, log: log}, nil
 }
 
-// isMine menyatakan pesan ini milik chat.
+// isMine says this message belongs to chat.
 //
-// Topic llm.results dan llm.dlq dipakai BERSAMA seluruh service yang memakai
-// llm-worker. Tanpa penyaringan ini, konsumen chat akan mencoba menyimpan
-// kurikulum coaching sebagai balasan percakapan - gagal, menahan offset, dan
-// menyumbat antrean untuk semua orang. Itu benar-benar terjadi saat coaching
-// ditambahkan.
+// The llm.results and llm.dlq topics are SHARED by every service that uses
+// llm-worker. Without this filter, the chat consumer would try to store a
+// coaching curriculum as a conversation reply - fail, hold the offset, and
+// clog the queue for everyone. That really happened when coaching was added.
 //
-// Jenisnya dibaca dari header aggregate_type yang diisi relay outbox, tanpa
-// membongkar isinya dan tanpa menebak dari bentuknya. Pesan tanpa header
-// dilewati: menerimanya berarti menebak.
+// The kind is read from the aggregate_type header the outbox relay fills in,
+// without unpacking the content and without guessing from its shape. A
+// message without the header is skipped: accepting it means guessing.
 func isMine(rec *kgo.Record) bool {
 	for _, h := range rec.Headers {
 		if h.Key == "aggregate_type" {
@@ -67,7 +66,7 @@ func (r *Results) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			r.log.InfoContext(ctx, "chat result consumer stopped")
-			//nolint:nilerr // Penghentian yang diminta bukan kegagalan.
+			//nolint:nilerr // A requested stop is not a failure.
 			return nil
 		}
 
@@ -79,8 +78,8 @@ func (r *Results) Run(ctx context.Context) error {
 		}
 
 		if errs := fetches.Errors(); len(errs) > 0 {
-			// Topic yang dibuat ulang di broker (B26): dilanggani ulang di sini,
-			// bukan lewat restart. franz-go sengaja tidak pulih sendiri.
+			// A topic recreated on the broker (B26): resubscribed here, not through
+			// a restart. franz-go deliberately does not recover on its own.
 			if recovered := kafka.RecoverRecreatedTopics(r.client, errs); len(recovered) > 0 {
 				r.log.WarnContext(ctx, "topics were recreated on the broker; subscribed again", "topics", recovered)
 			}
@@ -117,10 +116,10 @@ func (r *Results) Run(ctx context.Context) error {
 		if rewinder.Any() {
 			r.log.WarnContext(ctx, "holding offsets so failed replies are redelivered",
 				"handled", handled)
-			// Tidak mengomit saja TIDAK cukup: franz-go tidak mengirim ulang
-			// apa pun di dalam sesi yang sama, jadi batch berikutnya akan
-			// datang, berhasil, lalu mengomit SELURUH yang sudah dikonsumsi -
-			// termasuk record yang gagal tadi. Konsumen dimundurkan ke sana.
+			// Not committing alone is NOT enough: franz-go redelivers nothing within
+			// the same session, so the next batch would arrive, succeed, and commit
+			// EVERYTHING consumed so far - including the record that just failed.
+			// The consumer is rewound to it instead.
 			rewinder.Rewind(r.client)
 
 			select {
@@ -137,7 +136,7 @@ func (r *Results) Run(ctx context.Context) error {
 	}
 }
 
-// handle memproses satu balasan.
+// handle processes one reply.
 func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	if !isMine(rec) {
 		return nil
@@ -150,22 +149,22 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 		return nil
 	}
 
-	// Span konsumen menjadi anak dari permintaan yang menulis event ini
-	// (F9-05); galat yang dikembalikan handler tercatat di span-nya.
+	// The consumer span becomes a child of the request that wrote this event
+	// (F9-05); an error returned by the handler is recorded on its span.
 	ctx, span := telemetry.StartConsumerSpan(ctx, &env, rec)
 	defer func() { telemetry.End(span, err) }()
 
 	done := env.GetChatReplyCompleted()
 	if done == nil {
-		// Kegagalan LLM untuk percakapan umum sengaja tidak menulis apa pun ke
-		// riwayat: D9 di sistem lama menjawab kegagalan AI dengan pesan ramah,
-		// dan pesan itu dibuat pemanggilnya - bukan disimpan sebagai balasan
-		// model yang tidak pernah dikatakan model.
+		// An LLM failure for a general conversation deliberately writes nothing
+		// to the history: D9 in the legacy system answered an AI failure with a
+		// friendly message, and that message is produced by the caller - not
+		// stored as a model reply the model never said.
 		return nil
 	}
 
-	// Id percakapan datang dari kunci partisi, yang diisi relay dari
-	// aggregate_id baris outbox.
+	// The conversation id comes from the partition key, which the relay fills
+	// from the aggregate_id of the outbox row.
 	conversationID := string(rec.Key)
 	if conversationID == "" {
 		r.log.ErrorContext(ctx, "a chat reply carried no conversation key",
@@ -175,19 +174,18 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 
 	text, err := replyTextOf(done.GetReplyJson())
 	if err != nil {
-		// Balasan yang tidak bisa dibaca TIDAK disimpan. Menyimpannya apa
-		// adanya akan menampilkan JSON mentah kepada pengguna sebagai jawaban.
+		// An unreadable reply is NOT stored. Storing it as-is would show raw JSON
+		// to the user as an answer.
 		r.log.ErrorContext(ctx, "a chat reply was not usable",
 			"conversation_id", conversationID, "error", err)
 		return nil
 	}
 
 	if err = r.svc.StoreReply(ctx, conversationID, text); errors.Is(err, domain.ErrConversationNotFound) {
-		// Balasan untuk percakapan yang sudah tidak ada. Mengulanginya tidak
-		// akan pernah berhasil, dan menahan offset untuknya berarti konsumen
-		// ini memundurkan diri setiap detik, selamanya - itu benar-benar
-		// terjadi setelah akun uji dihapus, dan trace-lah yang
-		// menyingkapkannya.
+		// A reply for a conversation that no longer exists. Retrying it will
+		// never succeed, and holding the offset for it means this consumer
+		// rewinds itself every second, forever - that really happened after a
+		// test account was deleted, and the trace is what exposed it.
 		r.log.WarnContext(ctx, "a reply arrived for a conversation that no longer exists and was dropped",
 			"conversation_id", conversationID, "event_id", env.GetEventId())
 		return nil
@@ -195,12 +193,12 @@ func (r *Results) handle(ctx context.Context, rec *kgo.Record) (err error) {
 	return err
 }
 
-// replyTextOf mengambil teks balasan dari bentuk JSON yang dikembalikan model.
+// replyTextOf takes the reply text from the JSON shape the model returns.
 //
-// Bentuknya {"text": ...}, sama dengan yang diminta prompt chat_reply. Chat
-// menyimpan teks biasa, jadi hanya bagian itu yang dipakai - saran yang ikut
-// datang belum punya tempat, dan menyimpannya sebagai teks akan menampilkannya
-// sebagai bagian dari jawaban.
+// The shape is {"text": ...}, the same as the chat_reply prompt asks for. Chat
+// stores plain text, so only that part is used - the suggestions that come
+// along have no place yet, and storing them as text would show them as part of
+// the answer.
 func replyTextOf(raw string) (string, error) {
 	var payload struct {
 		Text string `json:"text"`
@@ -214,9 +212,8 @@ func replyTextOf(raw string) (string, error) {
 	return payload.Text, nil
 }
 
-// Handle memproses satu record - dipakai daftar periksa aturan (D9) untuk
-// menyuntikkan event tanpa broker. Perilakunya sama persis dengan yang
-// dipanggil Run.
+// Handle processes one record - used by the rule checklist (D9) to inject
+// events without a broker. It behaves exactly like the one Run calls.
 func (r *Results) Handle(ctx context.Context, rec *kgo.Record) error {
 	return r.handle(ctx, rec)
 }

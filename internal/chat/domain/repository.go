@@ -2,20 +2,20 @@ package domain
 
 import "context"
 
-// Page adalah permintaan halaman.
+// Page is a page request.
 //
-// Berbasis offset, bukan cursor. Percakapan seorang pengguna berjumlah puluhan,
-// bukan jutaan, dan cursor menambah bentuk yang harus dijelaskan klien tanpa
-// menghilangkan masalah yang belum ada.
+// Offset-based, not cursor-based. A user's conversations number in the tens,
+// not millions, and a cursor adds a shape the client has to be told about
+// without removing a problem that does not exist yet.
 type Page struct {
 	Number int
 	Size   int
 }
 
-// Normalise membatasi halaman ke rentang yang masuk akal.
+// Normalise clamps the page to a sensible range.
 //
-// Ukuran yang tidak dibatasi membiarkan satu permintaan meminta seluruh
-// riwayat, dan itu bukan pilihan pemanggil untuk diambil.
+// An unbounded size lets one request ask for the whole history, and that is
+// not a choice for the caller to make.
 func (p Page) Normalise() Page {
 	if p.Number < 1 {
 		p.Number = 1
@@ -29,44 +29,45 @@ func (p Page) Normalise() Page {
 	return p
 }
 
-// Offset adalah jumlah baris yang dilewati.
+// Offset is the number of rows skipped.
 func (p Page) Offset() int { return (p.Number - 1) * p.Size }
 
-// ConversationRepository menyimpan percakapan dan pesannya.
+// ConversationRepository stores conversations and their messages.
 type ConversationRepository interface {
 	Create(ctx context.Context, c *Conversation) error
 
-	// FindBySlug mencari lewat id publiknya.
+	// FindBySlug looks a conversation up by its public slug.
 	FindBySlug(ctx context.Context, slug string) (*Conversation, error)
 
-	// ListForUser mengembalikan percakapan seorang pengguna, terbaru lebih
-	// dulu, beserta jumlah seluruhnya.
+	// ListForUser returns a user's conversations, newest first, together with
+	// the total count.
 	//
-	// Jumlahnya ikut karena klien butuh tahu ada berapa halaman; menghitungnya
-	// dengan memuat semuanya akan meniadakan gunanya berhalaman.
+	// The count comes along because the client needs to know how many pages
+	// there are; counting by loading everything would defeat the point of
+	// paging.
 	ListForUser(ctx context.Context, userID UserID, page Page) (items []*Conversation, total int, err error)
 
 	Update(ctx context.Context, c *Conversation) error
 
-	// Delete menghapus percakapan beserta pesannya.
+	// Delete removes a conversation together with its messages.
 	//
-	// Berantai lewat ON DELETE CASCADE di basis data, bukan dengan menghapus
-	// satu per satu di Go: yang kedua meninggalkan sisa saat prosesnya mati di
-	// tengah, dan sisa itu tidak akan pernah ditemukan siapa pun.
+	// Cascaded through ON DELETE CASCADE in the database, not by deleting one
+	// by one in Go: the latter leaves remnants when the process dies halfway,
+	// and nobody will ever find those remnants.
 	Delete(ctx context.Context, id ID) error
 
 	CreateMessage(ctx context.Context, m *Message) error
 
-	// ListMessages membaca percakapan, terlama lebih dulu.
+	// ListMessages reads a conversation, oldest first.
 	//
-	// Berhalaman untuk tampilan; jendela konteks memakai TailMessages.
+	// Paged for display; the context window uses TailMessages.
 	ListMessages(ctx context.Context, conversationID ID, page Page) (items []*Message, total int, err error)
 
-	// TailMessages membaca sejumlah pesan TERAKHIR, terlama lebih dulu.
+	// TailMessages reads a number of the LAST messages, oldest first.
 	//
-	// Ia terpisah dari ListMessages karena pertanyaannya berbeda: yang satu
-	// "halaman ke berapa", yang lain "apa yang baru saja dikatakan". Mengambil
-	// halaman pertama sebagai konteks akan memberi model awal percakapan dan
-	// melewatkan yang paling relevan (D8).
+	// It is separate from ListMessages because the question differs: one is
+	// "which page", the other "what was just said". Taking the first page as
+	// context would give the model the start of the conversation and skip what
+	// is most relevant (D8).
 	TailMessages(ctx context.Context, conversationID ID, limit int) ([]*Message, error)
 }

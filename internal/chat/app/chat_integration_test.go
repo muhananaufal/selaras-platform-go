@@ -24,9 +24,9 @@ type harness struct {
 	svc  *app.Service
 	ctx  context.Context
 
-	// now bisa dimajukan test. Jam yang benar-benar beku membuat dua
-	// peristiwa berbeda punya stempel yang sama, dan urutan yang bergantung
-	// pada stempel itu jatuh ke pemecah seri - yang menguji hal lain.
+	// now can be advanced by tests. A truly frozen clock gives two different
+	// occurrences the same timestamp, and an order that depends on that
+	// timestamp falls back to the tie-breaker - which tests something else.
 	now time.Time
 }
 
@@ -48,8 +48,8 @@ func setup(t *testing.T) *harness {
 		chatpg.NewRepository(pool),
 		chatpg.NewUnitOfWork(pool, events),
 
-		// Jam membaca harness, bukan menyalin nilainya: test yang memajukan
-		// waktunya harus benar-benar mengubah apa yang dilihat service.
+		// The clock reads the harness rather than copying its value: a test that
+		// advances the time has to really change what the service sees.
 		func() time.Time { return h.now },
 	)
 	if err != nil {
@@ -60,7 +60,7 @@ func setup(t *testing.T) *harness {
 	return h
 }
 
-// advance memajukan jam yang dilihat service.
+// advance moves the clock the service sees forward.
 func (h *harness) advance(d time.Duration) { h.now = h.now.Add(d) }
 
 func (h *harness) user() string { return uuid.NewString() }
@@ -89,7 +89,7 @@ func (h *harness) events(t *testing.T) []*eventsv1.Envelope {
 	return out
 }
 
-// TestCreatingAConversationWithAMessageQueuesTheReply adalah F5-05 dan F5-07.
+// TestCreatingAConversationWithAMessageQueuesTheReply is F5-05 and F5-07.
 func TestCreatingAConversationWithAMessageQueuesTheReply(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -102,7 +102,7 @@ func TestCreatingAConversationWithAMessageQueuesTheReply(t *testing.T) {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 
-	// D12: judul diturunkan dari pesan pertama.
+	// D12: the title is derived from the first message.
 	if view.Conversation.Title != "Apakah kopi berpengaruh pada tekanan darah sa..." {
 		t.Fatalf("the derived title is %q", view.Conversation.Title)
 	}
@@ -123,15 +123,15 @@ func TestCreatingAConversationWithAMessageQueuesTheReply(t *testing.T) {
 		t.Fatalf("the event names conversation %q", req.GetConversationId())
 	}
 
-	// coaching_thread_id TIDAK diisi: itu yang membedakan percakapan umum dari
-	// thread coaching di sisi worker, dan mengisinya akan mengirim balasannya
-	// ke tempat yang salah.
+	// coaching_thread_id is NOT set: that is what tells a general conversation
+	// from a coaching thread on the worker side, and setting it would send the
+	// reply to the wrong place.
 	if req.GetCoachingThreadId() != "" {
 		t.Fatalf("a general conversation carries a coaching thread id: %q", req.GetCoachingThreadId())
 	}
 }
 
-// TestAConversationCanBeCreatedEmpty menjaga tombol "mulai baru".
+// TestAConversationCanBeCreatedEmpty guards the "start new" button.
 func TestAConversationCanBeCreatedEmpty(t *testing.T) {
 	h := setup(t)
 
@@ -149,8 +149,8 @@ func TestAConversationCanBeCreatedEmpty(t *testing.T) {
 	}
 }
 
-// TestEachMessageGetsItsOwnKey menjaga pesan kedua tidak dilewati sebagai
-// duplikat.
+// TestEachMessageGetsItsOwnKey keeps the second message from being skipped
+// as a duplicate.
 func TestEachMessageGetsItsOwnKey(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -184,7 +184,7 @@ func TestEachMessageGetsItsOwnKey(t *testing.T) {
 	}
 }
 
-// TestAReplyArrivesAsAModelMessage menjaga jalur balasan.
+// TestAReplyArrivesAsAModelMessage guards the reply path.
 func TestAReplyArrivesAsAModelMessage(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -210,14 +210,15 @@ func TestAReplyArrivesAsAModelMessage(t *testing.T) {
 	}
 }
 
-// TestTheListIsPagedAndOrderedByRecentUse adalah F5-04.
+// TestTheListIsPagedAndOrderedByRecentUse is F5-04.
 func TestTheListIsPagedAndOrderedByRecentUse(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
 
-	// Lima percakapan, dibuat dengan waktu yang berbeda supaya urutannya bisa
-	// diperiksa. Waktunya diatur langsung di basis data - jam layanan dibekukan
-	// di harness, dan itu memang yang membuat test lain bisa diramalkan.
+	// Five conversations, created at different times so the order can be
+	// checked. The times are set directly in the database - the service clock
+	// is frozen in the harness, and that is precisely what keeps the other
+	// tests predictable.
 	slugs := make([]string, 0, 5)
 	for i := range 5 {
 		view, err := h.svc.CreateConversation(h.ctx, app.CreateConversationCommand{
@@ -246,7 +247,7 @@ func TestTheListIsPagedAndOrderedByRecentUse(t *testing.T) {
 		t.Fatalf("the first page holds %d items, want 2", len(list.Items))
 	}
 
-	// Terbaru lebih dulu: yang terakhir dibuat ada di atas.
+	// Newest first: the last one created is at the top.
 	if list.Items[0].Slug != slugs[4] {
 		t.Fatalf("the newest conversation is not first")
 	}
@@ -259,22 +260,22 @@ func TestTheListIsPagedAndOrderedByRecentUse(t *testing.T) {
 		t.Fatalf("the third page holds %d items, want 1", len(second.Items))
 	}
 
-	// Dan percakapan orang lain tidak ikut.
+	// And someone else's conversations are not included.
 	stranger, err := h.svc.ListConversations(h.ctx, h.user(), domain.Page{})
 	if err != nil {
 		t.Fatalf("ListConversations: %v", err)
 	}
 	if len(stranger.Items) != 0 || stranger.Total != 0 {
-		// Keduanya disebut: mereka datang dari kueri yang BERBEDA, dan
-		// menyebut satu saja pernah membuat kegagalan nyata terbaca seperti
-		// bukan kegagalan - "melihat 0 percakapan orang lain".
+		// Both are named: they come from DIFFERENT queries, and naming only one
+		// once made a real failure read like no failure at all - "saw 0 of
+		// someone else's conversations".
 		t.Fatalf("a stranger sees %d items and a total of %d; both should be zero",
 			len(stranger.Items), stranger.Total)
 	}
 }
 
-// TestSendingAMessageMovesTheConversationUp menjaga urutan daftar tetap
-// bermakna.
+// TestSendingAMessageMovesTheConversationUp keeps the list order
+// meaningful.
 func TestSendingAMessageMovesTheConversationUp(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -292,12 +293,13 @@ func TestSendingAMessageMovesTheConversationUp(t *testing.T) {
 		UserID: owner, Title: "Baru",
 	})
 
-	// Jam dimajukan SEBELUM pesannya dikirim. Tanpa itu, percakapan lama
-	// mendapat stempel yang sama dengan yang baru, dan urutannya jatuh ke
-	// pemecah seri - yang menguji hal lain daripada yang dimaksud test ini.
+	// The clock is advanced BEFORE the message is sent. Without that, the old
+	// conversation gets the same timestamp as the new one, and the order falls
+	// back to the tie-breaker - which tests something other than what this
+	// test means to.
 	h.advance(time.Hour)
 
-	// Percakapan LAMA menerima pesan, jadi ia naik ke atas.
+	// The OLD conversation receives a message, so it moves to the top.
 	if _, err := h.svc.SendMessage(h.ctx, app.SendMessageCommand{
 		Slug: older.Conversation.Slug, UserID: owner, Text: "halo lagi",
 	}); err != nil {
@@ -315,7 +317,7 @@ func TestSendingAMessageMovesTheConversationUp(t *testing.T) {
 	_ = newer
 }
 
-// TestSomeoneElsesConversationIsNotFound adalah S9.
+// TestSomeoneElsesConversationIsNotFound is S9.
 func TestSomeoneElsesConversationIsNotFound(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -341,13 +343,13 @@ func TestSomeoneElsesConversationIsNotFound(t *testing.T) {
 		t.Errorf("DeleteConversation returned %v", err)
 	}
 
-	// Percakapan yang memang tidak ada menjawab SAMA.
+	// A conversation that really does not exist answers the SAME.
 	if _, err := h.svc.ShowConversation(h.ctx, "tidakadaslugini", stranger, domain.Page{}); !errors.Is(err, domain.ErrConversationNotFound) {
 		t.Errorf("a missing conversation returned %v", err)
 	}
 }
 
-// TestDeletingAConversationTakesItsMessages adalah F5-05.
+// TestDeletingAConversationTakesItsMessages is F5-05.
 func TestDeletingAConversationTakesItsMessages(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -361,8 +363,8 @@ func TestDeletingAConversationTakesItsMessages(t *testing.T) {
 		t.Fatalf("DeleteConversation: %v", err)
 	}
 
-	// Diperiksa lewat SQL langsung: repository yang keliru bisa melaporkan
-	// kosong untuk data yang masih ada.
+	// Checked through direct SQL: a mistaken repository could report empty for
+	// data that is still there.
 	var messages int
 	if err := h.pool.QueryRow(h.ctx,
 		`SELECT count(*) FROM chat_messages WHERE conversation_id = $1`, id).Scan(&messages); err != nil {
@@ -377,7 +379,7 @@ func TestDeletingAConversationTakesItsMessages(t *testing.T) {
 	}
 }
 
-// TestTheContextWindowTakesTheNewestMessages adalah D8.
+// TestTheContextWindowTakesTheNewestMessages is D8.
 func TestTheContextWindowTakesTheNewestMessages(t *testing.T) {
 	h := setup(t)
 	owner := h.user()
@@ -419,8 +421,8 @@ func TestTheContextWindowTakesTheNewestMessages(t *testing.T) {
 	}
 }
 
-// TestAnEmptyMessageIsRefusedByTheDatabaseToo menjaga invarian tetap ditegakkan
-// meski ada jalur yang melewati domainnya.
+// TestAnEmptyMessageIsRefusedByTheDatabaseToo keeps the invariant enforced even
+// when a path bypasses the domain.
 func TestAnEmptyMessageIsRefusedByTheDatabaseToo(t *testing.T) {
 	h := setup(t)
 

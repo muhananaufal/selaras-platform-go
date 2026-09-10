@@ -1,4 +1,4 @@
-// Package app merangkai aturan chat menjadi use case.
+// Package app composes the chat rules into use cases.
 package app
 
 import (
@@ -14,23 +14,23 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/chat/domain"
 )
 
-// EventWriter menulis event ke outbox.
+// EventWriter writes events to the outbox.
 type EventWriter interface {
 	Write(ctx context.Context, aggregateType, aggregateID string, envelope *eventsv1.Envelope) error
 }
 
-// Repositories adalah repository yang berbagi satu transaksi.
+// Repositories are the repositories that share one transaction.
 type Repositories interface {
 	Conversations() domain.ConversationRepository
 	Events() EventWriter
 }
 
-// UnitOfWork menjalankan sebuah fungsi di dalam satu transaksi.
+// UnitOfWork runs a function inside one transaction.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(Repositories) error) error
 }
 
-// Service adalah seluruh use case chat.
+// Service is the whole set of chat use cases.
 type Service struct {
 	conversations domain.ConversationRepository
 	uow           UnitOfWork
@@ -53,10 +53,10 @@ func NewService(
 	return &Service{conversations: conversations, uow: uow, now: now}, nil
 }
 
-// owned memuat percakapan dan memeriksa kepemilikannya.
+// owned loads a conversation and checks its ownership.
 //
-// SATU tempat, dan selalu menjawab ErrConversationNotFound untuk milik orang
-// lain: membedakannya dari "tidak ada" memberi tahu penanya bahwa slug itu ada
+// ONE place, and it always answers ErrConversationNotFound for someone else's:
+// telling it apart from "does not exist" tells the asker that the slug exists
 // (S9).
 func (s *Service) owned(
 	ctx context.Context, repo domain.ConversationRepository, slug, userID string,
@@ -76,14 +76,14 @@ func (s *Service) owned(
 	return conversation, nil
 }
 
-// ConversationList adalah satu halaman daftar percakapan.
+// ConversationList is one page of the conversation list.
 type ConversationList struct {
 	Items []*domain.Conversation
 	Total int
 	Page  domain.Page
 }
 
-// ListConversations mengembalikan percakapan milik pemanggil (F5-04).
+// ListConversations returns the caller's conversations (F5-04).
 func (s *Service) ListConversations(
 	ctx context.Context, userID string, page domain.Page,
 ) (*ConversationList, error) {
@@ -100,18 +100,19 @@ func (s *Service) ListConversations(
 	return &ConversationList{Items: items, Total: total, Page: page}, nil
 }
 
-// CreateConversationCommand adalah permintaan membuat percakapan.
+// CreateConversationCommand is a request to create a conversation.
 type CreateConversationCommand struct {
 	UserID string
 	Title  string
 
-	// FirstMessage boleh kosong: percakapan bisa dibuat sebelum ada pesan.
-	// Bila ada, ia ditulis DAN balasannya diminta - satu perjalanan, bukan dua.
+	// FirstMessage may be empty: a conversation can be created before there is
+	// a message. When present, it is written AND its reply is requested - one
+	// round trip, not two.
 	FirstMessage   string
 	IdempotencyKey string
 }
 
-// ConversationView adalah percakapan beserta pesannya.
+// ConversationView is a conversation together with its messages.
 type ConversationView struct {
 	Conversation *domain.Conversation
 	Messages     []*domain.Message
@@ -155,8 +156,8 @@ func (s *Service) CreateConversation(
 		view.Messages = []*domain.Message{message}
 		view.Total = 1
 
-		// Permintaan balasan ditulis di transaksi yang sama. Percakapan yang
-		// tersimpan tanpa permintaannya akan menunggu balasan selamanya.
+		// The reply request is written in the same transaction. A conversation
+		// stored without its request would wait for a reply forever.
 		return r.Events().Write(ctx, "conversation", conversation.ID.String(),
 			replyRequest(conversation, message, cmd.IdempotencyKey, now))
 	})
@@ -186,7 +187,7 @@ func (s *Service) ShowConversation(
 	}, nil
 }
 
-// SendMessageCommand adalah permintaan mengirim pesan.
+// SendMessageCommand is a request to send a message.
 type SendMessageCommand struct {
 	Slug           string
 	UserID         string
@@ -194,11 +195,11 @@ type SendMessageCommand struct {
 	IdempotencyKey string
 }
 
-// SendMessage menulis pesan pengguna dan meminta balasannya (F5-07).
+// SendMessage writes the user's message and requests its reply (F5-07).
 //
-// Ia menjawab SEGERA. Balasan model datang belakangan lewat llm.results.
-// Sistem lama menunggu Gemini di dalam permintaan HTTP, dan satu penyedia yang
-// lambat menahan permintaannya selama itu.
+// It answers IMMEDIATELY. The model's reply comes later through llm.results.
+// The legacy system waited for Gemini inside the HTTP request, and one slow
+// provider held the request for that long.
 func (s *Service) SendMessage(
 	ctx context.Context, cmd SendMessageCommand,
 ) (*domain.Message, error) {
@@ -220,8 +221,8 @@ func (s *Service) SendMessage(
 		}
 		written = message
 
-		// Percakapan naik ke atas daftar. Tanpa ini, percakapan yang aktif
-		// tenggelam di bawah percakapan lama yang baru saja diganti judulnya.
+		// The conversation moves to the top of the list. Without this, an active
+		// conversation sinks below an old one that was merely renamed.
 		conversation.Touch(now)
 		if err := r.Conversations().Update(ctx, conversation); err != nil {
 			return err
@@ -260,7 +261,8 @@ func (s *Service) RenameConversation(
 	return renamed, nil
 }
 
-// DeleteConversation menghapus percakapan beserta pesannya (F5-05).
+// DeleteConversation deletes a conversation together with its messages
+// (F5-05).
 func (s *Service) DeleteConversation(ctx context.Context, slug, userID string) error {
 	return s.uow.Do(ctx, func(r Repositories) error {
 		conversation, err := s.owned(ctx, r.Conversations(), slug, userID)
@@ -271,7 +273,7 @@ func (s *Service) DeleteConversation(ctx context.Context, slug, userID string) e
 	})
 }
 
-// StoreReply menyimpan balasan model yang datang dari llm-worker.
+// StoreReply stores a model reply that comes from llm-worker.
 func (s *Service) StoreReply(ctx context.Context, conversationID, text string) error {
 	id, err := domain.ParseID(conversationID)
 	if err != nil {
@@ -288,21 +290,21 @@ func (s *Service) StoreReply(ctx context.Context, conversationID, text string) e
 	})
 }
 
-// ConversationContext membaca jendela konteks untuk menyusun prompt (D8).
+// ConversationContext reads the context window for building a prompt (D8).
 func (s *Service) ConversationContext(
 	ctx context.Context, conversationID domain.ID,
 ) ([]*domain.Message, error) {
 	return s.conversations.TailMessages(ctx, conversationID, domain.ContextWindow)
 }
 
-// replyRequest menyusun event permintaan balasan.
+// replyRequest composes the reply request event.
 func replyRequest(
 	c *domain.Conversation, m *domain.Message, key string, now time.Time,
 ) *eventsv1.Envelope {
 	if key == "" {
-		// Diturunkan dari PESANNYA, bukan dari percakapannya: satu percakapan
-		// menerima banyak pesan, dan kunci per percakapan akan membuat pesan
-		// kedua dan seterusnya dilewati sebagai duplikat.
+		// Derived from the MESSAGE, not from the conversation: one conversation
+		// receives many messages, and a per-conversation key would make the
+		// second and later messages be skipped as duplicates.
 		key = "chat-reply:" + m.ID.String()
 	}
 
@@ -317,10 +319,9 @@ func replyRequest(
 				MessageId:      m.ID.String(),
 				JobId:          m.ID.String(),
 
-				// coaching_thread_id sengaja TIDAK diisi: itu yang membedakan
-				// percakapan umum dari thread coaching di sisi worker, dan
-				// mengisinya di sini akan mengirim balasannya ke tempat yang
-				// salah.
+				// coaching_thread_id is deliberately NOT set: that is what tells a
+				// general conversation from a coaching thread on the worker side, and
+				// setting it here would send the reply to the wrong place.
 			},
 		},
 	}

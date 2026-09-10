@@ -12,14 +12,14 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// EventWriterFor membuat penulis event DI ATAS satu transaksi.
+// EventWriterFor creates an event writer ON a single transaction.
 //
-// Pabrik, bukan penulis yang sudah jadi: penulis yang dibangun di atas kolam
-// koneksi akan commit sendiri, dan eventnya bertahan meski perubahan yang
-// memicunya batal.
+// A factory, not a ready-made writer: a writer built on the connection pool
+// would commit on its own, and its event would survive even when the change
+// that triggered it was rolled back.
 type EventWriterFor func(pg.Querier) app.EventWriter
 
-// UnitOfWork memenuhi app.UnitOfWork dengan transaksi Postgres sungguhan.
+// UnitOfWork implements app.UnitOfWork with a real Postgres transaction.
 type UnitOfWork struct {
 	pool   *pgxpool.Pool
 	events EventWriterFor
@@ -50,15 +50,15 @@ func (t *transactional) Conversations() domain.ConversationRepository {
 
 func (t *transactional) Events() app.EventWriter {
 	if t.events == nil {
-		// Penulis yang tidak melakukan apa-apa jauh lebih berbahaya daripada
-		// yang menolak: ia membuat service berjalan sambil diam-diam tidak
-		// menyiarkan apa pun, dan pengguna menunggu balasan selamanya.
+		// A writer that does nothing is far more dangerous than one that refuses:
+		// it lets the service run while silently announcing nothing, and the user
+		// waits for a reply forever.
 		return refusingWriter{}
 	}
 	return t.events(t.q)
 }
 
-// refusingWriter menolak setiap penulisan event.
+// refusingWriter refuses every event write.
 type refusingWriter struct{}
 
 func (refusingWriter) Write(context.Context, string, string, *eventsv1.Envelope) error {

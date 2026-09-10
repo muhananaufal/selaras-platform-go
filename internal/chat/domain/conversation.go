@@ -1,6 +1,6 @@
-// Package domain memuat aturan percakapan asisten umum.
+// Package domain holds the rules of general-assistant conversations.
 //
-// Ia tidak mengimpor apa pun dari adapter, dan itu dijaga test batas.
+// It imports nothing from the adapters, and a boundary test guards that.
 package domain
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Galat yang dikenali pemanggil.
+// Errors that callers recognise.
 var (
 	ErrConversationNotFound = errors.New("conversation not found")
 	ErrInvalidID            = errors.New("invalid id")
@@ -26,37 +26,37 @@ var (
 	ErrBlankTitle           = errors.New("a conversation title cannot be blank")
 )
 
-// DefaultTitle adalah judul percakapan yang belum diberi nama.
+// DefaultTitle is the title of a conversation not yet named.
 //
-// Percakapan yang dibuat lewat tombol "mulai baru" belum punya pesan, jadi
-// judulnya belum bisa diturunkan dari apa pun.
+// A conversation created through the "start new" button has no message yet,
+// so its title cannot be derived from anything.
 const DefaultTitle = "Percakapan Baru"
 
-// derivedTitleRunes adalah panjang judul yang diturunkan dari pesan pertama.
+// derivedTitleRunes is the length of a title derived from the first message.
 //
-// 45, sama dengan coaching dan dengan sistem lama (D12). Angkanya sengaja sama
-// di kedua tempat: pengguna melihat dua daftar percakapan di aplikasi yang
-// sama, dan judul yang dipotong berbeda panjang terlihat seperti kekeliruan.
+// 45, the same as coaching and as the legacy system (D12). The number is
+// deliberately the same in both places: users see two conversation lists in
+// the same app, and titles cut to different lengths look like a mistake.
 const derivedTitleRunes = 45
 
-// truncationSuffix mengikuti Str::limit di sistem lama.
+// truncationSuffix follows Str::limit in the legacy system.
 const truncationSuffix = "..."
 
-// maxTitle membatasi judul yang dikirim pengguna.
+// maxTitle bounds a title sent by the user.
 const maxTitle = 100
 
-// maxMessageBytes membatasi satu pesan.
+// maxMessageBytes bounds a single message.
 //
-// Ia juga batas biaya: pesan yang panjang menjadi prompt yang panjang, dan
-// prompt yang panjang dibayar per token.
+// It is also a cost bound: a long message becomes a long prompt, and a long
+// prompt is paid for per token.
 const maxMessageBytes = 16 * 1024
 
-// ContextWindow adalah jumlah pesan yang ikut ke prompt (D8).
+// ContextWindow is the number of messages that go into the prompt (D8).
 //
-// Dua puluh, sama dengan sistem lama.
+// Twenty, the same as the legacy system.
 const ContextWindow = 20
 
-// ID adalah kunci internal. Slug yang muncul di API publik.
+// ID is the internal key. The slug is what appears in the public API.
 type ID struct{ v uuid.UUID }
 
 func NewID() (ID, error) {
@@ -78,7 +78,7 @@ func ParseID(raw string) (ID, error) {
 func (id ID) String() string { return id.v.String() }
 func (id ID) IsZero() bool   { return id.v == uuid.Nil }
 
-// UserID menunjuk ke identity.users.
+// UserID points at identity.users.
 type UserID struct{ v uuid.UUID }
 
 func ParseUserID(raw string) (UserID, error) {
@@ -92,12 +92,12 @@ func ParseUserID(raw string) (UserID, error) {
 func (id UserID) String() string { return id.v.String() }
 func (id UserID) IsZero() bool   { return id.v == uuid.Nil }
 
-// slugBytes adalah 10 byte, 80 bit.
+// slugBytes is 10 bytes, 80 bits.
 const slugBytes = 10
 
 var slugEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
-// NewSlug menghasilkan id publik baru.
+// NewSlug generates a new public id.
 func NewSlug() (string, error) {
 	raw := make([]byte, slugBytes)
 	if _, err := rand.Read(raw); err != nil {
@@ -106,12 +106,12 @@ func NewSlug() (string, error) {
 	return slugEncoding.EncodeToString(raw), nil
 }
 
-// NormaliseSlug membersihkan slug yang datang dari URL.
+// NormaliseSlug cleans a slug that arrived from a URL.
 func NormaliseSlug(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
-// Conversation adalah satu percakapan.
+// Conversation is one conversation.
 type Conversation struct {
 	ID     ID
 	UserID UserID
@@ -122,10 +122,11 @@ type Conversation struct {
 	UpdatedAt time.Time
 }
 
-// NewConversation membuat percakapan baru.
+// NewConversation creates a new conversation.
 //
-// firstMessage boleh kosong: percakapan bisa dibuat sebelum ada pesan. Judulnya
-// diturunkan darinya bila ada, dan jatuh ke DefaultTitle bila tidak (D12).
+// firstMessage may be empty: a conversation can be created before there is a
+// message. The title is derived from it when present, and falls back to
+// DefaultTitle when not (D12).
 func NewConversation(userID UserID, title, firstMessage string, now time.Time) (*Conversation, error) {
 	if userID.IsZero() {
 		return nil, fmt.Errorf("%w: a conversation needs an owner", ErrInvalidID)
@@ -154,18 +155,18 @@ func NewConversation(userID UserID, title, firstMessage string, now time.Time) (
 	}, nil
 }
 
-// DeriveTitle membuat judul dari pesan pertama (D12).
+// DeriveTitle builds a title from the first message (D12).
 //
-// Memotong per RUNE, bukan per byte: memotong per byte akan memutus karakter
-// multi-byte dan menghasilkan judul yang berakhir dengan byte rusak.
+// Cut by RUNE, not by byte: cutting by byte would split a multi-byte
+// character and produce a title ending in a broken byte.
 func DeriveTitle(message string) string {
 	trimmed := strings.TrimSpace(message)
 	if trimmed == "" {
 		return DefaultTitle
 	}
 
-	// Judul adalah satu baris. Pesan berparagraf yang masuk apa adanya akan
-	// merusak tata letak daftar percakapan.
+	// A title is a single line. A message with paragraphs let through as-is
+	// would break the layout of the conversation list.
 	trimmed = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
@@ -181,10 +182,10 @@ func DeriveTitle(message string) string {
 	return strings.TrimSpace(string(runes[:derivedTitleRunes])) + truncationSuffix
 }
 
-// BelongsTo menyatakan kepemilikan.
+// BelongsTo states ownership.
 //
-// Dipakai untuk menjawab 404, BUKAN 403: membedakan "tidak ada" dari "milik
-// orang lain" memberi tahu penanya bahwa slug itu ada (S9).
+// Used to answer 404, NOT 403: telling "does not exist" from "someone
+// else's" tells the asker that the slug exists (S9).
 func (c *Conversation) BelongsTo(userID UserID) bool {
 	return !c.UserID.IsZero() && c.UserID == userID
 }
@@ -203,14 +204,13 @@ func (c *Conversation) Rename(title string, now time.Time) error {
 	return nil
 }
 
-// Touch menandai percakapan baru saja dipakai.
+// Touch marks a conversation as just used.
 //
-// Daftar percakapan diurutkan menurut updated_at, jadi tanpa ini percakapan
-// yang aktif akan tenggelam di bawah percakapan lama yang baru saja diganti
-// judulnya.
+// The conversation list is ordered by updated_at, so without this an active
+// conversation would sink below an old one that was merely renamed.
 func (c *Conversation) Touch(now time.Time) { c.UpdatedAt = now }
 
-// Role adalah peran pengirim pesan.
+// Role is the role of a message's sender.
 type Role string
 
 const (
@@ -218,7 +218,7 @@ const (
 	RoleModel Role = "model"
 )
 
-// NewRole memeriksa nilai yang datang dari luar.
+// NewRole checks a value that comes from outside.
 func NewRole(raw string) (Role, error) {
 	switch Role(raw) {
 	case RoleUser, RoleModel:
@@ -228,7 +228,7 @@ func NewRole(raw string) (Role, error) {
 	}
 }
 
-// Message adalah satu pesan dalam percakapan.
+// Message is one message in a conversation.
 type Message struct {
 	ID             ID
 	ConversationID ID

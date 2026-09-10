@@ -20,8 +20,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
-// newResults merakit konsumen di atas service sungguhan dan Postgres uji.
-// Klien Kafka-nya tidak pernah menyambung; handle dipanggil langsung.
+// newResults assembles the consumer on top of the real service and the test
+// Postgres. Its Kafka client never connects; handle is called directly.
 func newResults(t *testing.T) (*Results, context.Context) {
 	t.Helper()
 
@@ -77,11 +77,11 @@ func replyRecord(t *testing.T, conversationID string) *kgo.Record {
 	}
 }
 
-// TestAReplyForADeletedConversationIsDroppedNotRetried menutup putaran tanpa
-// akhir yang tersingkap oleh trace (F9-07): percakapan yang dihapus bersama
-// akunnya masih punya balasan LLM yang datang belakangan, dan pelanggaran
-// foreign key saat menyimpannya diperlakukan sebagai kegagalan sementara -
-// konsumen memundurkan offset dan mengulanginya setiap detik, selamanya.
+// TestAReplyForADeletedConversationIsDroppedNotRetried closes the endless
+// loop the trace exposed (F9-07): a conversation deleted along with its
+// account still has an LLM reply arriving later, and the foreign key
+// violation on storing it was treated as a transient failure - the consumer
+// rewound the offset and repeated it every second, forever.
 func TestAReplyForADeletedConversationIsDroppedNotRetried(t *testing.T) {
 	results, ctx := newResults(t)
 
@@ -90,9 +90,9 @@ func TestAReplyForADeletedConversationIsDroppedNotRetried(t *testing.T) {
 	}
 }
 
-// TestATransientFailureIsStillAnError menjaga perbaikan di atas tidak
-// melebar: galat SEMENTARA tetap galat, supaya offset ditahan dan balasannya
-// datang lagi.
+// TestATransientFailureIsStillAnError keeps the fix above from spreading: a
+// TRANSIENT error is still an error, so the offset is held and the reply
+// comes back.
 func TestATransientFailureIsStillAnError(t *testing.T) {
 	results, ctx := newResults(t)
 	gone, cancel := context.WithCancel(ctx)

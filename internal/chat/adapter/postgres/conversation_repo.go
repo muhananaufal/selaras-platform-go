@@ -1,4 +1,4 @@
-// Package postgres menyimpan percakapan chat di Postgres.
+// Package postgres stores chat conversations in Postgres.
 package postgres
 
 import (
@@ -16,7 +16,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// Repository memenuhi domain.ConversationRepository.
+// Repository implements domain.ConversationRepository.
 type Repository struct {
 	db pg.Querier
 }
@@ -52,16 +52,16 @@ func (r *Repository) FindBySlug(ctx context.Context, slug string) (*domain.Conve
 	return c, nil
 }
 
-// ListForUser mengembalikan percakapan seorang pengguna, terbaru lebih dulu.
+// ListForUser returns a user's conversations, newest first.
 func (r *Repository) ListForUser(
 	ctx context.Context, userID domain.UserID, page domain.Page,
 ) ([]*domain.Conversation, int, error) {
 	page = page.Normalise()
 
-	// Jumlah dihitung LEBIH DULU dan terpisah.
+	// The count is computed FIRST and separately.
 	//
-	// Menggabungkannya dengan window function akan menghitung ulang untuk
-	// setiap baris; dua kueri lebih murah dan jauh lebih mudah dibaca.
+	// Combining it with a window function would recompute it for every row;
+	// two queries are cheaper and far easier to read.
 	var total int
 	if err := r.db.QueryRow(ctx,
 		`SELECT count(*) FROM conversations WHERE user_id = $1`, userID.String(),
@@ -82,8 +82,8 @@ func (r *Repository) ListForUser(
 	}
 	defer rows.Close()
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi daftar akan gagal alih-alih menampilkan daftar kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the list fails instead of showing an empty list.
 	out := make([]*domain.Conversation, 0, page.Size)
 	for rows.Next() {
 		c, err := scanConversation(rows)
@@ -112,7 +112,7 @@ func (r *Repository) Update(ctx context.Context, c *domain.Conversation) error {
 }
 
 func (r *Repository) Delete(ctx context.Context, id domain.ID) error {
-	// Pesannya ikut terhapus lewat ON DELETE CASCADE.
+	// Its messages are deleted along with it through ON DELETE CASCADE.
 	const q = `DELETE FROM conversations WHERE id = $1`
 
 	tag, err := r.db.Exec(ctx, q, id.String())
@@ -133,10 +133,10 @@ func (r *Repository) CreateMessage(ctx context.Context, m *domain.Message) error
 	if _, err := r.db.Exec(ctx, q,
 		m.ID.String(), m.ConversationID.String(), string(m.Role), m.Content,
 		m.CreatedAt, m.UpdatedAt); err != nil {
-		// Foreign key yang gagal berarti percakapannya sudah tidak ada. Ia
-		// dinamai, bukan diteruskan sebagai galat SQL: pemanggil yang perlu
-		// membedakan "hilang" dari "rusak" - konsumen balasan LLM - hanya
-		// bisa melakukannya bila galatnya punya nama.
+		// A failed foreign key means the conversation no longer exists. It is
+		// named, not passed on as a SQL error: a caller that needs to tell "gone"
+		// from "broken" - the LLM reply consumer - can only do so if the error
+		// has a name.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation {
 			return domain.ErrConversationNotFound
@@ -146,7 +146,7 @@ func (r *Repository) CreateMessage(ctx context.Context, m *domain.Message) error
 	return nil
 }
 
-// ListMessages membaca percakapan berhalaman, terlama lebih dulu.
+// ListMessages reads a conversation by page, oldest first.
 func (r *Repository) ListMessages(
 	ctx context.Context, conversationID domain.ID, page domain.Page,
 ) ([]*domain.Message, int, error) {
@@ -187,11 +187,11 @@ func (r *Repository) ListMessages(
 	return out, total, nil
 }
 
-// TailMessages membaca sejumlah pesan TERAKHIR, terlama lebih dulu.
+// TailMessages reads a number of the LAST messages, oldest first.
 //
-// Pembatasannya diterapkan pada yang terbaru lalu urutannya dibalik: mengambil
-// yang pertama akan memberi model awal percakapan dan melewatkan yang baru saja
-// dikatakan (D8).
+// The bound is applied to the newest and the order is then reversed: taking the
+// first ones would give the model the start of the conversation and skip what
+// was just said (D8).
 func (r *Repository) TailMessages(
 	ctx context.Context, conversationID domain.ID, limit int,
 ) ([]*domain.Message, error) {

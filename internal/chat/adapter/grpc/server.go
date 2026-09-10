@@ -42,8 +42,8 @@ func (s *Server) ListConversations(
 		return nil, toStatus(ctx, "ListConversations", err)
 	}
 
-	// Slice kosong, bukan nil: nil menjadi `null` di JSON, dan klien yang
-	// mengiterasi daftar akan gagal alih-alih menampilkan daftar kosong.
+	// An empty slice, not nil: nil becomes `null` in JSON, and a client
+	// iterating the list fails instead of showing an empty list.
 	out := make([]*chatv1.Conversation, 0, len(list.Items))
 	for _, c := range list.Items {
 		out = append(out, conversationToProto(c))
@@ -70,9 +70,9 @@ func (s *Server) CreateConversation(
 	out := &chatv1.CreateConversationResponse{
 		Conversation: conversationToProto(view.Conversation),
 	}
-	// job_id hanya ada bila pesannya ikut: percakapan kosong tidak mengantre
-	// pekerjaan apa pun, dan mengembalikan id yang tidak menunjuk apa-apa akan
-	// membuat klien menunggu balasan yang tidak pernah diminta.
+	// job_id is present only when a message is included: an empty conversation
+	// queues no job, and returning an id that points at nothing would make the
+	// client wait for a reply that was never requested.
 	if len(view.Messages) > 0 {
 		out.JobId = view.Messages[0].ID.String()
 	}
@@ -155,11 +155,11 @@ func conversationToProto(c *domain.Conversation) *chatv1.Conversation {
 	}
 }
 
-// messageToProto memetakan pesan ke bentuk kontrak.
+// messageToProto maps a message to its contract shape.
 //
-// Kontraknya menamai bidangnya content_json, sementara chat menyimpan teks
-// biasa. Ia dibungkus menjadi {"text": ...} supaya bentuk kawatnya sama dengan
-// thread coaching - klien yang menampilkan keduanya tidak perlu dua pembaca.
+// The contract names the field content_json, while chat stores plain text. It
+// is wrapped as {"text": ...} so the wire shape matches coaching threads - a
+// client displaying both need not have two readers.
 func messageToProto(m *domain.Message) *chatv1.ChatMessage {
 	if m == nil {
 		return nil
@@ -190,17 +190,17 @@ func roleToProto(r domain.Role) chatv1.MessageRole {
 	}
 }
 
-// pageFrom membaca permintaan halaman dari kontrak.
+// pageFrom reads the page request from the contract.
 //
-// Kontrak bersamanya memakai page_token, bukan nomor halaman. Token itu OPAQUE
-// bagi klien - itulah gunanya - dan apa yang ada di dalamnya urusan adapter
-// ini. Yang disimpan di sini adalah nomor halaman, dan itu pilihan yang bisa
-// diganti cursor sungguhan nanti TANPA mengubah kontraknya maupun kliennya.
+// The shared contract uses page_token, not a page number. The token is OPAQUE
+// to the client - that is its purpose - and what is inside is this adapter's
+// business. What is stored here is the page number, and that is a choice that
+// can be replaced by a real cursor later WITHOUT changing the contract or the
+// client.
 //
-// Token yang tidak bisa dibaca diperlakukan sebagai halaman pertama, bukan
-// sebagai galat: token yang kedaluwarsa atau dipotong pemakainya jauh lebih
-// sering daripada token yang dipalsukan, dan mengembalikan galat untuk itu
-// hanya membuat daftar berhenti bekerja.
+// An unreadable token is treated as the first page, not as an error: a token
+// expired or cut short by its user is far more common than a forged one, and
+// returning an error for it only makes the list stop working.
 func pageFrom(p *commonv1.PageRequest) domain.Page {
 	return domain.Page{
 		Number: pageNumberFromToken(p.GetPageToken()),
@@ -208,10 +208,10 @@ func pageFrom(p *commonv1.PageRequest) domain.Page {
 	}
 }
 
-// pageTokenPrefix membuat token ini bisa dikenali saat menyelidiki.
+// pageTokenPrefix makes this token recognisable when investigating.
 //
-// Tanpa penanda, token dari sumber lain yang kebetulan terbaca sebagai angka
-// akan diterima diam-diam.
+// Without a marker, a token from another source that happens to read as a
+// number would be accepted silently.
 const pageTokenPrefix = "p:"
 
 func pageNumberFromToken(token string) int {
@@ -225,11 +225,11 @@ func pageNumberFromToken(token string) int {
 	return number
 }
 
-// pageToProto menyusun jawaban halaman.
+// pageToProto composes the page answer.
 //
-// next_page_token KOSONG di halaman terakhir. Klien memakai kosongnya sebagai
-// tanda berhenti; token yang selalu ada akan membuatnya meminta halaman kosong
-// selamanya.
+// next_page_token is EMPTY on the last page. The client uses its emptiness as
+// the signal to stop; a token that is always present would make it request
+// empty pages forever.
 func pageToProto(p domain.Page, total int) *commonv1.PageResponse {
 	out := &commonv1.PageResponse{}
 
@@ -239,13 +239,13 @@ func pageToProto(p domain.Page, total int) *commonv1.PageResponse {
 	return out
 }
 
-// toStatus menerjemahkan galat domain menjadi kode gRPC.
+// toStatus translates a domain error into a gRPC code.
 func toStatus(ctx context.Context, op string, err error) error {
 	switch {
 	case err == nil:
 		return nil
 
-	// Milik orang lain dan tidak ada menjawab SAMA (S9).
+	// Someone else's and non-existent answer the SAME (S9).
 	case errors.Is(err, domain.ErrConversationNotFound):
 		return status.Error(codes.NotFound, "no such conversation")
 

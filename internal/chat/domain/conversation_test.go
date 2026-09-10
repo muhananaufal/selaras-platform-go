@@ -28,7 +28,7 @@ func day(s string) time.Time {
 	return parsed
 }
 
-// TestATitleIsDerivedFromTheFirstMessage adalah D12.
+// TestATitleIsDerivedFromTheFirstMessage is D12.
 func TestATitleIsDerivedFromTheFirstMessage(t *testing.T) {
 	c, err := domain.NewConversation(owner(t), "",
 		"Apakah kopi berpengaruh pada tekanan darah saya?", day("2026-01-05"))
@@ -39,7 +39,7 @@ func TestATitleIsDerivedFromTheFirstMessage(t *testing.T) {
 		t.Fatalf("the derived title is %q", c.Title)
 	}
 
-	// Judul yang diberikan menang.
+	// A given title wins.
 	named, err := domain.NewConversation(owner(t), "Soal kopi", "apa pun", day("2026-01-05"))
 	if err != nil {
 		t.Fatalf("NewConversation: %v", err)
@@ -49,8 +49,8 @@ func TestATitleIsDerivedFromTheFirstMessage(t *testing.T) {
 	}
 }
 
-// TestAConversationWithoutAMessageGetsTheDefaultTitle menjaga percakapan yang
-// dibuat sebelum ada pesan.
+// TestAConversationWithoutAMessageGetsTheDefaultTitle guards a conversation
+// created before there is a message.
 func TestAConversationWithoutAMessageGetsTheDefaultTitle(t *testing.T) {
 	c, err := domain.NewConversation(owner(t), "", "", day("2026-01-05"))
 	if err != nil {
@@ -61,7 +61,8 @@ func TestAConversationWithoutAMessageGetsTheDefaultTitle(t *testing.T) {
 	}
 }
 
-// TestATitleIsCutByRunesNotBytes menjaga karakter tidak terpotong di tengah.
+// TestATitleIsCutByRunesNotBytes keeps characters from being split in the
+// middle.
 func TestATitleIsCutByRunesNotBytes(t *testing.T) {
 	title := domain.DeriveTitle(strings.Repeat("🥗", 60))
 
@@ -160,7 +161,7 @@ func TestAMessageIsTrimmedAndBounded(t *testing.T) {
 	}
 }
 
-// TestOnlyTwoRolesExist menjaga peran yang dikirim ke penyedia LLM.
+// TestOnlyTwoRolesExist guards the roles sent to the LLM provider.
 func TestOnlyTwoRolesExist(t *testing.T) {
 	for _, raw := range []string{"user", "model"} {
 		if _, err := domain.NewRole(raw); err != nil {
@@ -179,8 +180,8 @@ func TestOnlyTwoRolesExist(t *testing.T) {
 	}
 }
 
-// TestPagingStaysWithinSaneBounds menjaga satu permintaan tidak meminta seluruh
-// riwayat.
+// TestPagingStaysWithinSaneBounds keeps one request from asking for the whole
+// history.
 func TestPagingStaysWithinSaneBounds(t *testing.T) {
 	cases := []struct {
 		in         domain.Page
