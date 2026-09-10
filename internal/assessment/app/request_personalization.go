@@ -14,28 +14,28 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// EventWriter menulis event ke outbox.
+// EventWriter writes events to the outbox.
 //
-// Ia antarmuka supaya use case ini tidak mengimpor adapter mana pun, dan supaya
-// test bisa memeriksa event yang ditulis tanpa basis data.
+// It is an interface so this use case imports no adapter, and so tests can
+// inspect the events written without a database.
 type EventWriter interface {
 	Write(ctx context.Context, aggregateType, aggregateID string, envelope *eventsv1.Envelope) error
 }
 
-// EventWriterFor membuat penulis event DI ATAS satu transaksi.
+// EventWriterFor creates an event writer ON a single transaction.
 //
-// Ia sebuah pabrik, bukan penulis yang sudah jadi, dan itu bukan kerumitan yang
-// tidak perlu: penulis yang dibangun di atas kolam koneksi akan mengambil
-// koneksinya sendiri dan commit sendiri, sehingga eventnya bertahan meski
-// transaksi bisnisnya batal. Bentuk ini membuat kekeliruan itu tidak bisa
-// ditulis.
+// It is a factory, not a ready-made writer, and that is not needless
+// complexity: a writer built on the connection pool would take its own
+// connection and commit on its own, so its event would survive even when the
+// business transaction was rolled back. This shape makes that mistake
+// impossible to write.
 type EventWriterFor func(pg.Querier) EventWriter
 
-// StatusWriter menulis status personalisasi di dalam sebuah transaksi.
+// StatusWriter writes the personalisation status inside a transaction.
 //
-// Ia sengaja sebuah port yang sempit, bukan seluruh domain.Repository:
-// use case ini hanya perlu satu operasi, dan port yang lebih lebar akan
-// mengundang tulisan lain masuk ke transaksi yang tidak diniatkan untuknya.
+// It is deliberately a narrow port, not the whole domain.Repository: this
+// use case needs one operation, and a wider port would invite other writes
+// into a transaction not intended for them.
 type StatusWriter interface {
 	SetPersonalizationStatus(
 		ctx context.Context, id domain.ID,
@@ -43,69 +43,69 @@ type StatusWriter interface {
 	) (bool, error)
 }
 
-// StatusWriterFor membuat penulis status di atas satu transaksi.
+// StatusWriterFor creates a status writer on a single transaction.
 type StatusWriterFor func(pg.Querier) StatusWriter
 
-// UnitOfWork menjalankan sebuah fungsi di dalam satu transaksi.
+// UnitOfWork runs a function inside one transaction.
 //
-// Ia dibutuhkan di sini karena permintaan personalisasi menghasilkan DUA
-// tulisan yang harus terjadi bersama: penandaan bahwa penilaian ini sedang
-// dipersonalisasi, dan event yang memintanya. Kalau salah satunya bisa terjadi
-// tanpa yang lain, sistem punya penilaian yang menunggu selamanya atau
-// pekerjaan yang tidak ada yang menunggu.
+// It is needed here because a personalisation request produces TWO writes that
+// have to happen together: the mark that this assessment is being
+// personalised, and the event requesting it. If either could happen without
+// the other, the system would have an assessment waiting forever or a job
+// nobody is waiting for.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(pg.Querier) error) error
 }
 
-// PersonalizationRequest adalah permintaannya.
+// PersonalizationRequest is the request.
 type PersonalizationRequest struct {
 	Slug   string
 	UserID string
 
-	// IdempotencyKey datang dari pemanggil. Kosong berarti kunci diturunkan
-	// dari penilaiannya, sehingga dua permintaan untuk penilaian yang sama
-	// tetap menghasilkan satu pekerjaan.
+	// IdempotencyKey comes from the caller. Empty means the key is derived
+	// from the assessment, so two requests for the same assessment still
+	// produce one job.
 	IdempotencyKey string
 }
 
-// PersonalizationTicket adalah jawaban yang dikembalikan segera.
+// PersonalizationTicket is the answer returned immediately.
 type PersonalizationTicket struct {
 	JobID string
 
-	// AlreadyRunning menyatakan permintaan ini tidak memulai pekerjaan baru
-	// karena sudah ada yang berjalan atau sudah selesai. Pemanggil tetap
-	// mendapat job_id yang sama - permintaan ulang bukan galat.
+	// AlreadyRunning says this request started no new job because one is
+	// already running or already done. The caller still gets the same job_id -
+	// a repeated request is not an error.
 	AlreadyRunning bool
 }
 
-// RequestPersonalization meminta laporan personalisasi dibuat.
+// RequestPersonalization asks for a personalisation report to be produced.
 //
-// Ia TIDAK memanggil penyedia LLM. Ia menulis event dan kembali - itulah
-// seluruh alasan fase ini ada. Memanggil penyedia dari jalur permintaan berarti
-// pengguna menunggu puluhan detik, satu kegagalan penyedia menjadi kegagalan
-// HTTP, dan tidak ada yang bisa mencoba ulang tanpa pengguna menekan tombolnya
-// lagi.
+// It does NOT call the LLM provider. It writes an event and returns - that is
+// the whole reason this phase exists. Calling the provider from the request
+// path means the user waits tens of seconds, one provider failure becomes an
+// HTTP failure, and nothing can retry without the user pressing the button
+// again.
 func (s *Service) RequestPersonalization(
 	ctx context.Context, uow UnitOfWork, events EventWriterFor, req PersonalizationRequest,
 ) (*PersonalizationTicket, error) {
 	if uow == nil || events == nil || s.statusWriter == nil {
-		// Menerima permintaan tanpa salah satu dari ketiganya berarti
-		// mengembalikan tiket untuk pekerjaan yang tidak akan pernah tercatat
-		// atau tidak akan pernah dikerjakan. Menolaknya jauh lebih jujur.
+		// Accepting a request without any one of the three means returning a
+		// ticket for work that will never be recorded or never be done. Refusing
+		// is far more honest.
 		return nil, errors.New("personalisation needs a unit of work, an event writer, and a status writer")
 	}
 
-	// Kepemilikan diperiksa lewat jalur yang sama dengan pembacaan biasa: id
-	// profil diselesaikan dari user_id yang sudah terverifikasi, bukan
-	// diterima dari pemanggil (ADR-023).
+	// Ownership is checked through the same path as an ordinary read: the
+	// profile id is resolved from the already verified user_id, not accepted
+	// from the caller (ADR-023).
 	assessment, err := s.Get(ctx, req.Slug, req.UserID)
 	if err != nil {
 		return nil, err
 	}
 
 	if assessment.ResultDetails != nil {
-		// Sudah ada laporannya. Meminta lagi tidak salah, tetapi tidak perlu
-		// memulai pekerjaan berbayar yang kedua.
+		// The report already exists. Asking again is not wrong, but there is no
+		// need to start a second paid job.
 		return &PersonalizationTicket{
 			JobID:          assessment.ID.String(),
 			AlreadyRunning: true,
@@ -114,9 +114,9 @@ func (s *Service) RequestPersonalization(
 
 	key := req.IdempotencyKey
 	if key == "" {
-		// Diturunkan dari penilaiannya, bukan diacak. Kunci acak membuat setiap
-		// permintaan ulang menjadi pekerjaan baru, dan pengguna yang menekan
-		// tombolnya dua kali membayar dua kali.
+		// Derived from the assessment, not randomised. A random key turns every
+		// repeated request into a new job, and a user who presses the button
+		// twice pays twice.
 		key = "personalization:" + assessment.ID.String()
 	}
 
@@ -139,13 +139,13 @@ func (s *Service) RequestPersonalization(
 		},
 	}
 
-	// Dua tulisan, satu transaksi: penandaan bahwa penilaian ini sedang
-	// dikerjakan, dan event yang memintanya.
+	// Two writes, one transaction: the mark that this assessment is being
+	// worked on, and the event requesting it.
 	//
-	// Kalau salah satunya bisa terjadi tanpa yang lain, sistem punya penilaian
-	// yang menunggu selamanya (status pending tanpa event) atau pekerjaan yang
-	// tidak ada yang menunggu (event tanpa status). Penulis event dibangun DARI
-	// transaksi ini, bukan dipakai dari luar.
+	// If either could happen without the other, the system would have an
+	// assessment waiting forever (status pending without an event) or a job
+	// nobody is waiting for (an event without a status). The event writer is
+	// built FROM this transaction, not used from outside it.
 	if err := uow.Do(ctx, func(q pg.Querier) error {
 		if _, err := s.statusWriter(q).SetPersonalizationStatus(ctx, assessment.ID,
 			domain.PersonalizationPending,
@@ -161,13 +161,13 @@ func (s *Service) RequestPersonalization(
 	return &PersonalizationTicket{JobID: jobID.String()}, nil
 }
 
-// StorePersonalization menyimpan laporan yang datang kembali dari worker
+// StorePersonalization stores the report that comes back from the worker
 // (F3-11).
 //
-// Ia idempoten terhadap dirinya sendiri: laporan yang sudah tersimpan tidak
-// ditimpa. Event bisa tiba dua kali - relay outbox at-least-once - dan menimpa
-// laporan yang sudah ada dengan yang datang belakangan akan mengganti isi yang
-// mungkin sudah dibaca pengguna.
+// It is idempotent with itself: an already stored report is not overwritten.
+// Events can arrive twice - the outbox relay is at-least-once - and
+// overwriting an existing report with the one arriving later would replace
+// content the user may already have read.
 func (s *Service) StorePersonalization(
 	ctx context.Context, assessmentID string, report map[string]any,
 ) error {
@@ -185,16 +185,17 @@ func (s *Service) StorePersonalization(
 		return err
 	}
 	if !stored {
-		// Bukan galat: laporannya sudah ada, dan itu keadaan yang benar.
+		// Not an error: the report already exists, and that is the correct state.
 		return nil
 	}
 	return nil
 }
 
-// RepositoryFor membuat repository penilaian di atas satu transaksi.
+// RepositoryFor creates an assessment repository on a single transaction.
 //
-// Ia ada karena Start harus menulis penilaian DAN event pengumumannya dalam
-// satu transaksi (E10). Repository yang dibangun di atas kolam koneksi akan
-// commit sendiri, dan penilaiannya bertahan meski eventnya batal - dasbor lalu
-// tidak akan pernah tahu penilaian itu ada.
+// It exists because Start has to write the assessment AND its announcement
+// event in one transaction (E10). A repository built on the connection pool
+// would commit on its own, and the assessment would survive even when its
+// event was rolled back - the dashboard would then never learn the assessment
+// exists.
 type RepositoryFor func(pg.Querier) domain.Repository

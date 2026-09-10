@@ -12,7 +12,7 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// recordingWriter mencatat event yang ditulis, tanpa basis data.
+// recordingWriter records the events written, without a database.
 type recordingWriter struct {
 	written []*eventsv1.Envelope
 	keys    []string
@@ -33,12 +33,12 @@ func (w *recordingWriter) Write(
 	return nil
 }
 
-// directUOW menjalankan fn tanpa transaksi sungguhan.
+// directUOW runs fn without a real transaction.
 //
-// Ia cukup untuk test ini karena yang diuji adalah APA yang ditulis, bukan
-// keatomikannya - keatomikan outbox sudah dibuktikan di internal/platform/outbox
-// terhadap Postgres nyata, termasuk dengan mutasi yang memisahkan penulisnya
-// dari transaksinya.
+// It is enough for these tests because what is tested is WHAT is written, not
+// its atomicity - the outbox's atomicity is already proven in
+// internal/platform/outbox against a real Postgres, including with a mutation
+// that separates the writer from its transaction.
 type directUOW struct {
 	calls int
 	fail  error
@@ -56,7 +56,7 @@ func writerFor(w *recordingWriter) app.EventWriterFor {
 	return func(pg.Querier) app.EventWriter { return w }
 }
 
-// TestRequestingPersonalizationWritesAnEventAndReturnsImmediately adalah gate
+// TestRequestingPersonalizationWritesAnEventAndReturnsImmediately is gate
 // F3-10.
 func TestRequestingPersonalizationWritesAnEventAndReturnsImmediately(t *testing.T) {
 	svc, _, _ := newService(t)
@@ -100,22 +100,22 @@ func TestRequestingPersonalizationWritesAnEventAndReturnsImmediately(t *testing.
 		t.Fatal("the job id returned to the caller is not the one in the event")
 	}
 
-	// Kunci partisinya id penilaian, sehingga event untuk penilaian yang sama
-	// tetap berurutan.
+	// Its partition key is the assessment id, so events for the same
+	// assessment stay in order.
 	if writer.keys[0] != assessment.ID.String() {
 		t.Fatalf("the event was keyed on %q, want the assessment id", writer.keys[0])
 	}
 
-	// Dan kunci idempotensinya diturunkan, bukan diacak - dua permintaan untuk
-	// penilaian yang sama tidak boleh membayar dua kali.
+	// And its idempotency key is derived, not randomised - two requests for
+	// the same assessment must not pay twice.
 	key := env.GetIdempotencyKey().GetValue()
 	if !strings.Contains(key, assessment.ID.String()) {
 		t.Fatalf("the idempotency key is %q; it does not identify the assessment", key)
 	}
 }
 
-// TestTwoRequestsCarryTheSameIdempotencyKey adalah yang membuat tombol yang
-// ditekan dua kali tidak berbiaya dua kali.
+// TestTwoRequestsCarryTheSameIdempotencyKey is what keeps a button pressed
+// twice from costing twice.
 func TestTwoRequestsCarryTheSameIdempotencyKey(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)
@@ -141,7 +141,7 @@ func TestTwoRequestsCarryTheSameIdempotencyKey(t *testing.T) {
 	}
 }
 
-// TestACallerSuppliedKeyWins menghormati kunci dari klien.
+// TestACallerSuppliedKeyWins honours the key from the client.
 func TestACallerSuppliedKeyWins(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)
@@ -204,10 +204,10 @@ func TestSomeoneElsesAssessmentIsNotFound(t *testing.T) {
 	}
 }
 
-// TestAFailedWriteIsReported menjaga tiket palsu tidak dikembalikan.
+// TestAFailedWriteIsReported keeps a bogus ticket from being returned.
 //
-// Tiket yang dikembalikan padahal eventnya gagal ditulis akan membuat klien
-// menunggu pekerjaan yang tidak ada yang mengerjakan - selamanya.
+// A ticket returned while the event failed to be written would leave the
+// client waiting for a job nobody is working on - forever.
 func TestAFailedWriteIsReported(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)
@@ -224,7 +224,8 @@ func TestAFailedWriteIsReported(t *testing.T) {
 	}
 }
 
-// TestStoringAReportTwiceKeepsTheFirst menjaga isi yang mungkin sudah dibaca.
+// TestStoringAReportTwiceKeepsTheFirst protects content that may already have
+// been read.
 func TestStoringAReportTwiceKeepsTheFirst(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)
@@ -235,8 +236,8 @@ func TestStoringAReportTwiceKeepsTheFirst(t *testing.T) {
 		t.Fatalf("first StorePersonalization: %v", err)
 	}
 
-	// Pengiriman ulang. Ia BUKAN galat - relay outbox at-least-once, dan event
-	// yang tiba dua kali adalah keadaan yang normal.
+	// A redelivery. It is NOT an error - the outbox relay is at-least-once,
+	// and an event arriving twice is a normal state.
 	if err := svc.StorePersonalization(ctx, assessment.ID.String(),
 		map[string]any{"version": "second"}); err != nil {
 		t.Fatalf("the second delivery was reported as a failure: %v", err)
@@ -251,8 +252,8 @@ func TestStoringAReportTwiceKeepsTheFirst(t *testing.T) {
 	}
 }
 
-// TestAnEmptyReportIsRefused menjaga laporan kosong tidak tersimpan sebagai
-// laporan.
+// TestAnEmptyReportIsRefused keeps an empty report from being stored as a
+// report.
 func TestAnEmptyReportIsRefused(t *testing.T) {
 	svc, _, _ := newService(t)
 	assessment := seedAssessment(t, svc)
@@ -263,12 +264,13 @@ func TestAnEmptyReportIsRefused(t *testing.T) {
 	}
 }
 
-// seedAssessment membuat satu penilaian milik mineID lewat jalur normal.
+// seedAssessment creates one assessment owned by mineID through the normal
+// path.
 //
-// Lewat Start, bukan dengan menyuntikkan baris ke repository palsu: penilaian
-// yang dibuat jalur normal membawa slug, id profil, dan nilai turunan yang
-// sesungguhnya, sehingga test di bawah menguji objek yang benar-benar ada di
-// sistem - bukan objek yang dirakit test itu sendiri.
+// Through Start, not by injecting a row into the fake repository: an
+// assessment created by the normal path carries the real slug, profile id,
+// and derived values, so the tests below exercise an object that really
+// exists in the system - not one the test assembled itself.
 func seedAssessment(t *testing.T, svc *app.Service) *domain.Assessment {
 	t.Helper()
 

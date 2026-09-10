@@ -17,14 +17,15 @@ import (
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
-// ProfileSnapshot adalah data demografis yang dibutuhkan mesin risiko.
+// ProfileSnapshot is the demographic data the risk engine needs.
 //
-// Ia datang dari profile-svc. Sengaja hanya berisi yang benar-benar dipakai
-// perhitungan: nama dan bahasa tidak pernah masuk ke model, dan membawanya
-// hanya memperluas apa yang bocor bila cuplikan ini tercatat di suatu tempat.
+// It comes from profile-svc. It deliberately holds only what the computation
+// actually uses: name and language never enter the model, and carrying them
+// would only widen what leaks if this snapshot is ever recorded somewhere.
 type ProfileSnapshot struct {
-	// UserProfileID diturunkan dari profil yang dibaca, bukan diterima dari
-	// pemanggil (ADR-023). Inilah yang disimpan sebagai pemilik penilaian.
+	// UserProfileID is derived from the profile that was read, not accepted
+	// from the caller (ADR-023). This is what is stored as the assessment's
+	// owner.
 	UserProfileID string
 
 	Age                int
@@ -32,27 +33,27 @@ type ProfileSnapshot struct {
 	CountryOfResidence string
 }
 
-// ProfileSource mengambil cuplikan profil.
+// ProfileSource fetches a profile snapshot.
 //
-// Dipanggil sekali per PENILAIAN, bukan sekali per request. Penilaian adalah
-// tindakan yang jarang - beberapa kali setahun bagi seorang pengguna - jadi
-// panggilan ini tidak duduk di jalur terpanas mana pun, dan ADR-007 tidak
-// terlanggar. Cache dari event (F2-16) adalah optimasi yang menyusul, bukan
-// prasyarat.
+// Called once per ASSESSMENT, not once per request. An assessment is a rare
+// action - a few times a year for one user - so this call sits on no hot
+// path, and ADR-007 is not violated. The event-fed cache (F2-16) is an
+// optimisation that follows, not a prerequisite.
 type ProfileSource interface {
 	Snapshot(ctx context.Context, userID string) (ProfileSnapshot, error)
 }
 
 var (
-	// ErrProfileIncomplete menandai profil yang belum cukup untuk dihitung.
+	// ErrProfileIncomplete marks a profile that is not yet sufficient to
+	// compute from.
 	//
-	// Ia BUKAN kegagalan sistem: profil yang belum diisi adalah keadaan yang
-	// sah (B7). Yang salah adalah meminta penilaian sebelum mengisinya, dan
-	// pesannya harus menyebut apa yang kurang.
+	// It is NOT a system failure: an unfilled profile is a valid state (B7).
+	// What is wrong is asking for an assessment before filling it in, and the
+	// message has to name what is missing.
 	ErrProfileIncomplete = errors.New("the profile is missing values the risk model needs")
 
-	// ErrNotYours dipakai internal. Ia TIDAK boleh sampai ke klien sebagai
-	// dirinya sendiri - lihat Get.
+	// ErrNotYours is used internally. It must NOT reach the client as itself -
+	// see Get.
 	ErrNotYours = errors.New("this assessment belongs to someone else")
 )
 
@@ -63,15 +64,15 @@ type Service struct {
 	engine      *score.Engine
 	now         func() time.Time
 
-	// statusWriter dipasang belakangan lewat WithStatusWriter. Nil berarti
-	// service ini hanya melayani pembacaan dan perhitungan - bukan alasan
-	// untuk gagal, tetapi juga bukan alasan untuk berpura-pura menerima
-	// pekerjaan yang tidak akan tercatat.
+	// statusWriter is installed later through WithStatusWriter. Nil means this
+	// service only serves reads and computations - no reason to fail, but no
+	// reason to pretend to accept work that will never be recorded either.
 	statusWriter StatusWriterFor
 
-	// repoFor dipasang belakangan lewat WithRepositoryFor, dengan alasan yang
-	// sama seperti statusWriter: nil berarti service ini melayani pembacaan
-	// dan perhitungan tanpa outbox, bukan berpura-pura mengumumkan apa pun.
+	// repoFor is installed later through WithRepositoryFor, for the same
+	// reason as statusWriter: nil means this service serves reads and
+	// computations without an outbox, rather than pretending to announce
+	// anything.
 	repoFor RepositoryFor
 }
 
@@ -94,22 +95,22 @@ func NewService(
 	return &Service{assessments: assessments, profiles: profiles, engine: engine, now: now}, nil
 }
 
-// StartCommand adalah masukan satu penilaian.
+// StartCommand is the input of one assessment.
 //
-// Ia membawa user_id, bukan user_profile_id. Id profil diturunkan dari profil
-// yang dibaca, bukan diterima dari pemanggil (ADR-023).
+// It carries user_id, not user_profile_id. The profile id is derived from the
+// profile that is read, not accepted from the caller (ADR-023).
 type StartCommand struct {
 	UserID  string
 	Answers map[string]any
 }
 
-// Start menghitung risiko, menyimpan hasilnya, dan mengumumkannya.
+// Start computes the risk, stores the result, and announces it.
 //
-// uow dan events boleh nil: assessment-svc tetap melayani perhitungan tanpa
-// outbox, sebagaimana ia tetap melayani pembacaan. Yang TIDAK boleh adalah
-// menyimpan penilaian tanpa eventnya ketika keduanya ADA - read-model dasbor
-// tidak akan pernah tahu penilaian itu terjadi, dan pengguna melihat dasbor
-// yang tertinggal tanpa ada yang bisa menjelaskan sebabnya.
+// uow and events may be nil: assessment-svc still serves computations
+// without an outbox, just as it still serves reads. What is NOT allowed is
+// storing an assessment without its event when both EXIST - the dashboard
+// read-model would never learn the assessment happened, and the user would
+// see a stale dashboard with nobody able to explain why.
 func (s *Service) Start(
 	ctx context.Context, uow UnitOfWork, events EventWriterFor, cmd StartCommand,
 ) (*domain.Assessment, error) {
@@ -121,9 +122,9 @@ func (s *Service) Start(
 		return nil, err
 	}
 
-	// Id profil datang dari profil yang baru saja dibaca, bukan dari
-	// permintaan. Itu yang membuat penilaian tidak bisa ditulis ke profil
-	// orang lain oleh apa pun yang bisa menjangkau service ini.
+	// The profile id comes from the profile just read, not from the request.
+	// That is what keeps an assessment from being written to someone else's
+	// profile by anything that can reach this service.
 	profileID, err := domain.ParseProfileID(profile.UserProfileID)
 	if err != nil {
 		return nil, err
@@ -144,17 +145,19 @@ func (s *Service) Start(
 		return nil, err
 	}
 
-	// Tanpa outbox, penilaiannya tetap dihitung dan disimpan. Ia hanya tidak
-	// diumumkan - dan itu dinyatakan di log saat start-up, bukan diam-diam.
+	// Without an outbox, the assessment is still computed and stored. It just
+	// is not announced - and that is stated in the log at start-up, not
+	// silently.
 	if uow == nil || events == nil || s.repoFor == nil {
 		return assessment, s.store(ctx, s.assessments, assessment)
 	}
 
-	// Penilaian dan eventnya ditulis dalam SATU transaksi (E10).
+	// The assessment and its event are written in ONE transaction (E10).
 	//
-	// Menerbitkannya setelah commit membiarkan proses mati di antara keduanya,
-	// dan dasbor tidak akan pernah tahu penilaian itu ada. Menerbitkannya
-	// sebelum commit lebih buruk lagi: dasbor menampilkan penilaian yang batal.
+	// Publishing after the commit leaves room for the process to die between
+	// the two, and the dashboard would never learn the assessment exists.
+	// Publishing before the commit is worse still: the dashboard shows an
+	// assessment that was rolled back.
 	announced := assessmentCompleted(assessment, cmd.UserID, result.Category, s.now())
 
 	if err := uow.Do(ctx, func(q pg.Querier) error {
@@ -168,11 +171,12 @@ func (s *Service) Start(
 	return assessment, nil
 }
 
-// store menyimpan penilaian, mencoba slug baru bila yang pertama bentrok.
+// store saves the assessment, trying a fresh slug if the first one
+// collides.
 //
-// Slug 80 bit praktis tidak akan bentrok, tetapi "praktis tidak akan" bukan
-// "tidak bisa". Satu percobaan ulang mengubah kemungkinan yang sangat kecil
-// menjadi kegagalan yang tidak pernah terlihat pengguna.
+// An 80-bit slug will practically never collide, but "practically never" is
+// not "cannot". One retry turns a vanishingly small probability into a
+// failure the user never sees.
 func (s *Service) store(
 	ctx context.Context, repo domain.Repository, assessment *domain.Assessment,
 ) error {
@@ -192,13 +196,13 @@ func (s *Service) store(
 	return nil
 }
 
-// assessmentCompleted menyusun event yang memberi tahu dunia luar.
+// assessmentCompleted composes the event that tells the outside world.
 //
-// Ia membawa user_id dan kategori risiko, dan keduanya ada alasannya. user_id:
-// read-model dasbor menyimpan satu baris per pengguna dan harus tahu baris siapa
-// yang diperbarui. Kategori: ia DIHITUNG di sini, bukan diminta dari model
-// bahasa seperti sistem lama (B19), sehingga ia ada begitu penilaiannya ada -
-// bukan menunggu personalisasi yang bisa gagal.
+// It carries user_id and the risk category, and both have a reason. user_id: the
+// dashboard read-model keeps one row per user and has to know whose row to
+// update. The category: it is COMPUTED here, not requested from the language
+// model as in the legacy system (B19), so it exists as soon as the assessment
+// does - rather than waiting for a personalisation that can fail.
 func assessmentCompleted(
 	a *domain.Assessment, userID string, category score.Category, now time.Time,
 ) *eventsv1.Envelope {
@@ -207,9 +211,9 @@ func assessmentCompleted(
 		OccurredAt:    timestamppb.New(now),
 		SchemaVersion: 1,
 
-		// Kunci idempotensi diturunkan dari penilaiannya. Satu penilaian
-		// menghasilkan satu event ini, selamanya - konsumen yang menerimanya
-		// dua kali karena relay at-least-once bisa mengenalinya.
+		// The idempotency key derives from the assessment. One assessment
+		// produces one of these events, forever - a consumer that receives it
+		// twice because the relay is at-least-once can recognise it.
 		IdempotencyKey: &commonv1.IdempotencyKey{Value: "assessment-completed:" + a.ID.String()},
 
 		Payload: &eventsv1.Envelope_AssessmentCompleted{
@@ -225,11 +229,11 @@ func assessmentCompleted(
 	}
 }
 
-// resolveProfileID menanyakan id profil seorang pengguna.
+// resolveProfileID asks for a user's profile id.
 //
-// Dipakai jalur BACA. Ia satu panggilan tambahan pada setiap pembacaan, dan
-// itu harga yang dibayar sadar (ADR-023): tanpanya, id profil orang lain yang
-// dikirimkan akan membaca penilaian orang lain.
+// Used by the READ path. It is one extra call on every read, and that price
+// is paid consciously (ADR-023): without it, someone else's profile id sent
+// along would read someone else's assessments.
 func (s *Service) resolveProfileID(ctx context.Context, userID string) (domain.ProfileID, error) {
 	profile, err := s.profiles.Snapshot(ctx, userID)
 	if err != nil {
@@ -238,14 +242,13 @@ func (s *Service) resolveProfileID(ctx context.Context, userID string) (domain.P
 	return domain.ParseProfileID(profile.UserProfileID)
 }
 
-// Get mengambil penilaian lewat slug-nya, untuk pemilik yang menyebutkan
-// dirinya.
+// Get fetches an assessment by its slug, for the owner naming themselves.
 //
-// Penilaian milik orang lain menghasilkan ErrAssessmentNotFound, BUKAN galat
-// otorisasi. Membedakan "tidak ada" dari "bukan milikmu" memberi tahu
-// penanya bahwa slug itu ada - dan dengan itu berapa banyak penilaian yang
-// pernah dibuat, dan mana yang bisa ditebak berikutnya. Ini yang diminta
-// F2-14, dan ia menutup pola yang sama dengan temuan S9.
+// Someone else's assessment yields ErrAssessmentNotFound, NOT an
+// authorisation error. Telling "does not exist" apart from "not yours" tells
+// the asker that the slug exists - and with it how many assessments have
+// ever been made, and which ones to guess next. This is what F2-14 asks for,
+// and it closes the same pattern as finding S9.
 func (s *Service) Get(ctx context.Context, slug, userID string) (*domain.Assessment, error) {
 	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
@@ -269,20 +272,20 @@ func (s *Service) History(ctx context.Context, userID string, limit int) ([]*dom
 		return nil, err
 	}
 	if limit <= 0 || limit > 100 {
-		// Batas atas ditetapkan, bukan diserahkan ke pemanggil. Permintaan
-		// tanpa batas adalah cara termurah membuat basis data mengirim
-		// seluruh riwayat seseorang dalam satu jawaban.
+		// The upper bound is fixed, not left to the caller. An unbounded request
+		// is the cheapest way to make the database send someone's entire history
+		// in one answer.
 		limit = 20
 	}
 	return s.assessments.ListForProfile(ctx, profileID, limit)
 }
 
-// validate memeriksa cuplikan profil sebelum apa pun dihitung.
+// validate checks the profile snapshot before anything is computed.
 //
-// Mesin risiko akan menghitung apa pun yang diberikan kepadanya: usia nol
-// menghasilkan angka, jenis kelamin kosong menghasilkan galat, dan negara
-// kosong diam-diam menjadi wilayah "high". Yang ketiga paling berbahaya
-// karena ia tidak gagal - ia hanya salah.
+// The risk engine will compute whatever it is given: an age of zero yields
+// a number, an empty sex yields an error, and an empty country silently
+// becomes the "high" region. The third is the most dangerous because it
+// does not fail - it is just wrong.
 func validate(p ProfileSnapshot) error {
 	var missing []string
 
@@ -302,10 +305,10 @@ func validate(p ProfileSnapshot) error {
 	return nil
 }
 
-// WithStatusWriter memasang penulis status personalisasi.
+// WithStatusWriter installs the personalisation status writer.
 //
-// Terpisah dari NewService supaya service yang hanya membaca - dan test yang
-// hanya menguji perhitungan - tidak perlu menyediakannya.
+// Separate from NewService so a read-only service - and tests that only
+// exercise the computation - need not provide one.
 func (s *Service) WithStatusWriter(w StatusWriterFor) *Service {
 	s.statusWriter = w
 	return s

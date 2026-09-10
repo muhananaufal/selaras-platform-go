@@ -18,7 +18,7 @@ const (
 	theirsID = "018f4c1e-0000-7000-8000-00000000bbbb"
 )
 
-// fakeRepo menegakkan keunikan slug seperti indeks di basis data.
+// fakeRepo enforces slug uniqueness like the index in the database.
 type fakeRepo struct {
 	mu      sync.Mutex
 	bySlug  map[string]*domain.Assessment
@@ -85,8 +85,8 @@ func (f *fakeProfiles) Snapshot(_ context.Context, userID string) (app.ProfileSn
 	return snapshot, nil
 }
 
-// profileIDFor memberi setiap pengguna satu id profil yang stabil, seperti
-// yang akan dilakukan profile-svc.
+// profileIDFor gives every user one stable profile id, as profile-svc
+// would.
 func profileIDFor(userID string) string {
 	if userID == mineID {
 		return "018f4c1e-0000-7000-8000-0000000000a1"
@@ -107,8 +107,8 @@ func newService(t *testing.T) (*app.Service, *fakeRepo, *fakeProfiles) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	// Penulis status memakai repository palsu yang sama, sehingga perpindahan
-	// keadaan yang ditulis benar-benar terlihat oleh pembacaan berikutnya.
+	// The status writer uses the same fake repository, so the state
+	// transitions it writes are really visible to the next read.
 	svc = svc.WithStatusWriter(func(pg.Querier) app.StatusWriter { return repo })
 
 	return svc, repo, profiles
@@ -151,17 +151,16 @@ func TestStartCalculatesAndStores(t *testing.T) {
 		t.Errorf("%d assessments stored; want 1", len(repo.bySlug))
 	}
 
-	// Sekali per PENILAIAN, bukan sekali per request. Penilaian jarang, jadi
-	// panggilan ini tidak duduk di jalur terpanas dan ADR-007 tidak
-	// terlanggar - tetapi memanggilnya lebih dari sekali per penilaian tetap
-	// pemborosan yang harus terlihat.
+	// Once per ASSESSMENT, not once per request. Assessments are rare, so this
+	// call sits on no hot path and ADR-007 is not violated - but calling it
+	// more than once per assessment is still waste that has to be visible.
 	if profiles.calls != 1 {
 		t.Errorf("the profile was fetched %d times; want 1", profiles.calls)
 	}
 }
 
-// Cuplikan masukan disimpan bersama hasilnya. Angka risiko tanpa masukannya
-// tidak bisa dibantah siapa pun.
+// The input snapshot is stored with the result. A risk number without its
+// inputs cannot be disputed by anyone.
 func TestStartStoresTheInputsBesideTheResult(t *testing.T) {
 	svc, _, _ := newService(t)
 
@@ -186,9 +185,8 @@ func TestStartStoresTheInputsBesideTheResult(t *testing.T) {
 	}
 }
 
-// Nilai diabetes hanya masuk cuplikan pada jalur diabetes. Nol adalah nilai
-// yang mungkin, jadi memakainya sebagai penanda ketiadaan membuat cuplikannya
-// berbohong.
+// Diabetes values enter the snapshot only on the diabetes path. Zero is a
+// possible value, so using it as a marker of absence makes the snapshot lie.
 func TestDiabetesValuesAppearOnlyOnTheDiabetesPath(t *testing.T) {
 	svc, _, _ := newService(t)
 
@@ -228,9 +226,9 @@ func TestDiabetesValuesAppearOnlyOnTheDiabetesPath(t *testing.T) {
 	}
 }
 
-// Profil yang belum diisi adalah keadaan yang sah (B7). Yang salah adalah
-// meminta penilaian sebelum mengisinya, dan pesannya harus menyebut apa yang
-// kurang - bukan menghitung dengan nilai bawaan yang diam-diam salah.
+// An unfilled profile is a valid state (B7). What is wrong is asking for an
+// assessment before filling it in, and the message has to name what is
+// missing - not compute with defaults that are silently wrong.
 func TestAnIncompleteProfileIsRefusedWithItsMissingFields(t *testing.T) {
 	cases := map[string]app.ProfileSnapshot{
 		"no birth date": {Age: 0, Sex: "male", CountryOfResidence: "indonesia"},
@@ -256,8 +254,8 @@ func TestAnIncompleteProfileIsRefusedWithItsMissingFields(t *testing.T) {
 	}
 }
 
-// Negara yang kosong adalah yang paling berbahaya: mesin risiko tidak gagal
-// karenanya, ia diam-diam memakai wilayah "high".
+// An empty country is the most dangerous: the risk engine does not fail on
+// it, it silently uses the "high" region.
 func TestAnEmptyCountryIsRefusedRatherThanDefaulted(t *testing.T) {
 	svc, _, profiles := newService(t)
 	profiles.snapshot.CountryOfResidence = ""
@@ -270,9 +268,9 @@ func TestAnEmptyCountryIsRefusedRatherThanDefaulted(t *testing.T) {
 	}
 }
 
-// F2-14. Penilaian milik orang lain menjawab NOT FOUND, bukan galat
-// otorisasi. Membedakannya memberi tahu penanya bahwa slug itu ada - dan
-// dengan itu berapa banyak penilaian yang pernah dibuat.
+// F2-14. Someone else's assessment answers NOT FOUND, not an authorisation
+// error. Telling them apart tells the asker the slug exists - and with it
+// how many assessments have ever been made.
 func TestSomeoneElsesAssessmentIsNotFoundRatherThanForbidden(t *testing.T) {
 	svc, _, _ := newService(t)
 
@@ -291,14 +289,14 @@ func TestSomeoneElsesAssessmentIsNotFoundRatherThanForbidden(t *testing.T) {
 		t.Error("the error reveals that the assessment exists")
 	}
 
-	// Dan bagi pemiliknya, slug yang sama bekerja.
+	// And for the owner, the same slug works.
 	if _, err := svc.Get(context.Background(), theirs.Slug, theirsID); err != nil {
 		t.Errorf("the owner cannot read their own assessment: %v", err)
 	}
 }
 
-// Slug yang tidak ada dan slug milik orang lain harus menghasilkan galat yang
-// SAMA. Kalau berbeda, perbedaannya sendiri yang menjawab.
+// A slug that does not exist and someone else's slug must yield the SAME
+// error. If they differ, the difference itself is the answer.
 func TestAMissingSlugAndSomeoneElsesLookIdentical(t *testing.T) {
 	svc, _, _ := newService(t)
 
@@ -343,8 +341,8 @@ func TestHistoryIsCappedEvenWhenTheCallerAsksForMore(t *testing.T) {
 		}
 	}
 
-	// Batas yang tidak masuk akal diganti dengan bawaannya, bukan diteruskan
-	// ke basis data.
+	// An unreasonable limit is replaced with the default, not passed on to the
+	// database.
 	for _, limit := range []int{0, -1, 10000} {
 		found, err := svc.History(context.Background(), mineID, limit)
 		if err != nil {
@@ -372,10 +370,11 @@ func TestNewServiceRefusesMissingDependencies(t *testing.T) {
 	}
 }
 
-// ADR-023. Id profil datang dari profil yang dibaca, bukan dari permintaan.
+// ADR-023. The profile id comes from the profile that is read, not from the
+// request.
 //
-// Kalau ia diterima dari pemanggil, apa pun yang bisa menjangkau service ini
-// bisa menulis penilaian ke profil orang lain hanya dengan menyebut idnya.
+// If it were accepted from the caller, anything that can reach this service
+// could write an assessment to someone else's profile just by naming its id.
 func TestTheProfileIdComesFromTheProfileNotTheRequest(t *testing.T) {
 	svc, _, _ := newService(t)
 
@@ -400,9 +399,9 @@ func TestTheProfileIdComesFromTheProfileNotTheRequest(t *testing.T) {
 	}
 }
 
-// SetResultDetails meniru sisi basis data: laporan yang sudah ada tidak
-// ditimpa, dan itu yang membuat pengiriman ulang tidak mengganti isi yang
-// mungkin sudah dibaca pengguna.
+// SetResultDetails mimics the database side: an existing report is not
+// overwritten, and that is what keeps a redelivery from replacing content
+// the user may already have read.
 func (r *fakeRepo) SetResultDetails(
 	_ context.Context, id domain.ID, report map[string]any,
 ) (bool, error) {
@@ -426,9 +425,9 @@ func (r *fakeRepo) SetResultDetails(
 	return false, domain.ErrAssessmentNotFound
 }
 
-// SetPersonalizationStatus meniru sisi basis data, termasuk pembatasan
-// perpindahannya: perpindahan dari keadaan yang tidak diizinkan tidak terjadi
-// dan dilaporkan sebagai changed=false, bukan sebagai galat.
+// SetPersonalizationStatus mimics the database side, including its transition
+// restriction: a transition from a disallowed state does not happen and is
+// reported as changed=false, not as an error.
 func (r *fakeRepo) SetPersonalizationStatus(
 	_ context.Context, id domain.ID,
 	to domain.PersonalizationStatus, from []domain.PersonalizationStatus, failure string,
