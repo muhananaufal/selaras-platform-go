@@ -63,8 +63,10 @@ tasks:
     cmds: ["buf breaking --against '.git#branch=develop'"]
 
   proto:gen:
-    desc: Generate Go code from protobuf
-    cmds: [buf generate]
+    desc: Generate Go code from protobuf (gRPC for the services, Connect for the public edge contract)
+    cmds:
+      - buf generate
+      - buf generate --template buf.gen.edge.yaml
 
   proto:
     desc: Lint then generate protobuf

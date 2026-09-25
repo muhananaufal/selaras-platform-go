@@ -1,0 +1,232 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "coaching/v1/coaching.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Coaching serves the caller's coaching programs and their threads.
+service Coaching {
+  // Starts a program from an assessment. Returns immediately with
+  // curriculum_status PENDING: the curriculum comes later. Honours the
+  // Idempotency-Key header.
+  rpc StartProgram(StartProgramRequest) returns (StartProgramResponse);
+
+  rpc GetProgram(GetProgramRequest) returns (GetProgramResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Moves a program between active and paused.
+  rpc ToggleProgramStatus(ToggleProgramStatusRequest) returns (ToggleProgramStatusResponse);
+
+  // Deletes a program with everything in it.
+  rpc DeleteProgram(DeleteProgramRequest) returns (DeleteProgramResponse);
+
+  // Requests or fetches the graduation report. Requesting it has a side
+  // effect the first time, so this is NOT a GET.
+  rpc GetGraduationReport(GetGraduationReportRequest) returns (GetGraduationReportResponse);
+
+  // Flips one task between done and not done.
+  rpc ToggleTaskStatus(ToggleTaskStatusRequest) returns (ToggleTaskStatusResponse);
+
+  // Opens a thread with a first message. The reply comes later. Honours the
+  // Idempotency-Key header.
+  rpc StartThread(StartThreadRequest) returns (StartThreadResponse);
+
+  rpc GetThread(GetThreadRequest) returns (GetThreadResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  rpc UpdateThreadTitle(UpdateThreadTitleRequest) returns (UpdateThreadTitleResponse);
+  rpc DeleteThread(DeleteThreadRequest) returns (DeleteThreadResponse);
+
+  // Writes a message to a thread. The reply comes later. Honours the
+  // Idempotency-Key header.
+  rpc SendThreadMessage(SendThreadMessageRequest) returns (SendThreadMessageResponse);
+
+  // Streams the program whenever it changes, until the curriculum reaches a
+  // final state or the stream's time limit passes. The first message is the
+  // current state.
+  rpc WatchProgram(WatchProgramRequest) returns (stream WatchProgramResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Streams the thread whenever a message arrives, until the model has
+  // replied to the latest user message or the stream's time limit passes.
+  rpc WatchThread(WatchThreadRequest) returns (stream WatchThreadResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message CoachingTask {
+  // Tasks are addressed directly by this id.
+  string id = 1;
+
+  // ISO-8601 date.
+  string task_date = 2;
+  coaching.v1.TaskType task_type = 3;
+  string title = 4;
+  string description = 5;
+  bool completed = 6;
+}
+
+message CoachingWeek {
+  int32 week_number = 1;
+  string title = 2;
+  string description = 3;
+  repeated CoachingTask tasks = 4;
+}
+
+message CoachingThread {
+  string slug = 1;
+  string title = 2;
+}
+
+message CoachingMessage {
+  coaching.v1.MessageRole role = 1;
+
+  // The message as stored: the user's text or the model's structured reply.
+  // Absent when the stored content is not valid JSON.
+  google.protobuf.Value content = 2;
+
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message SourceAssessment {
+  string slug = 1;
+  double risk_percentage = 2;
+  string model_used = 3;
+}
+
+message CoachingProgram {
+  string slug = 1;
+  string title = 2;
+  string description = 3;
+  coaching.v1.ProgramStatus status = 4;
+  coaching.v1.Difficulty difficulty = 5;
+
+  // ISO-8601 dates.
+  string start_date = 6;
+  string end_date = 7;
+
+  coaching.v1.CurriculumStatus curriculum_status = 8;
+  repeated CoachingWeek weeks = 9;
+  repeated CoachingThread threads = 10;
+  SourceAssessment source_assessment = 11;
+
+  // Absent until the graduation report is ready.
+  google.protobuf.Value graduation_report = 12;
+}
+
+message StartProgramRequest {
+  string risk_assessment_slug = 1;
+
+  // DIFFICULTY_UNSPECIFIED is refused.
+  coaching.v1.Difficulty difficulty = 2;
+}
+
+message StartProgramResponse {
+  CoachingProgram program = 1;
+}
+
+message GetProgramRequest {
+  string slug = 1;
+}
+
+message GetProgramResponse {
+  CoachingProgram program = 1;
+}
+
+message ToggleProgramStatusRequest {
+  string slug = 1;
+}
+
+message ToggleProgramStatusResponse {
+  CoachingProgram program = 1;
+}
+
+message DeleteProgramRequest {
+  string slug = 1;
+}
+
+message DeleteProgramResponse {}
+
+message GetGraduationReportRequest {
+  string program_slug = 1;
+}
+
+message GetGraduationReportResponse {
+  coaching.v1.GraduationStatus status = 1;
+
+  // Absent until the status is READY.
+  google.protobuf.Value report = 2;
+}
+
+message ToggleTaskStatusRequest {
+  string task_id = 1;
+}
+
+message ToggleTaskStatusResponse {
+  CoachingTask task = 1;
+}
+
+message StartThreadRequest {
+  string program_slug = 1;
+  string message = 2;
+  optional string title = 3;
+}
+
+message StartThreadResponse {
+  CoachingThread thread = 1;
+}
+
+message GetThreadRequest {
+  string slug = 1;
+}
+
+message GetThreadResponse {
+  CoachingThread thread = 1;
+  repeated CoachingMessage messages = 2;
+}
+
+message UpdateThreadTitleRequest {
+  string slug = 1;
+  string title = 2;
+}
+
+message UpdateThreadTitleResponse {
+  CoachingThread thread = 1;
+}
+
+message DeleteThreadRequest {
+  string slug = 1;
+}
+
+message DeleteThreadResponse {}
+
+message SendThreadMessageRequest {
+  string thread_slug = 1;
+  string message = 2;
+}
+
+message SendThreadMessageResponse {
+  CoachingMessage message = 1;
+}
+
+message WatchProgramRequest {
+  string slug = 1;
+}
+
+message WatchProgramResponse {
+  CoachingProgram program = 1;
+}
+
+message WatchThreadRequest {
+  string slug = 1;
+}
+
+message WatchThreadResponse {
+  CoachingThread thread = 1;
+  repeated CoachingMessage messages = 2;
+}

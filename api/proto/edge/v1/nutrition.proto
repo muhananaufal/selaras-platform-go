@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "edge/v1/page.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "nutrition/v1/nutrition.proto";
+
+// Nutrition serves the caller's culinary preferences and daily meal guides.
+service Nutrition {
+  // Preferences and guide history in one call.
+  rpc GetHubData(GetHubDataRequest) returns (GetHubDataResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // A PARTIAL update: fields absent from the request are left as they are.
+  // One update carrying only allergies must not wipe the rest (finding B16).
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
+
+  // Asks for today's guide. Returns immediately: the guide comes later.
+  // Honours the Idempotency-Key header.
+  rpc GenerateDailyGuide(GenerateDailyGuideRequest) returns (GenerateDailyGuideResponse);
+
+  // Streams the guide whenever it changes, until it is ready or failed or the
+  // stream's time limit passes.
+  rpc WatchDailyGuide(WatchDailyGuideRequest) returns (stream WatchDailyGuideResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message CulinaryPreferences {
+  string allergies = 1;
+  nutrition.v1.BudgetLevel budget_level = 2;
+  nutrition.v1.CookingStyle cooking_style = 3;
+  repeated string taste_profiles = 4;
+  repeated string kitchen_equipment = 5;
+}
+
+message DailyMealGuide {
+  string id = 1;
+
+  // ISO-8601 date.
+  string guide_date = 2;
+  nutrition.v1.MealTime meal_time = 3;
+  nutrition.v1.GuideStatus status = 4;
+
+  // Absent until the guide is ready, and absent if the stored guide is not
+  // valid JSON.
+  google.protobuf.Value guide_data = 5;
+
+  bool chosen = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message GetHubDataRequest {
+  PageRequest page = 1;
+}
+
+message GetHubDataResponse {
+  CulinaryPreferences preferences = 1;
+  repeated DailyMealGuide history = 2;
+  PageResponse page = 3;
+}
+
+// A list that can be sent empty on purpose.
+//
+// A plain repeated field cannot tell "not sent" from "sent empty", and one of
+// them clears the list while the other must leave it alone.
+message StringList {
+  repeated string values = 1;
+}
+
+message UpdatePreferencesRequest {
+  optional string allergies = 1;
+
+  // BUDGET_LEVEL_UNSPECIFIED is refused when present.
+  optional nutrition.v1.BudgetLevel budget_level = 2;
+
+  // COOKING_STYLE_UNSPECIFIED is refused when present.
+  optional nutrition.v1.CookingStyle cooking_style = 3;
+
+  StringList taste_profiles = 4;
+  StringList kitchen_equipment = 5;
+}
+
+message UpdatePreferencesResponse {
+  CulinaryPreferences preferences = 1;
+}
+
+message GenerateDailyGuideRequest {
+  // plan_type, time_availability, energy_level, and cuisine_preference are
+  // required. craving_type and social_context may be UNSPECIFIED, meaning
+  // "none" - which is exactly why an unknown enum NAME is refused by the
+  // gateway rather than silently read as UNSPECIFIED.
+  nutrition.v1.DailyGuideInput input = 1;
+}
+
+message GenerateDailyGuideResponse {
+  string guide_id = 1;
+  string job_id = 2;
+  nutrition.v1.GuideStatus status = 3;
+}
+
+message WatchDailyGuideRequest {
+  string guide_id = 1;
+}
+
+message WatchDailyGuideResponse {
+  DailyMealGuide guide = 1;
+}
