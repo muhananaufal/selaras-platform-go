@@ -9,6 +9,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -192,6 +193,9 @@ func NewProgram(
 	if weeks < 1 {
 		return nil, errors.New("a program needs at least one week")
 	}
+	if weeks > MaxWeeks {
+		return nil, fmt.Errorf("a program has at most %d weeks, got %d", MaxWeeks, weeks)
+	}
 
 	id, err := NewID()
 	if err != nil {
@@ -283,9 +287,15 @@ func (p *Program) HasEnded(on time.Time) bool {
 	return !truncateToDay(on).Before(p.EndDate)
 }
 
+// MaxWeeks is the longest a program can be. It mirrors storage, not a product
+// rule: coaching_weeks.week_number is SMALLINT, so no program can hold more
+// weeks than that. It also keeps every day count derived from a program
+// (DurationDays, DayOn) within the int32 fields of the contracts.
+const MaxWeeks = math.MaxInt16
+
 // DurationDays is the length of the program in days.
 func (p *Program) DurationDays() int {
-	return int(p.EndDate.Sub(p.StartDate).Hours() / 24)
+	return daysBetween(p.StartDate, p.EndDate)
 }
 
 // Validate checks the invariants the constructor alone cannot guarantee, for
@@ -303,6 +313,9 @@ func (p *Program) Validate() error {
 	if !p.EndDate.After(p.StartDate) {
 		return fmt.Errorf("%w: %s to %s", ErrEndBeforeStart,
 			p.StartDate.Format(time.DateOnly), p.EndDate.Format(time.DateOnly))
+	}
+	if days := p.DurationDays(); days > MaxWeeks*7 {
+		return fmt.Errorf("a program lasts at most %d days (%d weeks), got %d", MaxWeeks*7, MaxWeeks, days)
 	}
 	return nil
 }
@@ -337,7 +350,18 @@ func (p *Program) DayOn(on time.Time) int {
 		// that ended last month is not on "day 90" of a 30-day program.
 		return total
 	default:
-		elapsed := int(day.Sub(p.StartDate).Hours() / 24)
+		elapsed := daysBetween(p.StartDate, day)
 		return elapsed + 1
 	}
+}
+
+// daysBetween counts whole calendar days from one date to another.
+//
+// Through Unix seconds, not time.Sub: a time.Duration saturates at about 292
+// years, which is shorter than the longest program storage allows (MaxWeeks),
+// and a saturated duration returned a wrong day count without any error.
+// Rounded, not truncated, so a day that is 23 or 25 hours long across a
+// daylight-saving change still counts as one day.
+func daysBetween(from, to time.Time) int {
+	return int(math.Round(float64(to.Unix()-from.Unix()) / 86400))
 }
