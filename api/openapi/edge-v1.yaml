@@ -1,952 +1,3380 @@
 openapi: 3.1.0
-
 info:
   title: Selaras Edge API
   version: "1.0.0"
   description: |
-    Kontrak REST publik. Bentuknya mengikuti API Laravel yang sudah dipakai
-    frontend, sehingga migrasi tidak menuntut perubahan di sisi klien.
+    The public edge.v1 contract, served over the Connect protocol.
 
-    Empat hal sengaja BERBEDA dari sistem lama, dan semuanya perbaikan:
+    Every operation is `POST /<package>.<Service>/<Method>` with a JSON body
+    and the header `Connect-Protocol-Version: 1`. Read operations also accept
+    `GET` with the message in the query string. JSON field names are
+    lowerCamelCase, enums are their proto names, and empty fields are omitted.
 
-    1. Reset kata sandi menjadi dua langkah. Endpoint lama bersifat publik
-       dan langsung mengganti kata sandi milik alamat email mana pun yang
-       diketahui pemanggil.
-    2. Operasi yang memanggil LLM menjawab `202 Accepted` dengan `job_id`,
-       bukan menahan koneksi sampai model selesai.
-    3. Sumber daya milik pengguna lain menjawab `404`, bukan `403`.
-       Membedakan keduanya membocorkan keberadaannya.
-    4. Penghapusan akun memverifikasi kata sandi. Sistem lama memintanya
-       lalu tidak pernah memeriksanya.
+    Errors are `{code, message, details}`. Field violations arrive as a
+    `google.rpc.BadRequest` detail; rate limiting as `resource_exhausted`
+    (HTTP 429) with a `google.rpc.RetryInfo` detail and `Retry-After`.
 
+    Every procedure requires a bearer token except Auth/Register,
+    Auth/Login, Auth/RequestPasswordReset, Auth/ConfirmPasswordReset, and
+    Auth/ExchangeSocialSession.
 servers:
-  - url: /api/v1
-
+  - url: http://127.0.0.1:18080
+    description: Local compose stack
 security:
   - bearerAuth: []
-
-tags:
-  - name: auth
-  - name: profile
-  - name: assessment
-  - name: dashboard
-  - name: chat
-  - name: coaching
-  - name: culinary
-
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
-  parameters:
-    Slug:
-      name: slug
-      in: path
-      required: true
-      schema: { type: string }
-    Provider:
-      name: provider
-      in: path
-      required: true
-      schema: { type: string, enum: [google] }
-    PageSize:
-      name: page_size
-      in: query
-      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-    PageToken:
-      name: page_token
-      in: query
-      schema: { type: string }
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
-      description: |
-        Mencegah pekerjaan ganda saat klien mengulang permintaan. Pengiriman
-        lewat broker bersifat at-least-once.
-      schema: { type: string }
-
   schemas:
-    Error:
+    assessment.v1.AssessmentInput:
       type: object
-      required: [success, message]
       properties:
-        success: { type: boolean, enum: [false] }
-        message: { type: string }
+        hasDiabetes:
+          type: boolean
+          title: has_diabetes
+        smokingStatus:
+          title: smoking_status
+          $ref: '#/components/schemas/assessment.v1.SmokingStatus'
+        systolicBloodPressure:
+          title: systolic_blood_pressure
+          $ref: '#/components/schemas/assessment.v1.ClinicalParameter'
+        sbpProxy:
+          title: sbp_proxy
+          $ref: '#/components/schemas/assessment.v1.SbpProxy'
+        totalCholesterol:
+          title: total_cholesterol
+          $ref: '#/components/schemas/assessment.v1.ClinicalParameter'
+        totalCholesterolProxy:
+          title: total_cholesterol_proxy
+          $ref: '#/components/schemas/assessment.v1.TotalCholesterolProxy'
+        hdlCholesterol:
+          title: hdl_cholesterol
+          $ref: '#/components/schemas/assessment.v1.ClinicalParameter'
+        hdlProxy:
+          title: hdl_proxy
+          $ref: '#/components/schemas/assessment.v1.HdlProxy'
+        ageAtDiabetesDiagnosis:
+          type:
+            - integer
+            - "null"
+          title: age_at_diabetes_diagnosis
+          format: int32
+          description: The next four fields are read only when has_diabetes is true.
+        hba1c:
+          title: hba1c
+          $ref: '#/components/schemas/assessment.v1.ClinicalParameter'
+        hba1cProxy:
+          title: hba1c_proxy
+          $ref: '#/components/schemas/assessment.v1.Hba1cProxy'
+        serumCreatinine:
+          title: serum_creatinine
+          $ref: '#/components/schemas/assessment.v1.ClinicalParameter'
+        serumCreatinineProxy:
+          title: serum_creatinine_proxy
+          $ref: '#/components/schemas/assessment.v1.SerumCreatinineProxy'
+        exercise:
+          title: exercise
+          description: |-
+            The exercise habit is used by two estimators at once, and here there is
+             only ONE source for it. The legacy system read it from two different
+             places with two different values, so the HbA1c deduction never applied
+             (finding B12).
+          $ref: '#/components/schemas/assessment.v1.ExerciseHabit'
+      title: AssessmentInput
+      additionalProperties: false
+    assessment.v1.BodyComposition:
+      type: string
+      title: BodyComposition
+      enum:
+        - BODY_COMPOSITION_UNSPECIFIED
+        - BODY_COMPOSITION_LEAN
+        - BODY_COMPOSITION_AVERAGE
+        - BODY_COMPOSITION_ATHLETIC
+        - BODY_COMPOSITION_VERY_MUSCULAR
+    assessment.v1.BodyShape:
+      type: string
+      title: BodyShape
+      enum:
+        - BODY_SHAPE_UNSPECIFIED
+        - BODY_SHAPE_SLIM_OR_IDEAL
+        - BODY_SHAPE_CENTRAL_OBESITY
+    assessment.v1.ClinicalParameter:
+      type: object
+      properties:
+        mode:
+          title: mode
+          $ref: '#/components/schemas/assessment.v1.InputMode'
+        measuredValue:
+          type:
+            - number
+            - "null"
+          title: measured_value
+          format: double
+      title: ClinicalParameter
+      additionalProperties: false
+      description: |-
+        Every clinical parameter has two modes. With MANUAL, the measured value
+         is used; with PROXY, the value is estimated from the questionnaire.
+    assessment.v1.CookingOil:
+      type: string
+      title: CookingOil
+      enum:
+        - COOKING_OIL_UNSPECIFIED
+        - COOKING_OIL_PALM_OR_BULK
+        - COOKING_OIL_OTHER
+    assessment.v1.DiabetesControl:
+      type: string
+      title: DiabetesControl
+      enum:
+        - DIABETES_CONTROL_UNSPECIFIED
+        - DIABETES_CONTROL_CONTROLLED
+        - DIABETES_CONTROL_POORLY_CONTROLLED
+    assessment.v1.ExerciseHabit:
+      type: string
+      title: ExerciseHabit
+      enum:
+        - EXERCISE_HABIT_UNSPECIFIED
+        - EXERCISE_HABIT_RARELY
+        - EXERCISE_HABIT_ROUTINE_INTENSE
+    assessment.v1.ExerciseType:
+      type: string
+      title: ExerciseType
+      enum:
+        - EXERCISE_TYPE_UNSPECIFIED
+        - EXERCISE_TYPE_ALMOST_NEVER
+        - EXERCISE_TYPE_LIGHT_ROUTINE
+        - EXERCISE_TYPE_WEIGHTS_OR_HIIT
+    assessment.v1.FishIntake:
+      type: string
+      title: FishIntake
+      enum:
+        - FISH_INTAKE_UNSPECIFIED
+        - FISH_INTAKE_RARELY
+        - FISH_INTAKE_TWICE_WEEKLY_OR_MORE
+    assessment.v1.FoamyUrine:
+      type: string
+      title: FoamyUrine
+      enum:
+        - FOAMY_URINE_UNSPECIFIED
+        - FOAMY_URINE_NEVER
+        - FOAMY_URINE_OFTEN
+    assessment.v1.GlucoseMonitoring:
+      type: string
+      title: GlucoseMonitoring
+      enum:
+        - GLUCOSE_MONITORING_UNSPECIFIED
+        - GLUCOSE_MONITORING_NEVER
+        - GLUCOSE_MONITORING_USUALLY_ON_TARGET
+        - GLUCOSE_MONITORING_USUALLY_ABOVE_TARGET
+    assessment.v1.Hba1cProxy:
+      type: object
+      properties:
+        glucoseMonitoring:
+          title: glucose_monitoring
+          $ref: '#/components/schemas/assessment.v1.GlucoseMonitoring'
+        treatmentAdherence:
+          title: treatment_adherence
+          $ref: '#/components/schemas/assessment.v1.TreatmentAdherence'
+      title: Hba1cProxy
+      additionalProperties: false
+    assessment.v1.HdlProxy:
+      type: object
+      properties:
+        exerciseType:
+          title: exercise_type
+          $ref: '#/components/schemas/assessment.v1.ExerciseType'
+        fishIntake:
+          title: fish_intake
+          $ref: '#/components/schemas/assessment.v1.FishIntake'
+      title: HdlProxy
+      additionalProperties: false
+    assessment.v1.InputMode:
+      type: string
+      title: InputMode
+      enum:
+        - INPUT_MODE_UNSPECIFIED
+        - INPUT_MODE_MANUAL
+        - INPUT_MODE_PROXY
+    assessment.v1.NsaidUse:
+      type: string
+      title: NsaidUse
+      enum:
+        - NSAID_USE_UNSPECIFIED
+        - NSAID_USE_RARELY
+        - NSAID_USE_OFTEN
+    assessment.v1.PersonalizationStatus:
+      type: string
+      title: PersonalizationStatus
+      enum:
+        - PERSONALIZATION_STATUS_UNSPECIFIED
+        - PERSONALIZATION_STATUS_NOT_REQUESTED
+        - PERSONALIZATION_STATUS_PENDING
+        - PERSONALIZATION_STATUS_COMPLETED
+        - PERSONALIZATION_STATUS_FAILED
+    assessment.v1.ResolvedClinicalValues:
+      type: object
+      properties:
+        age:
+          type: integer
+          title: age
+          format: int32
+        sex:
+          type: string
+          title: sex
+        riskRegion:
+          type: string
+          title: risk_region
+        systolicBloodPressure:
+          type: number
+          title: systolic_blood_pressure
+          format: double
+        totalCholesterol:
+          type: number
+          title: total_cholesterol
+          format: double
+        hdlCholesterol:
+          type: number
+          title: hdl_cholesterol
+          format: double
+        hba1c:
+          type:
+            - number
+            - "null"
+          title: hba1c
+          format: double
+        serumCreatinine:
+          type:
+            - number
+            - "null"
+          title: serum_creatinine
+          format: double
+        egfr:
+          type:
+            - number
+            - "null"
+          title: egfr
+          format: double
+      title: ResolvedClinicalValues
+      additionalProperties: false
+      description: |-
+        The clinical values that actually entered the calculator, whether
+         measured or estimated. Stored as they are so an old score can still be
+         explained years later.
+    assessment.v1.RiskModel:
+      type: string
+      title: RiskModel
+      enum:
+        - RISK_MODEL_UNSPECIFIED
+        - RISK_MODEL_SCORE2
+        - RISK_MODEL_SCORE2_OP
+        - RISK_MODEL_SCORE2_DIABETES
+    assessment.v1.SaltHabit:
+      type: string
+      title: SaltHabit
+      enum:
+        - SALT_HABIT_UNSPECIFIED
+        - SALT_HABIT_ADDS_TABLE_SALT
+        - SALT_HABIT_INSTANT_FOOD
+        - SALT_HABIT_SALTED_SNACKS
+        - SALT_HABIT_PROCESSED_MEAT
+    assessment.v1.SbpProxy:
+      type: object
+      properties:
+        familyHypertension:
+          type: boolean
+          title: family_hypertension
+        sleepPattern:
+          title: sleep_pattern
+          $ref: '#/components/schemas/assessment.v1.SleepPattern'
+        saltHabits:
+          type: array
+          items:
+            $ref: '#/components/schemas/assessment.v1.SaltHabit'
+          title: salt_habits
+          description: Multiple choice; the number selected determines the weight.
+        stressResponse:
+          title: stress_response
+          $ref: '#/components/schemas/assessment.v1.StressResponse'
+        bodyShape:
+          title: body_shape
+          $ref: '#/components/schemas/assessment.v1.BodyShape'
+        exercise:
+          title: exercise
+          $ref: '#/components/schemas/assessment.v1.ExerciseHabit'
+      title: SbpProxy
+      additionalProperties: false
+    assessment.v1.SerumCreatinineProxy:
+      type: object
+      properties:
+        bodyComposition:
+          title: body_composition
+          $ref: '#/components/schemas/assessment.v1.BodyComposition'
+        diabetesControl:
+          title: diabetes_control
+          $ref: '#/components/schemas/assessment.v1.DiabetesControl'
+        retinopathyOrNeuropathy:
+          type: boolean
+          title: retinopathy_or_neuropathy
+        nsaidUse:
+          title: nsaid_use
+          $ref: '#/components/schemas/assessment.v1.NsaidUse'
+        foamyUrine:
+          title: foamy_urine
+          $ref: '#/components/schemas/assessment.v1.FoamyUrine'
+      title: SerumCreatinineProxy
+      additionalProperties: false
+    assessment.v1.SleepPattern:
+      type: string
+      title: SleepPattern
+      enum:
+        - SLEEP_PATTERN_UNSPECIFIED
+        - SLEEP_PATTERN_RESTFUL
+        - SLEEP_PATTERN_INSOMNIA
+    assessment.v1.SmokingStatus:
+      type: string
+      title: SmokingStatus
+      enum:
+        - SMOKING_STATUS_UNSPECIFIED
+        - SMOKING_STATUS_CURRENT
+        - SMOKING_STATUS_NOT_CURRENT
+    assessment.v1.StressResponse:
+      type: string
+      title: StressResponse
+      enum:
+        - STRESS_RESPONSE_UNSPECIFIED
+        - STRESS_RESPONSE_CALM
+        - STRESS_RESPONSE_PALPITATIONS_AND_FLUSHING
+    assessment.v1.TotalCholesterolProxy:
+      type: object
+      properties:
+        familyHighCholesterolOrHeartAttack:
+          type: boolean
+          title: family_high_cholesterol_or_heart_attack
+        cookingOil:
+          title: cooking_oil
+          $ref: '#/components/schemas/assessment.v1.CookingOil'
+        exerciseType:
+          title: exercise_type
+          $ref: '#/components/schemas/assessment.v1.ExerciseType'
+        xanthoma:
+          type: boolean
+          title: xanthoma
+        fishIntake:
+          title: fish_intake
+          $ref: '#/components/schemas/assessment.v1.FishIntake'
+      title: TotalCholesterolProxy
+      additionalProperties: false
+    assessment.v1.TreatmentAdherence:
+      type: string
+      title: TreatmentAdherence
+      enum:
+        - TREATMENT_ADHERENCE_UNSPECIFIED
+        - TREATMENT_ADHERENCE_BOTH_DISCIPLINED
+        - TREATMENT_ADHERENCE_MEDICATION_OK_DIET_POOR
+        - TREATMENT_ADHERENCE_MEDICATION_POOR_DIET_OK
+        - TREATMENT_ADHERENCE_BOTH_POOR
+    chat.v1.MessageRole:
+      type: string
+      title: MessageRole
+      enum:
+        - MESSAGE_ROLE_UNSPECIFIED
+        - MESSAGE_ROLE_USER
+        - MESSAGE_ROLE_MODEL
+    coaching.v1.CurriculumStatus:
+      type: string
+      title: CurriculumStatus
+      enum:
+        - CURRICULUM_STATUS_UNSPECIFIED
+        - CURRICULUM_STATUS_PENDING
+        - CURRICULUM_STATUS_READY
+        - CURRICULUM_STATUS_FAILED
+    coaching.v1.Difficulty:
+      type: string
+      title: Difficulty
+      enum:
+        - DIFFICULTY_UNSPECIFIED
+        - DIFFICULTY_GENTLE
+        - DIFFICULTY_STANDARD
+        - DIFFICULTY_INTENSE
+    coaching.v1.GraduationStatus:
+      type: string
+      title: GraduationStatus
+      enum:
+        - GRADUATION_STATUS_UNSPECIFIED
+        - GRADUATION_STATUS_NOT_REQUESTED
+        - GRADUATION_STATUS_PENDING
+        - GRADUATION_STATUS_READY
+        - GRADUATION_STATUS_FAILED
+      description: |-
+        The state of the graduation report.
+
+         Four states, not two. A state derived from the presence of the report can
+         only tell "there" from "not there", and both hide what the client most
+         needs to know: the report is being produced, or its production failed and
+         waiting longer will change nothing.
+    coaching.v1.MessageRole:
+      type: string
+      title: MessageRole
+      enum:
+        - MESSAGE_ROLE_UNSPECIFIED
+        - MESSAGE_ROLE_USER
+        - MESSAGE_ROLE_MODEL
+    coaching.v1.ProgramStatus:
+      type: string
+      title: ProgramStatus
+      enum:
+        - PROGRAM_STATUS_UNSPECIFIED
+        - PROGRAM_STATUS_ACTIVE
+        - PROGRAM_STATUS_PAUSED
+        - PROGRAM_STATUS_COMPLETED
+        - PROGRAM_STATUS_CANCELLED
+    coaching.v1.TaskType:
+      type: string
+      title: TaskType
+      enum:
+        - TASK_TYPE_UNSPECIFIED
+        - TASK_TYPE_MAIN_MISSION
+        - TASK_TYPE_BONUS_CHALLENGE
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      const: 1
+      description: The version of the Connect protocol. Always 1.
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
         code:
           type: string
-          enum: [INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, ALREADY_EXISTS, FAILED_PRECONDITION, RATE_LIMITED, INTERNAL, UNAVAILABLE]
-        errors:
+          examples:
+            - not_found
+          enum:
+            - canceled
+            - unknown
+            - invalid_argument
+            - deadline_exceeded
+            - not_found
+            - already_exists
+            - permission_denied
+            - resource_exhausted
+            - failed_precondition
+            - aborted
+            - out_of_range
+            - unimplemented
+            - internal
+            - unavailable
+            - data_loss
+            - unauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/connect.error_details.Any'
+          description: A list of messages that carry the error details. There is no limit on the number of messages.
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    connect.error_details.Any:
+      type: object
+      properties:
+        type:
+          type: string
+          description: >-
+            The fully qualified type of the detail. This gateway sends google.rpc.BadRequest (per-field violations) and google.rpc.RetryInfo (how long to wait after resource_exhausted).
+        value:
+          type: string
+          format: byte
+          description: The detail message, serialized as protobuf and base64-encoded.
+        debug:
+          title: Debug
+          description: >-
+            The detail decoded as JSON, for convenience. Which schema applies is given by `type`. Generated clients decode `value` instead.
           type: object
-          additionalProperties:
-            type: array
-            items: { type: string }
-
-    Accepted:
-      type: object
-      required: [job_id, status]
-      properties:
-        job_id: { type: string }
-        status: { type: string, enum: [pending] }
-        poll_url: { type: string }
-
-    Page:
+          additionalProperties: true
+      additionalProperties: true
+      description: One error detail of a Connect error.
+    dashboard.v1.AssessmentSummary:
       type: object
       properties:
-        next_page_token: { type: string }
+        slug:
+          type: string
+          title: slug
+        assessedOn:
+          type: string
+          title: assessed_on
+        modelUsed:
+          type: string
+          title: model_used
+        riskPercentage:
+          type: number
+          title: risk_percentage
+          format: double
+        riskCategory:
+          type: string
+          title: risk_category
+          description: |-
+            The risk category that is COMPUTED, not made up by the model.
 
-    User:
+             The legacy system read it from the LLM report, so the dashboard of a user
+             whose personalisation had not arrived showed "N/A" as their health status.
+             This value comes from SCORE2, so it exists as soon as the assessment does.
+      title: AssessmentSummary
+      additionalProperties: false
+    dashboard.v1.HealthTrend:
+      type: string
+      title: HealthTrend
+      enum:
+        - HEALTH_TREND_UNSPECIFIED
+        - HEALTH_TREND_IMPROVING
+        - HEALTH_TREND_STABLE
+        - HEALTH_TREND_WORSENING
+        - HEALTH_TREND_INSUFFICIENT_DATA
+    dashboard.v1.ProgramSummary:
       type: object
       properties:
-        id: { type: string }
-        email: { type: string, format: email }
-        role: { type: string, enum: [user, admin] }
-        created_at: { type: string, format: date-time }
-
-    AuthSuccess:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+        status:
+          type: string
+          title: status
+        currentDay:
+          type: integer
+          title: current_day
+          format: int32
+        totalDays:
+          type: integer
+          title: total_days
+          format: int32
+        completionPercentage:
+          type: number
+          title: completion_percentage
+          format: double
+      title: ProgramSummary
+      additionalProperties: false
+    dashboard.v1.RiskTrendPoint:
       type: object
       properties:
-        access_token: { type: string }
-        token_type: { type: string, enum: [Bearer] }
-        expires_in: { type: integer }
-        user: { $ref: '#/components/schemas/User' }
-
-    Profile:
+        assessedOn:
+          type: string
+          title: assessed_on
+        riskPercentage:
+          type: number
+          title: risk_percentage
+          format: double
+      title: RiskTrendPoint
+      additionalProperties: false
+    edge.v1.ChatMessage:
       type: object
-      description: |
-        Seluruh bidang boleh kosong. Profil memang bisa belum terisi, dan
-        pendaftaran lewat penyedia sosial tidak membuatnya sama sekali.
       properties:
-        email: { type: string, format: email }
-        first_name: { type: [string, 'null'] }
-        last_name: { type: [string, 'null'] }
-        sex: { type: [string, 'null'], enum: [male, female, null] }
-        country_of_residence: { type: [string, 'null'] }
-        date_of_birth: { type: [string, 'null'], format: date }
-        age: { type: [integer, 'null'] }
-        risk_region: { type: [string, 'null'] }
-        language: { type: string, enum: [id, en] }
+        role:
+          title: role
+          $ref: '#/components/schemas/chat.v1.MessageRole'
+        content:
+          title: content
+          description: Absent when the stored content is not valid JSON.
+          $ref: '#/components/schemas/google.protobuf.Value'
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: ChatMessage
+      additionalProperties: false
+    edge.v1.CoachingMessage:
+      type: object
+      properties:
+        role:
+          title: role
+          $ref: '#/components/schemas/coaching.v1.MessageRole'
+        content:
+          title: content
+          description: |-
+            The message as stored: the user's text or the model's structured reply.
+             Absent when the stored content is not valid JSON.
+          $ref: '#/components/schemas/google.protobuf.Value'
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: CoachingMessage
+      additionalProperties: false
+    edge.v1.CoachingProgram:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+        description:
+          type: string
+          title: description
+        status:
+          title: status
+          $ref: '#/components/schemas/coaching.v1.ProgramStatus'
+        difficulty:
+          title: difficulty
+          $ref: '#/components/schemas/coaching.v1.Difficulty'
+        startDate:
+          type: string
+          title: start_date
+          description: ISO-8601 dates.
+        endDate:
+          type: string
+          title: end_date
+        curriculumStatus:
+          title: curriculum_status
+          $ref: '#/components/schemas/coaching.v1.CurriculumStatus'
+        weeks:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.CoachingWeek'
+          title: weeks
+        threads:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.CoachingThread'
+          title: threads
+        sourceAssessment:
+          title: source_assessment
+          $ref: '#/components/schemas/edge.v1.SourceAssessment'
+        graduationReport:
+          title: graduation_report
+          description: Absent until the graduation report is ready.
+          $ref: '#/components/schemas/google.protobuf.Value'
+      title: CoachingProgram
+      additionalProperties: false
+    edge.v1.CoachingTask:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+          description: Tasks are addressed directly by this id.
+        taskDate:
+          type: string
+          title: task_date
+          description: ISO-8601 date.
+        taskType:
+          title: task_type
+          $ref: '#/components/schemas/coaching.v1.TaskType'
+        title:
+          type: string
+          title: title
+        description:
+          type: string
+          title: description
+        completed:
+          type: boolean
+          title: completed
+      title: CoachingTask
+      additionalProperties: false
+    edge.v1.CoachingThread:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+      title: CoachingThread
+      additionalProperties: false
+    edge.v1.CoachingWeek:
+      type: object
+      properties:
+        weekNumber:
+          type: integer
+          title: week_number
+          format: int32
+        title:
+          type: string
+          title: title
+        description:
+          type: string
+          title: description
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.CoachingTask'
+          title: tasks
+      title: CoachingWeek
+      additionalProperties: false
+    edge.v1.ConfirmPasswordResetRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          title: token
+        password:
+          type: string
+          title: password
+        passwordConfirmation:
+          type: string
+          title: password_confirmation
+      title: ConfirmPasswordResetRequest
+      additionalProperties: false
+    edge.v1.ConfirmPasswordResetResponse:
+      type: object
+      title: ConfirmPasswordResetResponse
+      additionalProperties: false
+    edge.v1.Conversation:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+        updatedAt:
+          title: updated_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: Conversation
+      additionalProperties: false
+    edge.v1.CreateConversationRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          title: message
+          description: Optional. Empty creates an empty conversation.
+      title: CreateConversationRequest
+      additionalProperties: false
+    edge.v1.CreateConversationResponse:
+      type: object
+      properties:
+        conversation:
+          title: conversation
+          $ref: '#/components/schemas/edge.v1.Conversation'
+        jobId:
+          type: string
+          title: job_id
+          description: Present when a reply is being produced.
+      title: CreateConversationResponse
+      additionalProperties: false
+    edge.v1.CulinaryPreferences:
+      type: object
+      properties:
+        allergies:
+          type: string
+          title: allergies
+        budgetLevel:
+          title: budget_level
+          $ref: '#/components/schemas/nutrition.v1.BudgetLevel'
+        cookingStyle:
+          title: cooking_style
+          $ref: '#/components/schemas/nutrition.v1.CookingStyle'
+        tasteProfiles:
+          type: array
+          items:
+            type: string
+          title: taste_profiles
+        kitchenEquipment:
+          type: array
+          items:
+            type: string
+          title: kitchen_equipment
+      title: CulinaryPreferences
+      additionalProperties: false
+    edge.v1.DailyMealGuide:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        guideDate:
+          type: string
+          title: guide_date
+          description: ISO-8601 date.
+        mealTime:
+          title: meal_time
+          $ref: '#/components/schemas/nutrition.v1.MealTime'
+        status:
+          title: status
+          $ref: '#/components/schemas/nutrition.v1.GuideStatus'
+        guideData:
+          title: guide_data
+          description: |-
+            Absent until the guide is ready, and absent if the stored guide is not
+             valid JSON.
+          $ref: '#/components/schemas/google.protobuf.Value'
+        chosen:
+          type: boolean
+          title: chosen
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: DailyMealGuide
+      additionalProperties: false
+    edge.v1.DeleteAccountRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          title: password
+          description: |-
+            Required, and really compared. The legacy system required it and never
+             checked it (finding S2).
+      title: DeleteAccountRequest
+      additionalProperties: false
+    edge.v1.DeleteAccountResponse:
+      type: object
+      properties:
+        sagaId:
+          type: string
+          title: saga_id
+        status:
+          title: status
+          $ref: '#/components/schemas/edge.v1.DeletionStatus'
+      title: DeleteAccountResponse
+      additionalProperties: false
+    edge.v1.DeleteConversationRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: DeleteConversationRequest
+      additionalProperties: false
+    edge.v1.DeleteConversationResponse:
+      type: object
+      title: DeleteConversationResponse
+      additionalProperties: false
+    edge.v1.DeleteProgramRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: DeleteProgramRequest
+      additionalProperties: false
+    edge.v1.DeleteProgramResponse:
+      type: object
+      title: DeleteProgramResponse
+      additionalProperties: false
+    edge.v1.DeleteThreadRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: DeleteThreadRequest
+      additionalProperties: false
+    edge.v1.DeleteThreadResponse:
+      type: object
+      title: DeleteThreadResponse
+      additionalProperties: false
+    edge.v1.DeletionStatus:
+      type: string
+      title: DeletionStatus
+      enum:
+        - DELETION_STATUS_UNSPECIFIED
+        - DELETION_STATUS_IN_PROGRESS
+    edge.v1.ExchangeSocialSessionRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          title: code
+      title: ExchangeSocialSessionRequest
+      additionalProperties: false
+    edge.v1.ExchangeSocialSessionResponse:
+      type: object
+      properties:
+        session:
+          title: session
+          $ref: '#/components/schemas/edge.v1.Session'
+      title: ExchangeSocialSessionResponse
+      additionalProperties: false
+    edge.v1.GenerateDailyGuideRequest:
+      type: object
+      properties:
+        input:
+          title: input
+          description: |-
+            plan_type, time_availability, energy_level, and cuisine_preference are
+             required. craving_type and social_context may be UNSPECIFIED, meaning
+             "none" - which is exactly why an unknown enum NAME is refused by the
+             gateway rather than silently read as UNSPECIFIED.
+          $ref: '#/components/schemas/nutrition.v1.DailyGuideInput'
+      title: GenerateDailyGuideRequest
+      additionalProperties: false
+    edge.v1.GenerateDailyGuideResponse:
+      type: object
+      properties:
+        guideId:
+          type: string
+          title: guide_id
+        jobId:
+          type: string
+          title: job_id
+        status:
+          title: status
+          $ref: '#/components/schemas/nutrition.v1.GuideStatus'
+      title: GenerateDailyGuideResponse
+      additionalProperties: false
+    edge.v1.GetAssessmentRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: GetAssessmentRequest
+      additionalProperties: false
+    edge.v1.GetAssessmentResponse:
+      type: object
+      properties:
+        assessment:
+          title: assessment
+          $ref: '#/components/schemas/edge.v1.RiskAssessment'
+      title: GetAssessmentResponse
+      additionalProperties: false
+    edge.v1.GetConversationRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageRequest'
+      title: GetConversationRequest
+      additionalProperties: false
+    edge.v1.GetConversationResponse:
+      type: object
+      properties:
+        conversation:
+          title: conversation
+          $ref: '#/components/schemas/edge.v1.Conversation'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.ChatMessage'
+          title: messages
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
+      title: GetConversationResponse
+      additionalProperties: false
+    edge.v1.GetDashboardRequest:
+      type: object
+      title: GetDashboardRequest
+      additionalProperties: false
+    edge.v1.GetDashboardResponse:
+      type: object
+      properties:
+        hasAssessments:
+          type: boolean
+          title: has_assessments
+          description: |-
+            False means the user has never run an analysis, and the client shows a
+             welcome message. Stated explicitly, not inferred from an empty history.
+        latestAssessment:
+          title: latest_assessment
+          $ref: '#/components/schemas/dashboard.v1.AssessmentSummary'
+        program:
+          title: program
+          $ref: '#/components/schemas/dashboard.v1.ProgramSummary'
+        assessmentHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/dashboard.v1.AssessmentSummary'
+          title: assessment_history
+        riskTrend:
+          type: array
+          items:
+            $ref: '#/components/schemas/dashboard.v1.RiskTrendPoint'
+          title: risk_trend
+        healthTrend:
+          title: health_trend
+          description: |-
+            HEALTH_TREND_INSUFFICIENT_DATA is distinct from STABLE: someone with
+             nothing to compare against must not see a flat arrow.
+          $ref: '#/components/schemas/dashboard.v1.HealthTrend'
+        totalAssessments:
+          type: integer
+          title: total_assessments
+          format: int32
+        projectedAt:
+          title: projected_at
+          description: |-
+            When the read-model was last updated. Exposed because the projection is
+             eventually consistent, and a hidden lag looks like a bug.
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: GetDashboardResponse
+      additionalProperties: false
+    edge.v1.GetGraduationReportRequest:
+      type: object
+      properties:
+        programSlug:
+          type: string
+          title: program_slug
+      title: GetGraduationReportRequest
+      additionalProperties: false
+    edge.v1.GetGraduationReportResponse:
+      type: object
+      properties:
+        status:
+          title: status
+          $ref: '#/components/schemas/coaching.v1.GraduationStatus'
+        report:
+          title: report
+          description: Absent until the status is READY.
+          $ref: '#/components/schemas/google.protobuf.Value'
+      title: GetGraduationReportResponse
+      additionalProperties: false
+    edge.v1.GetHubDataRequest:
+      type: object
+      properties:
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageRequest'
+      title: GetHubDataRequest
+      additionalProperties: false
+    edge.v1.GetHubDataResponse:
+      type: object
+      properties:
+        preferences:
+          title: preferences
+          $ref: '#/components/schemas/edge.v1.CulinaryPreferences'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.DailyMealGuide'
+          title: history
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
+      title: GetHubDataResponse
+      additionalProperties: false
+    edge.v1.GetMeRequest:
+      type: object
+      title: GetMeRequest
+      additionalProperties: false
+    edge.v1.GetMeResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+          title: user_id
+        email:
+          type:
+            - string
+            - "null"
+          title: email
+          description: Absent when the token carries none.
+        userProfileId:
+          type:
+            - string
+            - "null"
+          title: user_profile_id
+          description: |-
+            Absent until the profile exists: social sign-in creates no profile
+             (finding B7).
+        role:
+          title: role
+          $ref: '#/components/schemas/edge.v1.Role'
+      title: GetMeResponse
+      additionalProperties: false
+    edge.v1.GetProfileRequest:
+      type: object
+      title: GetProfileRequest
+      additionalProperties: false
+    edge.v1.GetProfileResponse:
+      type: object
+      properties:
+        profile:
+          title: profile
+          description: Absent when the profile has not been created yet.
+          $ref: '#/components/schemas/edge.v1.UserProfile'
+      title: GetProfileResponse
+      additionalProperties: false
+    edge.v1.GetProgramRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: GetProgramRequest
+      additionalProperties: false
+    edge.v1.GetProgramResponse:
+      type: object
+      properties:
+        program:
+          title: program
+          $ref: '#/components/schemas/edge.v1.CoachingProgram'
+      title: GetProgramResponse
+      additionalProperties: false
+    edge.v1.GetThreadRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: GetThreadRequest
+      additionalProperties: false
+    edge.v1.GetThreadResponse:
+      type: object
+      properties:
+        thread:
+          title: thread
+          $ref: '#/components/schemas/edge.v1.CoachingThread'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.CoachingMessage'
+          title: messages
+      title: GetThreadResponse
+      additionalProperties: false
+    edge.v1.ListAssessmentsRequest:
+      type: object
+      title: ListAssessmentsRequest
+      additionalProperties: false
+    edge.v1.ListAssessmentsResponse:
+      type: object
+      properties:
+        assessments:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.RiskAssessment'
+          title: assessments
+      title: ListAssessmentsResponse
+      additionalProperties: false
+    edge.v1.ListConversationsRequest:
+      type: object
+      properties:
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageRequest'
+      title: ListConversationsRequest
+      additionalProperties: false
+    edge.v1.ListConversationsResponse:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.Conversation'
+          title: conversations
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
+      title: ListConversationsResponse
+      additionalProperties: false
+    edge.v1.LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          title: email
+        password:
+          type: string
+          title: password
+      title: LoginRequest
+      additionalProperties: false
+    edge.v1.LoginResponse:
+      type: object
+      properties:
+        session:
+          title: session
+          $ref: '#/components/schemas/edge.v1.Session'
+      title: LoginResponse
+      additionalProperties: false
+    edge.v1.LogoutRequest:
+      type: object
+      title: LogoutRequest
+      additionalProperties: false
+    edge.v1.LogoutResponse:
+      type: object
+      title: LogoutResponse
+      additionalProperties: false
+    edge.v1.PageRequest:
+      type: object
+      properties:
+        pageSize:
+          type: integer
+          title: page_size
+          format: int32
+        pageToken:
+          type: string
+          title: page_token
+      title: PageRequest
+      additionalProperties: false
+      description: |-
+        A page of a list.
 
-  responses:
-    Unauthorized:
-      description: Token tidak ada atau tidak berlaku
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    NotFound:
-      description: |
-        Tidak ditemukan. Dipakai juga untuk sumber daya milik pengguna lain.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    ValidationError:
-      description: Masukan tidak lolos validasi
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    Conflict:
-      description: Bertentangan dengan keadaan sumber daya saat ini
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    TooManyRequests:
-      description: Melebihi batas laju
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+         page_size zero means "the service default". page_token is opaque: the
+         client sends back what it received, without reading it. Offsets are not
+         used because they skip or repeat rows while the list is growing.
+    edge.v1.PageResponse:
+      type: object
+      properties:
+        nextPageToken:
+          type: string
+          title: next_page_token
+          description: Absent on the last page.
+      title: PageResponse
+      additionalProperties: false
+    edge.v1.RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          title: email
+        password:
+          type: string
+          title: password
+        passwordConfirmation:
+          type: string
+          title: password_confirmation
+          description: |-
+            Checked by the gateway: retyping a password is an interface check, and
+             its place is the layer that receives both from the browser.
+      title: RegisterRequest
+      additionalProperties: false
+    edge.v1.RegisterResponse:
+      type: object
+      properties:
+        session:
+          title: session
+          $ref: '#/components/schemas/edge.v1.Session'
+      title: RegisterResponse
+      additionalProperties: false
+    edge.v1.RequestPasswordResetRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          title: email
+      title: RequestPasswordResetRequest
+      additionalProperties: false
+    edge.v1.RequestPasswordResetResponse:
+      type: object
+      title: RequestPasswordResetResponse
+      additionalProperties: false
+    edge.v1.RequestPersonalizationRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: RequestPersonalizationRequest
+      additionalProperties: false
+    edge.v1.RequestPersonalizationResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          title: job_id
+        status:
+          title: status
+          description: 'COMPLETED when the report already exists: there is nothing to wait for.'
+          $ref: '#/components/schemas/assessment.v1.PersonalizationStatus'
+      title: RequestPersonalizationResponse
+      additionalProperties: false
+    edge.v1.RiskAssessment:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        modelUsed:
+          title: model_used
+          $ref: '#/components/schemas/assessment.v1.RiskModel'
+        riskPercentage:
+          type: number
+          title: risk_percentage
+          format: double
+        resolvedValues:
+          title: resolved_values
+          description: |-
+            The clinical values that actually entered the calculator, measured or
+             estimated. HbA1c, serum creatinine, and eGFR are absent outside the
+             diabetes path - never zero, which would look like data.
+          $ref: '#/components/schemas/assessment.v1.ResolvedClinicalValues'
+        personalizationStatus:
+          title: personalization_status
+          description: |-
+            The only way a client can tell "in progress" from "failed" and from
+             "never requested" (F3-12).
+          $ref: '#/components/schemas/assessment.v1.PersonalizationStatus'
+        personalizedReport:
+          title: personalized_report
+          description: |-
+            The narrative report, as the model produced it. Absent until
+             personalisation completes, and absent if the stored report is not valid
+             JSON - one corrupt row must not make the whole response unreadable.
+          $ref: '#/components/schemas/google.protobuf.Value'
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: RiskAssessment
+      additionalProperties: false
+    edge.v1.Role:
+      type: string
+      title: Role
+      enum:
+        - ROLE_UNSPECIFIED
+        - ROLE_USER
+        - ROLE_ADMIN
+    edge.v1.SendMessageRequest:
+      type: object
+      properties:
+        conversationSlug:
+          type: string
+          title: conversation_slug
+        message:
+          type: string
+          title: message
+      title: SendMessageRequest
+      additionalProperties: false
+    edge.v1.SendMessageResponse:
+      type: object
+      properties:
+        message:
+          title: message
+          $ref: '#/components/schemas/edge.v1.ChatMessage'
+      title: SendMessageResponse
+      additionalProperties: false
+    edge.v1.SendThreadMessageRequest:
+      type: object
+      properties:
+        threadSlug:
+          type: string
+          title: thread_slug
+        message:
+          type: string
+          title: message
+      title: SendThreadMessageRequest
+      additionalProperties: false
+    edge.v1.SendThreadMessageResponse:
+      type: object
+      properties:
+        message:
+          title: message
+          $ref: '#/components/schemas/edge.v1.CoachingMessage'
+      title: SendThreadMessageResponse
+      additionalProperties: false
+    edge.v1.Session:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+        tokenType:
+          type: string
+          title: token_type
+          description: Always "Bearer".
+        expiresInSeconds:
+          type:
+            - integer
+            - string
+          title: expires_in_seconds
+          format: int64
+          description: Zero when the issuer did not state it (the social hand-off).
+        user:
+          title: user
+          description: Absent after the social hand-off, which carries only the token.
+          $ref: '#/components/schemas/edge.v1.User'
+      title: Session
+      additionalProperties: false
+      description: A signed-in session.
+    edge.v1.SourceAssessment:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        riskPercentage:
+          type: number
+          title: risk_percentage
+          format: double
+        modelUsed:
+          type: string
+          title: model_used
+      title: SourceAssessment
+      additionalProperties: false
+    edge.v1.StartAssessmentRequest:
+      type: object
+      properties:
+        input:
+          title: input
+          description: |-
+            The questionnaire. Its enums are the domain vocabulary shared with
+             assessment-svc; display labels are the client's concern.
+          $ref: '#/components/schemas/assessment.v1.AssessmentInput'
+      title: StartAssessmentRequest
+      additionalProperties: false
+    edge.v1.StartAssessmentResponse:
+      type: object
+      properties:
+        assessment:
+          title: assessment
+          $ref: '#/components/schemas/edge.v1.RiskAssessment'
+      title: StartAssessmentResponse
+      additionalProperties: false
+    edge.v1.StartProgramRequest:
+      type: object
+      properties:
+        riskAssessmentSlug:
+          type: string
+          title: risk_assessment_slug
+        difficulty:
+          title: difficulty
+          description: DIFFICULTY_UNSPECIFIED is refused.
+          $ref: '#/components/schemas/coaching.v1.Difficulty'
+      title: StartProgramRequest
+      additionalProperties: false
+    edge.v1.StartProgramResponse:
+      type: object
+      properties:
+        program:
+          title: program
+          $ref: '#/components/schemas/edge.v1.CoachingProgram'
+      title: StartProgramResponse
+      additionalProperties: false
+    edge.v1.StartThreadRequest:
+      type: object
+      properties:
+        programSlug:
+          type: string
+          title: program_slug
+        message:
+          type: string
+          title: message
+        title:
+          type:
+            - string
+            - "null"
+          title: title
+      title: StartThreadRequest
+      additionalProperties: false
+    edge.v1.StartThreadResponse:
+      type: object
+      properties:
+        thread:
+          title: thread
+          $ref: '#/components/schemas/edge.v1.CoachingThread'
+      title: StartThreadResponse
+      additionalProperties: false
+    edge.v1.StringList:
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            type: string
+          title: values
+      title: StringList
+      additionalProperties: false
+      description: |-
+        A list that can be sent empty on purpose.
 
+         A plain repeated field cannot tell "not sent" from "sent empty", and one of
+         them clears the list while the other must leave it alone.
+    edge.v1.ToggleProgramStatusRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: ToggleProgramStatusRequest
+      additionalProperties: false
+    edge.v1.ToggleProgramStatusResponse:
+      type: object
+      properties:
+        program:
+          title: program
+          $ref: '#/components/schemas/edge.v1.CoachingProgram'
+      title: ToggleProgramStatusResponse
+      additionalProperties: false
+    edge.v1.ToggleTaskStatusRequest:
+      type: object
+      properties:
+        taskId:
+          type: string
+          title: task_id
+      title: ToggleTaskStatusRequest
+      additionalProperties: false
+    edge.v1.ToggleTaskStatusResponse:
+      type: object
+      properties:
+        task:
+          title: task
+          $ref: '#/components/schemas/edge.v1.CoachingTask'
+      title: ToggleTaskStatusResponse
+      additionalProperties: false
+    edge.v1.UpdateConversationTitleRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+      title: UpdateConversationTitleRequest
+      additionalProperties: false
+    edge.v1.UpdateConversationTitleResponse:
+      type: object
+      properties:
+        conversation:
+          title: conversation
+          $ref: '#/components/schemas/edge.v1.Conversation'
+      title: UpdateConversationTitleResponse
+      additionalProperties: false
+    edge.v1.UpdatePreferencesRequest:
+      type: object
+      properties:
+        allergies:
+          type:
+            - string
+            - "null"
+          title: allergies
+        budgetLevel:
+          oneOf:
+            - $ref: '#/components/schemas/nutrition.v1.BudgetLevel'
+            - type: "null"
+          title: budget_level
+          description: Present with BUDGET_LEVEL_UNSPECIFIED clears it; absent leaves it.
+        cookingStyle:
+          oneOf:
+            - $ref: '#/components/schemas/nutrition.v1.CookingStyle'
+            - type: "null"
+          title: cooking_style
+          description: Present with COOKING_STYLE_UNSPECIFIED clears it; absent leaves it.
+        tasteProfiles:
+          title: taste_profiles
+          $ref: '#/components/schemas/edge.v1.StringList'
+        kitchenEquipment:
+          title: kitchen_equipment
+          $ref: '#/components/schemas/edge.v1.StringList'
+      title: UpdatePreferencesRequest
+      additionalProperties: false
+    edge.v1.UpdatePreferencesResponse:
+      type: object
+      properties:
+        preferences:
+          title: preferences
+          $ref: '#/components/schemas/edge.v1.CulinaryPreferences'
+      title: UpdatePreferencesResponse
+      additionalProperties: false
+    edge.v1.UpdateProfileRequest:
+      type: object
+      properties:
+        firstName:
+          type:
+            - string
+            - "null"
+          title: first_name
+        lastName:
+          type:
+            - string
+            - "null"
+          title: last_name
+        dateOfBirth:
+          type:
+            - string
+            - "null"
+          title: date_of_birth
+        sex:
+          title: sex
+          description: |-
+            SEX_UNSPECIFIED (or absent) leaves the stored value as it is, the same
+             rule profile-svc applies.
+          $ref: '#/components/schemas/profile.v1.Sex'
+        countryOfResidence:
+          type:
+            - string
+            - "null"
+          title: country_of_residence
+        language:
+          type:
+            - string
+            - "null"
+          title: language
+      title: UpdateProfileRequest
+      additionalProperties: false
+    edge.v1.UpdateProfileResponse:
+      type: object
+      properties:
+        profile:
+          title: profile
+          $ref: '#/components/schemas/edge.v1.UserProfile'
+      title: UpdateProfileResponse
+      additionalProperties: false
+    edge.v1.UpdateThreadTitleRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+      title: UpdateThreadTitleRequest
+      additionalProperties: false
+    edge.v1.UpdateThreadTitleResponse:
+      type: object
+      properties:
+        thread:
+          title: thread
+          $ref: '#/components/schemas/edge.v1.CoachingThread'
+      title: UpdateThreadTitleResponse
+      additionalProperties: false
+    edge.v1.User:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        email:
+          type: string
+          title: email
+        role:
+          title: role
+          $ref: '#/components/schemas/edge.v1.Role'
+      title: User
+      additionalProperties: false
+    edge.v1.UserProfile:
+      type: object
+      properties:
+        email:
+          type:
+            - string
+            - "null"
+          title: email
+          description: Identity data, taken from the token, not from profile-svc (ADR-002).
+        firstName:
+          type:
+            - string
+            - "null"
+          title: first_name
+        lastName:
+          type:
+            - string
+            - "null"
+          title: last_name
+        sex:
+          title: sex
+          $ref: '#/components/schemas/profile.v1.Sex'
+        countryOfResidence:
+          type:
+            - string
+            - "null"
+          title: country_of_residence
+        dateOfBirth:
+          type:
+            - string
+            - "null"
+          title: date_of_birth
+          description: 'ISO-8601 date only: 1990-05-17 (finding B13).'
+        age:
+          type:
+            - integer
+            - "null"
+          title: age
+          format: int32
+          description: |-
+            Absent while the date of birth is empty. The legacy system showed 0,
+             because Carbon::parse(null) returns the current time (finding B6).
+        riskRegion:
+          type:
+            - string
+            - "null"
+          title: risk_region
+          description: |-
+            The SCORE2 calibration region of the country of residence. A clinical
+             concept owned by assessment-svc (ADR-002 rule 3); absent when it cannot be
+             computed.
+        language:
+          type: string
+          title: language
+      title: UserProfile
+      additionalProperties: false
+      description: |-
+        The profile as the client sees it.
+
+         Every field that may be empty is optional and is simply absent when empty -
+         not an empty string, and never today's date. This is the layer where B6 was
+         born in the legacy system.
+    edge.v1.WatchAssessmentRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: WatchAssessmentRequest
+      additionalProperties: false
+    edge.v1.WatchAssessmentResponse:
+      type: object
+      properties:
+        assessment:
+          title: assessment
+          $ref: '#/components/schemas/edge.v1.RiskAssessment'
+      title: WatchAssessmentResponse
+      additionalProperties: false
+    edge.v1.WatchConversationRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: WatchConversationRequest
+      additionalProperties: false
+    edge.v1.WatchConversationResponse:
+      type: object
+      properties:
+        conversation:
+          title: conversation
+          $ref: '#/components/schemas/edge.v1.Conversation'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.ChatMessage'
+          title: messages
+          description: |-
+            The NEWEST page of the conversation (up to 100 messages), oldest first -
+             not the whole history. The history is read through GetConversation.
+      title: WatchConversationResponse
+      additionalProperties: false
+    edge.v1.WatchDailyGuideRequest:
+      type: object
+      properties:
+        guideId:
+          type: string
+          title: guide_id
+      title: WatchDailyGuideRequest
+      additionalProperties: false
+    edge.v1.WatchDailyGuideResponse:
+      type: object
+      properties:
+        guide:
+          title: guide
+          $ref: '#/components/schemas/edge.v1.DailyMealGuide'
+      title: WatchDailyGuideResponse
+      additionalProperties: false
+    edge.v1.WatchProgramRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: WatchProgramRequest
+      additionalProperties: false
+    edge.v1.WatchProgramResponse:
+      type: object
+      properties:
+        program:
+          title: program
+          $ref: '#/components/schemas/edge.v1.CoachingProgram'
+      title: WatchProgramResponse
+      additionalProperties: false
+    edge.v1.WatchThreadRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+      title: WatchThreadRequest
+      additionalProperties: false
+    edge.v1.WatchThreadResponse:
+      type: object
+      properties:
+        thread:
+          title: thread
+          $ref: '#/components/schemas/edge.v1.CoachingThread'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.CoachingMessage'
+          title: messages
+      title: WatchThreadResponse
+      additionalProperties: false
+    google.protobuf.ListValue:
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/google.protobuf.Value'
+          title: values
+          description: Repeated field of dynamically typed values.
+      title: ListValue
+      additionalProperties: false
+      description: |-
+        `ListValue` is a wrapper around a repeated field of values.
+
+         The JSON representation for `ListValue` is JSON array.
+    google.protobuf.NullValue:
+      type: string
+      title: NullValue
+      enum:
+        - NULL_VALUE
+      description: |-
+        `NullValue` is a singleton enumeration to represent the null value for the
+         `Value` type union.
+
+         The JSON representation for `NullValue` is JSON `null`.
+    google.protobuf.Struct:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/google.protobuf.Value'
+      description: |-
+        `Struct` represents a structured data value, consisting of fields
+         which map to dynamically typed values. In some languages, `Struct`
+         might be supported by a native representation. For example, in
+         scripting languages like JS a struct is represented as an
+         object. The details of that representation are described together
+         with the proto support for the language.
+
+         The JSON representation for `Struct` is JSON object.
+    google.protobuf.Struct.FieldsEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          title: key
+        value:
+          title: value
+          $ref: '#/components/schemas/google.protobuf.Value'
+      title: FieldsEntry
+      additionalProperties: false
+    google.protobuf.Timestamp:
+      type: string
+      examples:
+        - "2023-01-15T01:30:15.01Z"
+        - "2024-12-25T12:00:00Z"
+      format: date-time
+      description: |-
+        A Timestamp represents a point in time independent of any time zone or local
+         calendar, encoded as a count of seconds and fractions of seconds at
+         nanosecond resolution. The count is relative to an epoch at UTC midnight on
+         January 1, 1970, in the proleptic Gregorian calendar which extends the
+         Gregorian calendar backwards to year one.
+
+         All minutes are 60 seconds long. Leap seconds are "smeared" so that no leap
+         second table is needed for interpretation, using a [24-hour linear
+         smear](https://developers.google.com/time/smear).
+
+         The range is from 0001-01-01T00:00:00Z to 9999-12-31T23:59:59.999999999Z. By
+         restricting to that range, we ensure that we can convert to and from [RFC
+         3339](https://www.ietf.org/rfc/rfc3339.txt) date strings.
+
+         # Examples
+
+         Example 1: Compute Timestamp from POSIX `time()`.
+
+             Timestamp timestamp;
+             timestamp.set_seconds(time(NULL));
+             timestamp.set_nanos(0);
+
+         Example 2: Compute Timestamp from POSIX `gettimeofday()`.
+
+             struct timeval tv;
+             gettimeofday(&tv, NULL);
+
+             Timestamp timestamp;
+             timestamp.set_seconds(tv.tv_sec);
+             timestamp.set_nanos(tv.tv_usec * 1000);
+
+         Example 3: Compute Timestamp from Win32 `GetSystemTimeAsFileTime()`.
+
+             FILETIME ft;
+             GetSystemTimeAsFileTime(&ft);
+             UINT64 ticks = (((UINT64)ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+
+             // A Windows tick is 100 nanoseconds. Windows epoch 1601-01-01T00:00:00Z
+             // is 11644473600 seconds before Unix epoch 1970-01-01T00:00:00Z.
+             Timestamp timestamp;
+             timestamp.set_seconds((INT64) ((ticks / 10000000) - 11644473600LL));
+             timestamp.set_nanos((INT32) ((ticks % 10000000) * 100));
+
+         Example 4: Compute Timestamp from Java `System.currentTimeMillis()`.
+
+             long millis = System.currentTimeMillis();
+
+             Timestamp timestamp = Timestamp.newBuilder().setSeconds(millis / 1000)
+                 .setNanos((int) ((millis % 1000) * 1000000)).build();
+
+         Example 5: Compute Timestamp from Java `Instant.now()`.
+
+             Instant now = Instant.now();
+
+             Timestamp timestamp =
+                 Timestamp.newBuilder().setSeconds(now.getEpochSecond())
+                     .setNanos(now.getNano()).build();
+
+         Example 6: Compute Timestamp from current time in Python.
+
+             timestamp = Timestamp()
+             timestamp.GetCurrentTime()
+
+         # JSON Mapping
+
+         In JSON format, the Timestamp type is encoded as a string in the
+         [RFC 3339](https://www.ietf.org/rfc/rfc3339.txt) format. That is, the
+         format is "{year}-{month}-{day}T{hour}:{min}:{sec}[.{frac_sec}]Z"
+         where {year} is always expressed using four digits while {month}, {day},
+         {hour}, {min}, and {sec} are zero-padded to two digits each. The fractional
+         seconds, which can go up to 9 digits (i.e. up to 1 nanosecond resolution),
+         are optional. The "Z" suffix indicates the timezone ("UTC"); the timezone
+         is required. A proto3 JSON serializer should always use UTC (as indicated by
+         "Z") when printing the Timestamp type and a proto3 JSON parser should be
+         able to accept both UTC and other timezones (as indicated by an offset).
+
+         For example, "2017-01-15T01:30:15.01Z" encodes 15.01 seconds past
+         01:30 UTC on January 15, 2017.
+
+         In JavaScript, one can convert a Date object to this format using the
+         standard
+         [toISOString()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toISOString)
+         method. In Python, a standard `datetime.datetime` object can be converted
+         to this format using
+         [`strftime`](https://docs.python.org/2/library/time.html#time.strftime) with
+         the time format spec '%Y-%m-%dT%H:%M:%S.%fZ'. Likewise, in Java, one can use
+         the Joda Time's [`ISODateTimeFormat.dateTime()`](
+         http://joda-time.sourceforge.net/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTime()
+         ) to obtain a formatter capable of generating timestamps in this format.
+    google.protobuf.Value:
+      oneOf:
+        - type: "null"
+        - type: number
+        - type: string
+        - type: boolean
+        - type: array
+        - type: object
+          additionalProperties: true
+      description: |-
+        `Value` represents a dynamically typed value which can be either
+         null, a number, a string, a boolean, a recursive struct value, or a
+         list of values. A producer of value is expected to set one of these
+         variants. Absence of any variant indicates an error.
+
+         The JSON representation for `Value` is JSON value.
+    nutrition.v1.BudgetLevel:
+      type: string
+      title: BudgetLevel
+      enum:
+        - BUDGET_LEVEL_UNSPECIFIED
+        - BUDGET_LEVEL_THRIFTY
+        - BUDGET_LEVEL_STANDARD
+        - BUDGET_LEVEL_FLEXIBLE
+    nutrition.v1.CookingStyle:
+      type: string
+      title: CookingStyle
+      enum:
+        - COOKING_STYLE_UNSPECIFIED
+        - COOKING_STYLE_QUICK_EVERY_TIME
+        - COOKING_STYLE_BATCH_MEAL_PREP
+    nutrition.v1.CravingType:
+      type: string
+      title: CravingType
+      enum:
+        - CRAVING_TYPE_UNSPECIFIED
+        - CRAVING_TYPE_SOUPY_AND_WARM
+        - CRAVING_TYPE_GRILLED
+        - CRAVING_TYPE_FRESH_AND_LIGHT
+        - CRAVING_TYPE_QUICK_STIR_FRY
+    nutrition.v1.DailyGuideInput:
+      type: object
+      properties:
+        planType:
+          title: plan_type
+          $ref: '#/components/schemas/nutrition.v1.PlanType'
+        timeAvailability:
+          title: time_availability
+          $ref: '#/components/schemas/nutrition.v1.TimeAvailability'
+        energyLevel:
+          title: energy_level
+          $ref: '#/components/schemas/nutrition.v1.EnergyLevel'
+        cuisinePreference:
+          type: string
+          title: cuisine_preference
+        cravingType:
+          title: craving_type
+          $ref: '#/components/schemas/nutrition.v1.CravingType'
+        socialContext:
+          title: social_context
+          $ref: '#/components/schemas/nutrition.v1.SocialContext'
+      title: DailyGuideInput
+      additionalProperties: false
+    nutrition.v1.EnergyLevel:
+      type: string
+      title: EnergyLevel
+      enum:
+        - ENERGY_LEVEL_UNSPECIFIED
+        - ENERGY_LEVEL_ENERGETIC
+        - ENERGY_LEVEL_ORDINARY
+        - ENERGY_LEVEL_TIRED
+    nutrition.v1.GuideStatus:
+      type: string
+      title: GuideStatus
+      enum:
+        - GUIDE_STATUS_UNSPECIFIED
+        - GUIDE_STATUS_PENDING
+        - GUIDE_STATUS_READY
+        - GUIDE_STATUS_FAILED
+    nutrition.v1.MealTime:
+      type: string
+      title: MealTime
+      enum:
+        - MEAL_TIME_UNSPECIFIED
+        - MEAL_TIME_BREAKFAST
+        - MEAL_TIME_LUNCH
+        - MEAL_TIME_AFTERNOON_SNACK
+        - MEAL_TIME_DINNER
+    nutrition.v1.PlanType:
+      type: string
+      title: PlanType
+      enum:
+        - PLAN_TYPE_UNSPECIFIED
+        - PLAN_TYPE_COOK_AT_HOME
+        - PLAN_TYPE_EAT_OUT
+    nutrition.v1.SocialContext:
+      type: string
+      title: SocialContext
+      enum:
+        - SOCIAL_CONTEXT_UNSPECIFIED
+        - SOCIAL_CONTEXT_ALONE
+        - SOCIAL_CONTEXT_WITH_FRIENDS
+        - SOCIAL_CONTEXT_WITH_PARTNER
+        - SOCIAL_CONTEXT_WITH_FAMILY
+    nutrition.v1.TimeAvailability:
+      type: string
+      title: TimeAvailability
+      enum:
+        - TIME_AVAILABILITY_UNSPECIFIED
+        - TIME_AVAILABILITY_QUICK
+        - TIME_AVAILABILITY_RELAXED
+    profile.v1.Sex:
+      type: string
+      title: Sex
+      enum:
+        - SEX_UNSPECIFIED
+        - SEX_MALE
+        - SEX_FEMALE
 paths:
-  # ------------------------------------------------------------------ auth
-  /register:
+  /edge.v1.Assessment/GetAssessment:
     post:
-      operationId: post_register
-      tags: [auth]
-      summary: Daftar akun baru
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password, password_confirmation]
-              properties:
-                email: { type: string, format: email, maxLength: 255 }
-                password: { type: string, minLength: 8 }
-                password_confirmation: { type: string }
-      responses:
-        '201':
-          description: Terdaftar dan langsung masuk
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AuthSuccess' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  /login:
-    post:
-      operationId: post_login
-      tags: [auth]
-      summary: Masuk
-      description: Mencabut seluruh token lama; satu sesi aktif per pengguna.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string }
-      responses:
-        '200':
-          description: Berhasil masuk
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AuthSuccess' }
-        '401':
-          description: Kredensial salah. Pesannya sengaja tidak membedakan email tidak terdaftar dari kata sandi keliru.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /logout:
-    post:
-      operationId: post_logout
-      tags: [auth]
-      summary: Keluar
-      responses:
-        '200': { description: Token dicabut }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  /auth/{provider}/redirect:
-    get:
-      operationId: get_auth_provider_redirect
-      tags: [auth]
-      summary: Mulai alur masuk lewat penyedia sosial
-      security: []
+      tags:
+        - Assessment
+      summary: GetAssessment
+      operationId: edge.v1.Assessment.GetAssessment
       parameters:
-        - $ref: '#/components/parameters/Provider'
-      responses:
-        '302': { description: Dialihkan ke penyedia }
-
-  /auth/{provider}/callback:
-    get:
-      operationId: get_auth_provider_callback
-      tags: [auth]
-      summary: Terima panggilan balik penyedia sosial
-      description: |
-        Menyerahkan kode pertukaran sekali pakai lewat fragment, bukan token
-        di query string. Query string masuk ke log server dan riwayat
-        peramban.
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/Provider'
-      responses:
-        '302': { description: Dialihkan kembali ke frontend }
-
-  /auth/session:
-    post:
-      operationId: post_auth_session
-      tags: [auth]
-      summary: Tukar kode sekali pakai dari callback sosial dengan token
-      description: |
-        Pasangan dari `/auth/{provider}/callback`, yang menyerahkan kodenya
-        lewat fragment. Tanpa endpoint ini kodenya tidak punya tujuan.
-
-        Kodenya sekali pakai dan berumur sangat pendek: ia sempat melewati
-        peramban, dan satu-satunya yang menjaga jendela itu tetap sempit
-        adalah masa berlakunya.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [code]
-              properties:
-                code: { type: string }
-      responses:
-        '200':
-          description: Berhasil masuk
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AuthSuccess' }
-        '401':
-          description: Kode tidak dikenal, sudah dipakai, atau kedaluwarsa.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /password-reset/request:
-    post:
-      operationId: post_password_reset_request
-      tags: [auth]
-      summary: Minta tautan reset kata sandi
-      description: |
-        Selalu menjawab 202, terlepas dari apakah emailnya terdaftar.
-        Membedakan keduanya mengubah endpoint ini menjadi alat enumerasi.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email]
-              properties:
-                email: { type: string, format: email }
-      responses:
-        '202': { description: 'Bila email terdaftar, tautan dikirim' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-
-  /password-reset/confirm:
-    post:
-      operationId: post_password_reset_confirm
-      tags: [auth]
-      summary: Tetapkan kata sandi baru memakai token
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [token, password, password_confirmation]
-              properties:
-                token: { type: string }
-                password: { type: string, minLength: 8 }
-                password_confirmation: { type: string }
-      responses:
-        '200': { description: Kata sandi diganti }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  /delete-account:
-    delete:
-      operationId: delete_delete_account
-      tags: [auth]
-      summary: Hapus akun secara permanen
-      description: |
-        Kata sandi diverifikasi sebelum saga dimulai. Penghapusan berjalan
-        lintas seluruh service, jadi jawabannya 202 dan bukan 204.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [password]
-              properties:
-                password: { type: string }
-      responses:
-        '202':
-          description: Penghapusan dimulai
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Accepted' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  # --------------------------------------------------------------- profile
-  /profile:
-    get:
-      operationId: get_profile
-      tags: [profile]
-      summary: Ambil profil sendiri
-      responses:
-        '200':
-          description: Profil. Seluruh bidang bisa null bila belum diisi.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/Profile' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-    patch:
-      operationId: patch_profile
-      tags: [profile]
-      summary: Buat atau perbarui profil
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                first_name: { type: string, maxLength: 255 }
-                last_name: { type: string, maxLength: 255 }
-                date_of_birth: { type: string, format: date }
-                sex: { type: string, enum: [male, female] }
-                country_of_residence: { type: string, maxLength: 255 }
-                language: { type: string, enum: [id, en] }
-      responses:
-        '200':
-          description: Profil diperbarui
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/Profile' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  # ------------------------------------------------------------ assessment
-  /risk-assessments:
-    post:
-      operationId: post_risk_assessments
-      tags: [assessment]
-      summary: Jalankan analisis risiko dan dapatkan skor
-      description: |
-        Skor numerik dihitung langsung; ia deterministik dan tidak memanggil
-        LLM. Laporan naratif diminta terpisah.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [has_diabetes, smoking_status, sbp_input_type, tchol_input_type, hdl_input_type]
-              properties:
-                has_diabetes: { type: boolean }
-                smoking_status: { type: string, enum: [current, not_current] }
-                exercise: { type: string, enum: [rarely, routine_intense] }
-                sbp_input_type: { type: string, enum: [manual, proxy] }
-                sbp_value: { type: number, minimum: 50, maximum: 300 }
-                sbp_proxy: { type: object }
-                tchol_input_type: { type: string, enum: [manual, proxy] }
-                tchol_value: { type: number, minimum: 1, maximum: 20 }
-                tchol_proxy: { type: object }
-                hdl_input_type: { type: string, enum: [manual, proxy] }
-                hdl_value: { type: number, minimum: 0.1, maximum: 5 }
-                hdl_proxy: { type: object }
-                age_at_diabetes_diagnosis: { type: integer, minimum: 1 }
-                hba1c_input_type: { type: string, enum: [manual, proxy] }
-                hba1c_value: { type: number, minimum: 20, maximum: 200 }
-                hba1c_proxy: { type: object }
-                scr_input_type: { type: string, enum: [manual, proxy] }
-                scr_value: { type: number, minimum: 0.1, maximum: 15 }
-                scr_proxy: { type: object }
-      responses:
-        '201':
-          description: Analisis tersimpan beserta skornya
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  assessment_slug: { type: string }
-                  risk_percentage: { type: number }
-                  model_used: { type: string, enum: [SCORE2, SCORE2-OP, SCORE2-Diabetes] }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  /risk-assessments/{slug}:
-    get:
-      operationId: get_risk_assessments_slug
-      tags: [assessment]
-      summary: Ambil satu analisis beserta status personalisasinya
-      description: |
-        Endpoint ini baru. Ia dibutuhkan karena personalisasi kini berjalan
-        asinkron, sehingga klien perlu tempat mengambil hasilnya.
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '200':
-          description: Analisis
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  slug: { type: string }
-                  risk_percentage: { type: number }
-                  model_used: { type: string }
-                  personalization_status:
-                    type: string
-                    enum: [not_requested, pending, completed, failed]
-                  report: { type: [object, 'null'] }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /risk-assessments/{slug}/personalize:
-    patch:
-      operationId: patch_risk_assessments_slug_personalize
-      tags: [assessment]
-      summary: Minta laporan naratif dari model
-      description: |
-        Menjawab 202. Sistem lama menahan koneksi sampai model selesai,
-        dengan batas waktu 300 detik di dalam request HTTP.
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '202':
-          description: Permintaan diterima
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Accepted' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  # ------------------------------------------------------------- dashboard
-  /dashboard:
-    get:
-      operationId: get_dashboard
-      tags: [dashboard]
-      summary: Ringkasan untuk halaman utama
-      responses:
-        '200':
-          description: |
-            Bila pengguna belum pernah menganalisis, data bernilai null dan
-            message berisi sambutan. Perilaku ini dipertahankan.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { type: [object, 'null'] }
-                  message: { type: string }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  # ------------------------------------------------------------------ chat
-  /chat/conversations:
-    get:
-      operationId: get_chat_conversations
-      tags: [chat]
-      summary: Daftar percakapan
-      parameters:
-        - $ref: '#/components/parameters/PageSize'
-        - $ref: '#/components/parameters/PageToken'
-      responses:
-        '200':
-          description: Daftar percakapan milik pemanggil
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { type: array, items: { type: object } }
-                  page: { $ref: '#/components/schemas/Page' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-    post:
-      operationId: post_chat_conversations
-      tags: [chat]
-      summary: Mulai percakapan baru
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [message]
-              properties:
-                message: { type: string, maxLength: 2000 }
-      responses:
-        '202':
-          description: Percakapan dibuat; balasan sedang disiapkan
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  conversation: { type: object }
-                  job: { $ref: '#/components/schemas/Accepted' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  /chat/conversations/{slug}:
-    get:
-      operationId: get_chat_conversations_slug
-      tags: [chat]
-      summary: Riwayat satu percakapan
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-        - $ref: '#/components/parameters/PageSize'
-        - $ref: '#/components/parameters/PageToken'
-      responses:
-        '200':
-          description: Percakapan beserta pesannya
-          content:
-            application/json:
-              schema: { type: object }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    patch:
-      operationId: patch_chat_conversations_slug
-      tags: [chat]
-      summary: Ubah judul percakapan
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [title]
-              properties:
-                title: { type: string, maxLength: 100 }
-      responses:
-        '200': { description: Judul diperbarui }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      operationId: delete_chat_conversations_slug
-      tags: [chat]
-      summary: Hapus percakapan
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '204': { description: Terhapus }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /chat/conversations/{slug}/messages:
-    post:
-      operationId: post_chat_conversations_slug_messages
-      tags: [chat]
-      summary: Kirim pesan ke percakapan
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [message]
-              properties:
-                message: { type: string, maxLength: 2000 }
-      responses:
-        '202':
-          description: Pesan tersimpan; balasan sedang disiapkan
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Accepted' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  # -------------------------------------------------------------- coaching
-  /coaching/programs:
-    post:
-      operationId: post_coaching_programs
-      tags: [coaching]
-      summary: Mulai program coaching
-      description: |
-        Program aktif sebelumnya DIJEDA (bukan dibatalkan; D2). Kurikulum
-        digenerasi model, jadi program lahir dengan curriculum_status pending.
-        risk_assessment_slug opsional: bila diisi, analisis itu menjadi sumber
-        program dan hanya boleh dipakai satu program (D3); coaching mengenal
-        analisis lewat event, jadi slug yang baru saja dibuat bisa menjawab 404
-        selama beberapa detik.
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [difficulty]
-              properties:
-                risk_assessment_slug: { type: string }
-                difficulty:
-                  type: string
-                  description: Nama tingkat sebagaimana ditampilkan ke pengguna, sama dengan sistem lama.
-                  enum: ["Santai & Bertahap", "Standar & Konsisten", "Intensif & Menantang"]
-      responses:
-        '202':
-          description: Program dibuat; kurikulum sedang disusun
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    description: Program dengan status, curriculum_status pending, dan source_assessment bila dimulai dari analisis.
-        '409':
-          description: Sudah ada program dari analisis yang sama
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  /coaching/programs/{slug}:
-    get:
-      operationId: get_coaching_programs_slug
-      tags: [coaching]
-      summary: Detail program beserta kurikulumnya
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '200':
-          description: Program
-          content:
-            application/json:
-              schema: { type: object }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      operationId: delete_coaching_programs_slug
-      tags: [coaching]
-      summary: Hapus program
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '204': { description: Terhapus }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /coaching/programs/{slug}/toggle-program-status:
-    patch:
-      operationId: patch_coaching_programs_slug_toggle_program_status
-      tags: [coaching]
-      summary: Jeda atau lanjutkan program
-      description: Hanya sah dari active ke paused dan sebaliknya.
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '200':
-          description: Status berubah
-          content:
-            application/json:
-              schema: { type: object }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /coaching/programs/{slug}/graduation-report:
-    get:
-      operationId: get_coaching_programs_slug_graduation_report
-      tags: [coaching]
-      summary: Laporan kelulusan
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '200':
-          description: Laporan
-          content:
-            application/json:
-              schema: { type: object }
-        '404':
-          description: Program belum selesai atau laporan belum ada
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /coaching/programs/{slug}/threads:
-    post:
-      operationId: post_coaching_programs_slug_threads
-      tags: [coaching]
-      summary: Mulai diskusi baru di dalam program
-      description: Judul diambil dari 45 karakter pertama pesan bila tidak diberikan.
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [message]
-              properties:
-                message: { type: string, maxLength: 2000 }
-                title: { type: string, maxLength: 100 }
-      responses:
-        '202':
-          description: Diskusi dibuat; balasan sedang disiapkan
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  thread: { type: object }
-                  job: { $ref: '#/components/schemas/Accepted' }
-        '403':
-          description: Program tidak aktif
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /coaching/threads/{slug}:
-    get:
-      operationId: get_coaching_threads_slug
-      tags: [coaching]
-      summary: Riwayat satu diskusi
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-        - $ref: '#/components/parameters/PageSize'
-        - $ref: '#/components/parameters/PageToken'
-      responses:
-        '200':
-          description: Diskusi beserta pesannya
-          content:
-            application/json:
-              schema: { type: object }
-        '404': { $ref: '#/components/responses/NotFound' }
-    patch:
-      operationId: patch_coaching_threads_slug
-      tags: [coaching]
-      summary: Ubah judul diskusi
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [title]
-              properties:
-                title: { type: string, maxLength: 100 }
-      responses:
-        '200': { description: Judul diperbarui }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      operationId: delete_coaching_threads_slug
-      tags: [coaching]
-      summary: Hapus diskusi
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-      responses:
-        '204': { description: Terhapus }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /coaching/threads/{slug}/messages:
-    post:
-      operationId: post_coaching_threads_slug_messages
-      tags: [coaching]
-      summary: Kirim pesan ke diskusi
-      parameters:
-        - $ref: '#/components/parameters/Slug'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [message]
-              properties:
-                message: { type: string, maxLength: 2000 }
-      responses:
-        '202':
-          description: Pesan tersimpan; balasan sedang disiapkan
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Accepted' }
-        '403':
-          description: Program tidak aktif
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /coaching/tasks/{task_id}/toggle-task-status:
-    patch:
-      operationId: patch_coaching_tasks_task_id_toggle_task_status
-      tags: [coaching]
-      summary: Tandai tugas selesai atau belum
-      description: Idempoten; menandai ulang tidak menerbitkan event kedua.
-      parameters:
-        - name: task_id
-          in: path
+        - name: Connect-Protocol-Version
+          in: header
           required: true
-          schema: { type: string }
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetAssessmentRequest'
+        required: true
       responses:
-        '200':
-          description: Status tugas berubah
-          content:
-            application/json:
-              schema: { type: object }
-        '403':
-          description: Program tidak aktif
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  # -------------------------------------------------------------- culinary
-  /culinary/hub-data:
-    get:
-      operationId: get_culinary_hub_data
-      tags: [culinary]
-      summary: Preferensi dan riwayat panduan dalam satu panggilan
-      parameters:
-        - $ref: '#/components/parameters/PageSize'
-        - $ref: '#/components/parameters/PageToken'
-      responses:
-        '200':
-          description: Data halaman hub
+        default:
+          description: Error
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      preferences: { type: object }
-                      history: { type: array, items: { type: object } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  /culinary/preferences:
-    patch:
-      operationId: patch_culinary_preferences
-      tags: [culinary]
-      summary: Simpan preferensi kuliner
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                allergies: { type: string, maxLength: 1000 }
-                budget_level: { type: string, enum: [thrifty, standard, flexible] }
-                cooking_style: { type: string, enum: [quick_every_time, batch_meal_prep] }
-                taste_profiles: { type: array, items: { type: string, maxLength: 50 } }
-                kitchen_equipment: { type: array, items: { type: string, maxLength: 50 } }
-      responses:
-        '200': { description: Preferensi tersimpan }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
-
-  /culinary/daily-guides:
-    post:
-      operationId: post_culinary_daily_guides
-      tags: [culinary]
-      summary: Minta panduan menu harian
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [plan_type, time_availability, energy_level, cuisine_preference]
-              properties:
-                plan_type: { type: string, enum: [cook_at_home, eat_out] }
-                time_availability: { type: string, enum: [quick, relaxed] }
-                energy_level: { type: string, enum: [energetic, ordinary, tired] }
-                cuisine_preference: { type: string, maxLength: 100 }
-                craving_type: { type: string, enum: [soupy_and_warm, grilled, fresh_and_light, quick_stir_fry] }
-                social_context: { type: string, enum: [alone, with_friends, with_partner, with_family] }
-      responses:
-        '202':
-          description: Panduan sedang disusun
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Accepted' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetAssessmentResponse'
+  /edge.v1.Assessment/ListAssessments:
+    post:
+      tags:
+        - Assessment
+      summary: ListAssessments
+      description: The caller's assessment history, newest first.
+      operationId: edge.v1.Assessment.ListAssessments
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListAssessmentsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListAssessmentsResponse'
+  /edge.v1.Assessment/RequestPersonalization:
+    post:
+      tags:
+        - Assessment
+      summary: RequestPersonalization
+      description: |-
+        Queues the narrative report. Returns immediately: the report comes later,
+         and personalization_status says when. Honours the Idempotency-Key header,
+         so a client that resends after a dropped connection does not pay twice.
+      operationId: edge.v1.Assessment.RequestPersonalization
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.RequestPersonalizationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.RequestPersonalizationResponse'
+  /edge.v1.Assessment/StartAssessment:
+    post:
+      tags:
+        - Assessment
+      summary: StartAssessment
+      description: |-
+        Computes a new assessment from the questionnaire. The score is computed
+         synchronously; the narrative report is requested separately.
+      operationId: edge.v1.Assessment.StartAssessment
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.StartAssessmentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.StartAssessmentResponse'
+  /edge.v1.Assessment/WatchAssessment: {}
+  /edge.v1.Auth/ConfirmPasswordReset:
+    post:
+      tags:
+        - Auth
+      summary: ConfirmPasswordReset
+      operationId: edge.v1.Auth.ConfirmPasswordReset
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ConfirmPasswordResetRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ConfirmPasswordResetResponse'
+  /edge.v1.Auth/DeleteAccount:
+    post:
+      tags:
+        - Auth
+      summary: DeleteAccount
+      description: |-
+        Starts the permanent deletion of the caller's account. The deletion
+         crosses six units and is NOT finished when this returns.
+      operationId: edge.v1.Auth.DeleteAccount
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.DeleteAccountRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.DeleteAccountResponse'
+  /edge.v1.Auth/ExchangeSocialSession:
+    post:
+      tags:
+        - Auth
+      summary: ExchangeSocialSession
+      description: |-
+        Exchanges the one-time code from the social sign-in redirect for a
+         session. The code arrives in the URL fragment of the frontend callback
+         page, never in a query string (finding S6).
+      operationId: edge.v1.Auth.ExchangeSocialSession
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ExchangeSocialSessionRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ExchangeSocialSessionResponse'
+  /edge.v1.Auth/GetMe:
+    post:
+      tags:
+        - Auth
+      summary: GetMe
+      description: Returns the identity carried by the token, without a network call.
+      operationId: edge.v1.Auth.GetMe
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetMeRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetMeResponse'
+  /edge.v1.Auth/Login:
+    post:
+      tags:
+        - Auth
+      summary: Login
+      operationId: edge.v1.Auth.Login
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.LoginRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.LoginResponse'
+  /edge.v1.Auth/Logout:
+    post:
+      tags:
+        - Auth
+      summary: Logout
+      operationId: edge.v1.Auth.Logout
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.LogoutRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.LogoutResponse'
+  /edge.v1.Auth/Register:
+    post:
+      tags:
+        - Auth
+      summary: Register
+      operationId: edge.v1.Auth.Register
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.RegisterRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.RegisterResponse'
+  /edge.v1.Auth/RequestPasswordReset:
+    post:
+      tags:
+        - Auth
+      summary: RequestPasswordReset
+      description: |-
+        Always succeeds, whether or not the address is registered. Telling the two
+         apart turns this procedure into an account enumeration tool.
+      operationId: edge.v1.Auth.RequestPasswordReset
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.RequestPasswordResetRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.RequestPasswordResetResponse'
+  /edge.v1.Chat/CreateConversation:
+    post:
+      tags:
+        - Chat
+      summary: CreateConversation
+      description: |-
+        Creates a conversation, optionally with a first message. With a message,
+         the reply comes later. Honours the Idempotency-Key header.
+      operationId: edge.v1.Chat.CreateConversation
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.CreateConversationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.CreateConversationResponse'
+  /edge.v1.Chat/DeleteConversation:
+    post:
+      tags:
+        - Chat
+      summary: DeleteConversation
+      operationId: edge.v1.Chat.DeleteConversation
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.DeleteConversationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.DeleteConversationResponse'
+  /edge.v1.Chat/GetConversation:
+    post:
+      tags:
+        - Chat
+      summary: GetConversation
+      operationId: edge.v1.Chat.GetConversation
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetConversationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetConversationResponse'
+  /edge.v1.Chat/ListConversations:
+    post:
+      tags:
+        - Chat
+      summary: ListConversations
+      operationId: edge.v1.Chat.ListConversations
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListConversationsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListConversationsResponse'
+  /edge.v1.Chat/SendMessage:
+    post:
+      tags:
+        - Chat
+      summary: SendMessage
+      description: |-
+        Writes a message. The reply comes later. Honours the Idempotency-Key
+         header.
+      operationId: edge.v1.Chat.SendMessage
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.SendMessageRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.SendMessageResponse'
+  /edge.v1.Chat/UpdateConversationTitle:
+    post:
+      tags:
+        - Chat
+      summary: UpdateConversationTitle
+      operationId: edge.v1.Chat.UpdateConversationTitle
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.UpdateConversationTitleRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.UpdateConversationTitleResponse'
+  /edge.v1.Chat/WatchConversation: {}
+  /edge.v1.Coaching/DeleteProgram:
+    post:
+      tags:
+        - Coaching
+      summary: DeleteProgram
+      description: Deletes a program with everything in it.
+      operationId: edge.v1.Coaching.DeleteProgram
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.DeleteProgramRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.DeleteProgramResponse'
+  /edge.v1.Coaching/DeleteThread:
+    post:
+      tags:
+        - Coaching
+      summary: DeleteThread
+      operationId: edge.v1.Coaching.DeleteThread
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.DeleteThreadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.DeleteThreadResponse'
+  /edge.v1.Coaching/GetGraduationReport:
+    post:
+      tags:
+        - Coaching
+      summary: GetGraduationReport
+      description: |-
+        Requests or fetches the graduation report. Requesting it has a side
+         effect the first time, so this is NOT a GET.
+      operationId: edge.v1.Coaching.GetGraduationReport
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetGraduationReportRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetGraduationReportResponse'
+  /edge.v1.Coaching/GetProgram:
+    post:
+      tags:
+        - Coaching
+      summary: GetProgram
+      operationId: edge.v1.Coaching.GetProgram
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetProgramRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetProgramResponse'
+  /edge.v1.Coaching/GetThread:
+    post:
+      tags:
+        - Coaching
+      summary: GetThread
+      operationId: edge.v1.Coaching.GetThread
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetThreadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetThreadResponse'
+  /edge.v1.Coaching/SendThreadMessage:
+    post:
+      tags:
+        - Coaching
+      summary: SendThreadMessage
+      description: |-
+        Writes a message to a thread. The reply comes later. Honours the
+         Idempotency-Key header.
+      operationId: edge.v1.Coaching.SendThreadMessage
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.SendThreadMessageRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.SendThreadMessageResponse'
+  /edge.v1.Coaching/StartProgram:
+    post:
+      tags:
+        - Coaching
+      summary: StartProgram
+      description: |-
+        Starts a program from an assessment. Returns immediately with
+         curriculum_status PENDING: the curriculum comes later. Honours the
+         Idempotency-Key header.
+      operationId: edge.v1.Coaching.StartProgram
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.StartProgramRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.StartProgramResponse'
+  /edge.v1.Coaching/StartThread:
+    post:
+      tags:
+        - Coaching
+      summary: StartThread
+      description: |-
+        Opens a thread with a first message. The reply comes later. Honours the
+         Idempotency-Key header.
+      operationId: edge.v1.Coaching.StartThread
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.StartThreadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.StartThreadResponse'
+  /edge.v1.Coaching/ToggleProgramStatus:
+    post:
+      tags:
+        - Coaching
+      summary: ToggleProgramStatus
+      description: Moves a program between active and paused.
+      operationId: edge.v1.Coaching.ToggleProgramStatus
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ToggleProgramStatusRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ToggleProgramStatusResponse'
+  /edge.v1.Coaching/ToggleTaskStatus:
+    post:
+      tags:
+        - Coaching
+      summary: ToggleTaskStatus
+      description: Flips one task between done and not done.
+      operationId: edge.v1.Coaching.ToggleTaskStatus
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ToggleTaskStatusRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ToggleTaskStatusResponse'
+  /edge.v1.Coaching/UpdateThreadTitle:
+    post:
+      tags:
+        - Coaching
+      summary: UpdateThreadTitle
+      operationId: edge.v1.Coaching.UpdateThreadTitle
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.UpdateThreadTitleRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.UpdateThreadTitleResponse'
+  /edge.v1.Coaching/WatchProgram: {}
+  /edge.v1.Coaching/WatchThread: {}
+  /edge.v1.Dashboard/GetDashboard:
+    post:
+      tags:
+        - Dashboard
+      summary: GetDashboard
+      operationId: edge.v1.Dashboard.GetDashboard
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetDashboardRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetDashboardResponse'
+  /edge.v1.Nutrition/GenerateDailyGuide:
+    post:
+      tags:
+        - Nutrition
+      summary: GenerateDailyGuide
+      description: |-
+        Asks for today's guide. Returns immediately: the guide comes later.
+         Honours the Idempotency-Key header.
+      operationId: edge.v1.Nutrition.GenerateDailyGuide
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GenerateDailyGuideRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GenerateDailyGuideResponse'
+  /edge.v1.Nutrition/GetHubData:
+    post:
+      tags:
+        - Nutrition
+      summary: GetHubData
+      description: Preferences and guide history in one call.
+      operationId: edge.v1.Nutrition.GetHubData
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetHubDataRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetHubDataResponse'
+  /edge.v1.Nutrition/UpdatePreferences:
+    post:
+      tags:
+        - Nutrition
+      summary: UpdatePreferences
+      description: |-
+        A PARTIAL update: fields absent from the request are left as they are.
+         One update carrying only allergies must not wipe the rest (finding B16).
+      operationId: edge.v1.Nutrition.UpdatePreferences
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.UpdatePreferencesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.UpdatePreferencesResponse'
+  /edge.v1.Nutrition/WatchDailyGuide: {}
+  /edge.v1.Profile/GetProfile:
+    post:
+      tags:
+        - Profile
+      summary: GetProfile
+      description: |-
+        Returns the caller's profile. A profile that does not exist yet is NOT an
+         error: registration through a social provider creates none (finding B7),
+         so the answer is an empty response, not NOT_FOUND.
+      operationId: edge.v1.Profile.GetProfile
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetProfileRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetProfileResponse'
+  /edge.v1.Profile/UpdateProfile:
+    post:
+      tags:
+        - Profile
+      summary: UpdateProfile
+      description: |-
+        Creates the profile if it does not exist, otherwise changes only the
+         fields that are present in the request.
+      operationId: edge.v1.Profile.UpdateProfile
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.UpdateProfileRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.UpdateProfileResponse'
+tags:
+  - name: Assessment
+    description: Assessment serves the caller's cardiovascular risk assessments.
+  - name: Auth
+    description: |-
+      Auth covers sign-up, sign-in, sign-out, password reset, the social
+       sign-in hand-off, and account deletion.
+
+       Register, Login, RequestPasswordReset, ConfirmPasswordReset, and
+       ExchangeSocialSession are the ONLY public procedures of the whole contract.
+       Everything else requires a bearer token, and that list is enforced by an
+       allowlist in the gateway, not by marking each protected procedure: a new
+       procedure is protected unless someone deliberately makes it public.
+  - name: Chat
+    description: Chat serves the caller's conversations with the general assistant.
+  - name: Coaching
+    description: Coaching serves the caller's coaching programs and their threads.
+  - name: Dashboard
+    description: Dashboard serves the whole home page in one call.
+  - name: Nutrition
+    description: Nutrition serves the caller's culinary preferences and daily meal guides.
+  - name: Profile
+    description: Profile serves the caller's own demographic profile.

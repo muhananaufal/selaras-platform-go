@@ -63,20 +63,21 @@ tasks:
     cmds: ["buf breaking --against '.git#branch=develop'"]
 
   proto:gen:
-    desc: Generate Go code from protobuf (gRPC for the services, Connect for the public edge contract)
+    desc: Generate from protobuf - gRPC for the services, Connect for the edge, OpenAPI for the public contract
     cmds:
       - buf generate
       - buf generate --template buf.gen.edge.yaml
+      - buf generate --template buf.gen.openapi.yaml
 
   proto:
-    desc: Lint then generate protobuf
+    desc: Lint, generate, then lint the generated OpenAPI
     cmds:
       - task: proto:lint
-      - task: openapi:lint
       - task: proto:gen
+      - task: openapi:lint
 
   openapi:lint:
-    desc: Lint the public REST contract
+    desc: Lint the OpenAPI generated from the public contract
     cmds: [vacuum lint -d api/openapi/edge-v1.yaml -r .vacuum-ruleset.yaml --fail-severity error]
 
   # ---------------------------------------------------------------- build

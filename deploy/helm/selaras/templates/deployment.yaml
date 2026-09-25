@@ -71,6 +71,10 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- with $.Values.rateLimit.trustedProxyCIDRs }}
+            - name: TRUSTED_PROXY_CIDRS
+              value: {{ . | quote }}
+            {{- end }}
             {{- range $k, $v := $u.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
