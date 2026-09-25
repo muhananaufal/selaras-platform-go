@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Selaras Platform (Go)",
-    "description": "Alur lengkap 32 endpoint edge-gateway, siap \"Run\" tanpa setup: stack lokal harus menyala (task up:full), lalu jalankan koleksi ini berurutan. Token, slug, dan id ditangkap otomatis antar-request; surel dibuat unik per larian. Sumber kebenarannya api/openapi/edge-v1.yaml.",
+    "description": "The whole edge.v1 flow over the Connect protocol, ready to \"Run\" with no setup: the local stack must be running (task up:full), then run this collection in order. Tokens, slugs, and ids are captured between requests; the email is unique per run. The source of truth is api/proto/edge/v1.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -17,7 +17,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://127.0.0.1:18080/api/v1",
+      "value": "http://127.0.0.1:18080",
       "type": "string"
     },
     {
@@ -59,7 +59,7 @@
   "item": [
     {
       "name": "1 · Auth",
-      "description": "Daftar, masuk, lihat diri sendiri. Token dari Login disimpan ke {{bearerToken}} dan dipakai seluruh request berikutnya.",
+      "description": "Sign up, sign in, see yourself. The token from Login is kept in {{bearerToken}} and used by every later request.",
       "item": [
         {
           "name": "Register",
@@ -67,26 +67,27 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/register",
+              "raw": "{{baseUrl}}/edge.v1.Auth/Register",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "register"
+                "edge.v1.Auth",
+                "Register"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Postman\",\n  \"email\": \"{{email}}\",\n  \"password\": \"correct-horse-battery\",\n  \"password_confirmation\": \"correct-horse-battery\"\n}",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"correct-horse-battery\",\n  \"passwordConfirmation\": \"correct-horse-battery\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -96,7 +97,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Surel dibuat unik per larian oleh skrip pre-request."
+            "description": "The email is made unique per run by the pre-request script."
           },
           "event": [
             {
@@ -113,9 +114,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set(\"bearerToken\", pm.response.json().access_token);",
-                  "pm.test(\"access_token ada\", () => pm.expect(pm.response.json().access_token).to.be.a(\"string\"));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"bearerToken\", pm.response.json().session.accessToken);",
+                  "pm.test(\"accessToken present\", () => pm.expect(pm.response.json().session.accessToken).to.be.a(\"string\"));"
                 ]
               }
             }
@@ -127,21 +128,22 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/login",
+              "raw": "{{baseUrl}}/edge.v1.Auth/Login",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "login"
+                "edge.v1.Auth",
+                "Login"
               ]
             },
             "body": {
@@ -156,7 +158,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Login mencabut seluruh sesi sebelumnya (D1); token dari Register tidak berlaku lagi setelah ini."
+            "description": "Signing in revokes every earlier session (D1); the token from Register stops working after this."
           },
           "event": [
             {
@@ -165,30 +167,44 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set(\"bearerToken\", pm.response.json().access_token);"
+                  "pm.collectionVariables.set(\"bearerToken\", pm.response.json().session.accessToken);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Me",
+          "name": "Get me",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/me",
+              "raw": "{{baseUrl}}/edge.v1.Auth/GetMe",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "me"
+                "edge.v1.Auth",
+                "GetMe"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -211,21 +227,35 @@
         {
           "name": "Get profile",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/profile",
+              "raw": "{{baseUrl}}/edge.v1.Profile/GetProfile",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "profile"
+                "edge.v1.Profile",
+                "GetProfile"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -243,36 +273,37 @@
         {
           "name": "Update profile",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/profile",
+              "raw": "{{baseUrl}}/edge.v1.Profile/UpdateProfile",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "profile"
+                "edge.v1.Profile",
+                "UpdateProfile"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"first_name\": \"Uji\",\n  \"last_name\": \"Postman\",\n  \"date_of_birth\": \"1970-05-10\",\n  \"sex\": \"male\",\n  \"country_of_residence\": \"Indonesia\"\n}",
+              "raw": "{\n  \"firstName\": \"Uji\",\n  \"lastName\": \"Postman\",\n  \"dateOfBirth\": \"1970-05-10\",\n  \"sex\": \"SEX_MALE\",\n  \"countryOfResidence\": \"Indonesia\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Wajib sebelum analisis risiko: umur, jenis kelamin, dan negara menentukan tabel SCORE2."
+            "description": "Required before a risk assessment: age, sex, and country select the SCORE2 table."
           },
           "event": [
             {
@@ -292,38 +323,39 @@
       "name": "3 · Risk assessment",
       "item": [
         {
-          "name": "Create assessment",
+          "name": "Start assessment",
           "request": {
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/risk-assessments",
+              "raw": "{{baseUrl}}/edge.v1.Assessment/StartAssessment",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "risk-assessments"
+                "edge.v1.Assessment",
+                "StartAssessment"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"has_diabetes\": false,\n  \"smoking_status\": \"Perokok aktif\",\n  \"q_exercise\": \"Jarang\",\n  \"sbp_input_type\": \"manual\",\n  \"sbp_value\": 150,\n  \"tchol_input_type\": \"manual\",\n  \"tchol_value\": 6.2,\n  \"hdl_input_type\": \"manual\",\n  \"hdl_value\": 1\n}",
+              "raw": "{\n  \"input\": {\n    \"hasDiabetes\": false,\n    \"smokingStatus\": \"SMOKING_STATUS_CURRENT\",\n    \"exercise\": \"EXERCISE_HABIT_RARELY\",\n    \"systolicBloodPressure\": {\n      \"mode\": \"INPUT_MODE_MANUAL\",\n      \"measuredValue\": 150\n    },\n    \"totalCholesterol\": {\n      \"mode\": \"INPUT_MODE_MANUAL\",\n      \"measuredValue\": 6.2\n    },\n    \"hdlCholesterol\": {\n      \"mode\": \"INPUT_MODE_MANUAL\",\n      \"measuredValue\": 1\n    }\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Skor SCORE2 dihitung sinkron; personalisasi LLM diminta terpisah."
+            "description": "SCORE2 is computed synchronously; the LLM report is requested separately."
           },
           "event": [
             {
@@ -331,8 +363,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set(\"assessmentSlug\", pm.response.json().data.slug);"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"assessmentSlug\", pm.response.json().assessment.slug);"
                 ]
               }
             }
@@ -341,22 +373,35 @@
         {
           "name": "Get assessment",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/risk-assessments/{{assessmentSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Assessment/GetAssessment",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "risk-assessments",
-                "{{assessmentSlug}}"
+                "edge.v1.Assessment",
+                "GetAssessment"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{assessmentSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -374,25 +419,37 @@
         {
           "name": "Request personalization",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/risk-assessments/{{assessmentSlug}}/personalize",
+              "raw": "{{baseUrl}}/edge.v1.Assessment/RequestPersonalization",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "risk-assessments",
-                "{{assessmentSlug}}",
-                "personalize"
+                "edge.v1.Assessment",
+                "RequestPersonalization"
               ]
             },
-            "description": "202: pekerjaan LLM diantrekan; laporannya muncul di GET beberapa detik kemudian (penyedia palsu di lokal)."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{assessmentSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Queues the LLM job and returns at once; the report appears on GetAssessment (or WatchAssessment) a few seconds later with the fake provider."
           },
           "event": [
             {
@@ -400,7 +457,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -409,22 +466,35 @@
         {
           "name": "Get assessment (after personalization)",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/risk-assessments/{{assessmentSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Assessment/GetAssessment",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "risk-assessments",
-                "{{assessmentSlug}}"
+                "edge.v1.Assessment",
+                "GetAssessment"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{assessmentSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -447,6 +517,52 @@
               }
             }
           ]
+        },
+        {
+          "name": "List assessments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/edge.v1.Assessment/ListAssessments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "edge.v1.Assessment",
+                "ListAssessments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -454,25 +570,39 @@
       "name": "4 · Dashboard",
       "item": [
         {
-          "name": "Dashboard",
+          "name": "Get dashboard",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/dashboard",
+              "raw": "{{baseUrl}}/edge.v1.Dashboard/GetDashboard",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "dashboard"
+                "edge.v1.Dashboard",
+                "GetDashboard"
               ]
             },
-            "description": "Read-model yang dimaterialisasi dari event; jeda singkat memberi waktu proyeksi menyusul."
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A read-model materialised from events; the short pause lets the projection catch up."
           },
           "event": [
             {
@@ -506,34 +636,34 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/StartProgram",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs"
+                "edge.v1.Coaching",
+                "StartProgram"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"risk_assessment_slug\": \"{{assessmentSlug}}\",\n  \"difficulty\": \"Standar & Konsisten\"\n}",
+              "raw": "{\n  \"riskAssessmentSlug\": \"{{assessmentSlug}}\",\n  \"difficulty\": \"DIFFICULTY_STANDARD\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Program bersumber dari analisis di atas (D3: satu program per analisis). Coaching mengenal analisis lewat event, karena itu ada jeda sebelum request ini."
+            "description": "Sourced from the assessment above (D3: one program per assessment). Coaching learns of the assessment through an event, hence the pause."
           },
           "event": [
             {
@@ -550,8 +680,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));",
-                  "pm.collectionVariables.set(\"programSlug\", pm.response.json().data.slug);"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"programSlug\", pm.response.json().program.slug);"
                 ]
               }
             }
@@ -560,23 +690,35 @@
         {
           "name": "Get program (curriculum ready)",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs/{{programSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/GetProgram",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs",
-                "{{programSlug}}"
+                "edge.v1.Coaching",
+                "GetProgram"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{programSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -595,8 +737,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "const weeks = pm.response.json().data.weeks || [];",
-                  "pm.test(\"kurikulum sudah ada\", () => pm.expect(weeks.length).to.be.above(0));",
+                  "const weeks = pm.response.json().program.weeks || [];",
+                  "pm.test(\"curriculum arrived\", () => pm.expect(weeks.length).to.be.above(0));",
                   "const task = weeks.flatMap(w => w.tasks || []).find(t => t.id);",
                   "if (task) pm.collectionVariables.set(\"taskId\", task.id);"
                 ]
@@ -607,24 +749,35 @@
         {
           "name": "Complete a task",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/tasks/{{taskId}}/toggle-task-status",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/ToggleTaskStatus",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "tasks",
-                "{{taskId}}",
-                "toggle-task-status"
+                "edge.v1.Coaching",
+                "ToggleTaskStatus"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taskId\": \"{{taskId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -634,7 +787,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"tugas selesai\", () => pm.expect(pm.response.json().data.is_completed).to.eql(true));"
+                  "pm.test(\"task completed\", () => pm.expect(pm.response.json().task.completed).to.eql(true));"
                 ]
               }
             }
@@ -643,24 +796,35 @@
         {
           "name": "Pause program",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs/{{programSlug}}/toggle-program-status",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/ToggleProgramStatus",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs",
-                "{{programSlug}}",
-                "toggle-program-status"
+                "edge.v1.Coaching",
+                "ToggleProgramStatus"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{programSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -678,24 +842,35 @@
         {
           "name": "Resume program",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs/{{programSlug}}/toggle-program-status",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/ToggleProgramStatus",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs",
-                "{{programSlug}}",
-                "toggle-program-status"
+                "edge.v1.Coaching",
+                "ToggleProgramStatus"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{programSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -716,29 +891,27 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs/{{programSlug}}/threads",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/StartThread",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs",
-                "{{programSlug}}",
-                "threads"
+                "edge.v1.Coaching",
+                "StartThread"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Soal sarapan\",\n  \"message\": \"Sarapan apa yang cocok untuk minggu pertama?\"\n}",
+              "raw": "{\n  \"programSlug\": \"{{programSlug}}\",\n  \"title\": \"Soal sarapan\",\n  \"message\": \"Sarapan apa yang cocok untuk minggu pertama?\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -752,8 +925,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));",
-                  "pm.collectionVariables.set(\"threadSlug\", pm.response.json().data.slug);"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"threadSlug\", pm.response.json().thread.slug);"
                 ]
               }
             }
@@ -762,23 +935,35 @@
         {
           "name": "Get thread",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/threads/{{threadSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/GetThread",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "threads",
-                "{{threadSlug}}"
+                "edge.v1.Coaching",
+                "GetThread"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{threadSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -805,31 +990,30 @@
         {
           "name": "Rename thread",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/threads/{{threadSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/UpdateThreadTitle",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "threads",
-                "{{threadSlug}}"
+                "edge.v1.Coaching",
+                "UpdateThreadTitle"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Sarapan minggu pertama\"\n}",
+              "raw": "{\n  \"slug\": \"{{threadSlug}}\",\n  \"title\": \"Sarapan minggu pertama\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -855,29 +1039,27 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/threads/{{threadSlug}}/messages",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/SendThreadMessage",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "threads",
-                "{{threadSlug}}",
-                "messages"
+                "edge.v1.Coaching",
+                "SendThreadMessage"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"message\": \"Kalau tidak sempat masak?\"\n}",
+              "raw": "{\n  \"threadSlug\": \"{{threadSlug}}\",\n  \"message\": \"Kalau tidak sempat masak?\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -891,7 +1073,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -900,23 +1082,35 @@
         {
           "name": "Delete thread",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/threads/{{threadSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/DeleteThread",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "threads",
-                "{{threadSlug}}"
+                "edge.v1.Coaching",
+                "DeleteThread"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{threadSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -934,7 +1128,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -943,26 +1137,37 @@
         {
           "name": "Graduation report",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs/{{programSlug}}/graduation-report",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/GetGraduationReport",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs",
-                "{{programSlug}}",
-                "graduation-report"
+                "edge.v1.Coaching",
+                "GetGraduationReport"
               ]
             },
-            "description": "202 saat laporan baru diminta, 200 saat sudah ada. Meminta laporan mengunci program (D5), jadi thread dihapus sebelum ini."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"programSlug\": \"{{programSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The status says whether the report is PENDING or READY. Requesting it locks the program (D5), so the thread is deleted first."
           },
           "event": [
             {
@@ -970,7 +1175,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 200 atau 202\", () => pm.expect([200, 202]).to.include(pm.response.code));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -979,23 +1184,35 @@
         {
           "name": "Delete program",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/coaching/programs/{{programSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Coaching/DeleteProgram",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "coaching",
-                "programs",
-                "{{programSlug}}"
+                "edge.v1.Coaching",
+                "DeleteProgram"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{programSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1004,7 +1221,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -1021,22 +1238,22 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/chat/conversations",
+              "raw": "{{baseUrl}}/edge.v1.Chat/CreateConversation",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
-                "conversations"
+                "edge.v1.Chat",
+                "CreateConversation"
               ]
             },
             "body": {
@@ -1055,8 +1272,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));",
-                  "pm.collectionVariables.set(\"conversationSlug\", pm.response.json().data.slug);"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"conversationSlug\", pm.response.json().conversation.slug);"
                 ]
               }
             }
@@ -1065,22 +1282,35 @@
         {
           "name": "List conversations",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/chat/conversations",
+              "raw": "{{baseUrl}}/edge.v1.Chat/ListConversations",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
-                "conversations"
+                "edge.v1.Chat",
+                "ListConversations"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1098,23 +1328,35 @@
         {
           "name": "Get conversation",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/chat/conversations/{{conversationSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Chat/GetConversation",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
-                "conversations",
-                "{{conversationSlug}}"
+                "edge.v1.Chat",
+                "GetConversation"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{conversationSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1141,31 +1383,30 @@
         {
           "name": "Rename conversation",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/chat/conversations/{{conversationSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Chat/UpdateConversationTitle",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
-                "conversations",
-                "{{conversationSlug}}"
+                "edge.v1.Chat",
+                "UpdateConversationTitle"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Soal kopi\"\n}",
+              "raw": "{\n  \"slug\": \"{{conversationSlug}}\",\n  \"title\": \"Soal kopi\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1191,29 +1432,27 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/chat/conversations/{{conversationSlug}}/messages",
+              "raw": "{{baseUrl}}/edge.v1.Chat/SendMessage",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
-                "conversations",
-                "{{conversationSlug}}",
-                "messages"
+                "edge.v1.Chat",
+                "SendMessage"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"message\": \"Berapa cangkir yang aman?\"\n}",
+              "raw": "{\n  \"conversationSlug\": \"{{conversationSlug}}\",\n  \"message\": \"Berapa cangkir yang aman?\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1227,7 +1466,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -1236,23 +1475,35 @@
         {
           "name": "Delete conversation",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/chat/conversations/{{conversationSlug}}",
+              "raw": "{{baseUrl}}/edge.v1.Chat/DeleteConversation",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "chat",
-                "conversations",
-                "{{conversationSlug}}"
+                "edge.v1.Chat",
+                "DeleteConversation"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{conversationSlug}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1270,7 +1521,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -1282,24 +1533,37 @@
       "name": "7 · Culinary",
       "item": [
         {
-          "name": "Hub data",
+          "name": "Get hub data",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/culinary/hub-data",
+              "raw": "{{baseUrl}}/edge.v1.Nutrition/GetHubData",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "culinary",
-                "hub-data"
+                "edge.v1.Nutrition",
+                "GetHubData"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1317,30 +1581,30 @@
         {
           "name": "Update preferences",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/culinary/preferences",
+              "raw": "{{baseUrl}}/edge.v1.Nutrition/UpdatePreferences",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "culinary",
-                "preferences"
+                "edge.v1.Nutrition",
+                "UpdatePreferences"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"allergies\": \"udang dan kepiting\",\n  \"budget_level\": \"thrifty\",\n  \"cooking_style\": \"quick_every_time\",\n  \"taste_profiles\": [\n    \"pedas\",\n    \"gurih\"\n  ],\n  \"kitchen_equipment\": [\n    \"wajan\",\n    \"rice cooker\"\n  ]\n}",
+              "raw": "{\n  \"allergies\": \"udang dan kepiting\",\n  \"budgetLevel\": \"BUDGET_LEVEL_THRIFTY\",\n  \"cookingStyle\": \"COOKING_STYLE_QUICK_EVERY_TIME\",\n  \"tasteProfiles\": {\n    \"values\": [\n      \"pedas\",\n      \"gurih\"\n    ]\n  },\n  \"kitchenEquipment\": {\n    \"values\": [\n      \"wajan\",\n      \"rice cooker\"\n    ]\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1366,27 +1630,27 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/culinary/daily-guides",
+              "raw": "{{baseUrl}}/edge.v1.Nutrition/GenerateDailyGuide",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "culinary",
-                "daily-guides"
+                "edge.v1.Nutrition",
+                "GenerateDailyGuide"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"plan_type\": \"cook_at_home\",\n  \"time_availability\": \"quick\",\n  \"energy_level\": \"tired\",\n  \"cuisine_preference\": \"Masakan Sunda\",\n  \"craving_type\": \"soupy_and_warm\",\n  \"social_context\": \"alone\"\n}",
+              "raw": "{\n  \"input\": {\n    \"planType\": \"PLAN_TYPE_COOK_AT_HOME\",\n    \"timeAvailability\": \"TIME_AVAILABILITY_QUICK\",\n    \"energyLevel\": \"ENERGY_LEVEL_TIRED\",\n    \"cuisinePreference\": \"Masakan Sunda\",\n    \"cravingType\": \"CRAVING_TYPE_SOUPY_AND_WARM\",\n    \"socialContext\": \"SOCIAL_CONTEXT_ALONE\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1400,31 +1664,44 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Hub data (guide arrived)",
+          "name": "Get hub data (guide arrived)",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/culinary/hub-data",
+              "raw": "{{baseUrl}}/edge.v1.Nutrition/GetHubData",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "culinary",
-                "hub-data"
+                "edge.v1.Nutrition",
+                "GetHubData"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1447,6 +1724,54 @@
               }
             }
           ]
+        },
+        {
+          "name": "Mistyped enum is refused",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/edge.v1.Nutrition/GenerateDailyGuide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "edge.v1.Nutrition",
+                "GenerateDailyGuide"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input\": {\n    \"planType\": \"PLAN_TYPE_COOK_AT_HOME\",\n    \"timeAvailability\": \"TIME_AVAILABILITY_QUICK\",\n    \"energyLevel\": \"ENERGY_LEVEL_TIRED\",\n    \"cuisinePreference\": \"Masakan Sunda\",\n    \"cravingType\": \"CRAVING_TYPE_GRILLD\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "An unknown enum name is refused, not read as \"no craving\" (the strict codec, ADR-027)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code invalid_argument\", () => pm.expect(pm.response.json().code).to.eql(\"invalid_argument\"));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1459,22 +1784,22 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/password-reset/request",
+              "raw": "{{baseUrl}}/edge.v1.Auth/RequestPasswordReset",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "password-reset",
-                "request"
+                "edge.v1.Auth",
+                "RequestPasswordReset"
               ]
             },
             "body": {
@@ -1489,7 +1814,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Tautannya dikirim ke Mailpit: http://127.0.0.1:18025. Konfirmasi butuh token dari surel itu, jadi tidak ikut dalam larian otomatis."
+            "description": "The link goes to Mailpit: http://127.0.0.1:18025. Confirming needs the token from that email, so it is not part of the automatic run."
           },
           "event": [
             {
@@ -1497,7 +1822,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -1509,18 +1834,32 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/logout",
+              "raw": "{{baseUrl}}/edge.v1.Auth/Logout",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "logout"
+                "edge.v1.Auth",
+                "Logout"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1536,25 +1875,39 @@
           ]
         },
         {
-          "name": "Me after logout (401)",
+          "name": "Get me after logout (401)",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/me",
+              "raw": "{{baseUrl}}/edge.v1.Auth/GetMe",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "me"
+                "edge.v1.Auth",
+                "GetMe"
               ]
             },
-            "description": "Pencabutan lewat penghitung generasi (ADR-020) berlaku seketika."
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Revocation through the generation counter (ADR-020) takes effect at once."
           },
           "event": [
             {
@@ -1562,7 +1915,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code unauthenticated\", () => pm.expect(pm.response.json().code).to.eql(\"unauthenticated\"));"
                 ]
               }
             }
@@ -1574,21 +1928,22 @@
             "method": "POST",
             "header": [
               {
-                "key": "Accept",
+                "key": "Content-Type",
                 "value": "application/json"
               },
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/login",
+              "raw": "{{baseUrl}}/edge.v1.Auth/Login",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "login"
+                "edge.v1.Auth",
+                "Login"
               ]
             },
             "body": {
@@ -1611,7 +1966,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set(\"bearerToken\", pm.response.json().access_token);"
+                  "pm.collectionVariables.set(\"bearerToken\", pm.response.json().session.accessToken);"
                 ]
               }
             }
@@ -1620,24 +1975,25 @@
         {
           "name": "Delete account (wrong password → 403)",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
             "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/delete-account",
+              "raw": "{{baseUrl}}/edge.v1.Auth/DeleteAccount",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "delete-account"
+                "edge.v1.Auth",
+                "DeleteAccount"
               ]
             },
             "body": {
@@ -1656,7 +2012,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"code permission_denied\", () => pm.expect(pm.response.json().code).to.eql(\"permission_denied\"));"
                 ]
               }
             }
@@ -1665,24 +2022,25 @@
         {
           "name": "Delete account",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
             "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Connect-Protocol-Version",
+                "value": "1"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/delete-account",
+              "raw": "{{baseUrl}}/edge.v1.Auth/DeleteAccount",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "delete-account"
+                "edge.v1.Auth",
+                "DeleteAccount"
               ]
             },
             "body": {
@@ -1694,7 +2052,7 @@
                 }
               }
             },
-            "description": "Saga penghapusan lintas unit (ADR-011); 202 karena unit lain menghapus datanya lewat event."
+            "description": "The deletion saga across units (ADR-011); the status says IN_PROGRESS because the other units delete their data through events."
           },
           "event": [
             {
@@ -1702,7 +2060,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 202\", () => pm.response.to.have.status(202));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
