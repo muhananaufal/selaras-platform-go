@@ -301,3 +301,49 @@ func TestTheFakeCanFailTheFirstCalls(t *testing.T) {
 		t.Fatalf("failed calls must still be counted as calls, got %d", got)
 	}
 }
+
+// TestTheFakeCanHoldEveryCallAfterTheFirstFew makes "stop the worker between
+// two attempts" deterministic: the first calls answer at once, every later
+// call waits until its context is cancelled. A test that has to win a race
+// against the worker's retries instead can only skip itself when it loses.
+func TestTheFakeCanHoldEveryCallAfterTheFirstFew(t *testing.T) {
+	f := llm.NewFake()
+	f.Err = errors.New("provider down")
+	f.SetHoldAfter(1)
+
+	if _, err := f.Generate(context.Background(), request()); err == nil || err.Error() != "provider down" {
+		t.Fatalf("the first call returned %v, want the configured error at once", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.Generate(ctx, request())
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("the second call returned %v before its context was cancelled; it must be held", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("the held call returned %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the held call did not return after its context was cancelled")
+	}
+
+	// Released: calls go through again.
+	f.SetHoldAfter(0)
+	if _, err := f.Generate(context.Background(), request()); err == nil || err.Error() != "provider down" {
+		t.Fatalf("after release the call returned %v, want the configured error at once", err)
+	}
+	if got := f.CallCount(); got != 3 {
+		t.Fatalf("the fake recorded %d calls, want 3", got)
+	}
+}
