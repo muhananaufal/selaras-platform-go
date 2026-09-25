@@ -1,16 +1,16 @@
-// Skenario TULIS: jalur yang mengubah data tanpa menyentuh LLM.
+// WRITE scenario: the paths that change data without touching the LLM.
 //
-// Tiga penulisan per iterasi: memperbarui profil, memulai penilaian risiko
-// (menghitung SCORE2 dan menulis outbox dalam satu transaksi), dan mengubah
-// preferensi kuliner. Personalisasi, coaching, chat, dan panduan menu
-// SENGAJA tidak ada di sini - semuanya mengantre pekerjaan LLM, dan itu
-// diukur terpisah (scenarios/llm.js) karena bentuk bebannya berbeda.
+// Three writes per iteration: updating the profile, starting a risk
+// assessment (computing SCORE2 and writing the outbox in one transaction),
+// and changing the culinary preferences. Personalisation, coaching, chat, and
+// meal guides are DELIBERATELY absent - they all queue LLM work, and that has
+// a different load shape.
 //
-// Menjalankan:
+// Run:
 //   task k6 -- write
 
 import { sleep } from "k6";
-import { completeProfile, patch, sessionFor, startAssessment } from "../lib/api.js";
+import { call, completeProfile, sessionFor, startAssessment } from "../lib/api.js";
 import { slo } from "../lib/slo.js";
 
 export const options = {
@@ -29,26 +29,14 @@ export const options = {
   thresholds: slo.write,
 };
 
-const budgets = ["thrifty", "standard", "flexible"];
+const budgets = ["BUDGET_LEVEL_THRIFTY", "BUDGET_LEVEL_STANDARD", "BUDGET_LEVEL_FLEXIBLE"];
 
 export default function () {
   const { token } = sessionFor("write", (t) => completeProfile(t));
 
-  patch(
-    token,
-    "/profile",
-    { first_name: "Beban", last_name: `Iterasi${__ITER}` },
-    "PATCH /profile",
-  );
-
+  call(token, "/edge.v1.Profile/UpdateProfile", { firstName: "Beban", lastName: `Iterasi${__ITER}` });
   startAssessment(token);
-
-  patch(
-    token,
-    "/culinary/preferences",
-    { budget_level: budgets[__ITER % budgets.length] },
-    "PATCH /culinary/preferences",
-  );
+  call(token, "/edge.v1.Nutrition/UpdatePreferences", { budgetLevel: budgets[__ITER % budgets.length] });
 
   sleep(1);
 }

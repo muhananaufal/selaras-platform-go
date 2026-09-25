@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -25,8 +24,8 @@ import (
 	chatpg "github.com/muhananaufal/selaras-platform-go/internal/chat/adapter/postgres"
 	chatapp "github.com/muhananaufal/selaras-platform-go/internal/chat/app"
 	chatdomain "github.com/muhananaufal/selaras-platform-go/internal/chat/domain"
-	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/oauth"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/service"
 	identitydomain "github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
@@ -113,14 +112,13 @@ func redisStore(t *testing.T) *oauth.Store {
 	return store
 }
 
-func socialHandler(t *testing.T, store *oauth.Store) *gin.Engine {
+func socialHandler(t *testing.T, store *oauth.Store) *http.ServeMux {
 	t.Helper()
-	gin.SetMode(gin.ReleaseMode)
-	social := handler.NewSocial(fakeIdentity{accessToken: "token-akses-rahasia"},
-		map[string]handler.ProviderClient{"google": fakeProvider{}}, store, "https://frontend.test")
-	router := gin.New()
-	router.GET("/auth/:provider/redirect", social.Redirect)
-	router.GET("/auth/:provider/callback", social.Callback)
+	social := service.NewSocial(fakeIdentity{accessToken: "token-akses-rahasia"},
+		map[string]service.ProviderClient{"google": fakeProvider{}}, store, "https://frontend.test")
+	router := http.NewServeMux()
+	router.HandleFunc("GET /auth/{provider}/redirect", social.Redirect)
+	router.HandleFunc("GET /auth/{provider}/callback", social.Callback)
 	return router
 }
 

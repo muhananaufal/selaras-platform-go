@@ -181,12 +181,12 @@ func (CurriculumStatus) EnumDescriptor() ([]byte, []int) {
 	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{2}
 }
 
-// Keadaan laporan kelulusan.
+// The state of the graduation report.
 //
-// Empat keadaan, bukan dua. Yang diturunkan dari ada tidaknya laporan hanya
-// bisa membedakan "ada" dan "tidak ada", dan keduanya menyembunyikan yang
-// paling perlu diketahui klien: laporannya sedang dibuat, atau pembuatannya
-// gagal dan menunggu lebih lama tidak akan mengubah apa pun.
+// Four states, not two. A state derived from the presence of the report can
+// only tell "there" from "not there", and both hide what the client most
+// needs to know: the report is being produced, or its production failed and
+// waiting longer will change nothing.
 type GraduationStatus int32
 
 const (
@@ -636,9 +636,9 @@ func (x *CoachingMessage) GetTimestamps() *v1.Timestamps {
 	return nil
 }
 
-// Referensi ke assessment bersifat LUNAK. Foreign key lintas service tidak
-// bisa ditegakkan database, jadi keunikannya dijaga di sini dan datanya
-// disalin dari event (ADR-004).
+// The reference to the assessment is SOFT. A cross-service foreign key
+// cannot be enforced by the database, so uniqueness is guarded here and the
+// data is copied from the event (ADR-004).
 type SourceAssessment struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AssessmentId   string                 `protobuf:"bytes,1,opt,name=assessment_id,json=assessmentId,proto3" json:"assessment_id,omitempty"`
@@ -711,18 +711,18 @@ type CoachingProgram struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Slug  string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
-	// Pemilik program adalah PENGGUNA, bukan profilnya (ADR-024).
+	// The owner of a program is the USER, not their profile (ADR-024).
 	//
-	// Kontrak ini semula memakai user_profile_id, dan itu keliru karena dua
-	// hal. Pertama, ADR-002 aturan 2 mengizinkan profil belum terisi - program
-	// yang dikunci pada id profil akan mengunci keluar pengguna yang justru
-	// diizinkan ada. Kedua, id profil harus diterjemahkan lebih dulu dari
-	// identitas yang sudah terverifikasi, dan penerjemahan itu adalah
-	// panggilan yang tidak menambah apa pun (ADR-023).
+	// This contract initially used user_profile_id, and that was wrong for two
+	// reasons. First, ADR-002 rule 2 allows a profile not yet filled in - a
+	// program keyed on the profile id would lock out users who are explicitly
+	// allowed to exist. Second, the profile id has to be translated first from
+	// the already verified identity, and that translation is a call that adds
+	// nothing (ADR-023).
 	//
-	// Sistem lama memakai profile->id di CoachingController dan user_id di
-	// ChatController - dua pola identitas untuk satu pertanyaan, dan itu
-	// separuh dari temuan S9.
+	// The legacy system used profile->id in CoachingController and user_id in
+	// ChatController - two identity patterns for one question, and that is
+	// half of finding S9.
 	UserId           string            `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	SourceAssessment *SourceAssessment `protobuf:"bytes,4,opt,name=source_assessment,json=sourceAssessment,proto3" json:"source_assessment,omitempty"`
 	Title            string            `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
@@ -730,9 +730,9 @@ type CoachingProgram struct {
 	Status           ProgramStatus     `protobuf:"varint,7,opt,name=status,proto3,enum=coaching.v1.ProgramStatus" json:"status,omitempty"`
 	Difficulty       Difficulty        `protobuf:"varint,8,opt,name=difficulty,proto3,enum=coaching.v1.Difficulty" json:"difficulty,omitempty"`
 	StartDate        string            `protobuf:"bytes,9,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
-	// Satu-satunya sumber kebenaran untuk akhir program. Sistem lama
-	// menghitungnya dari created_at ditambah 28 hari sambil menyimpan kolom
-	// ini tanpa memakainya (temuan B5).
+	// The single source of truth for the end of the program. The legacy
+	// system computed it from created_at plus 28 days while storing this
+	// column without using it (finding B5).
 	EndDate              string            `protobuf:"bytes,10,opt,name=end_date,json=endDate,proto3" json:"end_date,omitempty"`
 	CurriculumStatus     CurriculumStatus  `protobuf:"varint,11,opt,name=curriculum_status,json=curriculumStatus,proto3,enum=coaching.v1.CurriculumStatus" json:"curriculum_status,omitempty"`
 	Weeks                []*CoachingWeek   `protobuf:"bytes,12,rep,name=weeks,proto3" json:"weeks,omitempty"`
@@ -948,11 +948,11 @@ func (x *StartProgramRequest) GetIdempotencyKey() *v1.IdempotencyKey {
 
 type StartProgramResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// job_id menunjuk pekerjaan pembuatan kurikulum.
+	// job_id points at the curriculum generation job.
 	//
-	// Ia ada karena StartProgram menjawab SEBELUM kurikulumnya jadi: program
-	// dikembalikan dalam keadaan pending, dan klien memakai id ini untuk
-	// menanyakan kemajuannya.
+	// It exists because StartProgram answers BEFORE the curriculum is ready:
+	// the program is returned in the pending state, and the client uses this
+	// id to ask about its progress.
 	JobId         string           `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Program       *CoachingProgram `protobuf:"bytes,1,opt,name=program,proto3" json:"program,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1433,8 +1433,8 @@ func (x *GetGraduationReportRequest) GetUserId() string {
 
 type GetGraduationReportResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Kosong selama laporannya belum ada. Status di bawah yang membedakan
-	// "belum diminta" dari "sedang dibuat" dan dari "gagal".
+	// Empty while the report does not exist yet. The status below is what
+	// tells "not requested" apart from "being produced" and from "failed".
 	ReportJson    string           `protobuf:"bytes,1,opt,name=report_json,json=reportJson,proto3" json:"report_json,omitempty"`
 	Status        GraduationStatus `protobuf:"varint,2,opt,name=status,proto3,enum=coaching.v1.GraduationStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1490,7 +1490,8 @@ type StartThreadRequest struct {
 	ProgramSlug string                 `protobuf:"bytes,1,opt,name=program_slug,json=programSlug,proto3" json:"program_slug,omitempty"`
 	UserId      string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Message     string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	// Bila kosong, judul diambil dari 45 karakter pertama pesan (D12).
+	// When empty, the title is taken from the first 45 characters of the
+	// message (D12).
 	Title          *string            `protobuf:"bytes,4,opt,name=title,proto3,oneof" json:"title,omitempty"`
 	IdempotencyKey *v1.IdempotencyKey `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields

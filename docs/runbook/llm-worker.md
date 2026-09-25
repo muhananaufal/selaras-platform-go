@@ -120,7 +120,7 @@ WHERE id = '<assessment id>';
 COMMIT;
 ```
 
-Lalu minta ulang lewat API — `PATCH /api/v1/risk-assessments/{slug}/personalize`.
+Lalu minta ulang lewat API — `POST /edge.v1.Assessment/RequestPersonalization` dengan `{"slug": "..."}`.
 Permintaan itu yang menulis baris outbox baru.
 
 > Pemisah `chr(31)` bukan salah ketik. Kunci idempotensi disimpan sebagai

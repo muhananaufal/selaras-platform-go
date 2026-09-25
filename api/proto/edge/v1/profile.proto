@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "profile/v1/profile.proto";
+
+// Profile serves the caller's own demographic profile.
+service Profile {
+  // Returns the caller's profile. A profile that does not exist yet is NOT an
+  // error: registration through a social provider creates none (finding B7),
+  // so the answer is an empty response, not NOT_FOUND.
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Creates the profile if it does not exist, otherwise changes only the
+  // fields that are present in the request.
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+}
+
+// The profile as the client sees it.
+//
+// Every field that may be empty is optional and is simply absent when empty -
+// not an empty string, and never today's date. This is the layer where B6 was
+// born in the legacy system.
+message UserProfile {
+  // Identity data, taken from the token, not from profile-svc (ADR-002).
+  optional string email = 1;
+
+  optional string first_name = 2;
+  optional string last_name = 3;
+  profile.v1.Sex sex = 4;
+  optional string country_of_residence = 5;
+
+  // ISO-8601 date only: 1990-05-17 (finding B13).
+  optional string date_of_birth = 6;
+
+  // Absent while the date of birth is empty. The legacy system showed 0,
+  // because Carbon::parse(null) returns the current time (finding B6).
+  optional int32 age = 7;
+
+  // The SCORE2 calibration region of the country of residence. A clinical
+  // concept owned by assessment-svc (ADR-002 rule 3); absent when it cannot be
+  // computed.
+  optional string risk_region = 8;
+
+  string language = 9;
+}
+
+message GetProfileRequest {}
+
+message GetProfileResponse {
+  // Absent when the profile has not been created yet.
+  UserProfile profile = 1;
+}
+
+message UpdateProfileRequest {
+  optional string first_name = 1;
+  optional string last_name = 2;
+  optional string date_of_birth = 3;
+
+  // SEX_UNSPECIFIED (or absent) leaves the stored value as it is, the same
+  // rule profile-svc applies.
+  profile.v1.Sex sex = 4;
+
+  optional string country_of_residence = 5;
+  optional string language = 6;
+}
+
+message UpdateProfileResponse {
+  UserProfile profile = 1;
+}

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "dashboard/v1/dashboard.proto";
+import "google/protobuf/timestamp.proto";
+
+// Dashboard serves the whole home page in one call.
+service Dashboard {
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message GetDashboardRequest {}
+
+message GetDashboardResponse {
+  // False means the user has never run an analysis, and the client shows a
+  // welcome message. Stated explicitly, not inferred from an empty history.
+  bool has_assessments = 1;
+
+  dashboard.v1.AssessmentSummary latest_assessment = 2;
+  dashboard.v1.ProgramSummary program = 3;
+  repeated dashboard.v1.AssessmentSummary assessment_history = 4;
+  repeated dashboard.v1.RiskTrendPoint risk_trend = 5;
+
+  // HEALTH_TREND_INSUFFICIENT_DATA is distinct from STABLE: someone with
+  // nothing to compare against must not see a flat arrow.
+  dashboard.v1.HealthTrend health_trend = 6;
+
+  int32 total_assessments = 7;
+
+  // When the read-model was last updated. Exposed because the projection is
+  // eventually consistent, and a hidden lag looks like a bug.
+  google.protobuf.Timestamp projected_at = 8;
+}

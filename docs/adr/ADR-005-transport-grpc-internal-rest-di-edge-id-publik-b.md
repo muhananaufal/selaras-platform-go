@@ -1,5 +1,7 @@
 # ADR-005 — Transport: gRPC internal, REST di edge, ID publik berupa string
 
+**Status.** Bagian tepi (REST) digantikan ADR-027 pada 2026-09-25: premis "frontend yang ada tidak boleh pecah" gugur karena frontend ditulis ulang dari nol. gRPC internal dan ID publik berupa string tetap berlaku.
+
 
 **Konteks.** Frontend yang ada memanggil REST `/api/v1` dan tidak boleh pecah. Antar service,
 kontrak yang diperiksa compiler jauh lebih aman. E16 dan tipe `uuid` pada `coaching_tasks.id`

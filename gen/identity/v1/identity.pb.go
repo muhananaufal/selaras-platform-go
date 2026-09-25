@@ -147,9 +147,9 @@ func (x *User) GetTimestamps() *v1.Timestamps {
 	return nil
 }
 
-// Token akses berumur pendek beserta klaimnya. Klaim membawa
-// user_profile_id supaya tidak ada lookup per request (ADR-007); nilainya
-// diambil sekali saat penerbitan.
+// A short-lived access token together with its claims. The claims carry
+// user_profile_id so there is no per-request lookup (ADR-007); the value is
+// fetched once at issuance.
 type TokenPair struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	AccessToken      string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
@@ -366,8 +366,8 @@ func (x *LoginRequest) GetPassword() string {
 	return ""
 }
 
-// Login mencabut seluruh token lama milik pengguna: satu sesi per
-// pengguna, sesuai perilaku sistem lama yang wajib dipertahankan (D1).
+// Login revokes all of the user's old tokens: one session per user,
+// matching the legacy behaviour that had to be kept (D1).
 type LoginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
@@ -552,8 +552,8 @@ func (x *RequestPasswordResetRequest) GetEmail() string {
 	return ""
 }
 
-// Sengaja tidak memberi tahu apakah emailnya terdaftar. Membedakan
-// keduanya mengubah endpoint ini menjadi alat enumerasi akun.
+// Deliberately does not say whether the email is registered. Telling the
+// two apart turns this endpoint into an account enumeration tool.
 type RequestPasswordResetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -678,8 +678,8 @@ func (*ConfirmPasswordResetResponse) Descriptor() ([]byte, []int) {
 	return file_identity_v1_identity_proto_rawDescGZIP(), []int{11}
 }
 
-// Kata sandi wajib diverifikasi sebelum penghapusan dimulai. Sistem lama
-// memintanya di validasi lalu tidak pernah memeriksanya (temuan S2).
+// The password has to be verified before deletion starts. The legacy system
+// asked for it in validation and then never checked it (finding S2).
 type DeleteAccountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -776,10 +776,10 @@ func (x *DeleteAccountResponse) GetSagaId() string {
 	return ""
 }
 
-// id_token adalah ID token OIDC dari penyedia, bukan access token-nya.
-// Ia ditandatangani penyedia, sehingga klaim email_verified sampai ke
-// identity-svc dengan tanda tangannya utuh - identity-svc tidak perlu
-// mempercayai pemanggilnya soal alamat siapa yang sudah terbukti.
+// id_token is the OIDC ID token from the provider, not its access token. It
+// is signed by the provider, so the email_verified claim reaches
+// identity-svc with its signature intact - identity-svc need not trust its
+// caller about whose address has been proven.
 type ExchangeSocialTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -832,9 +832,9 @@ func (x *ExchangeSocialTokenRequest) GetIdToken() string {
 	return ""
 }
 
-// Menautkan akun, tidak pernah menimpanya. Sistem lama memakai
-// updateOrCreate berdasarkan email, sehingga login sosial menimpa kata
-// sandi akun yang sudah ada (temuan S5).
+// Links accounts, never overwrites them. The legacy system used
+// updateOrCreate by email, so a social login overwrote the password of an
+// existing account (finding S5).
 type ExchangeSocialTokenResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	User             *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`

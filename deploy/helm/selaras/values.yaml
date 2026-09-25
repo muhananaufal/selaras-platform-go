@@ -33,6 +33,12 @@ env:
 rateLimit:
   authRequests: ""
   llmRequests: ""
+  # CIDRs whose X-Forwarded-For the gateway believes (TRUSTED_PROXY_CIDRS).
+  # Empty believes nobody and limits by the direct peer - right when the
+  # gateway is reached directly. Behind an Ingress or a load balancer, set it
+  # to the proxy's address range: otherwise every user shares the proxy's
+  # address, and one counter, and five failed logins lock everyone out.
+  trustedProxyCIDRs: ""
 
 # Network limits (templates/networkpolicy.yaml): ingress is denied for every
 # unit, then opened only along the *_GRPC_TARGET graph above and the probe

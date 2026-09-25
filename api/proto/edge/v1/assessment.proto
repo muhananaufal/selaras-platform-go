@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "assessment/v1/assessment.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Assessment serves the caller's cardiovascular risk assessments.
+service Assessment {
+  // Computes a new assessment from the questionnaire. The score is computed
+  // synchronously; the narrative report is requested separately.
+  rpc StartAssessment(StartAssessmentRequest) returns (StartAssessmentResponse);
+
+  // The caller's assessment history, newest first.
+  rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  rpc GetAssessment(GetAssessmentRequest) returns (GetAssessmentResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Queues the narrative report. Returns immediately: the report comes later,
+  // and personalization_status says when. Honours the Idempotency-Key header,
+  // so a client that resends after a dropped connection does not pay twice.
+  rpc RequestPersonalization(RequestPersonalizationRequest) returns (RequestPersonalizationResponse);
+
+  // Streams the assessment whenever it changes, until personalisation reaches
+  // a final state or the stream's time limit passes. The first message is the
+  // current state, so a client that connects late misses nothing. A stream
+  // that ends while still pending is reopened by the client.
+  rpc WatchAssessment(WatchAssessmentRequest) returns (stream WatchAssessmentResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message RiskAssessment {
+  string slug = 1;
+  assessment.v1.RiskModel model_used = 2;
+  double risk_percentage = 3;
+
+  // The clinical values that actually entered the calculator, measured or
+  // estimated. HbA1c, serum creatinine, and eGFR are absent outside the
+  // diabetes path - never zero, which would look like data.
+  assessment.v1.ResolvedClinicalValues resolved_values = 4;
+
+  // The only way a client can tell "in progress" from "failed" and from
+  // "never requested" (F3-12).
+  assessment.v1.PersonalizationStatus personalization_status = 5;
+
+  // The narrative report, as the model produced it. Absent until
+  // personalisation completes, and absent if the stored report is not valid
+  // JSON - one corrupt row must not make the whole response unreadable.
+  google.protobuf.Value personalized_report = 6;
+
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message StartAssessmentRequest {
+  // The questionnaire. Its enums are the domain vocabulary shared with
+  // assessment-svc; display labels are the client's concern.
+  assessment.v1.AssessmentInput input = 1;
+}
+
+message StartAssessmentResponse {
+  RiskAssessment assessment = 1;
+}
+
+message ListAssessmentsRequest {}
+
+message ListAssessmentsResponse {
+  repeated RiskAssessment assessments = 1;
+}
+
+message GetAssessmentRequest {
+  string slug = 1;
+}
+
+message GetAssessmentResponse {
+  RiskAssessment assessment = 1;
+}
+
+message RequestPersonalizationRequest {
+  string slug = 1;
+}
+
+message RequestPersonalizationResponse {
+  string job_id = 1;
+
+  // COMPLETED when the report already exists: there is nothing to wait for.
+  assessment.v1.PersonalizationStatus status = 2;
+}
+
+message WatchAssessmentRequest {
+  string slug = 1;
+}
+
+message WatchAssessmentResponse {
+  RiskAssessment assessment = 1;
+}

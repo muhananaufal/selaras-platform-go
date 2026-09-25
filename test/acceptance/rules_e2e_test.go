@@ -1,29 +1,46 @@
 package acceptance
 
 import (
-	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
+
+	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
+	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
+	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
+	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
+	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 )
 
 // Rules that can only be proven through the public contract, against a
 // running stack (compose or k3d). Without TEST_E2E_BASE_URL these tests skip
 // themselves; in CI they MUST run.
+//
+// They use the generated edge.v1 Connect clients, so a rule is checked
+// through exactly the contract a consumer compiles against.
 
 const password = "correct-horse-battery"
 
 type api struct {
 	t     *testing.T
-	base  string
 	token string
 	email string
+
+	auth       edgev1connect.AuthClient
+	profile    edgev1connect.ProfileClient
+	assessment edgev1connect.AssessmentClient
+	coaching   edgev1connect.CoachingClient
+	dashboard  edgev1connect.DashboardClient
 }
 
 func stack(t *testing.T) *api {
@@ -35,148 +52,136 @@ func stack(t *testing.T) *api {
 		}
 		t.Skip("TEST_E2E_BASE_URL is not set; start the stack to run this rule")
 	}
-	return &api{t: t, base: base}
+
+	a := &api{t: t}
+	httpClient := &http.Client{Timeout: 20 * time.Second}
+	opts := []connect.ClientOption{connect.WithProtoJSON(), connect.WithInterceptors(tokenOf{a})}
+	a.auth = edgev1connect.NewAuthClient(httpClient, base, opts...)
+	a.profile = edgev1connect.NewProfileClient(httpClient, base, opts...)
+	a.assessment = edgev1connect.NewAssessmentClient(httpClient, base, opts...)
+	a.coaching = edgev1connect.NewCoachingClient(httpClient, base, opts...)
+	a.dashboard = edgev1connect.NewDashboardClient(httpClient, base, opts...)
+	return a
 }
 
-func (a *api) call(method, path string, body any, bearer string) (int, map[string]any, http.Header) {
-	a.t.Helper()
-	var reader io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			a.t.Fatal(err)
-		}
-		reader = bytes.NewReader(raw)
-	}
-	req, err := http.NewRequest(method, a.base+"/api/v1"+path, reader)
-	if err != nil {
-		a.t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	res, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
-		a.t.Fatalf("%s %s: %v", method, path, err)
-	}
-	defer res.Body.Close()
-	var decoded map[string]any
-	raw, _ := io.ReadAll(res.Body)
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &decoded); err != nil {
-			decoded = map[string]any{"_raw": string(raw)}
-		}
-	}
-	return res.StatusCode, decoded, res.Header
-}
-
-func (a *api) do(method, path string, body any) (int, map[string]any) {
-	code, decoded, _ := a.call(method, path, body, a.token)
-	return code, decoded
+func (a *api) ctx() context.Context {
+	ctx, cancel := context.WithTimeout(a.t.Context(), 20*time.Second)
+	a.t.Cleanup(cancel)
+	return ctx
 }
 
 func (a *api) register() *api {
 	a.t.Helper()
-	a.email = fmt.Sprintf("acc-%d-%s@user.co", time.Now().UnixNano(), strings.ToLower(strings.ReplaceAll(a.t.Name(), "/", "-")))
-	code, body := a.do(http.MethodPost, "/register", map[string]any{
-		"name": "Acceptance", "email": a.email, "password": password, "password_confirmation": password,
+	a.email = fmt.Sprintf("acc-%d-%s@user.co", time.Now().UnixNano(),
+		strings.ToLower(strings.NewReplacer("/", "-", "_", "-").Replace(a.t.Name())))
+	resp, err := a.auth.Register(a.ctx(), &edgev1.RegisterRequest{
+		Email: a.email, Password: password, PasswordConfirmation: password,
 	})
-	if code != http.StatusCreated && code != http.StatusOK {
-		a.t.Fatalf("register answered %d: %v", code, body)
+	if err != nil {
+		a.t.Fatalf("register: %v", err)
 	}
-	a.token, _ = body["access_token"].(string)
+	a.token = resp.GetSession().GetAccessToken()
 	if a.token == "" {
-		a.t.Fatalf("register returned no access token: %v", body)
+		a.t.Fatalf("register returned no access token: %v", resp)
 	}
 	return a
 }
 
+// as runs fn with a different token (or none), then restores the own one.
+func (a *api) as(token string, fn func()) {
+	saved := a.token
+	a.token = token
+	defer func() { a.token = saved }()
+	fn()
+}
+
 func (a *api) login() string {
 	a.t.Helper()
-	code, body, _ := a.call(http.MethodPost, "/login", map[string]any{"email": a.email, "password": password}, "")
-	if code != http.StatusOK {
-		a.t.Fatalf("login answered %d: %v", code, body)
-	}
-	token, _ := body["access_token"].(string)
+	var token string
+	a.as("", func() {
+		resp, err := a.auth.Login(a.ctx(), &edgev1.LoginRequest{Email: a.email, Password: password})
+		if err != nil {
+			a.t.Fatalf("login: %v", err)
+		}
+		token = resp.GetSession().GetAccessToken()
+	})
 	return token
 }
 
 func (a *api) completeProfile() {
 	a.t.Helper()
-	if code, body := a.do(http.MethodPatch, "/profile", map[string]any{
-		"first_name": "Uji", "last_name": "Aturan", "date_of_birth": "1970-05-10",
-		"sex": "male", "country_of_residence": "Indonesia",
-	}); code != http.StatusOK {
-		a.t.Fatalf("profile answered %d: %v", code, body)
+	first, last, dob, country := "Uji", "Aturan", "1970-05-10", "Indonesia"
+	if _, err := a.profile.UpdateProfile(a.ctx(), &edgev1.UpdateProfileRequest{
+		FirstName: &first, LastName: &last, DateOfBirth: &dob,
+		Sex: profilev1.Sex_SEX_MALE, CountryOfResidence: &country,
+	}); err != nil {
+		a.t.Fatalf("profile: %v", err)
 	}
 }
 
-func assessmentInput() map[string]any {
-	return map[string]any{
-		"has_diabetes": false, "smoking_status": "Perokok aktif", "q_exercise": "Jarang",
-		"sbp_input_type": "manual", "sbp_value": 150, "tchol_input_type": "manual", "tchol_value": 6.2,
-		"hdl_input_type": "manual", "hdl_value": 1.0,
+func assessmentInput() *assessmentv1.AssessmentInput {
+	manual := func(v float64) *assessmentv1.ClinicalParameter {
+		return &assessmentv1.ClinicalParameter{Mode: assessmentv1.InputMode_INPUT_MODE_MANUAL, MeasuredValue: &v}
+	}
+	return &assessmentv1.AssessmentInput{
+		SmokingStatus:         assessmentv1.SmokingStatus_SMOKING_STATUS_CURRENT,
+		Exercise:              assessmentv1.ExerciseHabit_EXERCISE_HABIT_RARELY,
+		SystolicBloodPressure: manual(150),
+		TotalCholesterol:      manual(6.2),
+		HdlCholesterol:        manual(1.0),
 	}
 }
 
 func (a *api) startAssessment() string {
 	a.t.Helper()
-	code, body := a.do(http.MethodPost, "/risk-assessments", assessmentInput())
-	if code != http.StatusCreated {
-		a.t.Fatalf("assessment answered %d: %v", code, body)
+	resp, err := a.assessment.StartAssessment(a.ctx(), &edgev1.StartAssessmentRequest{Input: assessmentInput()})
+	if err != nil {
+		a.t.Fatalf("assessment: %v", err)
 	}
-	data, _ := body["data"].(map[string]any)
-	slug, _ := data["slug"].(string)
-	if slug == "" {
-		a.t.Fatalf("assessment returned no slug: %v", body)
+	if resp.GetAssessment().GetSlug() == "" {
+		a.t.Fatalf("assessment returned no slug: %v", resp)
 	}
-	return slug
+	return resp.GetAssessment().GetSlug()
 }
 
-func (a *api) startProgram() (int, map[string]any) {
+func (a *api) startProgram() (*edgev1.CoachingProgram, error) {
 	a.t.Helper()
-	return a.do(http.MethodPost, "/coaching/programs", map[string]any{"difficulty": "Standar & Konsisten"})
+	resp, err := a.coaching.StartProgram(a.ctx(), &edgev1.StartProgramRequest{
+		Difficulty: coachingv1.Difficulty_DIFFICULTY_STANDARD,
+	})
+	return resp.GetProgram(), err
 }
 
 // startProgramFrom starts a program sourced from one analysis result.
 //
 // Coaching learns about an analysis through the assessment.completed event
-// (F4-06), so there is a delay between the 201 from /risk-assessments and
-// the moment its slug can be used: a 404 during that delay is retried for a
-// few seconds, not assumed to mean it does not exist.
-func (a *api) startProgramFrom(assessmentSlug string) (int, map[string]any) {
+// (F4-06), so there is a delay between StartAssessment and the moment its
+// slug can be used: not_found during that delay is retried for a few seconds,
+// not assumed to mean it does not exist.
+func (a *api) startProgramFrom(assessmentSlug string) (*edgev1.CoachingProgram, error) {
 	a.t.Helper()
-	body := map[string]any{"difficulty": "Standar & Konsisten", "risk_assessment_slug": assessmentSlug}
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		code, resp := a.do(http.MethodPost, "/coaching/programs", body)
-		if code != http.StatusNotFound || time.Now().After(deadline) {
-			return code, resp
+		resp, err := a.coaching.StartProgram(a.ctx(), &edgev1.StartProgramRequest{
+			Difficulty:         coachingv1.Difficulty_DIFFICULTY_STANDARD,
+			RiskAssessmentSlug: assessmentSlug,
+		})
+		if codeOf(err) != connect.CodeNotFound || time.Now().After(deadline) {
+			return resp.GetProgram(), err
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 }
 
-func statusOf(t *testing.T, body map[string]any) string {
-	t.Helper()
-	data, _ := body["data"].(map[string]any)
-	status, _ := data["status"].(string)
-	if status == "" {
-		t.Fatalf("no status in %v", body)
+func codeOf(err error) connect.Code {
+	if err == nil {
+		return 0
 	}
-	return status
-}
-
-func slugOf(t *testing.T, body map[string]any) string {
-	t.Helper()
-	data, _ := body["data"].(map[string]any)
-	slug, _ := data["slug"].(string)
-	if slug == "" {
-		t.Fatalf("no slug in %v", body)
+	var cerr *connect.Error
+	if errors.As(err, &cerr) {
+		return cerr.Code()
 	}
-	return slug
+	return connect.CodeUnknown
 }
 
 // D1 - One session per user: a successful login revokes the previous token.
@@ -184,111 +189,109 @@ func TestD01_ANewLoginRevokesTheOlderSession(t *testing.T) {
 	a := stack(t).register()
 	old := a.token
 
-	if code, _, _ := a.call(http.MethodGet, "/me", nil, old); code != http.StatusOK {
-		t.Fatalf("the first session is not usable: %d", code)
+	if _, err := a.auth.GetMe(a.ctx(), &edgev1.GetMeRequest{}); err != nil {
+		t.Fatalf("the first session is not usable: %v", err)
 	}
 	fresh := a.login()
 
-	// Revocation propagates through Redis; it is almost immediate, but not
-	// zero - given a few seconds, not assumed.
+	// Revocation propagates through Redis; almost immediate, not zero.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		code, _, _ := a.call(http.MethodGet, "/me", nil, old)
-		if code == http.StatusUnauthorized {
+		var err error
+		a.as(old, func() { _, err = a.auth.GetMe(a.ctx(), &edgev1.GetMeRequest{}) })
+		if codeOf(err) == connect.CodeUnauthenticated {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the older token still works after a new login: %d", code)
+			t.Fatalf("the older token still works after a new login: %v", err)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	if code, _, _ := a.call(http.MethodGet, "/me", nil, fresh); code != http.StatusOK {
-		t.Fatalf("the new session must work: %d", code)
-	}
+	a.as(fresh, func() {
+		if _, err := a.auth.GetMe(a.ctx(), &edgev1.GetMeRequest{}); err != nil {
+			t.Fatalf("the new session must work: %v", err)
+		}
+	})
 }
 
 // D2 - One active program per user. Starting a second one is NOT refused: as
-// in the legacy system (`initiateProgram`), the previously active program is
-// paused and the new one becomes the only active one. What is guarded is "one
-// active", not "may not start again" - a distinction I once wrote wrongly as
-// 409, and this test is what caught it. D3 - One program per analysis result:
-// an assessment already used by one program is refused with 409, even when
-// that program has been paused.
+// in the legacy system, the previously active program is paused and the new
+// one becomes the only active one. D3 - One program per analysis result: an
+// assessment already used by one program is refused (already_exists), even
+// when that program has been paused.
 func TestD02_D03_OneActiveProgramPerUserAndPerAssessment(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
 	assessment := a.startAssessment()
 
-	code, body := a.startProgramFrom(assessment)
-	if code != http.StatusAccepted {
-		t.Fatalf("the first program answered %d: %v", code, body)
-	}
-	first := slugOf(t, body)
-
-	code, body = a.startProgram()
-	if code != http.StatusAccepted {
-		t.Fatalf("D2: a second program answered %d, want 202 with the first one paused: %v", code, body)
-	}
-	if got := statusOf(t, body); got != "active" {
-		t.Fatalf("D2: the new program must be the active one, got %q", got)
-	}
-	code, body = a.do(http.MethodGet, "/coaching/programs/"+first, nil)
-	if code != http.StatusOK {
-		t.Fatalf("reading the first program answered %d: %v", code, body)
-	}
-	if got := statusOf(t, body); got != "paused" {
-		t.Fatalf("D2: the previous program must be paused, got %q", got)
+	first, err := a.startProgramFrom(assessment)
+	if err != nil {
+		t.Fatalf("the first program: %v", err)
 	}
 
-	if code, body := a.startProgramFrom(assessment); code != http.StatusConflict {
-		t.Fatalf("D3: reusing an assessment answered %d, want 409: %v", code, body)
+	second, err := a.startProgram()
+	if err != nil {
+		t.Fatalf("D2: a second program was refused, want it started with the first paused: %v", err)
+	}
+	if second.GetStatus() != coachingv1.ProgramStatus_PROGRAM_STATUS_ACTIVE {
+		t.Fatalf("D2: the new program must be the active one, got %v", second.GetStatus())
+	}
+	got, err := a.coaching.GetProgram(a.ctx(), &edgev1.GetProgramRequest{Slug: first.GetSlug()})
+	if err != nil {
+		t.Fatalf("reading the first program: %v", err)
+	}
+	if got.GetProgram().GetStatus() != coachingv1.ProgramStatus_PROGRAM_STATUS_PAUSED {
+		t.Fatalf("D2: the previous program must be paused, got %v", got.GetProgram().GetStatus())
+	}
+
+	if _, err := a.startProgramFrom(assessment); codeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("D3: reusing an assessment answered %v, want already_exists", err)
 	}
 }
 
-// D4 - A program can only be paused from active and resumed from paused.
-// Pausing twice in a row means resuming; what is refused is other statuses
-// (completed/cancelled), tested through a deleted program.
+// D4 - A program moves only between active and paused. Toggling twice
+// resumes; toggling a program that has ended is refused.
 func TestD04_ToggleOnlyMovesBetweenActiveAndPaused(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
 	a.startAssessment()
-	code, body := a.startProgram()
-	if code != http.StatusAccepted {
-		t.Fatalf("program: %d %v", code, body)
+	program, err := a.startProgram()
+	if err != nil {
+		t.Fatalf("program: %v", err)
 	}
-	slug := slugOf(t, body)
-	toggle := "/coaching/programs/" + slug + "/toggle-program-status"
+	toggle := &edgev1.ToggleProgramStatusRequest{Slug: program.GetSlug()}
 
-	if code, body := a.do(http.MethodPatch, toggle, nil); code != http.StatusOK {
-		t.Fatalf("pausing an active program answered %d: %v", code, body)
+	if _, err := a.coaching.ToggleProgramStatus(a.ctx(), toggle); err != nil {
+		t.Fatalf("pausing an active program: %v", err)
 	}
-	if code, body := a.do(http.MethodPatch, toggle, nil); code != http.StatusOK {
-		t.Fatalf("resuming a paused program answered %d: %v", code, body)
+	if _, err := a.coaching.ToggleProgramStatus(a.ctx(), toggle); err != nil {
+		t.Fatalf("resuming a paused program: %v", err)
 	}
-	if code, body := a.do(http.MethodDelete, "/coaching/programs/"+slug, nil); code != http.StatusOK && code != http.StatusNoContent {
-		t.Fatalf("ending the program answered %d: %v", code, body)
+	if _, err := a.coaching.DeleteProgram(a.ctx(), &edgev1.DeleteProgramRequest{Slug: program.GetSlug()}); err != nil {
+		t.Fatalf("ending the program: %v", err)
 	}
-	if code, _ := a.do(http.MethodPatch, toggle, nil); code != http.StatusConflict && code != http.StatusNotFound {
-		t.Fatalf("toggling a program that is no longer active answered %d, want 409 or 404", code)
+	_, err = a.coaching.ToggleProgramStatus(a.ctx(), toggle)
+	if c := codeOf(err); c != connect.CodeFailedPrecondition && c != connect.CodeNotFound {
+		t.Fatalf("toggling a program that is no longer active answered %v, want failed_precondition or not_found", err)
 	}
 }
 
 // D5 - A non-active program freezes interaction: a new thread on a paused
-// program is refused with 409.
+// program is refused (failed_precondition).
 func TestD05_APausedProgramFreezesInteraction(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
 	a.startAssessment()
-	code, body := a.startProgram()
-	if code != http.StatusAccepted {
-		t.Fatalf("program: %d %v", code, body)
+	program, err := a.startProgram()
+	if err != nil {
+		t.Fatalf("program: %v", err)
 	}
-	slug := slugOf(t, body)
-	if code, _ := a.do(http.MethodPatch, "/coaching/programs/"+slug+"/toggle-program-status", nil); code != http.StatusOK {
-		t.Fatalf("pause: %d", code)
+	if _, err := a.coaching.ToggleProgramStatus(a.ctx(), &edgev1.ToggleProgramStatusRequest{Slug: program.GetSlug()}); err != nil {
+		t.Fatalf("pause: %v", err)
 	}
-	if code, body := a.do(http.MethodPost, "/coaching/programs/"+slug+"/threads", map[string]any{"message": "halo"}); code != http.StatusConflict {
-		t.Fatalf("a thread on a paused program answered %d, want 409: %v", code, body)
+	_, err = a.coaching.StartThread(a.ctx(), &edgev1.StartThreadRequest{ProgramSlug: program.GetSlug(), Message: "halo"})
+	if codeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("a thread on a paused program answered %v, want failed_precondition", err)
 	}
 }
 
@@ -296,13 +299,16 @@ func TestD05_APausedProgramFreezesInteraction(t *testing.T) {
 // again with the same credentials fails.
 func TestD11_DeletionIsPermanent(t *testing.T) {
 	a := stack(t).register()
-	if code, body := a.do(http.MethodDelete, "/delete-account", map[string]any{"password": password}); code != http.StatusAccepted {
-		t.Fatalf("delete answered %d: %v", code, body)
+	if _, err := a.auth.DeleteAccount(a.ctx(), &edgev1.DeleteAccountRequest{Password: password}); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
 	deadline := time.Now().Add(60 * time.Second)
 	for {
-		code, _, _ := a.call(http.MethodPost, "/login", map[string]any{"email": a.email, "password": password}, "")
-		if code != http.StatusOK {
+		var err error
+		a.as("", func() {
+			_, err = a.auth.Login(a.ctx(), &edgev1.LoginRequest{Email: a.email, Password: password})
+		})
+		if err != nil {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -312,38 +318,40 @@ func TestD11_DeletionIsPermanent(t *testing.T) {
 	}
 }
 
-// S1 - A password reset demands a valid token; without the right token, the
-// password is NOT changed.
+// S1 - A password reset demands a valid token; without it, nothing changes.
 func TestS01_PasswordResetRequiresAValidToken(t *testing.T) {
 	a := stack(t).register()
-	code, _, _ := a.call(http.MethodPost, "/password-reset/confirm", map[string]any{
-		"token": "bukan-token-yang-pernah-diterbitkan", "password": "kata-sandi-baru-123", "password_confirmation": "kata-sandi-baru-123",
-	}, "")
-	if code < 400 || code >= 500 {
-		t.Fatalf("a bogus token answered %d, want a 4xx", code)
-	}
+	a.as("", func() {
+		_, err := a.auth.ConfirmPasswordReset(a.ctx(), &edgev1.ConfirmPasswordResetRequest{
+			Token: "bukan-token-yang-pernah-diterbitkan", Password: "kata-sandi-baru-123",
+			PasswordConfirmation: "kata-sandi-baru-123",
+		})
+		switch codeOf(err) {
+		case connect.CodeInvalidArgument, connect.CodeUnauthenticated, connect.CodePermissionDenied,
+			connect.CodeNotFound, connect.CodeFailedPrecondition:
+		default:
+			t.Fatalf("a bogus token answered %v, want a client error", err)
+		}
+	})
 	// The old password still works: nothing was changed.
-	if code, _, _ := a.call(http.MethodPost, "/login", map[string]any{"email": a.email, "password": password}, ""); code != http.StatusOK {
-		t.Fatalf("the original password stopped working after a bogus reset: %d", code)
-	}
+	a.login()
 }
 
-// S2 - Penghapusan akun memverifikasi kata sandi.
+// S2 - Account deletion verifies the password.
 func TestS02_DeleteAccountVerifiesThePassword(t *testing.T) {
 	a := stack(t).register()
-	if code, _ := a.do(http.MethodDelete, "/delete-account", map[string]any{"password": "salah"}); code != http.StatusForbidden {
-		t.Fatalf("a wrong password answered %d, want 403", code)
+	if _, err := a.auth.DeleteAccount(a.ctx(), &edgev1.DeleteAccountRequest{Password: "salah"}); codeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("a wrong password answered %v, want permission_denied", err)
 	}
-	if code, _ := a.do(http.MethodDelete, "/delete-account", map[string]any{}); code != http.StatusUnprocessableEntity {
-		t.Fatalf("no password answered %d, want 422", code)
+	if _, err := a.auth.DeleteAccount(a.ctx(), &edgev1.DeleteAccountRequest{}); codeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("no password answered %v, want invalid_argument", err)
 	}
-	if code, _, _ := a.call(http.MethodGet, "/me", nil, a.token); code != http.StatusOK {
-		t.Fatalf("the account was touched by a refused deletion: %d", code)
+	if _, err := a.auth.GetMe(a.ctx(), &edgev1.GetMeRequest{}); err != nil {
+		t.Fatalf("the account was touched by a refused deletion: %v", err)
 	}
 }
 
-// S8 - Token expiry: every token carries an exp in the bounded future, and
-// the API reports expires_at.
+// S8 - Token expiry: every token carries an exp in the bounded future.
 func TestS08_TokensExpire(t *testing.T) {
 	a := stack(t).register()
 	parts := strings.Split(a.token, ".")
@@ -370,35 +378,60 @@ func TestS08_TokensExpire(t *testing.T) {
 }
 
 // S9 - Authorisation does not leak the existence of resources: someone
-// else's is answered with 404, not 403.
+// else's is answered not_found, not permission_denied.
 func TestS09_OtherPeoplesResourcesLookNonexistent(t *testing.T) {
 	owner := stack(t).register()
 	owner.completeProfile()
 	slug := owner.startAssessment()
 
 	stranger := stack(t).register()
-	if code, _ := stranger.do(http.MethodGet, "/risk-assessments/"+slug, nil); code != http.StatusNotFound {
-		t.Fatalf("someone else's assessment answered %d, want 404", code)
+	if _, err := stranger.assessment.GetAssessment(stranger.ctx(), &edgev1.GetAssessmentRequest{Slug: slug}); codeOf(err) != connect.CodeNotFound {
+		t.Fatalf("someone else's assessment answered %v, want not_found", err)
 	}
-	if code, _ := stranger.do(http.MethodPatch, "/risk-assessments/"+slug+"/personalize", map[string]any{}); code != http.StatusNotFound {
-		t.Fatalf("personalizing someone else's assessment answered %d, want 404", code)
+	if _, err := stranger.assessment.RequestPersonalization(stranger.ctx(),
+		&edgev1.RequestPersonalizationRequest{Slug: slug}); codeOf(err) != connect.CodeNotFound {
+		t.Fatalf("personalizing someone else's assessment answered %v, want not_found", err)
 	}
 }
 
-// S10 - No debug fields in the dashboard contract.
+// S10 - No debug fields in the dashboard contract. Checked on the JSON the
+// client receives, not only on the Go struct.
 func TestS10_DashboardCarriesNoDebugFields(t *testing.T) {
 	a := stack(t).register()
 	a.completeProfile()
 	a.startAssessment()
 
-	code, body := a.do(http.MethodGet, "/dashboard", nil)
-	if code != http.StatusOK {
-		t.Fatalf("dashboard answered %d: %v", code, body)
+	dash, err := a.dashboard.GetDashboard(a.ctx(), &edgev1.GetDashboardRequest{})
+	if err != nil {
+		t.Fatalf("dashboard: %v", err)
 	}
-	raw, _ := json.Marshal(body)
-	for _, leaked := range []string{"program_raw", "resource_keys", "program_is_null", "program_empty_check"} {
+	raw, err := protojson.Marshal(dash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"programRaw", "program_raw", "resourceKeys", "programIsNull", "programEmptyCheck"} {
 		if strings.Contains(string(raw), leaked) {
 			t.Errorf("the dashboard leaks debug field %q", leaked)
 		}
 	}
+}
+
+// tokenOf adds the api's current token to every call.
+type tokenOf struct{ a *api }
+
+func (t tokenOf) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		if t.a.token != "" {
+			req.Header().Set("Authorization", "Bearer "+t.a.token)
+		}
+		return next(ctx, req)
+	}
+}
+
+func (t tokenOf) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (t tokenOf) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
 }

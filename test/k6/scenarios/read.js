@@ -1,16 +1,16 @@
-// Skenario BACA: jalur yang dilalui pengguna saat membuka aplikasi.
+// READ scenario: the path a user walks when opening the app.
 //
-// Lima GET yang menyusun halaman utama dan halaman profil. Tidak ada satu pun
-// yang mengantre pekerjaan LLM, sehingga yang diukur murni gateway, gRPC,
-// dan Postgres - jalur yang sama dengan baseline B2-07.
+// Five reads that make up the home page and the profile page. None of them
+// queues LLM work, so what is measured is purely the gateway, gRPC, and
+// Postgres - the same path as the B2-07 baseline.
 //
-// Menjalankan:
+// Run:
 //   task k6 -- read
-// atau langsung:
+// or directly:
 //   k6 run -e BASE_URL=http://127.0.0.1:18080 test/k6/scenarios/read.js
 
 import { sleep } from "k6";
-import { completeProfile, get, sessionFor, startAssessment } from "../lib/api.js";
+import { call, completeProfile, sessionFor, startAssessment } from "../lib/api.js";
 import { slo } from "../lib/slo.js";
 
 export const options = {
@@ -30,19 +30,19 @@ export const options = {
 };
 
 export default function () {
-  // Akun per VU dengan profil lengkap dan satu penilaian, supaya dashboard
-  // dan daftar penilaian mengembalikan data - bukan jalur "kosong" yang
-  // lebih murah dari yang dialami pengguna sungguhan.
+  // One account per VU with a complete profile and one assessment, so the
+  // dashboard and the history return data - not the cheaper "empty" path a
+  // real user never sees.
   const { token } = sessionFor("read", (t) => {
     completeProfile(t);
     startAssessment(t);
   });
 
-  get(token, "/me", "GET /me");
-  get(token, "/profile", "GET /profile");
-  get(token, "/risk-assessments", "GET /risk-assessments");
-  get(token, "/dashboard", "GET /dashboard");
-  get(token, "/culinary/hub-data", "GET /culinary/hub-data");
+  call(token, "/edge.v1.Auth/GetMe");
+  call(token, "/edge.v1.Profile/GetProfile");
+  call(token, "/edge.v1.Assessment/ListAssessments");
+  call(token, "/edge.v1.Dashboard/GetDashboard");
+  call(token, "/edge.v1.Nutrition/GetHubData");
 
   sleep(1);
 }

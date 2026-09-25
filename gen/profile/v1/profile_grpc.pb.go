@@ -29,23 +29,23 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Data demografis pengguna. Berdiri sendiri karena user_profiles adalah
-// hub yang di-FK oleh seluruh domain, sementara users hanya gerbang
-// autentikasi (ADR-002).
+// The user's demographic data. Stands on its own because user_profiles is
+// the hub every domain FKs to, while users is only the authentication gate
+// (ADR-002).
 //
-// risk_region sengaja TIDAK ada di sini. Ia konsep klinis, bukan
-// demografis: profil menyimpan negara, assessment yang memetakannya lewat
-// tabel kalibrasi SCORE2, dan gateway yang menggabungkan keduanya untuk
-// kontrak REST (ADR-002 aturan 3).
+// risk_region is deliberately NOT here. It is a clinical concept, not a
+// demographic one: the profile stores the country, assessment maps it
+// through the SCORE2 calibration table, and the gateway joins the two for
+// the REST contract (ADR-002 rule 3).
 type ProfileClient interface {
 	GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*GetProfileResponse, error)
 	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UpdateProfileResponse, error)
-	// Dipanggil identity-svc setelah pendaftaran. Bersifat best-effort:
-	// kegagalannya tidak menggagalkan pendaftaran, karena pengguna tanpa
-	// profil adalah state yang memang sudah sah (ADR-002 aturan 1).
+	// Called by identity-svc after registration. Best-effort: its failure
+	// does not fail the registration, because a user without a profile is a
+	// state that is already valid (ADR-002 rule 1).
 	CreateEmptyProfile(ctx context.Context, in *CreateEmptyProfileRequest, opts ...grpc.CallOption) (*CreateEmptyProfileResponse, error)
-	// Dipakai identity-svc saat menerbitkan token, sekali per login dan
-	// bukan sekali per request (ADR-007).
+	// Used by identity-svc when issuing a token, once per login and not once
+	// per request (ADR-007).
 	ResolveProfileId(ctx context.Context, in *ResolveProfileIdRequest, opts ...grpc.CallOption) (*ResolveProfileIdResponse, error)
 }
 
@@ -101,23 +101,23 @@ func (c *profileClient) ResolveProfileId(ctx context.Context, in *ResolveProfile
 // All implementations must embed UnimplementedProfileServer
 // for forward compatibility.
 //
-// Data demografis pengguna. Berdiri sendiri karena user_profiles adalah
-// hub yang di-FK oleh seluruh domain, sementara users hanya gerbang
-// autentikasi (ADR-002).
+// The user's demographic data. Stands on its own because user_profiles is
+// the hub every domain FKs to, while users is only the authentication gate
+// (ADR-002).
 //
-// risk_region sengaja TIDAK ada di sini. Ia konsep klinis, bukan
-// demografis: profil menyimpan negara, assessment yang memetakannya lewat
-// tabel kalibrasi SCORE2, dan gateway yang menggabungkan keduanya untuk
-// kontrak REST (ADR-002 aturan 3).
+// risk_region is deliberately NOT here. It is a clinical concept, not a
+// demographic one: the profile stores the country, assessment maps it
+// through the SCORE2 calibration table, and the gateway joins the two for
+// the REST contract (ADR-002 rule 3).
 type ProfileServer interface {
 	GetProfile(context.Context, *GetProfileRequest) (*GetProfileResponse, error)
 	UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error)
-	// Dipanggil identity-svc setelah pendaftaran. Bersifat best-effort:
-	// kegagalannya tidak menggagalkan pendaftaran, karena pengguna tanpa
-	// profil adalah state yang memang sudah sah (ADR-002 aturan 1).
+	// Called by identity-svc after registration. Best-effort: its failure
+	// does not fail the registration, because a user without a profile is a
+	// state that is already valid (ADR-002 rule 1).
 	CreateEmptyProfile(context.Context, *CreateEmptyProfileRequest) (*CreateEmptyProfileResponse, error)
-	// Dipakai identity-svc saat menerbitkan token, sekali per login dan
-	// bukan sekali per request (ADR-007).
+	// Used by identity-svc when issuing a token, once per login and not once
+	// per request (ADR-007).
 	ResolveProfileId(context.Context, *ResolveProfileIdRequest) (*ResolveProfileIdResponse, error)
 	mustEmbedUnimplementedProfileServer()
 }

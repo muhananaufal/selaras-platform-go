@@ -278,8 +278,42 @@ jobs:
           # permission.
           pr_comment: false
 
+  generated:
+    name: generated code is current
+    runs-on: ubuntu-latest
+    # Three buf templates now generate from api/proto: grpc-go for the services,
+    # Connect for the edge, OpenAPI for third parties. A forgotten run leaves a
+    # contract and its code disagreeing without any other job noticing - it
+    # happened once already (the translated proto comments). This job
+    # regenerates everything and fails on any difference.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+        with:
+          version: 1.72.0
+          setup_only: true
+      - name: Install the pinned generators
+        # The versions that produced the committed code. Each module's go.mod
+        # asks for at most Go 1.26.0, within this repo's toolchain, so
+        # GOTOOLCHAIN=local does not refuse them.
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0
+          go install github.com/sudorandom/protoc-gen-connect-openapi@v0.26.0
+      - name: Regenerate and compare
+        run: |
+          buf generate
+          buf generate --template buf.gen.edge.yaml
+          buf generate --template buf.gen.openapi.yaml
+          git diff --exit-code -- gen api/openapi
+
   openapi:
-    name: rest contract
+    name: public contract (OpenAPI)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -297,7 +331,7 @@ jobs:
           tar -xzf /tmp/vacuum.tar.gz -C /tmp vacuum
           sudo install -m 0755 /tmp/vacuum /usr/local/bin/vacuum
           vacuum version
-      - name: Lint the public REST contract
+      - name: Lint the generated OpenAPI of the public contract
         run: vacuum lint -d api/openapi/edge-v1.yaml -r .vacuum-ruleset.yaml --fail-severity error
 
   security:

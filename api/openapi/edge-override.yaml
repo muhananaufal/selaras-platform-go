@@ -1,0 +1,40 @@
+openapi: 3.1.0
+
+# Corrections to components protoc-gen-connect-openapi emits on its own
+# (ADR-027). Applied by buf.gen.openapi.yaml through the `override` option.
+#
+# Both are schema defects in the generator's boilerplate, found by vacuum
+# (oas-schema-check), not in the contract:
+#  - connect-protocol-version declared both `enum: [1]` and `const: 1`;
+#  - error_details.Any put a discriminator on `debug` that names a `type`
+#    property the debug variants do not have.
+# The detail list is also narrowed to the two details this gateway sends.
+components:
+  schemas:
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      const: 1
+      description: The version of the Connect protocol. Always 1.
+    connect.error_details.Any:
+      type: object
+      properties:
+        type:
+          type: string
+          description: >-
+            The fully qualified type of the detail. This gateway sends
+            google.rpc.BadRequest (per-field violations) and
+            google.rpc.RetryInfo (how long to wait after resource_exhausted).
+        value:
+          type: string
+          format: byte
+          description: The detail message, serialized as protobuf and base64-encoded.
+        debug:
+          title: Debug
+          description: >-
+            The detail decoded as JSON, for convenience. Which schema applies
+            is given by `type`. Generated clients decode `value` instead.
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: One error detail of a Connect error.

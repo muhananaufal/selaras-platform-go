@@ -143,11 +143,11 @@ type Conversation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Slug  string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
-	// Pemilik percakapan adalah PENGGUNA, bukan profilnya (ADR-024).
+	// The owner of a conversation is the USER, not their profile (ADR-024).
 	//
-	// Sistem lama sudah memakai user_id di ChatController; yang keliru adalah
-	// CoachingController yang memakai profile->id. Keduanya bersama membentuk
-	// temuan S9, dan kontrak ini semula justru mengulangi sisi yang keliru.
+	// The legacy system already used user_id in ChatController; the wrong one
+	// was CoachingController, which used profile->id. Together the two form
+	// finding S9, and this contract initially repeated the wrong side.
 	UserId             string         `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Title              string         `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	LastMessageSnippet *string        `protobuf:"bytes,5,opt,name=last_message_snippet,json=lastMessageSnippet,proto3,oneof" json:"last_message_snippet,omitempty"`

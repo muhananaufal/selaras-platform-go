@@ -8,7 +8,7 @@ tentang siapa yang belum menjawab.
 ## Apa yang terjadi
 
 ```
-DELETE /api/v1/delete-account   { "password": "..." }
+POST /edge.v1.Auth/DeleteAccount   { "password": "..." }
         |
         |  kata sandi DIVERIFIKASI (S2)
         v

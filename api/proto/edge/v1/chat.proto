@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "chat/v1/chat.proto";
+import "edge/v1/page.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Chat serves the caller's conversations with the general assistant.
+service Chat {
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Creates a conversation, optionally with a first message. With a message,
+  // the reply comes later. Honours the Idempotency-Key header.
+  rpc CreateConversation(CreateConversationRequest) returns (CreateConversationResponse);
+
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  rpc UpdateConversationTitle(UpdateConversationTitleRequest) returns (UpdateConversationTitleResponse);
+  rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
+
+  // Writes a message. The reply comes later. Honours the Idempotency-Key
+  // header.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+
+  // Streams the conversation whenever a message arrives, until the model has
+  // replied to the latest user message or the stream's time limit passes.
+  rpc WatchConversation(WatchConversationRequest) returns (stream WatchConversationResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message Conversation {
+  string slug = 1;
+  string title = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message ChatMessage {
+  chat.v1.MessageRole role = 1;
+
+  // Absent when the stored content is not valid JSON.
+  google.protobuf.Value content = 2;
+
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message ListConversationsRequest {
+  PageRequest page = 1;
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+  PageResponse page = 2;
+}
+
+message CreateConversationRequest {
+  // Optional. Empty creates an empty conversation.
+  string message = 1;
+}
+
+message CreateConversationResponse {
+  Conversation conversation = 1;
+
+  // Present when a reply is being produced.
+  string job_id = 2;
+}
+
+message GetConversationRequest {
+  string slug = 1;
+  PageRequest page = 2;
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+  repeated ChatMessage messages = 2;
+  PageResponse page = 3;
+}
+
+message UpdateConversationTitleRequest {
+  string slug = 1;
+  string title = 2;
+}
+
+message UpdateConversationTitleResponse {
+  Conversation conversation = 1;
+}
+
+message DeleteConversationRequest {
+  string slug = 1;
+}
+
+message DeleteConversationResponse {}
+
+message SendMessageRequest {
+  string conversation_slug = 1;
+  string message = 2;
+}
+
+message SendMessageResponse {
+  ChatMessage message = 1;
+}
+
+message WatchConversationRequest {
+  string slug = 1;
+}
+
+message WatchConversationResponse {
+  Conversation conversation = 1;
+
+  // The NEWEST page of the conversation (up to 100 messages), oldest first -
+  // not the whole history. The history is read through GetConversation.
+  repeated ChatMessage messages = 2;
+}

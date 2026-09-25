@@ -4,152 +4,133 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
+	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 )
 
 // TestCulinaryPreferencesSurviveAPartialUpdate is B16 through four layers.
 //
-// In the legacy system, one PATCH carrying only allergies WIPED the user's
-// tastes and kitchen equipment: its repository overwrote the whole JSON column
-// with whichever fields happened to pass validation. No error, and the user
-// only noticed when their suggestions changed.
-//
-// The chain holding it back is long - the HTTP body, the proto contract, the
-// use case, SQL - and breaking it at ANY ONE layer is enough to bring the bug
-// back to life. That is why it is tested from the outside, not only in the
-// domain.
+// In the legacy system one update carrying only allergies WIPED the user's
+// tastes and kitchen equipment. The chain holding it back - the wire, the
+// proto contract, the use case, SQL - breaks if ANY layer breaks, so it is
+// tested from the outside.
 func TestCulinaryPreferencesSurviveAPartialUpdate(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// Never touched: the hub still opens, and its content is empty - not a
-	// 404.
-	code, empty := c.do(http.MethodGet, "/api/v1/culinary/hub-data", nil)
-	if code != http.StatusOK {
-		t.Fatalf("a hub for a user with no preferences answered %d: %v", code, empty)
+	// Never touched: the hub still opens, and its content is empty.
+	empty, err := c.nutrition.GetHubData(c.ctx(), &edgev1.GetHubDataRequest{})
+	if err != nil {
+		t.Fatalf("a hub for a user with no preferences: %v", err)
 	}
-	if got, _ := dig(empty, "data", "preferences", "budget_level").(string); got != "" {
-		t.Errorf("an untouched budget level came back as %q", got)
+	if got := empty.GetPreferences().GetBudgetLevel(); got != nutritionv1.BudgetLevel_BUDGET_LEVEL_UNSPECIFIED {
+		t.Errorf("an untouched budget level came back as %v", got)
 	}
 
-	// Seluruh preferensi diisi.
-	code, full := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
-		"allergies":         "udang dan kepiting",
-		"budget_level":      "thrifty",
-		"cooking_style":     "quick_every_time",
-		"taste_profiles":    []string{"pedas", "gurih"},
-		"kitchen_equipment": []string{"wajan", "rice cooker"},
+	allergies := "udang dan kepiting"
+	budget := nutritionv1.BudgetLevel_BUDGET_LEVEL_THRIFTY
+	style := nutritionv1.CookingStyle_COOKING_STYLE_QUICK_EVERY_TIME
+	if _, err := c.nutrition.UpdatePreferences(c.ctx(), &edgev1.UpdatePreferencesRequest{
+		Allergies:        &allergies,
+		BudgetLevel:      &budget,
+		CookingStyle:     &style,
+		TasteProfiles:    &edgev1.StringList{Values: []string{"pedas", "gurih"}},
+		KitchenEquipment: &edgev1.StringList{Values: []string{"wajan", "rice cooker"}},
+	}); err != nil {
+		t.Fatalf("saving preferences: %v", err)
+	}
+
+	// Then ONLY the allergies change.
+	onlyAllergies := "udang, kepiting, dan kacang"
+	partial, err := c.nutrition.UpdatePreferences(c.ctx(), &edgev1.UpdatePreferencesRequest{Allergies: &onlyAllergies})
+	if err != nil {
+		t.Fatalf("a partial update: %v", err)
+	}
+	p := partial.GetPreferences()
+	if p.GetAllergies() != onlyAllergies {
+		t.Errorf("the allergy note is %q", p.GetAllergies())
+	}
+	if p.GetBudgetLevel() != budget {
+		t.Errorf("the budget level was wiped to %v by an update that never mentioned it", p.GetBudgetLevel())
+	}
+	if p.GetCookingStyle() != style {
+		t.Errorf("the cooking style was wiped to %v", p.GetCookingStyle())
+	}
+	if len(p.GetTasteProfiles()) != 2 || len(p.GetKitchenEquipment()) != 2 {
+		t.Errorf("a list was wiped: tastes %v, equipment %v", p.GetTasteProfiles(), p.GetKitchenEquipment())
+	}
+
+	// What is really stored, not only what was returned.
+	hub, err := c.nutrition.GetHubData(c.ctx(), &edgev1.GetHubDataRequest{})
+	if err != nil {
+		t.Fatalf("reading the hub: %v", err)
+	}
+	if got := hub.GetPreferences().GetBudgetLevel(); got != budget {
+		t.Errorf("the stored budget level is %v", got)
+	}
+
+	// DELIBERATE emptying still works - an empty StringList is "clear it",
+	// an absent one is "leave it".
+	cleared, err := c.nutrition.UpdatePreferences(c.ctx(), &edgev1.UpdatePreferencesRequest{
+		TasteProfiles: &edgev1.StringList{},
 	})
-	if code != http.StatusOK {
-		t.Fatalf("saving preferences answered %d: %v", code, full)
+	if err != nil {
+		t.Fatalf("emptying the taste profiles: %v", err)
 	}
-
-	// Then ONLY the allergies are changed.
-	code, partial := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
-		"allergies": "udang, kepiting, dan kacang",
-	})
-	if code != http.StatusOK {
-		t.Fatalf("a partial update answered %d: %v", code, partial)
-	}
-
-	if got, _ := dig(partial, "data", "allergies").(string); got != "udang, kepiting, dan kacang" {
-		t.Errorf("the allergy note is %q", got)
-	}
-	if got, _ := dig(partial, "data", "budget_level").(string); got != "thrifty" {
-		t.Errorf("the budget level was wiped to %q by a patch that never mentioned it", got)
-	}
-	if got, _ := dig(partial, "data", "cooking_style").(string); got != "quick_every_time" {
-		t.Errorf("the cooking style was wiped to %q", got)
-	}
-	if got, _ := dig(partial, "data", "taste_profiles").([]any); len(got) != 2 {
-		t.Errorf("the taste profiles were wiped to %v", got)
-	}
-	if got, _ := dig(partial, "data", "kitchen_equipment").([]any); len(got) != 2 {
-		t.Errorf("the kitchen equipment was wiped to %v", got)
-	}
-
-	// And what is really stored, not only what was returned.
-	code, hub := c.do(http.MethodGet, "/api/v1/culinary/hub-data", nil)
-	if code != http.StatusOK {
-		t.Fatalf("reading the hub answered %d", code)
-	}
-	if got, _ := dig(hub, "data", "preferences", "budget_level").(string); got != "thrifty" {
-		t.Errorf("the stored budget level is %q", got)
-	}
-
-	// DELIBERATE emptying still works: otherwise a preference once filled in
-	// could never be cleared again.
-	code, cleared := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
-		"taste_profiles": []string{},
-	})
-	if code != http.StatusOK {
-		t.Fatalf("emptying the taste profiles answered %d: %v", code, cleared)
-	}
-	if got, _ := dig(cleared, "data", "taste_profiles").([]any); len(got) != 0 {
+	if got := cleared.GetPreferences().GetTasteProfiles(); len(got) != 0 {
 		t.Errorf("an explicitly emptied list still holds %v", got)
 	}
-	if got, _ := dig(cleared, "data", "kitchen_equipment").([]any); len(got) != 2 {
+	if got := cleared.GetPreferences().GetKitchenEquipment(); len(got) != 2 {
 		t.Errorf("emptying one list also emptied the other: %v", got)
 	}
 }
 
-// TestADailyGuideIsAskedForAndArrives is the F6 exit gate.
-//
-// The request is answered 202 and the guide arrives later - crossing the
-// gateway, nutrition-svc, the outbox, Kafka, llm-worker, and back. The legacy
-// system held the HTTP request while Gemini worked, with a 180-second timeout
-// (B14).
+// TestADailyGuideIsAskedForAndArrives is the F6 exit gate: the request returns
+// at once, and the guide arrives later on the WatchDailyGuide stream - through
+// the gateway, nutrition-svc, the outbox, Kafka, llm-worker, and back. The
+// legacy system held the request while Gemini worked (B14).
 func TestADailyGuideIsAskedForAndArrives(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// The allergy note is filled in first: it goes into the prompt, and it is
-	// the only part of the context that can hurt someone when wrong.
-	if code, body := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
-		"allergies": "udang",
-	}); code != http.StatusOK {
-		t.Fatalf("saving the allergy note answered %d: %v", code, body)
+	// The allergy note goes into the prompt, and it is the only part of the
+	// context that can hurt someone when wrong.
+	allergies := "udang"
+	if _, err := c.nutrition.UpdatePreferences(c.ctx(), &edgev1.UpdatePreferencesRequest{Allergies: &allergies}); err != nil {
+		t.Fatalf("saving the allergy note: %v", err)
 	}
 
-	code, asked := c.do(http.MethodPost, "/api/v1/culinary/daily-guides", map[string]any{
-		"plan_type":          "cook_at_home",
-		"time_availability":  "quick",
-		"energy_level":       "tired",
-		"cuisine_preference": "Masakan Sunda",
-		"craving_type":       "soupy_and_warm",
-		"social_context":     "with_family",
-	})
-	if code != http.StatusAccepted {
-		t.Fatalf("asking for a guide answered %d, want 202: %v", code, asked)
+	in := dailyGuideInput()
+	in.CravingType = nutritionv1.CravingType_CRAVING_TYPE_SOUPY_AND_WARM
+	in.SocialContext = nutritionv1.SocialContext_SOCIAL_CONTEXT_WITH_FAMILY
+	asked, err := c.nutrition.GenerateDailyGuide(c.ctx(), &edgev1.GenerateDailyGuideRequest{Input: in})
+	if err != nil {
+		t.Fatalf("asking for a guide: %v", err)
 	}
-
-	guideID, _ := dig(asked, "data", "guide_id").(string)
-	if guideID == "" {
+	if asked.GetGuideId() == "" {
 		t.Fatalf("the answer names no guide: %v", asked)
 	}
-	if got, _ := dig(asked, "data", "status").(string); got != "pending" {
-		t.Errorf("a guide that has not been generated yet has status %q", got)
+	if asked.GetStatus() != nutritionv1.GuideStatus_GUIDE_STATUS_PENDING {
+		t.Errorf("a guide not generated yet has status %v", asked.GetStatus())
 	}
 
-	guide := c.waitForGuide(guideID, 90*time.Second)
+	guide := c.watchGuide(asked.GetGuideId(), 90*time.Second)
 
 	// The guide carries its content, not only its status.
-	data, _ := guide["guide_data"].(map[string]any)
-	suggestions, _ := data["suggestions"].([]any)
+	suggestions := guide.GetGuideData().GetStructValue().GetFields()["suggestions"].GetListValue().GetValues()
 	if len(suggestions) == 0 {
-		t.Fatalf("the guide arrived with no suggestions: %v", data)
+		t.Fatalf("the guide arrived with no suggestions: %v", guide.GetGuideData())
 	}
-	first, _ := suggestions[0].(map[string]any)
-	if name, _ := first["dish_name"].(string); name == "" {
-		t.Errorf("the first suggestion has no dish name: %v", first)
+	if name := suggestions[0].GetStructValue().GetFields()["dish_name"].GetStringValue(); name == "" {
+		t.Errorf("the first suggestion has no dish name: %v", suggestions[0])
 	}
-
-	// Its meal time was frozen when requested, and is not empty.
-	if mealTime, _ := guide["meal_time"].(string); mealTime == "" {
+	if guide.GetMealTime() == nutritionv1.MealTime_MEAL_TIME_UNSPECIFIED {
 		t.Error("the guide carries no meal time")
 	}
 	// Its date is the local date, not a timestamp.
-	if date, _ := guide["guide_date"].(string); len(date) != 10 {
-		t.Errorf("the guide date is %q, want a plain date", date)
+	if len(guide.GetGuideDate()) != len(time.DateOnly) {
+		t.Errorf("the guide date is %q, want a plain date", guide.GetGuideDate())
 	}
 }
 
@@ -159,141 +140,114 @@ func TestTheCulinaryHistoryIsPagedAndPrivate(t *testing.T) {
 	c.register()
 
 	for range 3 {
-		code, body := c.do(http.MethodPost, "/api/v1/culinary/daily-guides", map[string]any{
-			"plan_type":          "eat_out",
-			"time_availability":  "relaxed",
-			"energy_level":       "ordinary",
-			"cuisine_preference": "Masakan Padang",
-		})
-		if code != http.StatusAccepted {
-			t.Fatalf("asking for a guide answered %d: %v", code, body)
+		if _, err := c.nutrition.GenerateDailyGuide(c.ctx(), &edgev1.GenerateDailyGuideRequest{
+			Input: &nutritionv1.DailyGuideInput{
+				PlanType:          nutritionv1.PlanType_PLAN_TYPE_EAT_OUT,
+				TimeAvailability:  nutritionv1.TimeAvailability_TIME_AVAILABILITY_RELAXED,
+				EnergyLevel:       nutritionv1.EnergyLevel_ENERGY_LEVEL_ORDINARY,
+				CuisinePreference: "Masakan Padang",
+			},
+		}); err != nil {
+			t.Fatalf("asking for a guide: %v", err)
 		}
 	}
 
-	code, first := c.do(http.MethodGet, "/api/v1/culinary/hub-data?page_size=2", nil)
-	if code != http.StatusOK {
-		t.Fatalf("the hub answered %d: %v", code, first)
+	first, err := c.nutrition.GetHubData(c.ctx(), &edgev1.GetHubDataRequest{Page: &edgev1.PageRequest{PageSize: 2}})
+	if err != nil {
+		t.Fatalf("the hub: %v", err)
 	}
-	if items, _ := dig(first, "data", "history").([]any); len(items) != 2 {
-		t.Fatalf("the first page holds %d guides, want 2", len(items))
+	if n := len(first.GetHistory()); n != 2 {
+		t.Fatalf("the first page holds %d guides, want 2", n)
 	}
-
-	token, _ := dig(first, "data", "page", "next_page_token").(string)
+	token := first.GetPage().GetNextPageToken()
 	if token == "" {
 		t.Fatalf("the first page carries no next token: %v", first)
 	}
 
-	code, second := c.do(http.MethodGet,
-		"/api/v1/culinary/hub-data?page_size=2&page_token="+token, nil)
-	if code != http.StatusOK {
-		t.Fatalf("the second page answered %d", code)
+	second, err := c.nutrition.GetHubData(c.ctx(), &edgev1.GetHubDataRequest{
+		Page: &edgev1.PageRequest{PageSize: 2, PageToken: token},
+	})
+	if err != nil {
+		t.Fatalf("the second page: %v", err)
 	}
-	if rest, _ := dig(second, "data", "history").([]any); len(rest) != 1 {
-		t.Fatalf("the second page holds %d guides, want 1", len(rest))
+	if n := len(second.GetHistory()); n != 1 {
+		t.Fatalf("the second page holds %d guides, want 1", n)
 	}
-
-	// The last page carries NO token: its emptiness is the stop signal.
-	if last, _ := dig(second, "data", "page", "next_page_token").(string); last != "" {
+	if last := second.GetPage().GetNextPageToken(); last != "" {
 		t.Errorf("the last page still carries a next token: %q", last)
 	}
 
-	// And someone else sees none at all.
 	stranger := newClient(t)
 	stranger.register()
-
-	code, theirs := stranger.do(http.MethodGet, "/api/v1/culinary/hub-data", nil)
-	if code != http.StatusOK {
-		t.Fatalf("the hub answered %d for a stranger", code)
+	theirs, err := stranger.nutrition.GetHubData(stranger.ctx(), &edgev1.GetHubDataRequest{})
+	if err != nil {
+		t.Fatalf("the hub for a stranger: %v", err)
 	}
-	if items, _ := dig(theirs, "data", "history").([]any); len(items) != 0 {
-		t.Errorf("a stranger sees %d of someone else's guides", len(items))
-	}
-	if got, _ := dig(theirs, "data", "preferences", "allergies").(string); got != "" {
-		t.Errorf("a stranger sees someone else's allergy note: %q", got)
+	if len(theirs.GetHistory()) != 0 || theirs.GetPreferences().GetAllergies() != "" {
+		t.Errorf("a stranger sees someone else's culinary data: %v", theirs)
 	}
 }
 
-// TestAnInvalidDailyGuideRequestIsRefused guards the daily input.
+// TestAnInvalidDailyGuideRequestIsRefused guards the daily input on the wire.
 //
-// The first three answers are REQUIRED: without any one of them, the prompt
-// loses the part that makes today's advice different from any other advice.
+// The required answers are refused when missing, and - the case a typed client
+// cannot even express - a legacy label or a mistyped enum name is refused
+// instead of being read as "none". Every refusal is a client error, never 5xx.
 func TestAnInvalidDailyGuideRequestIsRefused(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	valid := map[string]any{
-		"plan_type":          "cook_at_home",
-		"time_availability":  "quick",
-		"energy_level":       "tired",
-		"cuisine_preference": "Masakan Sunda",
-	}
-
-	for name, mutate := range map[string]func(map[string]any){
-		"no plan type":      func(b map[string]any) { delete(b, "plan_type") },
-		"no energy level":   func(b map[string]any) { delete(b, "energy_level") },
-		"no cuisine":        func(b map[string]any) { delete(b, "cuisine_preference") },
-		"legacy plan label": func(b map[string]any) { b["plan_type"] = "Masak di Rumah" },
-		"unknown craving":   func(b map[string]any) { b["craving_type"] = "Berkuah & Hangat" },
+	const proc = "/edge.v1.Nutrition/GenerateDailyGuide"
+	for name, body := range map[string]string{
+		"no plan type":      `{"input":{"timeAvailability":"TIME_AVAILABILITY_QUICK","energyLevel":"ENERGY_LEVEL_TIRED","cuisinePreference":"Sunda"}}`,
+		"no energy level":   `{"input":{"planType":"PLAN_TYPE_COOK_AT_HOME","timeAvailability":"TIME_AVAILABILITY_QUICK","cuisinePreference":"Sunda"}}`,
+		"no cuisine":        `{"input":{"planType":"PLAN_TYPE_COOK_AT_HOME","timeAvailability":"TIME_AVAILABILITY_QUICK","energyLevel":"ENERGY_LEVEL_TIRED"}}`,
+		"legacy plan label": `{"input":{"planType":"Masak di Rumah","timeAvailability":"TIME_AVAILABILITY_QUICK","energyLevel":"ENERGY_LEVEL_TIRED","cuisinePreference":"Sunda"}}`,
+		"unknown craving":   `{"input":{"planType":"PLAN_TYPE_COOK_AT_HOME","timeAvailability":"TIME_AVAILABILITY_QUICK","energyLevel":"ENERGY_LEVEL_TIRED","cuisinePreference":"Sunda","cravingType":"Berkuah & Hangat"}}`,
+		"undefined number":  `{"input":{"planType":99,"timeAvailability":"TIME_AVAILABILITY_QUICK","energyLevel":"ENERGY_LEVEL_TIRED","cuisinePreference":"Sunda"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			body := make(map[string]any, len(valid))
-			for k, v := range valid {
-				body[k] = v
-			}
-			mutate(body)
-
-			code, answer := c.do(http.MethodPost, "/api/v1/culinary/daily-guides", body)
-			if code == http.StatusAccepted {
-				t.Fatalf("an invalid request was accepted: %v", answer)
-			}
-			if code >= 500 {
-				t.Fatalf("an invalid request answered %d; bad input is not a server fault", code)
+			status, code := c.raw(proc, body)
+			if status != http.StatusBadRequest || code != "invalid_argument" {
+				t.Fatalf("got %d %q; want 400 invalid_argument", status, code)
 			}
 		})
 	}
 
-	// The old labels of the previous system are refused in the preferences as
-	// well, not silently accepted and stored as a value no code recognises.
-	code, answer := c.do(http.MethodPatch, "/api/v1/culinary/preferences", map[string]any{
-		"budget_level": "Hemat",
-	})
-	if code == http.StatusOK {
-		t.Errorf("the legacy label \"Hemat\" was accepted: %v", answer)
+	// The legacy labels are refused in the preferences too, not stored as a
+	// value no code recognises.
+	if status, code := c.raw("/edge.v1.Nutrition/UpdatePreferences", `{"budgetLevel":"Hemat"}`); status != http.StatusBadRequest {
+		t.Errorf("the legacy label \"Hemat\" answered %d %q; want 400", status, code)
 	}
 }
 
-// waitForGuide waits for a guide to stop being pending, then returns it.
-func (c *client) waitForGuide(guideID string, timeout time.Duration) map[string]any {
+// watchGuide waits on the WatchDailyGuide stream until the guide is final.
+func (c *client) watchGuide(guideID string, timeout time.Duration) *edgev1.DailyMealGuide {
 	c.t.Helper()
 
 	deadline := time.Now().Add(timeout)
-	var last string
-
+	var last *edgev1.DailyMealGuide
 	for time.Now().Before(deadline) {
-		code, hub := c.do(http.MethodGet, "/api/v1/culinary/hub-data", nil)
-		if code != http.StatusOK {
-			c.t.Fatalf("reading the hub answered %d: %v", code, hub)
+		ctx, cancel := contextUntil(c.t, deadline)
+		stream, err := c.nutrition.WatchDailyGuide(ctx, &edgev1.WatchDailyGuideRequest{GuideId: guideID})
+		if err != nil {
+			cancel()
+			c.t.Fatalf("opening WatchDailyGuide: %v", err)
 		}
-
-		history, _ := dig(hub, "data", "history").([]any)
-		for _, raw := range history {
-			guide, _ := raw.(map[string]any)
-			if id, _ := guide["id"].(string); id != guideID {
-				continue
-			}
-
-			status, _ := guide["status"].(string)
-			last = status
-			switch status {
-			case "ready":
-				return guide
-			case "failed":
-				c.t.Fatalf("the guide failed instead of arriving: %v", guide)
+		for stream.Receive() {
+			last = stream.Msg().GetGuide()
+			switch last.GetStatus() {
+			case nutritionv1.GuideStatus_GUIDE_STATUS_READY:
+				cancel()
+				return last
+			case nutritionv1.GuideStatus_GUIDE_STATUS_FAILED:
+				cancel()
+				c.t.Fatalf("the guide failed instead of arriving: %v", last)
+			default:
 			}
 		}
-		time.Sleep(2 * time.Second)
+		cancel()
 	}
-
-	c.t.Fatalf("the guide never arrived within %v; its last status was %q", timeout, last)
+	c.t.Fatalf("the guide never arrived within %v; last state: %v", timeout, last)
 	return nil
 }

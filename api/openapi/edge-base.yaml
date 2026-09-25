@@ -1,0 +1,39 @@
+openapi: 3.1.0
+
+# The hand-written part of the generated OpenAPI document (ADR-027).
+#
+# Everything about operations and schemas is GENERATED from api/proto/edge/v1
+# by protoc-gen-connect-openapi (buf.gen.openapi.yaml); only what the proto
+# cannot say lives here. Edit this file, never edge-v1.yaml.
+info:
+  title: Selaras Edge API
+  version: "1.0.0"
+  description: |
+    The public edge.v1 contract, served over the Connect protocol.
+
+    Every operation is `POST /<package>.<Service>/<Method>` with a JSON body
+    and the header `Connect-Protocol-Version: 1`. Read operations also accept
+    `GET` with the message in the query string. JSON field names are
+    lowerCamelCase, enums are their proto names, and empty fields are omitted.
+
+    Errors are `{code, message, details}`. Field violations arrive as a
+    `google.rpc.BadRequest` detail; rate limiting as `resource_exhausted`
+    (HTTP 429) with a `google.rpc.RetryInfo` detail and `Retry-After`.
+
+    Every procedure requires a bearer token except Auth/Register,
+    Auth/Login, Auth/RequestPasswordReset, Auth/ConfirmPasswordReset, and
+    Auth/ExchangeSocialSession.
+
+servers:
+  - url: http://127.0.0.1:18080
+    description: Local compose stack
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

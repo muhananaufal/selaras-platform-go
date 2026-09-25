@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package edge.v1;
+
+// The public contract of the gateway (ADR-027).
+//
+// edge.v1 is the ONLY contract a client sees. Its messages are shaped for
+// the client, not copied from the services behind the gateway: internal ids,
+// user_id fields, and storage details never appear here, because the caller
+// is always the user named by the verified token (ADR-023). Enum vocabulary
+// and the risk questionnaire ARE shared with the internal packages - they are
+// domain words, not storage, and buf breaking already guards them.
+//
+// Every RPC here is served over the Connect protocol (JSON or binary over
+// HTTP/1.1 or HTTP/2), gRPC, and gRPC-Web from the same handler.
+
+// Auth covers sign-up, sign-in, sign-out, password reset, the social
+// sign-in hand-off, and account deletion.
+//
+// Register, Login, RequestPasswordReset, ConfirmPasswordReset, and
+// ExchangeSocialSession are the ONLY public procedures of the whole contract.
+// Everything else requires a bearer token, and that list is enforced by an
+// allowlist in the gateway, not by marking each protected procedure: a new
+// procedure is protected unless someone deliberately makes it public.
+service Auth {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // Always succeeds, whether or not the address is registered. Telling the two
+  // apart turns this procedure into an account enumeration tool.
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ConfirmPasswordReset(ConfirmPasswordResetRequest) returns (ConfirmPasswordResetResponse);
+
+  // Exchanges the one-time code from the social sign-in redirect for a
+  // session. The code arrives in the URL fragment of the frontend callback
+  // page, never in a query string (finding S6).
+  rpc ExchangeSocialSession(ExchangeSocialSessionRequest) returns (ExchangeSocialSessionResponse);
+
+  // Starts the permanent deletion of the caller's account. The deletion
+  // crosses six units and is NOT finished when this returns.
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+
+  // Returns the identity carried by the token, without a network call.
+  rpc GetMe(GetMeRequest) returns (GetMeResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ADMIN = 2;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  Role role = 3;
+}
+
+// A signed-in session.
+message Session {
+  string access_token = 1;
+
+  // Always "Bearer".
+  string token_type = 2;
+
+  // Zero when the issuer did not state it (the social hand-off).
+  int64 expires_in_seconds = 3;
+
+  // Absent after the social hand-off, which carries only the token.
+  User user = 4;
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+
+  // Checked by the gateway: retyping a password is an interface check, and
+  // its place is the layer that receives both from the browser.
+  string password_confirmation = 3;
+}
+
+message RegisterResponse {
+  Session session = 1;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  Session session = 1;
+}
+
+message LogoutRequest {}
+
+message LogoutResponse {}
+
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message RequestPasswordResetResponse {}
+
+message ConfirmPasswordResetRequest {
+  string token = 1;
+  string password = 2;
+  string password_confirmation = 3;
+}
+
+message ConfirmPasswordResetResponse {}
+
+message ExchangeSocialSessionRequest {
+  string code = 1;
+}
+
+message ExchangeSocialSessionResponse {
+  Session session = 1;
+}
+
+message DeleteAccountRequest {
+  // Required, and really compared. The legacy system required it and never
+  // checked it (finding S2).
+  string password = 1;
+}
+
+enum DeletionStatus {
+  DELETION_STATUS_UNSPECIFIED = 0;
+
+  // The deletion is running, not finished. A client showing "your account has
+  // been deleted" at this point says something that is not yet true.
+  DELETION_STATUS_IN_PROGRESS = 1;
+}
+
+message DeleteAccountResponse {
+  string saga_id = 1;
+  DeletionStatus status = 2;
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  string user_id = 1;
+
+  // Absent when the token carries none.
+  optional string email = 2;
+
+  // Absent until the profile exists: social sign-in creates no profile
+  // (finding B7).
+  optional string user_profile_id = 3;
+
+  Role role = 4;
+}

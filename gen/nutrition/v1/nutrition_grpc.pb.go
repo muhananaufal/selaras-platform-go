@@ -28,15 +28,15 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Preferensi kuliner dan panduan menu harian.
+// Culinary preferences and daily menu guides.
 //
-// Preferensi dipisah menjadi tabel sendiri lewat expand-contract. Di
-// sistem lama ia menumpang sebagai satu kolom JSON di user_profiles -
-// gejala batas agregat yang bocor.
+// Preferences are split into their own table through expand-contract. In
+// the legacy system they rode along as one JSON column in user_profiles - a
+// symptom of a leaking aggregate boundary.
 type NutritionClient interface {
 	GetHubData(ctx context.Context, in *GetHubDataRequest, opts ...grpc.CallOption) (*GetHubDataResponse, error)
 	UpdatePreferences(ctx context.Context, in *UpdatePreferencesRequest, opts ...grpc.CallOption) (*UpdatePreferencesResponse, error)
-	// Menjawab segera; panduan tiba lewat worker.
+	// Answers immediately; the guide arrives through the worker.
 	GenerateDailyGuide(ctx context.Context, in *GenerateDailyGuideRequest, opts ...grpc.CallOption) (*GenerateDailyGuideResponse, error)
 }
 
@@ -82,15 +82,15 @@ func (c *nutritionClient) GenerateDailyGuide(ctx context.Context, in *GenerateDa
 // All implementations must embed UnimplementedNutritionServer
 // for forward compatibility.
 //
-// Preferensi kuliner dan panduan menu harian.
+// Culinary preferences and daily menu guides.
 //
-// Preferensi dipisah menjadi tabel sendiri lewat expand-contract. Di
-// sistem lama ia menumpang sebagai satu kolom JSON di user_profiles -
-// gejala batas agregat yang bocor.
+// Preferences are split into their own table through expand-contract. In
+// the legacy system they rode along as one JSON column in user_profiles - a
+// symptom of a leaking aggregate boundary.
 type NutritionServer interface {
 	GetHubData(context.Context, *GetHubDataRequest) (*GetHubDataResponse, error)
 	UpdatePreferences(context.Context, *UpdatePreferencesRequest) (*UpdatePreferencesResponse, error)
-	// Menjawab segera; panduan tiba lewat worker.
+	// Answers immediately; the guide arrives through the worker.
 	GenerateDailyGuide(context.Context, *GenerateDailyGuideRequest) (*GenerateDailyGuideResponse, error)
 	mustEmbedUnimplementedNutritionServer()
 }

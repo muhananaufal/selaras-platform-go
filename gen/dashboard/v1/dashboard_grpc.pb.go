@@ -26,13 +26,13 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Read-model dasbor.
+// The dashboard read-model.
 //
-// Bukan service CRUD: ia tidak memiliki data sendiri, melainkan
-// memproyeksikan event dari domain lain menjadi satu baris per profil.
-// Di sistem lama, tempat ini ditempati repository-of-repositories dengan
-// cache 15 menit dan empat listener invalidasi manual - dan empat listener
-// itulah gejala yang read-model hapus (ADR-009).
+// Not a CRUD service: it owns no data of its own, but projects events from
+// other domains into one row per profile. In the legacy system this spot
+// was held by a repository-of-repositories with a 15-minute cache and four
+// manual invalidation listeners - and those four listeners are the symptom
+// the read-model removes (ADR-009).
 type DashboardClient interface {
 	GetDashboard(ctx context.Context, in *GetDashboardRequest, opts ...grpc.CallOption) (*GetDashboardResponse, error)
 }
@@ -59,13 +59,13 @@ func (c *dashboardClient) GetDashboard(ctx context.Context, in *GetDashboardRequ
 // All implementations must embed UnimplementedDashboardServer
 // for forward compatibility.
 //
-// Read-model dasbor.
+// The dashboard read-model.
 //
-// Bukan service CRUD: ia tidak memiliki data sendiri, melainkan
-// memproyeksikan event dari domain lain menjadi satu baris per profil.
-// Di sistem lama, tempat ini ditempati repository-of-repositories dengan
-// cache 15 menit dan empat listener invalidasi manual - dan empat listener
-// itulah gejala yang read-model hapus (ADR-009).
+// Not a CRUD service: it owns no data of its own, but projects events from
+// other domains into one row per profile. In the legacy system this spot
+// was held by a repository-of-repositories with a 15-minute cache and four
+// manual invalidation listeners - and those four listeners are the symptom
+// the read-model removes (ADR-009).
 type DashboardServer interface {
 	GetDashboard(context.Context, *GetDashboardRequest) (*GetDashboardResponse, error)
 	mustEmbedUnimplementedDashboardServer()
