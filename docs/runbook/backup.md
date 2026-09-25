@@ -21,14 +21,28 @@ yang **sama** dengan servernya (`postgres:18.6-alpine`), menjalankan
 `deploy/compose/backup/backup.sh` dalam putaran setiap `BACKUP_INTERVAL`
 detik (bawaan 21600 = enam jam):
 
-1. `pg_dumpall --globals-only` → `globals-<stamp>.sql`
-2. `pg_dump --format=custom --compress=6` → `selaras-<stamp>.dump`
-3. `pg_restore --list` atas arsip itu; **harus** memuat ≥ 8 skema, kalau
-   tidak putaran itu dinyatakan GAGAL di log
-4. arsip yang lebih tua dari `BACKUP_KEEP` hari (bawaan 14) dibuang
+1. `pg_dumpall --globals-only` → `globals-<stamp>.sql.tmp`
+2. `pg_dump --format=custom --compress=6` → `selaras-<stamp>.dump.tmp`
+3. Verifikasi, dua-duanya **wajib**:
+   - `pg_restore --list` atas arsip memuat ≥ 8 skema;
+   - berkas peran memuat `CREATE ROLE svc_<unit>;` untuk kedelapan unit.
+4. Hanya kalau keduanya lolos, kedua berkas diberi nama final. Putaran yang
+   gagal di langkah mana pun menghapus berkas `.tmp`-nya dan tercatat
+   `FAILED stamp=… : <alasan>` di log.
+5. arsip yang lebih tua dari `BACKUP_KEEP` hari (bawaan 14) dibuang
 
-Ditulis atomik (`.tmp` lalu `mv`), jadi arsip yang terpotong karena
-container mati di tengah tidak pernah tampak sebagai arsip.
+Setiap langkah memeriksa hasilnya sendiri, tanpa mengandalkan `set -e`.
+**Sebelum 2026-09-25, klaim "ditulis atomik" di runbook ini tidak benar.**
+Dalam mode layanan, `run_once` dipanggil dari `if ! run_once`, dan POSIX sh
+mengabaikan `errexit` di dalam fungsi yang dipanggil dari sebuah kondisi.
+Akibatnya, setiap kali `pg_dump` gagal (misalnya database dimatikan oleh
+drill), `mv` tetap jalan. Volume `selaras-core_backups` sampai menyimpan
+**tujuh dump dan lima berkas peran berukuran 0 byte dengan nama final**, dan
+drill pemulihan memilih berkas terbaru, yang kosong. Keadaan ini
+direproduksi di container sekali pakai, lalu diperbaiki dan dikunci oleh
+`test/drill/backup.test.sh` (job CI `backup and restore scripts`).
+Berkas 0 byte lama masih ada di volume itu, dan `restore.sh` kini
+melewatinya (lihat [`restore-drill.md`](restore-drill.md)).
 
 Dinyalakan bersama `task up:full`. Sekali jalan sekarang: `task backup:now`.
 Daftar arsip: `task backup:list`.
