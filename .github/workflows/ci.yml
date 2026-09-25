@@ -181,14 +181,14 @@ jobs:
           for s in coaching chat nutrition dashboard; do
             export "TEST_DSN_$(echo $s | tr a-z A-Z)=postgres://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
-          # test/e2e and test/acceptance need a running stack; the e2e job below
-          # runs them. Here both are EXPLICITLY excluded, not left to skip
-          # themselves - with CI=true both would fail, and that is precisely the
+          # test/e2e, test/acceptance and test/drill need a running stack; the e2e job below
+          # runs them. Here all three are EXPLICITLY excluded, not left to skip
+          # themselves - with CI=true they would fail, and that is precisely the
           # intended behaviour.
           # -json so every skip is visible: a green run says nothing about a
           # test that did not run (test/skips/check.sh).
           rc=0
-          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance") -race -count=1 -p 1 -json > unit-report.json || rc=$?
+          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance" | grep -v "/test/drill") -race -count=1 -p 1 -json > unit-report.json || rc=$?
           jq -r 'select(.Action == "output") | .Output' unit-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
           bash test/skips/check.sh unit-report.json test/skips/unit.allow || rc=1
           exit "$rc"
@@ -491,7 +491,8 @@ jobs:
           export TEST_DSN_LLM="postgres://svc_llm:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=llm"
           export TEST_DSN_CHAT="postgres://svc_chat:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=chat"
           rc=0
-          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m -json > e2e-report.json || rc=$?
+          # The broker-outage test stops Kafka; it runs in its own step after k6.
+          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m -skip '^TestTheOutboxSurvivesABrokerOutage$' -json > e2e-report.json || rc=$?
           jq -r 'select(.Action == "output") | .Output' e2e-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
           bash test/skips/check.sh e2e-report.json test/skips/e2e.allow || rc=1
           exit "$rc"
@@ -500,6 +501,33 @@ jobs:
         run: |
           docker run --rm --network selaras-core_default -v "$PWD/test/k6:/k6:ro" \
             -e BASE_URL=http://edge-gateway:8080 grafana/k6:1.8.1 run /k6/scenarios/read.js
+
+      # The two tests that disturb the stack run last, each in its own step,
+      # so nothing else runs while the schema is altered or the broker is
+      # down. Both used to skip themselves in CI; now they are required.
+      - name: Expand/contract migration drill under live traffic
+        env:
+          TEST_DRILL: "1"
+          TEST_E2E_BASE_URL: http://127.0.0.1:18080
+        run: |
+          export TEST_DSN_ASSESSMENT="postgres://svc_assessment:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=assessment"
+          rc=0
+          go test ./test/drill/expand/ -count=1 -timeout 10m -json > drill-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' drill-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh drill-report.json test/skips/none.allow || rc=1
+          exit "$rc"
+
+      - name: The outbox survives a broker outage
+        env:
+          TEST_E2E_DISRUPTIVE: "1"
+          TEST_E2E_BASE_URL: http://127.0.0.1:18080
+        run: |
+          export TEST_DSN_LLM="postgres://svc_llm:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=llm"
+          rc=0
+          go test ./test/e2e/ -run '^TestTheOutboxSurvivesABrokerOutage$' -count=1 -timeout 10m -json > outage-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' outage-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh outage-report.json test/skips/none.allow || rc=1
+          exit "$rc"
 
       - name: Logs on failure
         if: failure()
