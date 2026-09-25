@@ -30,9 +30,10 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: true
-    gosec:
-      excludes:
-        - G115  # konversi integer; ditangani review, terlalu banyak positif palsu
+    # gosec runs with every rule, G115 (integer overflow) included: each
+    # narrowing conversion is either range-checked or carries a nolint that
+    # names the invariant bounding it.
+    gosec: {}
     staticcheck:
       checks: ["all"]
 

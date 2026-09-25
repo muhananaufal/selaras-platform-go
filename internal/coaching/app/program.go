@@ -258,13 +258,15 @@ func programUpdated(p *domain.Program, now time.Time) *eventsv1.Envelope {
 		SchemaVersion: 1,
 		Payload: &eventsv1.Envelope_CoachingProgramUpdated{
 			CoachingProgramUpdated: &eventsv1.CoachingProgramUpdated{
-				ProgramId:  p.ID.String(),
-				Slug:       p.Slug,
-				Status:     string(p.Status),
-				UserId:     p.UserID.String(),
-				Title:      p.Title,
-				CurrentDay: int32(p.DayOn(now)),
-				TotalDays:  int32(p.DurationDays()),
+				ProgramId: p.ID.String(),
+				Slug:      p.Slug,
+				Status:    string(p.Status),
+				UserId:    p.UserID.String(),
+				Title:     p.Title,
+				// Both are at most domain.MaxWeeks*7: every write path bounds the
+				// program (NewProgram, Program.Validate, Curriculum.Validate).
+				CurrentDay: int32(p.DayOn(now)),     //nolint:gosec // G115: bounded by domain.MaxWeeks*7
+				TotalDays:  int32(p.DurationDays()), //nolint:gosec // G115: bounded by domain.MaxWeeks*7
 
 				// completion_percentage is deliberately NOT filled here.
 				//
