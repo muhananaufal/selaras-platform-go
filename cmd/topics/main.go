@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"time"
@@ -23,10 +24,24 @@ func main() {
 		"replication factor; 1 is for local development only")
 	flag.Parse()
 
-	if err := run(*brokers, int16(*replicas)); err != nil {
+	factor, err := replicationFactor(*replicas)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "topics: %v\n", err)
+		os.Exit(2)
+	}
+	if err := run(*brokers, factor); err != nil {
 		fmt.Fprintf(os.Stderr, "topics: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// replicationFactor checks the flag before narrowing it: Kafka takes the
+// factor as an int16, and a plain conversion of a larger int wraps around.
+func replicationFactor(n int) (int16, error) {
+	if n < 1 || n > math.MaxInt16 {
+		return 0, fmt.Errorf("-replicas must be between 1 and %d, got %d", math.MaxInt16, n)
+	}
+	return int16(n), nil //nolint:gosec // G115: bounded to [1, MaxInt16] above
 }
 
 func run(brokers string, replicas int16) error {
