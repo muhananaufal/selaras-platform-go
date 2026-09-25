@@ -155,8 +155,8 @@ func (c *Curriculum) Validate() error {
 
 	seen := make(map[int]bool, len(c.Weeks))
 	for _, w := range c.Weeks {
-		if w.WeekNumber < 1 {
-			return fmt.Errorf("%w: got %d", ErrInvalidWeekNumber, w.WeekNumber)
+		if w.WeekNumber < 1 || w.WeekNumber > MaxWeeks {
+			return fmt.Errorf("%w: got %d, want 1 to %d", ErrInvalidWeekNumber, w.WeekNumber, MaxWeeks)
 		}
 		if seen[w.WeekNumber] {
 			// The same week number twice would be rejected by the unique index in
