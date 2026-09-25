@@ -31,10 +31,17 @@ memuat angka autoscaling-nya).
 1. **build** — satu job per unit (matriks 11), `docker build` dari Dockerfile
    yang sama dengan lokal, `load` dulu, **pindai Trivy** (CRITICAL/HIGH yang
    punya perbaikan → gagal), BARU `push` ke `ghcr.io/<owner>/selaras/<unit>:<tag>`.
-   Image yang gagal pindai tidak pernah ada di registri.
-2. **deploy** — Job migrasi dan topic dari `deploy/k8s/jobs/migrate.yaml`
-   dengan tag yang sama, lalu `helm upgrade --install --atomic --wait`
-   dengan `values-cloud.yaml` dan `image.tag=<tag>`.
+   Image yang gagal pindai tidak pernah ada di registri. Sesudah push, image
+   diberi **SBOM CycloneDX dan provenance SLSA** yang ditandatangani keyless
+   (`actions/attest`, Sigstore) dan didorong ke registri di sebelahnya —
+   rinciannya di [`supply-chain.md`](supply-chain.md).
+2. **deploy** — kesebelas image **diverifikasi** dulu
+   (`deploy/supply-chain/verify.sh`: ditandatangani `cd.yml` repositori ini,
+   di runner milik GitHub); lalu gerbang error budget
+   ([`error-budget.md`](error-budget.md)); lalu Job migrasi dan topic dari
+   `deploy/k8s/jobs/migrate.yaml` dengan tag yang sama, lalu
+   `helm upgrade --install --atomic --wait` dengan `values-cloud.yaml` dan
+   `image.tag=<tag>`.
 
 Kubeconfig datang dari Secret lingkungan GitHub `KUBECONFIG_B64`; tanpa itu
 job gagal di langkah pertamanya. Tidak ada kredensial di repositori
