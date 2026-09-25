@@ -31,16 +31,16 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Percakapan dengan asisten umum, terpisah dari diskusi di dalam program
-// coaching. Agregatnya memang berbeda: percakapan berdiri sendiri,
-// sementara thread selalu milik sebuah program.
+// Conversations with the general assistant, separate from discussions
+// inside a coaching program. The aggregates are indeed different: a
+// conversation stands alone, while a thread always belongs to a program.
 type ChatClient interface {
 	ListConversations(ctx context.Context, in *ListConversationsRequest, opts ...grpc.CallOption) (*ListConversationsResponse, error)
 	CreateConversation(ctx context.Context, in *CreateConversationRequest, opts ...grpc.CallOption) (*CreateConversationResponse, error)
 	GetConversation(ctx context.Context, in *GetConversationRequest, opts ...grpc.CallOption) (*GetConversationResponse, error)
 	UpdateConversationTitle(ctx context.Context, in *UpdateConversationTitleRequest, opts ...grpc.CallOption) (*UpdateConversationTitleResponse, error)
 	DeleteConversation(ctx context.Context, in *DeleteConversationRequest, opts ...grpc.CallOption) (*DeleteConversationResponse, error)
-	// Menjawab segera; balasan tiba lewat worker.
+	// Answers immediately; the reply arrives through the worker.
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
 }
 
@@ -116,16 +116,16 @@ func (c *chatClient) SendMessage(ctx context.Context, in *SendMessageRequest, op
 // All implementations must embed UnimplementedChatServer
 // for forward compatibility.
 //
-// Percakapan dengan asisten umum, terpisah dari diskusi di dalam program
-// coaching. Agregatnya memang berbeda: percakapan berdiri sendiri,
-// sementara thread selalu milik sebuah program.
+// Conversations with the general assistant, separate from discussions
+// inside a coaching program. The aggregates are indeed different: a
+// conversation stands alone, while a thread always belongs to a program.
 type ChatServer interface {
 	ListConversations(context.Context, *ListConversationsRequest) (*ListConversationsResponse, error)
 	CreateConversation(context.Context, *CreateConversationRequest) (*CreateConversationResponse, error)
 	GetConversation(context.Context, *GetConversationRequest) (*GetConversationResponse, error)
 	UpdateConversationTitle(context.Context, *UpdateConversationTitleRequest) (*UpdateConversationTitleResponse, error)
 	DeleteConversation(context.Context, *DeleteConversationRequest) (*DeleteConversationResponse, error)
-	// Menjawab segera; balasan tiba lewat worker.
+	// Answers immediately; the reply arrives through the worker.
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
 	mustEmbedUnimplementedChatServer()
 }

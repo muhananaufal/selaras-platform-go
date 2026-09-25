@@ -29,7 +29,8 @@ const (
 	HealthTrend_HEALTH_TREND_IMPROVING   HealthTrend = 1
 	HealthTrend_HEALTH_TREND_STABLE      HealthTrend = 2
 	HealthTrend_HEALTH_TREND_WORSENING   HealthTrend = 3
-	// Dipakai ketika baru ada satu analisis: arah belum bisa disimpulkan.
+	// Used when there is only one analysis so far: no direction can be
+	// concluded yet.
 	HealthTrend_HEALTH_TREND_INSUFFICIENT_DATA HealthTrend = 4
 )
 
@@ -84,11 +85,11 @@ type AssessmentSummary struct {
 	AssessedOn     string                 `protobuf:"bytes,2,opt,name=assessed_on,json=assessedOn,proto3" json:"assessed_on,omitempty"`
 	ModelUsed      string                 `protobuf:"bytes,3,opt,name=model_used,json=modelUsed,proto3" json:"model_used,omitempty"`
 	RiskPercentage float64                `protobuf:"fixed64,4,opt,name=risk_percentage,json=riskPercentage,proto3" json:"risk_percentage,omitempty"`
-	// Kategori risiko yang DIHITUNG, bukan yang dikarang model.
+	// The risk category that is COMPUTED, not made up by the model.
 	//
-	// Sistem lama membacanya dari laporan LLM, sehingga dasbor pengguna yang
-	// personalisasinya belum tiba menampilkan "N/A" sebagai status kesehatannya.
-	// Nilai ini datang dari SCORE2, jadi ia ada begitu penilaiannya ada.
+	// The legacy system read it from the LLM report, so the dashboard of a user
+	// whose personalisation had not arrived showed "N/A" as their health status.
+	// This value comes from SCORE2, so it exists as soon as the assessment does.
 	RiskCategory  string `protobuf:"bytes,5,opt,name=risk_category,json=riskCategory,proto3" json:"risk_category,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -298,18 +299,18 @@ func (x *RiskTrendPoint) GetRiskPercentage() float64 {
 type DashboardView struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	// Kosong bila pengguna belum pernah melakukan analisis. Gateway
-	// menerjemahkannya menjadi pesan sambutan, sebagaimana perilaku lama.
+	// Empty when the user has never run an analysis. The gateway translates
+	// it into a welcome message, as the legacy behaviour did.
 	AssessmentHistory []*AssessmentSummary `protobuf:"bytes,2,rep,name=assessment_history,json=assessmentHistory,proto3" json:"assessment_history,omitempty"`
 	LatestAssessment  *AssessmentSummary   `protobuf:"bytes,3,opt,name=latest_assessment,json=latestAssessment,proto3,oneof" json:"latest_assessment,omitempty"`
-	// Kosong bila tidak ada program berjalan. Itu state yang sah.
+	// Empty when no program is running. That is a valid state.
 	Program          *ProgramSummary   `protobuf:"bytes,4,opt,name=program,proto3,oneof" json:"program,omitempty"`
 	RiskTrend        []*RiskTrendPoint `protobuf:"bytes,5,rep,name=risk_trend,json=riskTrend,proto3" json:"risk_trend,omitempty"`
 	HealthTrend      HealthTrend       `protobuf:"varint,6,opt,name=health_trend,json=healthTrend,proto3,enum=dashboard.v1.HealthTrend" json:"health_trend,omitempty"`
 	TotalAssessments int32             `protobuf:"varint,7,opt,name=total_assessments,json=totalAssessments,proto3" json:"total_assessments,omitempty"`
-	// Kapan proyeksi ini terakhir diperbarui dari event. Dibuka apa adanya
-	// karena read-model bersifat eventually consistent; menyembunyikannya
-	// membuat lag tampak seperti bug.
+	// When this projection was last updated from an event. Exposed as it is
+	// because the read-model is eventually consistent; hiding it makes the
+	// lag look like a bug.
 	Timestamps    *v1.Timestamps `protobuf:"bytes,8,opt,name=timestamps,proto3" json:"timestamps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

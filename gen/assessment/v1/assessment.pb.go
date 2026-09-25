@@ -941,7 +941,7 @@ type SbpProxy struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	FamilyHypertension bool                   `protobuf:"varint,1,opt,name=family_hypertension,json=familyHypertension,proto3" json:"family_hypertension,omitempty"`
 	SleepPattern       SleepPattern           `protobuf:"varint,2,opt,name=sleep_pattern,json=sleepPattern,proto3,enum=assessment.v1.SleepPattern" json:"sleep_pattern,omitempty"`
-	// Pilihan ganda; jumlah yang dipilih yang menentukan bobotnya.
+	// Multiple choice; the number selected determines the weight.
 	SaltHabits     []SaltHabit    `protobuf:"varint,3,rep,packed,name=salt_habits,json=saltHabits,proto3,enum=assessment.v1.SaltHabit" json:"salt_habits,omitempty"`
 	StressResponse StressResponse `protobuf:"varint,4,opt,name=stress_response,json=stressResponse,proto3,enum=assessment.v1.StressResponse" json:"stress_response,omitempty"`
 	BodyShape      BodyShape      `protobuf:"varint,5,opt,name=body_shape,json=bodyShape,proto3,enum=assessment.v1.BodyShape" json:"body_shape,omitempty"`
@@ -1278,8 +1278,8 @@ func (x *Hba1CProxy) GetTreatmentAdherence() TreatmentAdherence {
 	return TreatmentAdherence_TREATMENT_ADHERENCE_UNSPECIFIED
 }
 
-// Tiap parameter klinis punya dua mode. Bila MANUAL, nilai terukur yang
-// dipakai; bila PROXY, nilainya diestimasi dari kuesioner.
+// Every clinical parameter has two modes. With MANUAL, the measured value
+// is used; with PROXY, the value is estimated from the questionnaire.
 type ClinicalParameter struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Mode          InputMode              `protobuf:"varint,1,opt,name=mode,proto3,enum=assessment.v1.InputMode" json:"mode,omitempty"`
@@ -1342,16 +1342,16 @@ type AssessmentInput struct {
 	TotalCholesterolProxy *TotalCholesterolProxy `protobuf:"bytes,6,opt,name=total_cholesterol_proxy,json=totalCholesterolProxy,proto3" json:"total_cholesterol_proxy,omitempty"`
 	HdlCholesterol        *ClinicalParameter     `protobuf:"bytes,7,opt,name=hdl_cholesterol,json=hdlCholesterol,proto3" json:"hdl_cholesterol,omitempty"`
 	HdlProxy              *HdlProxy              `protobuf:"bytes,8,opt,name=hdl_proxy,json=hdlProxy,proto3" json:"hdl_proxy,omitempty"`
-	// Empat field berikut hanya dibaca bila has_diabetes bernilai true.
+	// The next four fields are read only when has_diabetes is true.
 	AgeAtDiabetesDiagnosis *int32                `protobuf:"varint,9,opt,name=age_at_diabetes_diagnosis,json=ageAtDiabetesDiagnosis,proto3,oneof" json:"age_at_diabetes_diagnosis,omitempty"`
 	Hba1C                  *ClinicalParameter    `protobuf:"bytes,10,opt,name=hba1c,proto3" json:"hba1c,omitempty"`
 	Hba1CProxy             *Hba1CProxy           `protobuf:"bytes,11,opt,name=hba1c_proxy,json=hba1cProxy,proto3" json:"hba1c_proxy,omitempty"`
 	SerumCreatinine        *ClinicalParameter    `protobuf:"bytes,12,opt,name=serum_creatinine,json=serumCreatinine,proto3" json:"serum_creatinine,omitempty"`
 	SerumCreatinineProxy   *SerumCreatinineProxy `protobuf:"bytes,13,opt,name=serum_creatinine_proxy,json=serumCreatinineProxy,proto3" json:"serum_creatinine_proxy,omitempty"`
-	// Kebiasaan olahraga dipakai dua estimator sekaligus, dan di sini hanya
-	// ada SATU sumbernya. Sistem lama membacanya dari dua tempat berbeda
-	// dengan dua nilai berbeda, sehingga potongan pada HbA1c tidak pernah
-	// berlaku (temuan B12).
+	// The exercise habit is used by two estimators at once, and here there is
+	// only ONE source for it. The legacy system read it from two different
+	// places with two different values, so the HbA1c deduction never applied
+	// (finding B12).
 	Exercise      ExerciseHabit `protobuf:"varint,14,opt,name=exercise,proto3,enum=assessment.v1.ExerciseHabit" json:"exercise,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1485,9 +1485,9 @@ func (x *AssessmentInput) GetExercise() ExerciseHabit {
 	return ExerciseHabit_EXERCISE_HABIT_UNSPECIFIED
 }
 
-// Nilai klinis yang benar-benar masuk ke kalkulator, baik terukur maupun
-// hasil estimasi. Disimpan apa adanya supaya sebuah skor lama tetap bisa
-// dijelaskan bertahun-tahun kemudian.
+// The clinical values that actually entered the calculator, whether
+// measured or estimated. Stored as they are so an old score can still be
+// explained years later.
 type ResolvedClinicalValues struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	Age                   int32                  `protobuf:"varint,1,opt,name=age,proto3" json:"age,omitempty"`
@@ -1713,12 +1713,12 @@ func (x *RiskAssessment) GetTimestamps() *v1.Timestamps {
 	return nil
 }
 
-// Berkunci user_id, bukan user_profile_id (ADR-023).
+// Keyed on user_id, not user_profile_id (ADR-023).
 //
-// Service ini TIDAK memakai identitas yang sekadar dikirimkan sebagai dasar
-// otorisasi: user_profile_id yang dipercaya begitu saja akan membiarkan
-// penilaian ditulis ke profil orang lain oleh apa pun yang bisa menjangkau
-// jaringan internal. Ia menanyakannya sendiri ke profile-svc.
+// This service does NOT use an identity that is merely sent along as the
+// basis for authorisation: a user_profile_id trusted at face value would
+// let an assessment be written to someone else's profile by anything that
+// can reach the internal network. It asks profile-svc itself.
 type StartAssessmentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -1875,7 +1875,7 @@ func (x *RequestPersonalizationRequest) GetIdempotencyKey() *v1.IdempotencyKey {
 	return nil
 }
 
-// Dikembalikan segera; hasilnya diambil lewat GetAssessment.
+// Returned immediately; the result is fetched through GetAssessment.
 type RequestPersonalizationResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -2172,10 +2172,10 @@ func (x *ResolveRiskRegionRequest) GetCountryOfResidence() string {
 	return ""
 }
 
-// Negara yang tidak ada di tabel kalibrasi menghasilkan wilayah "high".
-// Itu pilihan konservatif yang dipertahankan dari sistem lama: menurunkannya
-// akan menggeser angka risiko setiap pengguna dari negara yang belum
-// terdaftar, ke arah yang lebih rendah dari yang bisa dibuktikan.
+// A country not in the calibration table yields the "high" region. That is a
+// conservative choice kept from the legacy system: lowering it would shift
+// the risk number of every user from an unlisted country in a direction
+// lower than can be proven.
 type ResolveRiskRegionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RiskRegion    string                 `protobuf:"bytes,1,opt,name=risk_region,json=riskRegion,proto3" json:"risk_region,omitempty"`
