@@ -1,0 +1,26 @@
+version: v2
+
+# Connect code for the public contract only (ADR-027).
+#
+# The internal services stay on grpc-go: they are called only by other Go
+# units over gRPC, and Connect adds nothing there. The edge contract is served
+# by connect-go so one handler answers the Connect protocol (browsers, curl),
+# gRPC, and gRPC-Web. `simple` generates plain request/response signatures;
+# headers travel through connect.CallInfoForHandlerContext.
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/muhananaufal/selaras-platform-go/gen
+
+inputs:
+  - directory: api/proto
+    paths:
+      - api/proto/edge
+
+plugins:
+  - local: protoc-gen-connect-go
+    out: gen
+    opt:
+      - paths=source_relative
+      - simple

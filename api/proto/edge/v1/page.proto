@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package edge.v1;
+
+// A page of a list.
+//
+// page_size zero means "the service default". page_token is opaque: the
+// client sends back what it received, without reading it. Offsets are not
+// used because they skip or repeat rows while the list is growing.
+message PageRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message PageResponse {
+  // Absent on the last page.
+  string next_page_token = 1;
+}
