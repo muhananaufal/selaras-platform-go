@@ -29,10 +29,21 @@ psql_app() { docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d "$POSTG
 started=$(date +%s)
 mark() { echo $(( $(date +%s) - started )); }
 
-# 1. The latest backup is picked BEFORE anything is deleted.
-LATEST=$(docker run --rm -v selaras-core_backups:/backups alpine sh -c 'ls -1 /backups/*.dump | sort | tail -1')
-GLOBALS=$(docker run --rm -v selaras-core_backups:/backups alpine sh -c 'ls -1 /backups/globals-*.sql | sort | tail -1')
-[ -n "$LATEST" ] || { log "no backup found in the backups volume"; exit 1; }
+# 1. The backup is picked BEFORE anything is deleted: the newest NON-EMPTY
+#    archive, and the role file of the SAME round (same stamp). Picking the
+#    newest of each separately could pair files from different rounds, and
+#    the volume has held empty files under final names (see backup.sh).
+PAIR=$(docker run --rm -v selaras-core_backups:/backups alpine sh -c '
+  for dump in $(ls -1 /backups/*.dump 2>/dev/null | sort -r); do
+    [ -s "$dump" ] || continue
+    stamp=${dump##*-}; stamp=${stamp%.dump}
+    globals=/backups/globals-$stamp.sql
+    [ -s "$globals" ] || continue
+    echo "$dump $globals"; break
+  done')
+LATEST=${PAIR% *}
+GLOBALS=${PAIR#* }
+[ -n "$PAIR" ] || { log "no non-empty archive with a matching role file in the backups volume"; exit 1; }
 log "restoring from $LATEST (+ $GLOBALS)"
 
 # The numbers before: used to compare after the restore.
@@ -51,11 +62,14 @@ psql_admin "DROP DATABASE $POSTGRES_DB"
 log "database dropped at +$(mark)s"
 psql_admin "CREATE DATABASE $POSTGRES_DB"
 
-# 4. The roles (they already exist; the 'already exists' error is ignored
-#    deliberately), then the content.
+# 4. The roles, then the content. The roles usually exist already, so their
+#    CREATE ROLE fails with "already exists" - restore-globals.sh ignores that
+#    one error and fails on any other, and on a missing globals file
+#    (tested in test/drill/restore-globals.test.sh).
 docker run --rm -v selaras-core_backups:/backups --network selaras-core_default \
-  -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:18.6-alpine \
-  psql -h postgres -U "$POSTGRES_USER" -d postgres -f "$GLOBALS" >/dev/null 2>&1 || true
+  -v "$ROOT/deploy/compose/backup/restore-globals.sh:/restore-globals.sh:ro" \
+  -e PGHOST=postgres -e PGUSER="$POSTGRES_USER" -e PGPASSWORD="$POSTGRES_PASSWORD" \
+  postgres:18.6-alpine sh /restore-globals.sh "$GLOBALS"
 docker run --rm -v selaras-core_backups:/backups --network selaras-core_default \
   -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:18.6-alpine \
   pg_restore -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --role="$POSTGRES_USER" --exit-on-error "$LATEST"
