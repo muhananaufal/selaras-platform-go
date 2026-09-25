@@ -1,0 +1,75 @@
+# SLO-as-code (Sloth, spec prometheus/v1). This file is the ONLY place the
+# SLOs are defined; deploy/compose/observability/slo-rules.yml is generated
+# from it (`task slo:generate`) and CI fails when the two drift.
+#
+# The numbers are the same ones k6 enforces in CI (test/k6/lib/slo.js):
+# failures < 1 %, p95 < 50 ms. A p95 target is expressed here as a ratio -
+# at most 5 % of requests may be slower than 50 ms - because a ratio has an
+# error budget and a burn rate, and a quantile has neither. 50 ms is an
+# exact bucket boundary of the otelhttp histogram (measured on /metrics),
+# so the ratio is counted, not interpolated.
+#
+# Two kinds of request are excluded from the latency SLO. Registration:
+# argon2id really takes ~375 ms (slo.js) and keeps its own threshold alert
+# in alerts.yml. The Watch* server streams: otelhttp records a stream's
+# whole lifetime (up to 5 minutes by design, measured at 0.05-2.5 s on
+# /metrics), so a healthy stream would count as a slow request.
+version: "prometheus/v1"
+service: "edge-gateway"
+labels:
+  owner: "selaras"
+  tier: "1"
+# The 30-day SLI is counted from the raw events (rate over 30d), not as
+# Sloth's default average of the 5-minute ratios. An average of ratios
+# weighs a quiet 3 a.m. window the same as a busy noon one, and one window
+# with no traffic at all is 0/0 = NaN, which poisons that average - and with
+# it the error budget - for the next 30 days (measured on the local stack:
+# slo:sli_error:ratio_rate30d was NaN after one idle scrape). Re-running the
+# core SLI plugin after the default one (priority 10 > 0) replaces its rules.
+slo_plugins:
+  chain:
+    - id: "sloth.dev/core/sli_rules/v1"
+      priority: 10
+      config:
+        disableOptimized: true
+slos:
+  - name: "requests-availability"
+    objective: 99
+    description: "99 % of edge requests over 30 days do not end in a 5xx."
+    sli:
+      events:
+        error_query: sum(rate(http_server_request_duration_seconds_count{unit="edge-gateway",http_response_status_code=~"5.."}[{{.window}}]))
+        total_query: sum(rate(http_server_request_duration_seconds_count{unit="edge-gateway"}[{{.window}}]))
+    alerting:
+      name: SelarasAvailabilitySLOBurn
+      annotations:
+        summary: "Edge 5xx ratio is burning the 99 % availability error budget"
+        runbook: "docs/runbook/error-budget.md"
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
+
+  - name: "requests-latency"
+    objective: 95
+    description: "95 % of unary edge requests (registration excluded) over 30 days finish within 50 ms."
+    sli:
+      events:
+        error_query: |
+          sum(rate(http_server_request_duration_seconds_count{unit="edge-gateway",http_route!~"/edge.v1.Auth/Register|/edge.v1.[A-Za-z]+/Watch[A-Za-z]+"}[{{.window}}]))
+            -
+          sum(rate(http_server_request_duration_seconds_bucket{unit="edge-gateway",http_route!~"/edge.v1.Auth/Register|/edge.v1.[A-Za-z]+/Watch[A-Za-z]+",le="0.05"}[{{.window}}]))
+        total_query: sum(rate(http_server_request_duration_seconds_count{unit="edge-gateway",http_route!~"/edge.v1.Auth/Register|/edge.v1.[A-Za-z]+/Watch[A-Za-z]+"}[{{.window}}]))
+    alerting:
+      name: SelarasLatencySLOBurn
+      annotations:
+        summary: "Edge requests slower than 50 ms are burning the latency error budget"
+        runbook: "docs/runbook/error-budget.md"
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
