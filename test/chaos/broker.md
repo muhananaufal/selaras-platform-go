@@ -1,7 +1,12 @@
 # Chaos F9-12 — broker dimatikan paksa saat pekerjaan berjalan
 
 Skrip: `test/chaos/broker.sh`. Dijalankan 2026-09-07 terhadap stack compose
-lokal. Kafka dimatikan dengan `docker kill` (SIGKILL, bukan shutdown rapi):
+lokal. Skrip ini manual. Versi otomatis yang lebih sempit,
+`TestTheOutboxSurvivesABrokerOutage` (`test/e2e/outbox_test.go`: lima event
+outbox ditulis saat Kafka mati paksa. Selama broker mati, kelimanya wajib tetap
+belum terkirim, relay wajib mencatat alasan kegagalannya, dan setelah broker
+kembali kelimanya wajib terkirim), **wajib jalan di CI**
+sejak PR #15. Sebelumnya test itu men-skip dirinya sendiri di CI. Kafka dimatikan dengan `docker kill` (SIGKILL, bukan shutdown rapi):
 yang diuji adalah broker yang hilang mendadak, bukan yang pamit.
 
 ## Hasil
