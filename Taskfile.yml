@@ -320,6 +320,11 @@ tasks:
     cmds:
       - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction up
 
+  migrate:lint:
+    desc: Lint migrations newer than the frozen baseline with squawk (and prove the gate refuses an unsafe fixture)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/migrations/lint.sh
+
   migrate:down:
     desc: 'Roll every migration back for one service. Usage: task migrate:down -- identity'
     requires:
