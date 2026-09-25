@@ -48,6 +48,12 @@ type Fake struct {
 	// path, not merely the failure path.
 	FailFirst int
 
+	// holdAfter, when above zero, holds every call after the first holdAfter
+	// until its context is cancelled. It makes "stop the worker between two
+	// attempts" deterministic instead of a race against the retry loop. Set
+	// through SetHoldAfter, which is safe while a worker is running.
+	holdAfter int
+
 	calls []Request
 }
 
@@ -83,7 +89,13 @@ func (f *Fake) Generate(ctx context.Context, req Request) (*Response, error) {
 	answer := f.Answer
 	finish := f.FinishReason
 	model := f.Model
+	held := f.holdAfter > 0 && call > f.holdAfter
 	f.mu.Unlock()
+
+	if held {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 
 	if delay > 0 {
 		select {
@@ -255,4 +267,12 @@ func (f *Fake) SetErr(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Err = err
+}
+
+// SetHoldAfter holds every call after the first n until its context is
+// cancelled; zero releases the hold for every later call.
+func (f *Fake) SetHoldAfter(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.holdAfter = n
 }
