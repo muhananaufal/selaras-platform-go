@@ -1,16 +1,15 @@
-// Skenario CAMPURAN: bentuk trafik yang paling mendekati pemakaian nyata.
+// MIXED scenario: the traffic shape closest to real use.
 //
-// Dua skenario berjalan bersamaan: pembaca yang membuka halaman (mayoritas)
-// dan penulis yang mengubah data (minoritas). Perbandingannya 4:1, ditetapkan
-// dari bentuk aplikasinya - satu penilaian dibaca berkali-kali lewat
-// dashboard dan riwayat - bukan dari pengukuran trafik produksi, yang memang
-// tidak pernah ada.
+// Two scenarios run together: readers opening pages (the majority) and
+// writers changing data (the minority). The 4:1 ratio comes from the shape
+// of the app - one assessment is read many times through the dashboard and
+// the history - not from production traffic, which has never existed.
 //
-// Menjalankan:
+// Run:
 //   task k6 -- mixed
 
 import { sleep } from "k6";
-import { completeProfile, get, patch, sessionFor, startAssessment } from "../lib/api.js";
+import { call, completeProfile, sessionFor, startAssessment } from "../lib/api.js";
 import { slo } from "../lib/slo.js";
 
 export const options = {
@@ -47,9 +46,9 @@ export function reader() {
     startAssessment(t);
   });
 
-  get(token, "/dashboard", "GET /dashboard");
-  get(token, "/risk-assessments", "GET /risk-assessments");
-  get(token, "/profile", "GET /profile");
+  call(token, "/edge.v1.Dashboard/GetDashboard");
+  call(token, "/edge.v1.Assessment/ListAssessments");
+  call(token, "/edge.v1.Profile/GetProfile");
 
   sleep(1);
 }
@@ -58,7 +57,7 @@ export function writer() {
   const { token } = sessionFor("mixed-w", (t) => completeProfile(t));
 
   startAssessment(token);
-  patch(token, "/profile", { last_name: `Iterasi${__ITER}` }, "PATCH /profile");
+  call(token, "/edge.v1.Profile/UpdateProfile", { lastName: `Iterasi${__ITER}` });
 
   sleep(2);
 }

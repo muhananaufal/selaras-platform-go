@@ -11,9 +11,9 @@ tests:
   # not.
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",http_response_status_code="200"}'
         values: '0+800x90'
-      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="503"}'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",http_response_status_code="503"}'
         values: '0+200x90'
     alert_rule_test:
       - eval_time: 65m
@@ -26,9 +26,9 @@ tests:
 
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",http_response_status_code="200"}'
         values: '0+995x90'
-      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="503"}'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",http_response_status_code="503"}'
         values: '0+5x90'
     alert_rule_test:
       - eval_time: 65m
@@ -41,11 +41,11 @@ tests:
   # 0.1, ...).
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.05"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",le="0.05"}'
         values: '0+0x20'
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.1"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",le="0.1"}'
         values: '0+100x20'
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="+Inf"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",le="+Inf"}'
         values: '0+100x20'
     alert_rule_test:
       - eval_time: 16m
@@ -58,11 +58,11 @@ tests:
 
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.01"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",le="0.01"}'
         values: '0+100x20'
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="0.05"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",le="0.05"}'
         values: '0+100x20'
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/me",le="+Inf"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",le="+Inf"}'
         values: '0+100x20'
     alert_rule_test:
       - eval_time: 16m
@@ -73,11 +73,11 @@ tests:
   # excluded), but fires the registration alert when > 1.5 s.
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="1"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/Register",le="1"}'
         values: '0+0x20'
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="2.5"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/Register",le="2.5"}'
         values: '0+10x20'
-      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/api/v1/register",le="+Inf"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/Register",le="+Inf"}'
         values: '0+10x20'
     alert_rule_test:
       - eval_time: 16m
@@ -152,9 +152,9 @@ tests:
   # page), and 0.5 % does not.
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",http_response_status_code="200"}'
         values: '0+920x420'
-      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/api/v1/me",http_response_status_code="503"}'
+      - series: 'http_server_request_duration_seconds_count{job="selaras",unit="edge-gateway",http_route="/edge.v1.Auth/GetMe",http_response_status_code="503"}'
         values: '0+80x420'
     alert_rule_test:
       - eval_time: 7h

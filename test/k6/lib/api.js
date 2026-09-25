@@ -1,53 +1,61 @@
-// Pustaka bersama skenario k6.
+// Shared library of the k6 scenarios.
 //
-// Satu tempat untuk bentuk permintaan dan pembacaan jawabannya, supaya tiga
-// skenario tidak menyalin tiga versi yang perlahan menyimpang. Bentuknya
-// mengikuti kontrak publik (api/openapi/edge-v1.yaml) dan suite e2e - kalau
-// salah satunya berubah, yang gagal di sini adalah pemeriksaan, bukan angka
-// latensi yang diam-diam mengukur jalur galat.
+// One place for the shape of every request and the reading of its answer, so
+// three scenarios do not copy three versions that slowly drift apart. The shape
+// follows the public edge.v1 contract (api/proto/edge/v1) over the Connect
+// protocol with JSON - the same wire the browser uses. If the contract changes,
+// what fails here is a check, not a latency number silently measuring the
+// error path.
 
 import http from "k6/http";
 import { check, fail } from "k6";
 
 export const BASE_URL = __ENV.BASE_URL || "http://127.0.0.1:18080";
 
-// Kata sandi memenuhi aturan minimum pendaftaran. Bukan rahasia: akun yang
-// dibuat di sini adalah akun uji yang dibuang setelah pengukuran.
+// The password meets the minimum registration rules. Not a secret: the
+// accounts made here are throwaway test accounts.
 const PASSWORD = "correct-horse-battery";
 
-const JSON_HEADERS = { "Content-Type": "application/json", Accept: "application/json" };
+// Every Connect unary call is a POST of a JSON message to
+// /<package>.<Service>/<Method>, with Connect-Protocol-Version: 1.
+const CONNECT_HEADERS = {
+  "Content-Type": "application/json",
+  "Connect-Protocol-Version": "1",
+};
 
-function url(path) {
-  return `${BASE_URL}/api/v1${path}`;
+function params(token, name) {
+  const headers = Object.assign({}, CONNECT_HEADERS);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return { headers, tags: { name } };
 }
 
-function authHeaders(token) {
-  return { headers: Object.assign({ Authorization: `Bearer ${token}` }, JSON_HEADERS) };
+// call runs one procedure and checks it succeeded. name is the metric tag;
+// it is the procedure itself so thresholds and dashboards read the same label.
+export function call(token, procedure, body) {
+  const res = http.post(`${BASE_URL}${procedure}`, JSON.stringify(body || {}), params(token, procedure));
+  check(res, { [`${procedure} 200`]: (r) => r.status === 200 });
+  unexpected(procedure, res, 200);
+  return res;
 }
 
-// register mendaftarkan satu akun uji dan mengembalikan tokennya.
+// register creates one test account and returns its token.
 //
-// Domain surelnya @user.co, sama dengan suite e2e: domain itu yang diizinkan
-// linter data uji (docs/data-handling.md), dan yang menjaga akun uji tidak
-// menyerupai alamat orang sungguhan.
+// The email domain is @user.co, the same as the e2e suite: it is the domain the
+// test-data linter allows (docs/data-handling.md), and it keeps test accounts
+// from resembling real addresses.
 export function register(tag) {
   const email = `k6-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@user.co`;
   const res = http.post(
-    url("/register"),
-    JSON.stringify({
-      name: "K6 Load",
-      email,
-      password: PASSWORD,
-      password_confirmation: PASSWORD,
-    }),
-    { headers: JSON_HEADERS, tags: { name: "POST /register" } },
+    `${BASE_URL}/edge.v1.Auth/Register`,
+    JSON.stringify({ email, password: PASSWORD, passwordConfirmation: PASSWORD }),
+    params("", "/edge.v1.Auth/Register"),
   );
-  if (res.status !== 201 && res.status !== 200) {
+  if (res.status !== 200) {
     fail(`register answered ${res.status}: ${res.body}`);
   }
-  // Token ada di AKAR jawaban, bukan di bawah "data" - bentuk yang
-  // dipertahankan dari sistem lama (ADR-005).
-  const token = res.json("access_token");
+  const token = res.json("session.accessToken");
   if (!token) {
     fail(`register returned no access token: ${res.body}`);
   }
@@ -56,63 +64,46 @@ export function register(tag) {
 
 export function login(email) {
   const res = http.post(
-    url("/login"),
+    `${BASE_URL}/edge.v1.Auth/Login`,
     JSON.stringify({ email, password: PASSWORD }),
-    { headers: JSON_HEADERS, tags: { name: "POST /login" } },
+    params("", "/edge.v1.Auth/Login"),
   );
   check(res, { "login 200": (r) => r.status === 200 });
-  return res.json("access_token");
+  return res.json("session.accessToken");
 }
 
-// completeProfile mengisi profil sampai penilaian risiko bisa dimulai.
+// completeProfile fills the profile in until a risk assessment can start.
 export function completeProfile(token) {
-  const res = http.patch(
-    url("/profile"),
-    JSON.stringify({
-      first_name: "Beban",
-      last_name: "Uji",
-      date_of_birth: "1970-05-10",
-      sex: "male",
-      country_of_residence: "Indonesia",
-    }),
-    Object.assign(authHeaders(token), { tags: { name: "PATCH /profile" } }),
-  );
-  check(res, { "profile 200": (r) => r.status === 200 });
-  unexpected("PATCH /profile", res, 200);
-  return res;
+  return call(token, "/edge.v1.Profile/UpdateProfile", {
+    firstName: "Beban",
+    lastName: "Uji",
+    dateOfBirth: "1970-05-10",
+    sex: "SEX_MALE",
+    countryOfResidence: "Indonesia",
+  });
 }
 
-// assessmentInput adalah kuesioner yang sah, seluruhnya manual - sama dengan
-// yang dipakai suite e2e, sehingga jalur yang diukur adalah jalur yang
-// terbukti benar.
+// assessmentInput is a valid questionnaire, measured manually throughout -
+// the same one the e2e suite uses, so the path measured is a path proven right.
 export function assessmentInput() {
+  const manual = (value) => ({ mode: "INPUT_MODE_MANUAL", measuredValue: value });
   return {
-    has_diabetes: false,
-    smoking_status: "Perokok aktif",
-    q_exercise: "Jarang",
-    sbp_input_type: "manual",
-    sbp_value: 150,
-    tchol_input_type: "manual",
-    tchol_value: 6.2,
-    hdl_input_type: "manual",
-    hdl_value: 1.0,
+    hasDiabetes: false,
+    smokingStatus: "SMOKING_STATUS_CURRENT",
+    exercise: "EXERCISE_HABIT_RARELY",
+    systolicBloodPressure: manual(150),
+    totalCholesterol: manual(6.2),
+    hdlCholesterol: manual(1.0),
   };
 }
 
 export function startAssessment(token) {
-  const res = http.post(
-    url("/risk-assessments"),
-    JSON.stringify(assessmentInput()),
-    Object.assign(authHeaders(token), { tags: { name: "POST /risk-assessments" } }),
-  );
-  check(res, { "assessment 201": (r) => r.status === 201 });
-  unexpected("POST /risk-assessments", res, 201);
-  return res;
+  return call(token, "/edge.v1.Assessment/StartAssessment", { input: assessmentInput() });
 }
 
-// unexpected mencatat permintaan yang gagal beserta alasannya. Angka
-// kegagalan tanpa alasan tidak bisa diselidiki setelah larian selesai - dan
-// lima kegagalan dari enam ribu permintaan pernah lolos begitu saja.
+// unexpected logs a failed request with its reason. A failure rate without
+// reasons cannot be investigated after the run - and five failures out of six
+// thousand once slipped through exactly that way.
 export function unexpected(name, res, want) {
   if (res.status !== want) {
     console.warn(
@@ -121,30 +112,12 @@ export function unexpected(name, res, want) {
   }
 }
 
-export function get(token, path, name) {
-  const res = http.get(url(path), Object.assign(authHeaders(token), { tags: { name } }));
-  check(res, { [`${name} 200`]: (r) => r.status === 200 });
-  unexpected(name, res, 200);
-  return res;
-}
-
-export function patch(token, path, body, name) {
-  const res = http.patch(
-    url(path),
-    JSON.stringify(body),
-    Object.assign(authHeaders(token), { tags: { name } }),
-  );
-  check(res, { [`${name} 200`]: (r) => r.status === 200 });
-  unexpected(name, res, 200);
-  return res;
-}
-
-// Akun per VU, dibuat sekali pada iterasi pertama VU itu.
+// One account per VU, created once on that VU's first iteration.
 //
-// setup() k6 berjalan di satu VU dan hasilnya disalin ke semua VU; membuat
-// satu akun per VU di sana berarti N pendaftaran berurutan sebelum
-// pengukuran mulai. Membuatnya malas di VU masing-masing menyebar
-// pendaftarannya dan tetap menjaga satu akun per VU.
+// k6's setup() runs on one VU and its result is copied to all of them; making
+// one account per VU there would mean N registrations in a row before
+// measurement starts. Making it lazily in each VU spreads the registrations
+// and still keeps one account per VU.
 const sessions = {};
 
 export function sessionFor(tag, prepare) {

@@ -1,192 +1,153 @@
 package e2e_test
 
 import (
-	"net/http"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+
+	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
+	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
+	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 )
 
-// deletionBudget is how long to wait for all six units to answer.
-//
-// Every unit has to receive its request through Kafka, delete its data, write
-// its confirmation to its own outbox, and its relay has to send it back. Six of
-// those round trips, plus the one-second relay sweep interval across seven
-// services.
-//
-// Forty seconds: loose for a machine running nine containers at once, and still
-// tight enough to catch a saga that is really stuck.
+// deletionBudget is how long to wait for all six units to answer: six
+// round trips through Kafka and each unit's outbox, plus the one-second relay
+// sweep. Loose for a machine running every container at once, still tight
+// enough to catch a saga that is really stuck.
 const deletionBudget = 40 * time.Second
 
-// TestTheWrongPasswordDeletesNothingOverHTTP is S2 through every layer.
+// TestTheWrongPasswordDeletesNothing is S2 through every layer.
 //
-// In the legacy system, DeleteAccountRequest required the password field to be
-// present and then never compared it: authorize() returned true, the rule was
-// only 'required|string', and the action called forceDelete() straight away.
-// Anyone holding a valid token - including one stolen from an unlocked device -
-// could permanently delete the account by sending any string.
-func TestTheWrongPasswordDeletesNothingOverHTTP(t *testing.T) {
+// The legacy system required the password and then never compared it: anyone
+// holding a valid token - including one from an unlocked device - could
+// permanently delete the account by sending any string.
+func TestTheWrongPasswordDeletesNothing(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	code, body := c.do(http.MethodDelete, "/api/v1/delete-account",
-		map[string]any{"password": "jelas-bukan-kata-sandinya"})
-	if code != http.StatusForbidden {
-		t.Fatalf("a wrong password answered %d, want 403: %v", code, body)
-	}
+	_, err := c.auth.DeleteAccount(c.ctx(), &edgev1.DeleteAccountRequest{Password: "jelas-bukan-kata-sandinya"})
+	// permission_denied, not unauthenticated: the caller IS authenticated, and
+	// unauthenticated would make the client think its token expired and sign
+	// the person out for a typo.
+	expectCode(t, "deleting with a wrong password", err, connect.CodePermissionDenied)
 
-	// 403 with PERMISSION_DENIED, not 401: the caller IS authenticated.
-	// Answering 401 would make the client assume its token has expired and ask
-	// the person to sign in again - for a mistake that was really just a typo.
-	if got, _ := dig(body, "code").(string); got != "PERMISSION_DENIED" {
-		t.Errorf("the error code is %q, want PERMISSION_DENIED", got)
-	}
-
-	// And the account is still usable.
-	if code, _ := c.do(http.MethodGet, "/api/v1/me", nil); code != http.StatusOK {
-		t.Errorf("the account stopped working after a refused deletion: %d", code)
+	if _, err := c.auth.GetMe(c.ctx(), &edgev1.GetMeRequest{}); err != nil {
+		t.Errorf("the account stopped working after a refused deletion: %v", err)
 	}
 }
 
-// TestAMissingPasswordIsRefusedBeforeAnythingHappens closes the shortest
-// path.
+// TestAMissingPasswordIsRefusedBeforeAnythingHappens closes the shortest path.
 func TestAMissingPasswordIsRefusedBeforeAnythingHappens(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	code, body := c.do(http.MethodDelete, "/api/v1/delete-account", map[string]any{})
-	if code != http.StatusUnprocessableEntity {
-		t.Fatalf("a request with no password answered %d, want 422: %v", code, body)
-	}
+	_, err := c.auth.DeleteAccount(c.ctx(), &edgev1.DeleteAccountRequest{})
+	expectCode(t, "deleting with no password", err, connect.CodeInvalidArgument)
 
-	if code, _ := c.do(http.MethodGet, "/api/v1/me", nil); code != http.StatusOK {
+	if _, err := c.auth.GetMe(c.ctx(), &edgev1.GetMeRequest{}); err != nil {
 		t.Error("the account stopped working after a refused deletion")
 	}
 }
 
 // TestDeletingAnAccountLeavesNothingBehind is the F8 exit gate.
 //
-// It uses EVERY feature first, so the deletion really touches all six
-// units. Deleting an account that was never used only proves that deleting
-// from empty tables works.
+// Every feature is used first so the deletion really touches all six units;
+// deleting an unused account only proves that deleting from empty tables works.
 func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 	c := newClient(t)
 	c.register()
 	c.completeProfile()
 
-	// Every unit is given something to delete.
-	if code, body := c.do(http.MethodPost, "/api/v1/risk-assessments", assessmentInput()); code != http.StatusCreated {
-		t.Fatalf("starting an assessment answered %d: %v", code, body)
+	c.startAssessment()
+	if _, err := c.chat.CreateConversation(c.ctx(), &edgev1.CreateConversationRequest{Message: "halo"}); err != nil {
+		t.Fatalf("starting a conversation: %v", err)
 	}
-	if code, body := c.do(http.MethodPost, "/api/v1/chat/conversations",
-		map[string]any{"message": "halo"}); code != http.StatusAccepted {
-		t.Fatalf("starting a conversation answered %d: %v", code, body)
+	allergies := "udang"
+	if _, err := c.nutrition.UpdatePreferences(c.ctx(), &edgev1.UpdatePreferencesRequest{Allergies: &allergies}); err != nil {
+		t.Fatalf("saving preferences: %v", err)
 	}
-	if code, body := c.do(http.MethodPatch, "/api/v1/culinary/preferences",
-		map[string]any{"allergies": "udang"}); code != http.StatusOK {
-		t.Fatalf("saving preferences answered %d: %v", code, body)
+	if _, err := c.nutrition.GenerateDailyGuide(c.ctx(), &edgev1.GenerateDailyGuideRequest{Input: dailyGuideInput()}); err != nil {
+		t.Fatalf("asking for a meal guide: %v", err)
 	}
-	if code, body := c.do(http.MethodPost, "/api/v1/culinary/daily-guides", map[string]any{
-		"plan_type": "cook_at_home", "time_availability": "quick",
-		"energy_level": "tired", "cuisine_preference": "Masakan Sunda",
-	}); code != http.StatusAccepted {
-		t.Fatalf("asking for a meal guide answered %d: %v", code, body)
-	}
-	if code, body := c.do(http.MethodPost, "/api/v1/coaching/programs",
-		map[string]any{"difficulty": "Standar & Konsisten"}); code != http.StatusAccepted {
-		t.Fatalf("starting a program answered %d: %v", code, body)
-	}
+	c.startProgram(coachingv1.Difficulty_DIFFICULTY_STANDARD)
 
 	// The dashboard catches up, proving the projection has its row too.
 	c.waitForDashboard(1, dashboardLagBudget)
 
-	// And now it is deleted.
-	code, accepted := c.do(http.MethodDelete, "/api/v1/delete-account",
-		map[string]any{"password": defaultPassword})
-	if code != http.StatusAccepted {
-		t.Fatalf("deleting the account answered %d, want 202: %v", code, accepted)
+	accepted, err := c.auth.DeleteAccount(c.ctx(), &edgev1.DeleteAccountRequest{Password: defaultPassword})
+	if err != nil {
+		t.Fatalf("deleting the account: %v", err)
 	}
-
-	if saga, _ := dig(accepted, "data", "saga_id").(string); saga == "" {
+	if accepted.GetSagaId() == "" {
 		t.Errorf("the answer names no saga: %v", accepted)
 	}
-	// 202, and the status is stated as it is: not finished. A client that
-	// shows "your account has been deleted" at this point says something that
-	// is not yet true.
-	if got, _ := dig(accepted, "data", "status").(string); got != "in_progress" {
-		t.Errorf("the status is %q, want in_progress", got)
+	// Stated as it is: running, not finished.
+	if got := accepted.GetStatus(); got != edgev1.DeletionStatus_DELETION_STATUS_IN_PROGRESS {
+		t.Errorf("the status is %v, want IN_PROGRESS", got)
 	}
 
-	// The account is gone once all six units have answered. What is observable
-	// from the outside: its token stops working.
+	// Gone once all six units have answered: its token stops working.
 	c.waitUntilGone(deletionBudget)
 
-	// Signing in again with the same credentials does NOT work - the account
-	// is really gone, not merely its session ended.
-	code, denied := c.doAnonymous(http.MethodPost, "/api/v1/login", map[string]any{
-		"email":    c.email,
-		"password": defaultPassword,
+	// Signing in again does NOT work - the account is gone, not merely its
+	// session.
+	c.anonymous(func() {
+		if _, err := c.auth.Login(c.ctx(), &edgev1.LoginRequest{Email: c.email, Password: defaultPassword}); err == nil {
+			t.Fatal("the deleted account can still sign in")
+		}
 	})
-	if code == http.StatusOK {
-		t.Fatalf("the deleted account can still sign in: %v", denied)
-	}
 }
 
 // TestASecondDeletionRequestIsRefusedWhileTheFirstRuns keeps one saga per
-// account.
-//
-// Two chains of confirmations for one account would make the second one
-// think it is incomplete - its units have already answered the first - and
-// the account would never be deleted.
+// account: two chains of confirmations for one account would leave the second
+// forever incomplete.
 func TestASecondDeletionRequestIsRefusedWhileTheFirstRuns(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	if code, body := c.do(http.MethodDelete, "/api/v1/delete-account",
-		map[string]any{"password": defaultPassword}); code != http.StatusAccepted {
-		t.Fatalf("the first request answered %d: %v", code, body)
+	if _, err := c.auth.DeleteAccount(c.ctx(), &edgev1.DeleteAccountRequest{Password: defaultPassword}); err != nil {
+		t.Fatalf("the first request: %v", err)
 	}
 
-	// Immediately, before the saga has a chance to finish. If it has already
-	// finished, the account is gone and the answer is 401 - also not 202, so
-	// this test still means something, it just tests something slightly
-	// different.
-	code, second := c.do(http.MethodDelete, "/api/v1/delete-account",
-		map[string]any{"password": defaultPassword})
-
-	switch code {
-	case http.StatusConflict:
-		if got, _ := dig(second, "code").(string); got != "FAILED_PRECONDITION" {
-			t.Errorf("the refusal code is %q", got)
-		}
-	case http.StatusUnauthorized:
-		// The saga finished first; the account is gone. Valid.
+	// Immediately, before the saga can finish. If it already finished, the
+	// account is gone and the answer is unauthenticated - also a refusal, so
+	// the test still means something.
+	_, err := c.auth.DeleteAccount(c.ctx(), &edgev1.DeleteAccountRequest{Password: defaultPassword})
+	switch codeOf(err) {
+	case connect.CodeFailedPrecondition, connect.CodeUnauthenticated:
 	default:
-		t.Fatalf("the second request answered %d: %v", code, second)
+		t.Fatalf("the second request answered %v (%v)", codeOf(err), err)
 	}
 }
 
-// waitUntilGone waits for the caller's token to stop working.
-//
-// That is what is observable from the OUTSIDE when an account is deleted, and
-// observing it from the outside is the point: a test that asks the database
-// directly would pass even while the gateway still serves requests on behalf of
-// an account that no longer exists.
+// waitUntilGone waits for the caller's token to stop working - what is
+// observable from the OUTSIDE when an account is deleted. Asking the database
+// directly would pass even while the gateway still served the account.
 func (c *client) waitUntilGone(timeout time.Duration) {
 	c.t.Helper()
 
 	started := time.Now()
 	deadline := started.Add(timeout)
-
 	for time.Now().Before(deadline) {
-		code, _ := c.do(http.MethodGet, "/api/v1/me", nil)
-		if code == http.StatusUnauthorized || code == http.StatusNotFound {
+		_, err := c.auth.GetMe(c.ctx(), &edgev1.GetMeRequest{})
+		if code := codeOf(err); code == connect.CodeUnauthenticated || code == connect.CodeNotFound {
 			c.t.Logf("the account was gone after %v", time.Since(started).Round(time.Millisecond))
 			return
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-
 	c.t.Fatalf("the account still answers after %v.\n"+
 		"A unit probably never confirmed - see docs/runbook/account-deletion.md "+
 		"and identity-svc's start-up log for the outstanding saga.", timeout)
+}
+
+// dailyGuideInput is a valid meal guide request.
+func dailyGuideInput() *nutritionv1.DailyGuideInput {
+	return &nutritionv1.DailyGuideInput{
+		PlanType:          nutritionv1.PlanType_PLAN_TYPE_COOK_AT_HOME,
+		TimeAvailability:  nutritionv1.TimeAvailability_TIME_AVAILABILITY_QUICK,
+		EnergyLevel:       nutritionv1.EnergyLevel_ENERGY_LEVEL_TIRED,
+		CuisinePreference: "Masakan Sunda",
+	}
 }

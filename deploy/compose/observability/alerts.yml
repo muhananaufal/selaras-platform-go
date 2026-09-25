@@ -70,7 +70,7 @@ groups:
       - alert: SelarasLatencyAboveSLO
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route!="/api/v1/register"}[5m]))
+            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route!="/edge.v1.Auth/Register"}[5m]))
           ) > 0.050
         for: 10m
         labels: { severity: ticket }
@@ -80,7 +80,7 @@ groups:
       - alert: SelarasRegisterLatencyAboveSLO
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route="/api/v1/register"}[5m]))
+            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route="/edge.v1.Auth/Register"}[5m]))
           ) > 1.5
         for: 10m
         labels: { severity: ticket }

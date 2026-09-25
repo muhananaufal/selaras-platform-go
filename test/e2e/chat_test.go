@@ -1,81 +1,70 @@
 package e2e_test
 
 import (
-	"net/http"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+
+	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
+	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 )
 
 // TestAChatConversationRunsFromCreationToDeletion is gate F5-10.
 //
-// Create a conversation -> send a message -> the reply arrives -> delete. Every
-// step goes over HTTP, and that reply crosses the gateway, chat-svc, Kafka,
-// llm-worker, and back.
+// Create a conversation -> send a message -> the reply arrives -> delete. The
+// reply crosses the gateway, chat-svc, Kafka, llm-worker, and back.
 func TestAChatConversationRunsFromCreationToDeletion(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// 1. The conversation is created TOGETHER with its first message. The
-	//    answer is 202: the model's reply comes later.
-	code, body := c.do(http.MethodPost, "/api/v1/chat/conversations", map[string]any{
-		"message": "Apakah kopi berpengaruh pada tekanan darah saya?",
+	// 1. Created TOGETHER with its first message; job_id says a reply is
+	//    being produced.
+	created, err := c.chat.CreateConversation(c.ctx(), &edgev1.CreateConversationRequest{
+		Message: "Apakah kopi berpengaruh pada tekanan darah saya?",
 	})
-	if code != http.StatusAccepted {
-		t.Fatalf("creating a conversation with a message answered %d: %v", code, body)
+	if err != nil {
+		t.Fatalf("creating a conversation with a message: %v", err)
+	}
+	slug := created.GetConversation().GetSlug()
+	if slug == "" || created.GetJobId() == "" {
+		t.Fatalf("want a slug and a job id: %v", created)
+	}
+	// The title is derived from the first message, with the truncation
+	// marker (D12).
+	if got := created.GetConversation().GetTitle(); got != "Apakah kopi berpengaruh pada tekanan darah sa..." {
+		t.Fatalf("the derived title is %q", got)
 	}
 
-	slug, _ := dig(body, "data", "slug").(string)
-	if slug == "" {
-		t.Fatalf("the conversation has no slug: %v", body)
-	}
-
-	// The title is derived from the first message, with the truncation marker
-	// (D12).
-	title, _ := dig(body, "data", "title").(string)
-	if title != "Apakah kopi berpengaruh pada tekanan darah sa..." {
-		t.Fatalf("the derived title is %q", title)
-	}
-
-	// 2. The model's reply arrives.
-	c.waitForModelReply(slug, 90*time.Second)
+	// 2. The model's reply arrives on the WatchConversation stream.
+	c.watchReplies(slug, 1, 90*time.Second)
 
 	// 3. A second message, and its reply arrives too - the per-message
 	//    idempotency key is what keeps it from being skipped as a duplicate.
-	code, sent := c.do(http.MethodPost,
-		"/api/v1/chat/conversations/"+slug+"/messages",
-		map[string]any{"message": "Berapa cangkir yang aman?"})
-	if code != http.StatusAccepted {
-		t.Fatalf("sending a message answered %d: %v", code, sent)
+	if _, err := c.chat.SendMessage(c.ctx(), &edgev1.SendMessageRequest{
+		ConversationSlug: slug, Message: "Berapa cangkir yang aman?",
+	}); err != nil {
+		t.Fatalf("sending a message: %v", err)
 	}
-
-	deadline := time.Now().Add(90 * time.Second)
-	for time.Now().Before(deadline) {
-		if c.countModelReplies(slug) >= 2 {
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
-	if got := c.countModelReplies(slug); got < 2 {
-		t.Fatalf("only %d model replies arrived; the second message was skipped as a duplicate", got)
-	}
+	c.watchReplies(slug, 2, 90*time.Second)
 
 	// 4. The title is changed.
-	code, renamed := c.do(http.MethodPatch, "/api/v1/chat/conversations/"+slug,
-		map[string]any{"title": "Soal kopi"})
-	if code != http.StatusOK {
-		t.Fatalf("renaming answered %d: %v", code, renamed)
+	renamed, err := c.chat.UpdateConversationTitle(c.ctx(), &edgev1.UpdateConversationTitleRequest{
+		Slug: slug, Title: "Soal kopi",
+	})
+	if err != nil {
+		t.Fatalf("renaming: %v", err)
 	}
-	if got, _ := dig(renamed, "data", "title").(string); got != "Soal kopi" {
+	if got := renamed.GetConversation().GetTitle(); got != "Soal kopi" {
 		t.Fatalf("the title came back as %q", got)
 	}
 
 	// 5. Deleted, and gone.
-	if code, _ := c.do(http.MethodDelete, "/api/v1/chat/conversations/"+slug, nil); code != http.StatusNoContent {
-		t.Fatalf("deleting answered %d, want 204", code)
+	if _, err := c.chat.DeleteConversation(c.ctx(), &edgev1.DeleteConversationRequest{Slug: slug}); err != nil {
+		t.Fatalf("deleting: %v", err)
 	}
-	if code, _ := c.do(http.MethodGet, "/api/v1/chat/conversations/"+slug, nil); code != http.StatusNotFound {
-		t.Fatalf("the conversation survived deletion: %d", code)
-	}
+	_, err = c.chat.GetConversation(c.ctx(), &edgev1.GetConversationRequest{Slug: slug})
+	expectCode(t, "reading a deleted conversation", err, connect.CodeNotFound)
 }
 
 // TestAnEmptyConversationQueuesNothing guards the "start new" button.
@@ -83,21 +72,22 @@ func TestAnEmptyConversationQueuesNothing(t *testing.T) {
 	c := newClient(t)
 	c.register()
 
-	// 201, not 202: there is nothing to wait for.
-	code, body := c.do(http.MethodPost, "/api/v1/chat/conversations", map[string]any{})
-	if code != http.StatusCreated {
-		t.Fatalf("creating an empty conversation answered %d, want 201: %v", code, body)
+	created, err := c.chat.CreateConversation(c.ctx(), &edgev1.CreateConversationRequest{})
+	if err != nil {
+		t.Fatalf("creating an empty conversation: %v", err)
 	}
-
-	slug, _ := dig(body, "data", "slug").(string)
-	if title, _ := dig(body, "data", "title").(string); title != "Percakapan Baru" {
-		t.Fatalf("an empty conversation is titled %q", title)
+	// No job: there is nothing to wait for.
+	if created.GetJobId() != "" {
+		t.Fatalf("an empty conversation queued job %q", created.GetJobId())
+	}
+	if got := created.GetConversation().GetTitle(); got != "Percakapan Baru" {
+		t.Fatalf("an empty conversation is titled %q", got)
 	}
 
 	// Given time, then checked: no reply arrives for a message that never
 	// existed.
 	time.Sleep(8 * time.Second)
-	if got := c.countModelReplies(slug); got != 0 {
+	if got := c.countModelReplies(created.GetConversation().GetSlug()); got != 0 {
 		t.Fatalf("%d model replies arrived for a conversation with no message", got)
 	}
 }
@@ -108,54 +98,48 @@ func TestTheConversationListIsPagedAndPrivate(t *testing.T) {
 	c.register()
 
 	for range 3 {
-		if code, _ := c.do(http.MethodPost, "/api/v1/chat/conversations", map[string]any{}); code != http.StatusCreated {
-			t.Fatalf("creating a conversation answered %d", code)
+		if _, err := c.chat.CreateConversation(c.ctx(), &edgev1.CreateConversationRequest{}); err != nil {
+			t.Fatalf("creating a conversation: %v", err)
 		}
 	}
 
-	code, first := c.do(http.MethodGet, "/api/v1/chat/conversations?page_size=2", nil)
-	if code != http.StatusOK {
-		t.Fatalf("listing answered %d: %v", code, first)
+	first, err := c.chat.ListConversations(c.ctx(), &edgev1.ListConversationsRequest{
+		Page: &edgev1.PageRequest{PageSize: 2},
+	})
+	if err != nil {
+		t.Fatalf("listing: %v", err)
 	}
-
-	items, _ := dig(first, "data", "conversations").([]any)
-	if len(items) != 2 {
-		t.Fatalf("the first page holds %d conversations, want 2", len(items))
+	if n := len(first.GetConversations()); n != 2 {
+		t.Fatalf("the first page holds %d conversations, want 2", n)
 	}
-
-	// The next-page token is present, and leads to the rest of the list.
-	token, _ := dig(first, "data", "page", "next_page_token").(string)
+	token := first.GetPage().GetNextPageToken()
 	if token == "" {
 		t.Fatalf("the first page carries no next token: %v", first)
 	}
 
-	code, second := c.do(http.MethodGet,
-		"/api/v1/chat/conversations?page_size=2&page_token="+token, nil)
-	if code != http.StatusOK {
-		t.Fatalf("the second page answered %d", code)
+	second, err := c.chat.ListConversations(c.ctx(), &edgev1.ListConversationsRequest{
+		Page: &edgev1.PageRequest{PageSize: 2, PageToken: token},
+	})
+	if err != nil {
+		t.Fatalf("the second page: %v", err)
 	}
-	rest, _ := dig(second, "data", "conversations").([]any)
-	if len(rest) != 1 {
-		t.Fatalf("the second page holds %d conversations, want 1", len(rest))
+	if n := len(second.GetConversations()); n != 1 {
+		t.Fatalf("the second page holds %d conversations, want 1", n)
 	}
-
-	// The last page carries NO token: its emptiness is the stop signal, and a
-	// token that is always present makes the client request empty pages
-	// forever.
-	if last, _ := dig(second, "data", "page", "next_page_token").(string); last != "" {
+	// The last page carries NO token: its absence is the stop signal.
+	if last := second.GetPage().GetNextPageToken(); last != "" {
 		t.Fatalf("the last page still carries a next token: %q", last)
 	}
 
 	// And someone else sees none at all.
 	stranger := newClient(t)
 	stranger.register()
-
-	code, theirs := stranger.do(http.MethodGet, "/api/v1/chat/conversations", nil)
-	if code != http.StatusOK {
-		t.Fatalf("listing answered %d", code)
+	theirs, err := stranger.chat.ListConversations(stranger.ctx(), &edgev1.ListConversationsRequest{})
+	if err != nil {
+		t.Fatalf("listing: %v", err)
 	}
-	if items, _ := dig(theirs, "data", "conversations").([]any); len(items) != 0 {
-		t.Fatalf("a stranger sees %d of someone else's conversations", len(items))
+	if n := len(theirs.GetConversations()); n != 0 {
+		t.Fatalf("a stranger sees %d of someone else's conversations", n)
 	}
 }
 
@@ -163,70 +147,80 @@ func TestTheConversationListIsPagedAndPrivate(t *testing.T) {
 func TestSomeoneElsesConversationIsNotFound(t *testing.T) {
 	owner := newClient(t)
 	owner.register()
-
-	code, body := owner.do(http.MethodPost, "/api/v1/chat/conversations",
-		map[string]any{"message": "halo"})
-	if code != http.StatusAccepted {
-		t.Fatalf("creating a conversation answered %d: %v", code, body)
+	created, err := owner.chat.CreateConversation(owner.ctx(), &edgev1.CreateConversationRequest{Message: "halo"})
+	if err != nil {
+		t.Fatalf("creating a conversation: %v", err)
 	}
-	slug, _ := dig(body, "data", "slug").(string)
+	slug := created.GetConversation().GetSlug()
 
 	stranger := newClient(t)
 	stranger.register()
+	ctx := stranger.ctx()
 
-	for _, probe := range []struct {
-		method string
-		path   string
-		body   any
-	}{
-		{http.MethodGet, "/api/v1/chat/conversations/" + slug, nil},
-		{http.MethodPatch, "/api/v1/chat/conversations/" + slug, map[string]any{"title": "milik saya"}},
-		{http.MethodPost, "/api/v1/chat/conversations/" + slug + "/messages", map[string]any{"message": "halo"}},
-		{http.MethodDelete, "/api/v1/chat/conversations/" + slug, nil},
-	} {
-		if code, _ := stranger.do(probe.method, probe.path, probe.body); code != http.StatusNotFound {
-			t.Errorf("%s %s answered %d, want 404", probe.method, probe.path, code)
+	_, err = stranger.chat.GetConversation(ctx, &edgev1.GetConversationRequest{Slug: slug})
+	expectCode(t, "GetConversation", err, connect.CodeNotFound)
+	_, err = stranger.chat.UpdateConversationTitle(ctx, &edgev1.UpdateConversationTitleRequest{Slug: slug, Title: "milik saya"})
+	expectCode(t, "UpdateConversationTitle", err, connect.CodeNotFound)
+	_, err = stranger.chat.SendMessage(ctx, &edgev1.SendMessageRequest{ConversationSlug: slug, Message: "halo"})
+	expectCode(t, "SendMessage", err, connect.CodeNotFound)
+	_, err = stranger.chat.DeleteConversation(ctx, &edgev1.DeleteConversationRequest{Slug: slug})
+	expectCode(t, "DeleteConversation", err, connect.CodeNotFound)
+
+	// A stream is guarded the same way as a unary call.
+	stream, err := stranger.chat.WatchConversation(ctx, &edgev1.WatchConversationRequest{Slug: slug})
+	if err == nil {
+		for stream.Receive() {
+			t.Fatal("a stranger received a message of someone else's conversation")
 		}
+		err = stream.Err()
 	}
+	expectCode(t, "WatchConversation", err, connect.CodeNotFound)
 
 	// And a conversation that really does not exist answers the same.
-	if code, _ := stranger.do(http.MethodGet, "/api/v1/chat/conversations/tidakadaslugini", nil); code != http.StatusNotFound {
-		t.Errorf("a missing conversation answered %d, want 404", code)
-	}
+	_, err = stranger.chat.GetConversation(ctx, &edgev1.GetConversationRequest{Slug: "tidakadaslugini"})
+	expectCode(t, "GetConversation on a missing slug", err, connect.CodeNotFound)
 }
 
-// waitForModelReply waits for the first reply from the model.
-func (c *client) waitForModelReply(slug string, timeout time.Duration) {
+// watchReplies waits on the WatchConversation stream until at least want
+// model replies are on the newest page, reopening the stream when it ends.
+func (c *client) watchReplies(slug string, want int, timeout time.Duration) {
 	c.t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if c.countModelReplies(slug) > 0 {
-			return
+		ctx, cancel := contextUntil(c.t, deadline)
+		stream, err := c.chat.WatchConversation(ctx, &edgev1.WatchConversationRequest{Slug: slug})
+		if err != nil {
+			cancel()
+			c.t.Fatalf("opening WatchConversation: %v", err)
 		}
-		time.Sleep(2 * time.Second)
+		for stream.Receive() {
+			if modelReplies(stream.Msg().GetMessages()) >= want {
+				cancel()
+				return
+			}
+		}
+		cancel()
 	}
-	c.t.Fatalf("the model never replied within %v", timeout)
+	c.t.Fatalf("fewer than %d model replies within %v; the message was lost or skipped as a duplicate", want, timeout)
 }
 
-// countModelReplies counts the messages with the "model" role in a
-// conversation.
+// countModelReplies counts the model's messages on the first page.
 func (c *client) countModelReplies(slug string) int {
 	c.t.Helper()
-
-	code, body := c.do(http.MethodGet, "/api/v1/chat/conversations/"+slug, nil)
-	if code != http.StatusOK {
-		c.t.Fatalf("reading the conversation answered %d: %v", code, body)
+	resp, err := c.chat.GetConversation(c.ctx(), &edgev1.GetConversationRequest{Slug: slug})
+	if err != nil {
+		c.t.Fatalf("reading the conversation: %v", err)
 	}
+	return modelReplies(resp.GetMessages())
+}
 
-	messages, _ := dig(body, "data", "messages").([]any)
-
-	var replies int
-	for _, rm := range messages {
-		message, _ := rm.(map[string]any)
-		if role, _ := message["role"].(string); role == "model" {
-			replies++
+func modelReplies(messages []*edgev1.ChatMessage) int {
+	var n int
+	for _, m := range messages {
+		if m.GetRole() == chatv1.MessageRole_MESSAGE_ROLE_MODEL {
+			n++
 		}
 	}
-	return replies
+	return n
 }

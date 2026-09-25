@@ -1,20 +1,25 @@
-# Koleksi Postman
+# Postman collection
 
-`selaras.postman_collection.json` adalah alur lengkap 32 endpoint gateway
-yang bisa di-**Run** tanpa setup: `baseUrl` sudah menunjuk ke stack lokal,
-surel dibuat unik per larian, token dan setiap slug/id ditangkap otomatis
-dari jawaban sebelumnya, dan tiap request punya asersi status.
+`selaras.postman_collection.json` is the whole edge.v1 flow over the Connect
+protocol, runnable with no setup: `baseUrl` already points at the local stack,
+the email is unique per run, the token and every slug/id are captured from the
+previous answer, and every request asserts its status.
 
 ```bash
-task up:full        # stack harus menyala
-task postman:run    # Newman menjalankan koleksi yang sama dari CLI
+task up:full        # the stack must be running
+task postman:run    # Newman runs the same collection from the CLI
 ```
 
-Di Postman: Import → pilih berkas ini → Run collection. Urutan folder adalah
-urutan alurnya (Auth → Profile → Assessment → Dashboard → Coaching → Chat →
-Culinary → Account); jangan diacak - Coaching butuh slug analisis, Account
-menghapus akunnya di akhir.
+In Postman: Import → pick this file → Run collection. The folder order is the
+flow order (Auth → Profile → Assessment → Dashboard → Coaching → Chat →
+Culinary → Account); do not shuffle it - Coaching needs the assessment slug,
+and Account deletes its account at the end.
 
-Koleksinya DIBANGUN, bukan ditulis tangan: `node build.js <output>`.
-Body request meniru yang dipakai suite e2e (terbukti diterima gateway);
-sumber kebenaran kontraknya tetap `api/openapi/edge-v1.yaml`.
+Every request is `POST {{baseUrl}}/<package>.<Service>/<Method>` with a JSON
+body and `Connect-Protocol-Version: 1`. The `Watch*` server streams are not in
+the collection - Postman cannot read the Connect streaming envelope; the e2e
+suite covers them.
+
+The collection is BUILT, not written by hand: `node build.js <output>`. It
+holds no saved responses on purpose. The source of truth for the contract is
+`api/proto/edge/v1`.
