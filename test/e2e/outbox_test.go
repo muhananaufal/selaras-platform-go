@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -33,15 +34,23 @@ func requireDisruptive(t *testing.T) {
 	}
 }
 
-// docker runs a docker command inside WSL.
+// docker runs a docker command against the daemon that runs the stack.
 //
-// Through WSL, not directly: the daemon lives there, and calling it from
-// Windows depends on a TCP endpoint that may not exist.
+// On Linux (CI) that is the local daemon. On Windows it goes through WSL,
+// not directly: the daemon lives there, and calling it from Windows depends
+// on a TCP endpoint that may not exist.
 func docker(t *testing.T, args ...string) string {
 	t.Helper()
 
 	full := "docker " + strings.Join(args, " ")
-	cmd := exec.Command("wsl", "-d", "Ubuntu", "--", "bash", "-lc", full)
+	cmd := exec.Command("docker", args...)
+	if runtime.GOOS == "windows" {
+		quoted := make([]string, len(args))
+		for i, a := range args {
+			quoted[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		}
+		cmd = exec.Command("wsl", "-d", "Ubuntu", "--", "bash", "-lc", "docker "+strings.Join(quoted, " "))
+	}
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -56,7 +65,7 @@ func waitForBroker(t *testing.T, timeout time.Duration) {
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		status := docker(t, "inspect", "-f", "'{{.State.Health.Status}}'", "selaras-kafka")
+		status := docker(t, "inspect", "-f", "{{.State.Health.Status}}", "selaras-kafka")
 		if strings.Contains(status, "healthy") {
 			return
 		}
