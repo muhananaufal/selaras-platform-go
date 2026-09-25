@@ -16,9 +16,19 @@ karena ia menghapus basis data lokal seluruhnya.
 3. Menghentikan seluruh unit, PgBouncer, dan container backup — semua yang
    memegang koneksi.
 4. `pg_terminate_backend` untuk sisa koneksi, lalu **`DROP DATABASE`**.
-5. `CREATE DATABASE`, `psql -f globals-*.sql` (peran sudah ada; galat
-   "already exists" diabaikan dengan sengaja), `pg_restore --no-owner
-   --exit-on-error`.
+5. `CREATE DATABASE`, lalu peran lewat `deploy/compose/backup/restore-globals.sh`,
+   lalu `pg_restore --no-owner --exit-on-error`. Soal peran: peran biasanya
+   sudah ada, jadi satu-satunya galat yang diabaikan adalah "role … already
+   exists". Galat lain, berkas yang tidak ada, atau berkas tanpa peran
+   menggagalkan drill (`test/drill/restore-globals.test.sh`). Sebelum
+   2026-09-25, langkah ini memakai `psql … >/dev/null 2>&1 || true`, yang
+   menelan **semua** galat, dan drill memilih dump terbaru dan berkas peran
+   terbaru secara terpisah. Keduanya bisa kosong (lihat
+   [`backup.md`](backup.md)). Kini yang dipilih adalah arsip terbaru yang
+   **tidak kosong** beserta berkas peran dari putaran **yang sama**.
+   Dijalankan terhadap volume nyata, pilihan lama jatuh ke pasangan kosong
+   `094144Z`, sedangkan pilihan baru jatuh ke `090926Z` (969.641 dan 3.882
+   byte).
 6. Mengembalikan kepemilikan skema dan tabel ke `svc_<skema>` — `--no-owner`
    membuat semuanya milik admin, dan ADR-006 menuntut peran per-service
    memiliki skemanya. Tanpa langkah ini, pemelihara partisi dan migrasi
