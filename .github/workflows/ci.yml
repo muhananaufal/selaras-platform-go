@@ -236,6 +236,17 @@ jobs:
         working-directory: deploy/compose/observability
         run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
 
+  # Migrations are linted with squawk (the pinned image) against the rules in
+  # .squawk.toml; files older than the frozen baseline are not rewritten. The
+  # script first proves the gate refuses a known-unsafe fixture.
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint migrations newer than the frozen baseline
+        run: bash migrations/lint.sh
+
   # The Helm chart is treated like code: strict lint for both value profiles,
   # then the rendered manifests are validated against the Kubernetes schemas
   # (kubeconform). The KEDA CRD has no schema there and is skipped explicitly.

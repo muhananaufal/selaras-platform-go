@@ -64,6 +64,7 @@ Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-re
 | Satu service mati | Gateway menjawab 504 dalam 5 detik, bukan menggantung; pulih 2 detik | [`test/chaos/service.md`](test/chaos/service.md) |
 | Penyedia LLM lambat / kadang gagal / selalu gagal | Diulang, lalu menyerah dengan status yang jujur ke pengguna | [`test/chaos/llm.md`](test/chaos/llm.md) |
 | Backup dipulihkan, bukan diasumsikan | 29 detik dari stop sampai gateway siap; 40 pengguna, 1.671 penilaian utuh; e2e hijau sesudahnya | [`docs/runbook/restore-drill.md`](docs/runbook/restore-drill.md) |
+| Migrasi skema tanpa downtime | expand (kolom nullable, backfill, indeks `CONCURRENTLY`) lalu contract di bawah lalu lintas nyata: 662 request, 0 gagal; kontrol negatif (rename kolom yang dipakai) membuat 266 dari 700 gagal; migrasi baru di-lint squawk di CI dengan gerbang yang dibuktikan menolak | [`docs/runbook/migrations.md`](docs/runbook/migrations.md) |
 | Autoscaling di k3d | edge 1→4 replika, service 1→3 di bawah 60 VU; batas satu node dinyatakan | [`docs/performance-report.md`](docs/performance-report.md) |
 | Koneksi Postgres saat replika bertambah | PgBouncer mode transaksi: ≤ 64 koneksi ke Postgres berapa pun replikanya; replika baca lag 10 ms | [`docs/db-connections.md`](docs/db-connections.md) |
 | Token LLM sungguhan | Diukur dari `usageMetadata` Gemini: token "pikiran" model 3.x 3–4× token jawaban | [`docs/finops.md`](docs/finops.md) |
