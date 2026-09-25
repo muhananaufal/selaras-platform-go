@@ -1,0 +1,2 @@
+# Tests allowed to skip in the "build and test" job. One per line:
+# <package> <TestName> # <why it cannot run in this job>

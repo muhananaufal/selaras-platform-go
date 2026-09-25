@@ -185,7 +185,13 @@ jobs:
           # runs them. Here both are EXPLICITLY excluded, not left to skip
           # themselves - with CI=true both would fail, and that is precisely the
           # intended behaviour.
-          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance") -race -count=1 -p 1
+          # -json so every skip is visible: a green run says nothing about a
+          # test that did not run (test/skips/check.sh).
+          rc=0
+          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance") -race -count=1 -p 1 -json > unit-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' unit-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh unit-report.json test/skips/unit.allow || rc=1
+          exit "$rc"
 
   lint:
     name: lint
@@ -484,7 +490,11 @@ jobs:
         run: |
           export TEST_DSN_LLM="postgres://svc_llm:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=llm"
           export TEST_DSN_CHAT="postgres://svc_chat:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=chat"
-          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m
+          rc=0
+          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m -json > e2e-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' e2e-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh e2e-report.json test/skips/e2e.allow || rc=1
+          exit "$rc"
 
       - name: k6 read scenario against the SLO
         run: |
