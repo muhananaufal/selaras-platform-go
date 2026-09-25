@@ -1,13 +1,18 @@
-# Ruleset untuk kontrak REST publik.
+# Ruleset for the public contract (api/openapi/edge-v1.yaml, generated from
+# api/proto/edge by buf.gen.openapi.yaml - ADR-027).
 extends: [[spectral:oas, recommended]]
 
 rules:
-  # DIMATIKAN. Kontrak ini memakai snake_case karena itulah bentuk yang
-  # sudah dipakai frontend Laravel. Mengubahnya menjadi camelCase adalah
-  # breaking change bagi setiap klien - persis yang migrasi ini hindari.
-  camel-case-properties: false
+  # ON. The Connect JSON mapping is lowerCamelCase (protojson), so every
+  # property must be camelCase; a snake_case property would mean a field
+  # the generator did not map the way clients read it.
+  camel-case-properties: error
 
-  # Diturunkan ke info. Contoh berguna untuk dokumentasi, tetapi
-  # ketiadaannya bukan cacat kontrak, dan menjadikannya blocker mendorong
-  # orang menempelkan contoh asal-asalan.
+  # OFF. Connect paths are /<package>.<Service>/<Method> by the protocol's
+  # specification; kebab-case would be a different protocol.
+  paths-kebab-case: false
+
+  # Downgraded to info. Examples help documentation, but their absence is not
+  # a contract defect, and making it a blocker pushes people to paste
+  # careless examples.
   oas3-missing-example: info

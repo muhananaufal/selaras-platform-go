@@ -1,0 +1,31 @@
+version: v2
+
+# The OpenAPI document of the public contract, GENERATED from api/proto/edge
+# (ADR-027) for third parties, API portals, and DAST scanners. It is never
+# edited by hand: api/openapi/edge-base.yaml holds what the proto cannot say.
+#
+# strategy: all runs the plugin once over every edge file, so the seven
+# services land in ONE document instead of overwriting each other.
+inputs:
+  - directory: api/proto
+    paths:
+      - api/proto/edge
+
+plugins:
+  - local: protoc-gen-connect-openapi
+    out: api/openapi
+    strategy: all
+    opt:
+      - path=edge-v1.yaml
+      - base=api/openapi/edge-base.yaml
+      - override=api/openapi/edge-override.yaml
+      - features=connectrpc
+      - content-types=json
+      - short-service-tags
+      - trim-unused-types
+
+# with-google-error-detail is deliberately OFF: in v0.26.0 it emits the
+# google.rpc.* detail schemas with proto field names (field_violations),
+# while connect-go sends them as protojson camelCase (fieldViolations) - a
+# document that contradicts the wire is worse than none. The two details this
+# gateway sends are described in edge-base.yaml and edge-override.yaml.

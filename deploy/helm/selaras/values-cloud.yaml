@@ -16,6 +16,12 @@ rateLimit:
   authRequests: ""
   llmRequests: ""
 
+# REQUIRED before real traffic: the Ingress controller's pod CIDR, or every
+# user is rate limited as one address. Left empty here because the range
+# belongs to the target cluster and is not known yet (ADR-027).
+# rateLimit:
+#   trustedProxyCIDRs: "10.42.0.0/16"
+
 units:
   edge-gateway:
     service:
