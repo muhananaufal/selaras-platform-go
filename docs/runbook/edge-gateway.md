@@ -1,7 +1,9 @@
 # Runbook on-call — edge-gateway
 
-Satu-satunya pintu masuk publik. Ia tidak menyimpan apa pun: setiap permintaan
-diteruskan ke satu service lewat gRPC, dan yang ia pegang sendiri hanyalah
+Satu-satunya pintu masuk publik, melayani kontrak `edge.v1` lewat Connect
+(ADR-027): satu handler menjawab protokol Connect (JSON/HTTP), gRPC, dan
+gRPC-Web. Ia tidak menyimpan apa pun: setiap prosedur diteruskan ke satu
+service lewat gRPC, dan yang ia pegang sendiri hanyalah
 kunci PUBLIK token (ADR-020), pembatas laju di Redis, dan cache pencabutan.
 
 ## Siapa yang terdampak bila ia mati
@@ -17,23 +19,28 @@ dan hasilnya menunggu; yang hilang hanya kemampuan bertanya.
 | Semua permintaan 502/503 dari proxy di depannya | proses mati atau `readyz` 503 | `curl :8081/readyz`; log start-up: variabel wajib yang kosong menolak start (ADR-016) |
 | 401 untuk semua orang, termasuk yang baru login | kunci verifikasi tidak cocok dengan kunci tanda tangan identity | `JWT_VERIFY_KEY` vs `JWT_SIGNING_KEY` — keduanya dari `task keygen` yang sama |
 | 401 hanya untuk sebagian orang setelah mereka logout/hapus akun | ini benar: pencabutan bekerja (ADR-020) | tidak ada yang perlu dilakukan |
-| 503 dengan `code: "UNAVAILABLE"` pada satu kelompok rute saja | satu service di belakangnya mati | rute → service: lihat tabel di bawah; runbook service itu |
-| 429 mendadak untuk pengguna sah | batas laju terlalu ketat untuk lingkungan ini, atau `X-Forwarded-For` tidak dipercaya sehingga semua orang berbagi satu IP | `docs/runbook/rate-limits.md`; `SetTrustedProxies` |
+| 503 dengan `code: "unavailable"` pada satu service saja | satu service di belakangnya mati | prosedur → service: lihat tabel di bawah; runbook service itu |
+| 404 (klien Connect: `unimplemented`) untuk seluruh prosedur satu service | `*_GRPC_TARGET` service itu kosong, jadi prosedurnya tidak dipasang | log start-up: `... is not configured; its procedures are not mounted` |
+| 429 mendadak untuk pengguna sah | batas laju terlalu ketat untuk lingkungan ini, atau gateway di belakang proxy tanpa `TRUSTED_PROXY_CIDRS` sehingga semua orang berbagi alamat proxy | `docs/runbook/rate-limits.md`; `TRUSTED_PROXY_CIDRS` |
 | Semua permintaan lolos pembatasan laju + log `rate limiting is unavailable` | Redis mati; pembatasan gagal-terbuka dengan sengaja | runbook Redis; pembatasan pulih sendiri saat Redis kembali |
 | Semua permintaan terproteksi 503 + log `revocation check unavailable` | Redis mati; pemeriksaan pencabutan gagal-TERTUTUP dengan sengaja (ADR-020) | Redis dulu — ini yang membuat Redis menjadi dependensi keras gateway |
-| 413 untuk unggahan yang sah | badan > 1 MiB (`middleware.MaxBodyBytes`) | tidak ada endpoint yang butuh lebih; bila ada, itu perubahan kontrak |
+| `resource_exhausted` / 413 untuk permintaan yang sah | badan > 1 MiB (`edge.MaxBodyBytes`) | tidak ada prosedur yang butuh lebih; bila ada, itu perubahan kontrak |
+| 400 `invalid_argument` untuk nilai yang "terlihat benar" | nama enum salah ketik atau field tak dikenal: codec JSON ketat menolaknya, bukan membacanya sebagai nol (ADR-027) | `details` berisi `google.rpc.BadRequest` yang menyebut field-nya |
+| Stream `Watch*` berakhir tanpa status akhir | batas 5 menit per stream (`service.DefaultWatch`) - normal; klien membuka ulang dan pesan pertama adalah keadaan terkini | bila berakhir jauh lebih cepat: `WriteTimeout` proxy di depan gateway |
 
-Rute → service yang dipanggil:
+Prosedur → service yang dipanggil:
 
-| Rute | Service |
+| Prosedur | Service |
 | :--- | :--- |
-| `/register`, `/login`, `/logout`, `/password-reset/*`, `/delete-account`, `/auth/*` | identity-svc (register juga → profile-svc) |
-| `/profile`, `/me` | profile-svc (region via assessment-svc) |
-| `/risk-assessments*` | assessment-svc |
-| `/coaching/*` | coaching-svc |
-| `/chat/*` | chat-svc |
-| `/culinary/*` | nutrition-svc |
-| `/dashboard` | dashboard-svc |
+| `/edge.v1.Auth/*`, `/auth/{provider}/*` (redirect OAuth, HTTP polos) | identity-svc (Register juga → profile-svc); `Auth/GetMe` tanpa panggilan |
+| `/edge.v1.Profile/*` | profile-svc (region via assessment-svc) |
+| `/edge.v1.Assessment/*` | assessment-svc |
+| `/edge.v1.Coaching/*` | coaching-svc |
+| `/edge.v1.Chat/*` | chat-svc |
+| `/edge.v1.Nutrition/*` | nutrition-svc |
+| `/edge.v1.Dashboard/*` | dashboard-svc |
+
+Label `http_route` di metrik adalah path prosedur itu sendiri.
 
 ## Triase dalam lima menit
 

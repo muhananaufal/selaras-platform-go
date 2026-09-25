@@ -97,6 +97,29 @@ lain 5–17 ms. Itu argon2id: 64 MiB dan tiga iterasi per hash, dengan sengaja
 | p99 | 14,2 ms | |
 | maks | 1,17 s | |
 
+### Pengukuran ulang setelah gateway Connect (2026-09-25, ADR-027)
+
+Skenario yang sama (`task k6 -- read`, 20 VU, lima prosedur baca per iterasi),
+kini lewat protokol Connect dengan JSON. Dua larian berturut-turut di mesin
+yang sama, stack compose tanpa observabilitas:
+
+| | REST (2026-09-07) | Connect larian 1 | Connect larian 2 |
+| :--- | ---: | ---: | ---: |
+| Permintaan | 8.200 | 8.070 | 8.145 |
+| Gagal | 0 | **0** | **0** |
+| p50 | 2,16 ms | 3,31 ms | 3,09 ms |
+| p95 | 4,37 ms | 16,58 ms | 8,69 ms |
+| p99 | 11,03 ms | 53,93 ms | - |
+
+Semua ambang SLO lulus di kedua larian (p95 < 25 ms, gagal < 1 %). Yang
+tidak disembunyikan: median naik sekitar satu milidetik, dan p95 berbeda dua
+kali lipat antara dua larian berurutan - derau mesin ini besar, jadi p95 di
+sini bukan angka yang bisa dibandingkan satu-satu. Penyebab kenaikan median
+BELUM diukur. Kandidatnya: codec JSON ketat (protojson, bukan encoding/json),
+otelhttp menggantikan otelgin, dan tiga interceptor per prosedur. Profiling
+kontinu (Pyroscope, Gelombang 1) adalah alat yang tepat untuk memisahkannya;
+sampai itu dijalankan, ini tercatat sebagai regresi yang belum dijelaskan.
+
 ## Yang ditemukan karena mengukur
 
 **RSS identity-svc menempel di plafonnya.** Saat skenario tulis dan campuran
