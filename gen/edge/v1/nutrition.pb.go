@@ -350,9 +350,9 @@ func (x *StringList) GetValues() []string {
 type UpdatePreferencesRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Allergies *string                `protobuf:"bytes,1,opt,name=allergies,proto3,oneof" json:"allergies,omitempty"`
-	// BUDGET_LEVEL_UNSPECIFIED is refused when present.
+	// Present with BUDGET_LEVEL_UNSPECIFIED clears it; absent leaves it.
 	BudgetLevel *v1.BudgetLevel `protobuf:"varint,2,opt,name=budget_level,json=budgetLevel,proto3,enum=nutrition.v1.BudgetLevel,oneof" json:"budget_level,omitempty"`
-	// COOKING_STYLE_UNSPECIFIED is refused when present.
+	// Present with COOKING_STYLE_UNSPECIFIED clears it; absent leaves it.
 	CookingStyle     *v1.CookingStyle `protobuf:"varint,3,opt,name=cooking_style,json=cookingStyle,proto3,enum=nutrition.v1.CookingStyle,oneof" json:"cooking_style,omitempty"`
 	TasteProfiles    *StringList      `protobuf:"bytes,4,opt,name=taste_profiles,json=tasteProfiles,proto3" json:"taste_profiles,omitempty"`
 	KitchenEquipment *StringList      `protobuf:"bytes,5,opt,name=kitchen_equipment,json=kitchenEquipment,proto3" json:"kitchen_equipment,omitempty"`

@@ -74,10 +74,10 @@ message StringList {
 message UpdatePreferencesRequest {
   optional string allergies = 1;
 
-  // BUDGET_LEVEL_UNSPECIFIED is refused when present.
+  // Present with BUDGET_LEVEL_UNSPECIFIED clears it; absent leaves it.
   optional nutrition.v1.BudgetLevel budget_level = 2;
 
-  // COOKING_STYLE_UNSPECIFIED is refused when present.
+  // Present with COOKING_STYLE_UNSPECIFIED clears it; absent leaves it.
   optional nutrition.v1.CookingStyle cooking_style = 3;
 
   StringList taste_profiles = 4;

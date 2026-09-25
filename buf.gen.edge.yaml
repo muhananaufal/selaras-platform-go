@@ -1,6 +1,6 @@
 version: v2
 
-# Connect code for the public contract only (ADR-027).
+# Go messages and Connect code for the public contract only (ADR-027).
 #
 # The internal services stay on grpc-go: they are called only by other Go
 # units over gRPC, and Connect adds nothing there. The edge contract is served
@@ -19,6 +19,9 @@ inputs:
       - api/proto/edge
 
 plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
   - local: protoc-gen-connect-go
     out: gen
     opt:
