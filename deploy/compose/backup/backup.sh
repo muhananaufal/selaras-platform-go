@@ -30,26 +30,50 @@ BACKUP_KEEP="${BACKUP_KEEP:-14}"              # hari
 
 log() { printf '%s backup %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
+# The eight unit roles a role file must carry to be restorable.
+UNITS="identity profile assessment coaching chat nutrition dashboard llm"
+
+# fail removes this round's temporary files and reports why it failed; the
+# caller returns 1 itself.
+fail() {
+  rm -f "$globals.tmp" "$dump.tmp"
+  log "FAILED stamp=$stamp: $*"
+}
+
+# run_once checks every step itself instead of relying on `set -e`: in the
+# service loop it is called from `if ! run_once`, and POSIX sh ignores
+# errexit inside a function called from a condition. Relying on it wrote
+# empty files under final names whenever pg_dump failed - seven empty dumps
+# and five empty role files that looked like backups. Both files are written
+# under a .tmp name and get their final names only after BOTH are verified.
 run_once() {
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   globals="$BACKUP_DIR/globals-$stamp.sql"
   dump="$BACKUP_DIR/$PGDATABASE-$stamp.dump"
 
   log "starting stamp=$stamp"
-  pg_dumpall --globals-only > "$globals.tmp"
-  mv "$globals.tmp" "$globals"
+  pg_dumpall --globals-only > "$globals.tmp" || { fail "pg_dumpall --globals-only"; return 1; }
+  pg_dump --format=custom --compress=6 --file="$dump.tmp" "$PGDATABASE" || { fail "pg_dump"; return 1; }
 
-  pg_dump --format=custom --compress=6 --file="$dump.tmp" "$PGDATABASE"
-  mv "$dump.tmp" "$dump"
+  # Verification: the archive has to be readable and hold all eight schemas,
+  # and the role file has to carry every unit role - a dump restores into
+  # schemas nobody can log in to without them.
+  listing=$(pg_restore --list "$dump.tmp") || { fail "pg_restore --list cannot read the archive"; return 1; }
+  schemas=$(printf '%s\n' "$listing" | grep -c ' SCHEMA - ' || true)
+  [ "$schemas" -ge 8 ] || { fail "archive lists $schemas schemas, want at least 8"; return 1; }
+  roles=0
+  for unit in $UNITS; do
+    if grep -q "^CREATE ROLE svc_$unit;" "$globals.tmp"; then
+      roles=$((roles + 1))
+    else
+      fail "role file lacks svc_$unit"; return 1
+    fi
+  done
 
-  # Verification: the archive has to be readable and hold all eight schemas.
-  schemas=$(pg_restore --list "$dump" | grep -c ' SCHEMA - ' || true)
-  if [ "$schemas" -lt 8 ]; then
-    log "FAILED verification: archive lists $schemas schemas, want at least 8"
-    return 1
-  fi
+  mv "$globals.tmp" "$globals" || { fail "naming the role file"; return 1; }
+  mv "$dump.tmp" "$dump" || { rm -f "$globals"; fail "naming the archive"; return 1; }
   size=$(wc -c < "$dump")
-  log "verified stamp=$stamp schemas=$schemas bytes=$size file=$dump"
+  log "verified stamp=$stamp schemas=$schemas roles=$roles bytes=$size file=$dump"
 
   # Retention by file age.
   find "$BACKUP_DIR" -maxdepth 1 -type f \( -name '*.dump' -o -name 'globals-*.sql' \) -mtime +"$BACKUP_KEEP" -print -delete \
