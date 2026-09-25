@@ -1,5 +1,5 @@
-// Command edge-gateway serves the public REST contract and forwards it to
-// the services behind it over gRPC.
+// Command edge-gateway serves the public edge.v1 Connect contract (ADR-027)
+// and forwards it to the services behind it over gRPC.
 package main
 
 import (
@@ -26,9 +26,9 @@ import (
 	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
-	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
-	"github.com/muhananaufal/selaras-platform-go/internal/edge/middleware"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/interceptor"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/oauth"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/service"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/revocation"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/token"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
@@ -119,10 +119,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	var (
-		assessmentHandler *handler.Assessment
-		regions           assessmentv1.AssessmentClient
-	)
+	var assessments assessmentv1.AssessmentClient
 	if cfg.AssessmentAddr != "" {
 		conn, err := dial(cfg.AssessmentAddr)
 		if err != nil {
@@ -130,17 +127,16 @@ func run(log *slog.Logger) error {
 		}
 		defer closeConn(conn, "assessment-svc", log)
 
-		regions = assessmentv1.NewAssessmentClient(conn)
-		assessmentHandler = handler.NewAssessment(regions)
+		assessments = assessmentv1.NewAssessmentClient(conn)
 	} else {
-		// Without assessment-svc, the assessment routes are not mounted and
-		// risk_region is sent as null. Both are honest: the first is a 404, the
-		// second a value that cannot be computed yet.
-		log.Warn("assessment-svc is not configured; its routes are not mounted",
+		// Without assessment-svc, its procedures are not mounted and risk_region
+		// is absent. Both are honest: the first answers unimplemented, the second
+		// is a value that cannot be computed yet.
+		log.Warn("assessment-svc is not configured; its procedures are not mounted",
 			"variable", "ASSESSMENT_GRPC_TARGET")
 	}
 
-	var coachingHandler *handler.Coaching
+	var coaching coachingv1.CoachingClient
 	if cfg.CoachingAddr != "" {
 		conn, err := dial(cfg.CoachingAddr)
 		if err != nil {
@@ -148,15 +144,15 @@ func run(log *slog.Logger) error {
 		}
 		defer closeConn(conn, "coaching-svc", log)
 
-		coachingHandler = handler.NewCoaching(coachingv1.NewCoachingClient(conn))
+		coaching = coachingv1.NewCoachingClient(conn)
 	} else {
-		// Without coaching-svc, its routes are not mounted. 404 is far more
-		// honest than 500 from a client connected to nothing.
-		log.Warn("coaching-svc is not configured; its routes are not mounted",
+		// Without coaching-svc, its procedures are not mounted: unimplemented is
+		// far more honest than internal from a client connected to nothing.
+		log.Warn("coaching-svc is not configured; its procedures are not mounted",
 			"variable", "COACHING_GRPC_TARGET")
 	}
 
-	var chatHandler *handler.Chat
+	var chat chatv1.ChatClient
 	if cfg.ChatAddr != "" {
 		conn, err := dial(cfg.ChatAddr)
 		if err != nil {
@@ -164,13 +160,13 @@ func run(log *slog.Logger) error {
 		}
 		defer closeConn(conn, "chat-svc", log)
 
-		chatHandler = handler.NewChat(chatv1.NewChatClient(conn))
+		chat = chatv1.NewChatClient(conn)
 	} else {
-		log.Warn("chat-svc is not configured; its routes are not mounted",
+		log.Warn("chat-svc is not configured; its procedures are not mounted",
 			"variable", "CHAT_GRPC_TARGET")
 	}
 
-	var nutritionHandler *handler.Nutrition
+	var nutrition nutritionv1.NutritionClient
 	if cfg.NutritionAddr != "" {
 		conn, err := dial(cfg.NutritionAddr)
 		if err != nil {
@@ -178,13 +174,13 @@ func run(log *slog.Logger) error {
 		}
 		defer closeConn(conn, "nutrition-svc", log)
 
-		nutritionHandler = handler.NewNutrition(nutritionv1.NewNutritionClient(conn))
+		nutrition = nutritionv1.NewNutritionClient(conn)
 	} else {
-		log.Warn("nutrition-svc is not configured; its routes are not mounted",
+		log.Warn("nutrition-svc is not configured; its procedures are not mounted",
 			"variable", "NUTRITION_GRPC_TARGET")
 	}
 
-	var dashboardHandler *handler.Dashboard
+	var dashboards dashboardv1.DashboardClient
 	if cfg.DashboardAddr != "" {
 		conn, err := dial(cfg.DashboardAddr)
 		if err != nil {
@@ -192,14 +188,13 @@ func run(log *slog.Logger) error {
 		}
 		defer closeConn(conn, "dashboard-svc", log)
 
-		dashboardHandler = handler.NewDashboard(dashboardv1.NewDashboardClient(conn))
+		dashboards = dashboardv1.NewDashboardClient(conn)
 	} else {
-		log.Warn("dashboard-svc is not configured; its route is not mounted",
+		log.Warn("dashboard-svc is not configured; its procedure is not mounted",
 			"variable", "DASHBOARD_GRPC_TARGET")
 	}
 
-	socialHandler, err := buildSocial(cfg, identityClient, redisClient, log)
-
+	social, handoff, err := buildSocial(cfg, identityClient, redisClient, log)
 	if err != nil {
 		return err
 	}
@@ -210,31 +205,44 @@ func run(log *slog.Logger) error {
 	//
 	// An authentication path without a limit is an unlimited place to guess
 	// passwords, and an LLM path without a limit is an unlimited bill.
-	limiter, err := middleware.NewLimiter(redisClient, log)
+	// X-Forwarded-For is believed only from these proxies. Empty believes
+	// nobody - right when the gateway is reached directly, as in compose.
+	proxies, err := interceptor.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return err
+	}
+	authLimit, llmLimit := interceptor.LimitsFromEnv()
+	limiter, err := interceptor.NewRateLimiter(redisClient, log, proxies,
+		edge.RateLimitPolicies(authLimit, llmLimit))
 	if err != nil {
 		return err
 	}
 
-	router := edge.NewRouter(edge.Deps{
+	handler, err := edge.NewHandler(edge.Deps{
 		Identity:    identityClient,
 		Profiles:    profilev1.NewProfileClient(profileConn),
+		Regions:     assessments,
+		Assessments: assessments,
+		Coaching:    coaching,
+		Chat:        chat,
+		Nutrition:   nutrition,
+		Dashboards:  dashboards,
 		Tokens:      verifier,
 		Revocations: revocations,
+		Limiter:     limiter,
+		Social:      social,
+		Handoff:     handoff,
 		Probes:      probes,
 		Now:         time.Now,
-		Social:      socialHandler,
-		Assessments: assessmentHandler,
-		Coaching:    coachingHandler,
-		Chat:        chatHandler,
-		Nutrition:   nutritionHandler,
-		Dashboards:  dashboardHandler,
-		Regions:     regions,
-		Limiter:     limiter,
+		Watch:       service.DefaultWatch,
 	})
+	if err != nil {
+		return err
+	}
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: router,
+		Handler: handler,
 		// Timeouts are set explicitly. A Go HTTP server without timeouts holds
 		// hanging connections forever, and that is the cheapest way to exhaust a
 		// gateway's resources.
@@ -362,20 +370,20 @@ func buildSocial(
 	identity identityv1.IdentityClient,
 	redisClient *goredis.Client,
 	log *slog.Logger,
-) (*handler.Social, error) {
+) (*service.Social, service.HandoffCodes, error) {
 	social := cfg.Social
 
 	if !social.Configured() {
 		if missing := social.Missing(); len(missing) < 4 {
-			return nil, fmt.Errorf("social sign-in is partly configured; missing: %v", missing)
+			return nil, nil, fmt.Errorf("social sign-in is partly configured; missing: %v", missing)
 		}
 		log.Warn("social sign-in is not configured; its routes are not mounted")
-		return nil, nil //nolint:nilnil // nil here means "not mounted", and that is a valid state
+		return nil, nil, nil
 	}
 
 	store, err := oauth.NewStore(redisClient, 10*time.Minute, time.Minute)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	google, err := oauth.NewGoogle(oauth.GoogleConfig{
@@ -384,14 +392,14 @@ func buildSocial(
 		RedirectURL:  social.GoogleRedirectURL,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	log.Info("social sign-in is configured", "provider", "google")
-	return handler.NewSocial(
+	return service.NewSocial(
 		identity,
-		map[string]handler.ProviderClient{"google": google},
+		map[string]service.ProviderClient{"google": google},
 		store,
 		social.FrontendURL,
-	), nil
+	), store, nil
 }

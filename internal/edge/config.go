@@ -38,6 +38,11 @@ type Config struct {
 	TokenIssuer   string
 	RevocationTTL time.Duration
 	Social        SocialConfig
+
+	// TrustedProxies is the comma-separated CIDR list whose X-Forwarded-For
+	// may be believed (TRUSTED_PROXY_CIDRS). Empty - the default - believes
+	// nobody, which is right when the gateway is reached directly.
+	TrustedProxies string
 }
 
 // LoadConfig reads the configuration and refuses an incomplete one.
@@ -58,6 +63,7 @@ func LoadConfig() (Config, error) {
 		DashboardAddr:  os.Getenv("DASHBOARD_GRPC_TARGET"),
 		NutritionAddr:  os.Getenv("NUTRITION_GRPC_TARGET"),
 		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
+		TrustedProxies: os.Getenv("TRUSTED_PROXY_CIDRS"),
 	}
 
 	var missing []string

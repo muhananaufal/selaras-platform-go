@@ -113,5 +113,8 @@ message WatchConversationRequest {
 
 message WatchConversationResponse {
   Conversation conversation = 1;
+
+  // The NEWEST page of the conversation (up to 100 messages), oldest first -
+  // not the whole history. The history is read through GetConversation.
   repeated ChatMessage messages = 2;
 }

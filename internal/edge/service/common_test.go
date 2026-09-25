@@ -1,4 +1,4 @@
-package handler
+package service
 
 import (
 	"testing"
@@ -18,14 +18,27 @@ func TestAnIdempotencyKeyIsBoundToItsUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a, b := idempotencyKeyFor(alice, "retry-1"), idempotencyKeyFor(bob, "retry-1")
+	a, b := keyFor(alice, "retry-1"), keyFor(bob, "retry-1")
 	if a.GetValue() == b.GetValue() {
 		t.Fatal("two users sharing a client key must not share a job key")
 	}
 	if a.GetValue() != alice.UserID.String()+"\x1f"+"retry-1" {
 		t.Fatalf("unexpected shape %q", a.GetValue())
 	}
-	if idempotencyKeyFor(alice, "") != nil {
+	if keyFor(alice, "") != nil || keyFor(alice, "   ") != nil {
 		t.Fatal("no header means no key, so the use case derives its own")
+	}
+}
+
+func TestInvalidStoredJSONBecomesAnAbsentField(t *testing.T) {
+	if jsonValue(`{"broken":`) != nil {
+		t.Fatal("corrupt stored JSON must become an absent field, not an error")
+	}
+	if jsonValue("") != nil {
+		t.Fatal("empty stored JSON must become an absent field")
+	}
+	v := jsonValue(`{"summary":"ok","score":3}`)
+	if v.GetStructValue().GetFields()["summary"].GetStringValue() != "ok" {
+		t.Fatalf("valid JSON did not survive: %v", v)
 	}
 }
