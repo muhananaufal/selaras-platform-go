@@ -36,19 +36,13 @@ func deps(t *testing.T, pattern string) []string {
 	return list
 }
 
-// violations returns the dependencies matching any forbidden prefix. A prefix
-// ending in "$" must match exactly (net/http, not net/http/httptrace from
-// a harmless helper).
+// violations returns the dependencies that are a forbidden package or live
+// under one ("net/http" also catches net/http/httptrace and the rest of the
+// tree: a transport is a transport, whichever corner of it is imported).
 func violations(list []string, forbidden []string) []string {
 	var found []string
 	for _, dep := range list {
 		for _, bad := range forbidden {
-			if exact, ok := strings.CutSuffix(bad, "$"); ok {
-				if dep == exact {
-					found = append(found, dep)
-				}
-				continue
-			}
 			if dep == bad || strings.HasPrefix(dep, bad+"/") {
 				found = append(found, dep)
 			}
@@ -81,7 +75,7 @@ func TestEveryDomainKnowsNothingAboutInfrastructure(t *testing.T) {
 				"connectrpc.com/connect",
 				"github.com/twmb/franz-go",
 				"github.com/redis/go-redis",
-				"net/http$",
+				"net/http",
 				module + "/gen",
 				module + "/internal/platform",
 				module + "/internal/" + unit + "/adapter",
@@ -106,7 +100,7 @@ func TestEveryUseCaseLayerStaysOffTheWire(t *testing.T) {
 				"google.golang.org/grpc",
 				"connectrpc.com/connect",
 				"github.com/twmb/franz-go",
-				"net/http$",
+				"net/http",
 				module + "/internal/" + unit + "/adapter",
 			}, otherUnits(unit)...)
 
