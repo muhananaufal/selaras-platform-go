@@ -20,6 +20,10 @@ on:
         type: choice
         options: [cloud]
         default: cloud
+      budget_override:
+        description: "Alasan deploy walau error budget habis (perbaikan reliabilitas/keamanan); kosong = patuhi freeze"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -129,6 +133,26 @@ jobs:
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
+
+      # Error budget policy (docs/runbook/error-budget.md): a spent budget
+      # freezes feature releases. The gate asks the cluster's Prometheus
+      # through a port-forward; no Prometheus or no traffic is a warning,
+      # not a block. A fix that has to ship anyway is dispatched with
+      # budget_override naming the reason.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Error budget gate
+        env:
+          BUDGET_OVERRIDE: ${{ github.event.inputs.budget_override }}
+        run: |
+          go build -o bin/ ./cmd/slo-budget
+          kubectl -n observability port-forward svc/prometheus 19090:9090 >/tmp/port-forward.log 2>&1 &
+          pf=$!
+          trap 'kill $pf 2>/dev/null || true' EXIT
+          for _ in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:19090/-/ready && break; sleep 1; done
+          bash deploy/slo/gate.sh http://127.0.0.1:19090
 
       - name: Migrations and topics
         run: |
