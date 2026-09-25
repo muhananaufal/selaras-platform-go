@@ -1,6 +1,8 @@
 package crypto_test
 
 import (
+	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 
@@ -133,6 +135,45 @@ func TestVerifyRejectsMalformedHash(t *testing.T) {
 	for _, bad := range []string{"", "not-a-hash", "$argon2id$v=19$broken", "$bcrypt$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA"} {
 		if _, _, err := h.Verify(domain.PasswordHash(bad), mustPassword(t, "some password")); err == nil {
 			t.Errorf("Verify(%q) returned no error for a malformed hash", bad)
+		}
+	}
+}
+
+// TestVerifyRejectsSaltAndTagOutsideTheirBounds pins the lengths a stored hash
+// may carry. RFC 9106 section 3.1 puts the tag at 4 bytes or more, and
+// section 4 accepts a salt no shorter than 64 bits; the upper bound is this
+// service's own, so a tampered row cannot ask for an arbitrarily large
+// derivation. Well-formed hashes of the lengths this service writes (16-byte
+// salt, 32-byte tag) still verify.
+func TestVerifyRejectsSaltAndTagOutsideTheirBounds(t *testing.T) {
+	t.Parallel()
+
+	h := crypto.NewArgon2idHasher(crypto.FastParamsForTests())
+	pw := mustPassword(t, "some password")
+	b64 := func(n int) string { return base64.RawStdEncoding.EncodeToString(make([]byte, n)) }
+	hash := func(salt, tag int) domain.PasswordHash {
+		return domain.PasswordHash("$argon2id$v=19$m=8192,t=1,p=1$" + b64(salt) + "$" + b64(tag))
+	}
+
+	for _, tc := range []struct {
+		name      string
+		salt, tag int
+	}{
+		{"salt shorter than 64 bits", 7, 32},
+		{"tag shorter than 4 bytes", 16, 3},
+		{"salt beyond the service bound", 1025, 32},
+		{"tag beyond the service bound", 16, 1025},
+	} {
+		if _, _, err := h.Verify(hash(tc.salt, tc.tag), pw); !errors.Is(err, crypto.ErrMalformedHash) {
+			t.Errorf("%s: Verify returned %v, want ErrMalformedHash", tc.name, err)
+		}
+	}
+
+	// The bounds are inclusive: the smallest and largest accepted lengths are
+	// parsed (and then simply do not match this password).
+	for _, tc := range []struct{ salt, tag int }{{8, 4}, {1024, 1024}} {
+		if _, _, err := h.Verify(hash(tc.salt, tc.tag), pw); errors.Is(err, crypto.ErrMalformedHash) {
+			t.Errorf("salt %d, tag %d: rejected as malformed, want it parsed", tc.salt, tc.tag)
 		}
 	}
 }
