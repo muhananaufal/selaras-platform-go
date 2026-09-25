@@ -135,7 +135,7 @@ func (h *Argon2idHasher) Verify(stored domain.PasswordHash, candidate domain.Pas
 		return false, false, err
 	}
 
-	got := h.bounded([]byte(candidate.Expose()), salt, p, uint32(len(want)))
+	got := h.bounded([]byte(candidate.Expose()), salt, p, p.KeyLength)
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return false, false, nil
 	}
@@ -181,7 +181,24 @@ func decode(encoded string) (Params, []byte, []byte, error) {
 		return Params{}, nil, nil, ErrMalformedHash
 	}
 
-	p.SaltLength = uint32(len(salt))
-	p.KeyLength = uint32(len(key))
+	// RFC 9106 section 3.1 puts the tag at 4 bytes or more, and section 4
+	// accepts a salt no shorter than 64 bits. The upper bound is this
+	// service's own - it writes 16 and 32 bytes - so that a tampered row
+	// cannot ask for an arbitrarily large derivation. Checked before the
+	// conversion below, which is then within uint32 by construction.
+	if len(salt) < minSaltLength || len(salt) > maxStoredLength ||
+		len(key) < minKeyLength || len(key) > maxStoredLength {
+		return Params{}, nil, nil, fmt.Errorf("%w: salt %d bytes, tag %d bytes", ErrMalformedHash, len(salt), len(key))
+	}
+
+	p.SaltLength = uint32(len(salt)) //nolint:gosec // G115: bounded to maxStoredLength above
+	p.KeyLength = uint32(len(key))   //nolint:gosec // G115: bounded to maxStoredLength above
 	return p, salt, key, nil
 }
+
+// Length bounds for a stored hash; see decode.
+const (
+	minSaltLength   = 8
+	minKeyLength    = 4
+	maxStoredLength = 1024
+)
