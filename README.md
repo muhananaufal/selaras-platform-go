@@ -119,7 +119,7 @@ dilakukan saat pukul tiga pagi.
 
 | | |
 | :--- | :--- |
-| **Domain bebas library** | `internal/<unit>/domain` tidak mengimpor adapter apa pun; penyedia LLM palsu tidak bisa menyentuh jaringan karena paket induknya tidak punya paket jaringan |
+| **Domain bebas library** | `internal/<unit>/domain` tidak mengimpor adapter, transport, broker, basis data, maupun unit lain, dan itu dijaga fitness function atas grafik dependensi nyata di `test/architecture` untuk ketujuh unit; penyedia LLM palsu tidak bisa menyentuh jaringan karena paket induknya tidak punya paket jaringan |
 | **Test yang disaksikan merah** | Bugfix membawa reproduksi yang merah lebih dulu; sekitar lima puluh mutasi sepanjang F6–F9 menyingkap test yang tidak menguji apa-apa |
 | **Nol** | Nol `TODO`, nol kredensial hardcode, nol `interface{}` telanjang, nol galat yang ditelan; `golangci-lint` bersih |
 | **Kontrak dulu** | `api/proto` adalah satu-satunya sumber kebenaran, termasuk kontrak publik `edge.v1`; kode Go, kode Connect, dan `api/openapi/edge-v1.yaml` di-generate darinya dan CI menolak hasil generate yang basi; perubahan breaking terdeteksi `buf breaking` |
