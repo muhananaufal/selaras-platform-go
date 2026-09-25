@@ -16,7 +16,10 @@ trap cleanup EXIT
 
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=throwaway "$IMAGE" >/dev/null
 for _ in $(seq 1 60); do
-  docker exec "$NAME" pg_isready -U postgres >/dev/null 2>&1 && break
+  # Over TCP, not the socket: the image's entrypoint first runs a temporary
+  # server on the socket only for initialisation and then restarts, and a
+  # socket check can catch that one just before it shuts down.
+  docker exec "$NAME" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1 && break
   sleep 1
 done
 docker exec "$NAME" psql -U postgres -v ON_ERROR_STOP=1 -qc "CREATE ROLE svc_existing LOGIN PASSWORD 'old'"
