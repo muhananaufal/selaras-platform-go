@@ -490,14 +490,14 @@ func (GuideStatus) EnumDescriptor() ([]byte, []int) {
 	return file_nutrition_v1_nutrition_proto_rawDescGZIP(), []int{8}
 }
 
-// StringList membuat "tidak dikirim" bisa dibedakan dari "dikirim kosong".
+// StringList makes "not sent" distinguishable from "sent empty".
 //
-// proto3 tidak mengenal `optional repeated`: daftar kosong dan daftar yang
-// tidak disertakan terlihat SAMA PERSIS di kawat. Tanpa pembungkus ini,
-// UpdatePreferences tidak punya cara menyatakan "jangan sentuh selera saya",
-// dan satu PATCH yang hanya mengirim alergi akan menghapus selera serta
-// peralatan dapur pengguna. Itu bug yang benar-benar ada di sistem lama (B16),
-// dan ia lahir dari KONTRAKNYA, bukan dari kodenya.
+// proto3 has no `optional repeated`: an empty list and a list not included
+// look EXACTLY THE SAME on the wire. Without this wrapper, UpdatePreferences
+// has no way to say "do not touch my tastes", and one PATCH sending only
+// allergies would wipe the user's tastes and kitchen equipment. That bug
+// really existed in the legacy system (B16), and it was born from its
+// CONTRACT, not its code.
 type StringList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Values        []string               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
@@ -724,7 +724,8 @@ type DailyMealGuide struct {
 	UserId    string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	GuideDate string                 `protobuf:"bytes,3,opt,name=guide_date,json=guideDate,proto3" json:"guide_date,omitempty"`
 	Input     *DailyGuideInput       `protobuf:"bytes,4,opt,name=input,proto3" json:"input,omitempty"`
-	// Waktu makan ditentukan jam server saat panduan diminta (D10).
+	// The meal time is determined by the server clock when the guide is
+	// requested (D10).
 	MealTime      MealTime       `protobuf:"varint,5,opt,name=meal_time,json=mealTime,proto3,enum=nutrition.v1.MealTime" json:"meal_time,omitempty"`
 	Status        GuideStatus    `protobuf:"varint,6,opt,name=status,proto3,enum=nutrition.v1.GuideStatus" json:"status,omitempty"`
 	GuideJson     *string        `protobuf:"bytes,7,opt,name=guide_json,json=guideJson,proto3,oneof" json:"guide_json,omitempty"`
@@ -939,11 +940,11 @@ func (x *GetHubDataResponse) GetPage() *v1.PageResponse {
 	return nil
 }
 
-// UpdatePreferencesRequest adalah pembaruan PARSIAL.
+// UpdatePreferencesRequest is a PARTIAL update.
 //
-// Bidang yang tidak disertakan DIBIARKAN apa adanya; yang disertakan diganti.
-// Tiap bidang memakai presence eksplisit supaya keduanya bisa dibedakan - lihat
-// StringList di atas untuk alasan lengkapnya.
+// Fields not included are LEFT as they are; fields included are replaced. Every
+// field uses explicit presence so the two can be told apart - see StringList
+// above for the full reason.
 type UpdatePreferencesRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	UserId           string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`

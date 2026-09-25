@@ -71,18 +71,17 @@ func (Sex) EnumDescriptor() ([]byte, []int) {
 	return file_profile_v1_profile_proto_rawDescGZIP(), []int{0}
 }
 
-// Seluruh field yang boleh kosong ditandai optional dan dipetakan apa
-// adanya. Sistem lama menjalankan Carbon::parse(null) pada tanggal lahir
-// yang belum diisi, sehingga umur tampil 0 dan tanggal lahir tampil hari
-// ini (temuan B6).
+// Every field that may be empty is marked optional and mapped as it is. The
+// legacy system ran Carbon::parse(null) on a date of birth not yet filled
+// in, so the age showed as 0 and the date of birth as today (finding B6).
 type UserProfile struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	UserId    string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	FirstName *string                `protobuf:"bytes,3,opt,name=first_name,json=firstName,proto3,oneof" json:"first_name,omitempty"`
 	LastName  *string                `protobuf:"bytes,4,opt,name=last_name,json=lastName,proto3,oneof" json:"last_name,omitempty"`
-	// Format ISO-8601 tanggal saja: 1990-05-17. Bukan Timestamp, karena
-	// tanggal lahir tidak punya jam dan tidak punya zona waktu.
+	// ISO-8601 date-only format: 1990-05-17. Not a Timestamp, because a date
+	// of birth has no time and no time zone.
 	DateOfBirth        *string        `protobuf:"bytes,5,opt,name=date_of_birth,json=dateOfBirth,proto3,oneof" json:"date_of_birth,omitempty"`
 	Sex                Sex            `protobuf:"varint,6,opt,name=sex,proto3,enum=profile.v1.Sex" json:"sex,omitempty"`
 	CountryOfResidence *string        `protobuf:"bytes,7,opt,name=country_of_residence,json=countryOfResidence,proto3,oneof" json:"country_of_residence,omitempty"`
@@ -185,16 +184,16 @@ func (x *UserProfile) GetTimestamps() *v1.Timestamps {
 	return nil
 }
 
-// Berkunci user_id, bukan user_profile_id.
+// Keyed on user_id, not user_profile_id.
 //
-// Pemanggilnya selalu punya user_id dari klaim token, sementara
-// user_profile_id bisa kosong - dan justru pengguna yang profilnya belum
-// ada adalah yang paling butuh endpoint ini. Biayanya sama: satu lewat
-// kunci primer, satu lewat indeks unik.
+// The caller always has user_id from the token claims, while
+// user_profile_id may be empty - and it is precisely the user whose profile
+// does not exist yet who needs this endpoint the most. The cost is the
+// same: one through the primary key, one through a unique index.
 //
-// Klaim user_profile_id di token tetap berguna, tetapi bukan untuk
-// service ini: ia dipakai unit lain yang meng-FK user_profiles supaya
-// tidak perlu bertanya ke profile-svc lebih dulu (ADR-007).
+// The user_profile_id claim in the token remains useful, but not for this
+// service: it is used by the other units that FK user_profiles so they need
+// not ask profile-svc first (ADR-007).
 type GetProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -283,11 +282,12 @@ func (x *GetProfileResponse) GetProfile() *UserProfile {
 	return nil
 }
 
-// Membuat profil bila belum ada, seperti updateOrCreate di sistem lama.
+// Creates the profile if it does not exist, like updateOrCreate in the
+// legacy system.
 //
-// Tanpa itu, pengguna yang pembuatan profilnya gagal saat mendaftar tidak
-// akan pernah bisa punya profil - padahal ADR-002 aturan 1 menyatakan
-// keadaan itu memang boleh terjadi dan harus bisa dipulihkan.
+// Without that, a user whose profile creation failed at registration could
+// never have a profile - even though ADR-002 rule 1 says that state may
+// happen and has to be recoverable.
 type UpdateProfileRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	UserId             string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -556,7 +556,7 @@ func (x *ResolveProfileIdRequest) GetUserId() string {
 	return ""
 }
 
-// Kosong bila profil belum ada. Bukan galat.
+// Empty when the profile does not exist yet. Not an error.
 type ResolveProfileIdResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserProfileId string                 `protobuf:"bytes,1,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`

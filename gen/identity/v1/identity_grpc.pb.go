@@ -33,28 +33,27 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Autentikasi dan kredensial. Data demografis tinggal di profile.v1:
-// keduanya menjawab pertanyaan yang berbeda, dan user_profiles adalah hub
-// yang di-FK seluruh domain sementara users hampir tidak dipakai siapa pun
-// kecuali gateway (ADR-002).
+// Authentication and credentials. Demographic data lives in profile.v1: the
+// two answer different questions, and user_profiles is the hub every domain
+// FKs to while users is hardly used by anyone except the gateway (ADR-002).
 type IdentityClient interface {
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
 	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutResponse, error)
-	// Dua langkah, karena sistem lama tidak punya langkah pertama sama
-	// sekali: endpoint resetnya publik dan langsung mengganti kata sandi
-	// siapa pun yang emailnya diketahui (temuan S1).
+	// Two steps, because the legacy system had no first step at all: its
+	// reset endpoint was public and directly changed the password of anyone
+	// whose email was known (finding S1).
 	RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error)
 	ConfirmPasswordReset(ctx context.Context, in *ConfirmPasswordResetRequest, opts ...grpc.CallOption) (*ConfirmPasswordResetResponse, error)
 	DeleteAccount(ctx context.Context, in *DeleteAccountRequest, opts ...grpc.CallOption) (*DeleteAccountResponse, error)
 	ExchangeSocialToken(ctx context.Context, in *ExchangeSocialTokenRequest, opts ...grpc.CallOption) (*ExchangeSocialTokenResponse, error)
-	// Dipanggil gateway HANYA saat cache pencabutan tidak tahu, bukan di
-	// setiap request. Gateway memverifikasi tanda tangan token sendiri
-	// dengan kunci publik (ADR-020); yang tidak bisa ia ketahui sendiri
-	// hanyalah generasi token yang sedang berlaku.
+	// Called by the gateway ONLY when the revocation cache does not know, not
+	// on every request. The gateway verifies the token signature itself with
+	// the public key (ADR-020); the only thing it cannot know on its own is
+	// the token generation currently in effect.
 	//
-	// Menggantikan VerifyToken, yang menempatkan identity-svc di jalur
-	// terpanas - persis panggilan jaringan wajib yang dihapus ADR-007.
+	// Replaces VerifyToken, which put identity-svc on the hottest path -
+	// exactly the mandatory network call ADR-007 removed.
 	GetTokenGeneration(ctx context.Context, in *GetTokenGenerationRequest, opts ...grpc.CallOption) (*GetTokenGenerationResponse, error)
 }
 
@@ -150,28 +149,27 @@ func (c *identityClient) GetTokenGeneration(ctx context.Context, in *GetTokenGen
 // All implementations must embed UnimplementedIdentityServer
 // for forward compatibility.
 //
-// Autentikasi dan kredensial. Data demografis tinggal di profile.v1:
-// keduanya menjawab pertanyaan yang berbeda, dan user_profiles adalah hub
-// yang di-FK seluruh domain sementara users hampir tidak dipakai siapa pun
-// kecuali gateway (ADR-002).
+// Authentication and credentials. Demographic data lives in profile.v1: the
+// two answer different questions, and user_profiles is the hub every domain
+// FKs to while users is hardly used by anyone except the gateway (ADR-002).
 type IdentityServer interface {
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	Login(context.Context, *LoginRequest) (*LoginResponse, error)
 	Logout(context.Context, *LogoutRequest) (*LogoutResponse, error)
-	// Dua langkah, karena sistem lama tidak punya langkah pertama sama
-	// sekali: endpoint resetnya publik dan langsung mengganti kata sandi
-	// siapa pun yang emailnya diketahui (temuan S1).
+	// Two steps, because the legacy system had no first step at all: its
+	// reset endpoint was public and directly changed the password of anyone
+	// whose email was known (finding S1).
 	RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error)
 	ConfirmPasswordReset(context.Context, *ConfirmPasswordResetRequest) (*ConfirmPasswordResetResponse, error)
 	DeleteAccount(context.Context, *DeleteAccountRequest) (*DeleteAccountResponse, error)
 	ExchangeSocialToken(context.Context, *ExchangeSocialTokenRequest) (*ExchangeSocialTokenResponse, error)
-	// Dipanggil gateway HANYA saat cache pencabutan tidak tahu, bukan di
-	// setiap request. Gateway memverifikasi tanda tangan token sendiri
-	// dengan kunci publik (ADR-020); yang tidak bisa ia ketahui sendiri
-	// hanyalah generasi token yang sedang berlaku.
+	// Called by the gateway ONLY when the revocation cache does not know, not
+	// on every request. The gateway verifies the token signature itself with
+	// the public key (ADR-020); the only thing it cannot know on its own is
+	// the token generation currently in effect.
 	//
-	// Menggantikan VerifyToken, yang menempatkan identity-svc di jalur
-	// terpanas - persis panggilan jaringan wajib yang dihapus ADR-007.
+	// Replaces VerifyToken, which put identity-svc on the hottest path -
+	// exactly the mandatory network call ADR-007 removed.
 	GetTokenGeneration(context.Context, *GetTokenGenerationRequest) (*GetTokenGenerationResponse, error)
 	mustEmbedUnimplementedIdentityServer()
 }

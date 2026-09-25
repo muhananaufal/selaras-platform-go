@@ -30,29 +30,29 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Penilaian risiko kardiovaskular berbasis SCORE2, SCORE2-OP, dan
+// Cardiovascular risk assessment based on SCORE2, SCORE2-OP, and
 // SCORE2-Diabetes.
 //
-// Seluruh jawaban proksi dimodelkan sebagai enum bernilai semantik, bukan
-// string berbahasa Indonesia seperti di sistem lama. String itu detail
-// presentasi; memasukkannya ke kontrak berarti satu salah ketik diam-diam
-// menghasilkan skor yang berbeda. Pemetaan enum ke nilai lama hidup di
-// adapter dan diuji terhadap golden vector.
+// Every proxy answer is modelled as a semantically valued enum, not an
+// Indonesian string as in the legacy system. Those strings are a
+// presentation detail; putting them into the contract means one typo
+// silently yields a different score. The mapping from enum to legacy value
+// lives in the adapter and is tested against golden vectors.
 type AssessmentClient interface {
-	// Mengembalikan skor numerik dengan segera. Personalisasi naratif
-	// dikerjakan terpisah karena ia memanggil LLM.
+	// Returns the numeric score immediately. The narrative personalisation is
+	// done separately because it calls the LLM.
 	StartAssessment(ctx context.Context, in *StartAssessmentRequest, opts ...grpc.CallOption) (*StartAssessmentResponse, error)
-	// Menjawab segera: pekerjaan dititipkan lewat outbox, bukan dikerjakan
-	// di dalam request seperti sistem lama.
+	// Answers immediately: the work is handed to the outbox, not done inside
+	// the request as in the legacy system.
 	RequestPersonalization(ctx context.Context, in *RequestPersonalizationRequest, opts ...grpc.CallOption) (*RequestPersonalizationResponse, error)
 	GetAssessment(ctx context.Context, in *GetAssessmentRequest, opts ...grpc.CallOption) (*GetAssessmentResponse, error)
 	ListAssessments(ctx context.Context, in *ListAssessmentsRequest, opts ...grpc.CallOption) (*ListAssessmentsResponse, error)
-	// Memetakan negara tempat tinggal ke wilayah kalibrasi SCORE2.
+	// Maps the country of residence to its SCORE2 calibration region.
 	//
-	// Ia ada di sini, bukan di profile-svc, karena risk_region adalah konsep
-	// KLINIS: ia bagian dari kalibrasi model, bukan data demografis
-	// (ADR-002 aturan 3). profile-svc menyimpan negaranya; yang tahu artinya
-	// bagi risiko adalah service ini.
+	// It lives here, not in profile-svc, because risk_region is a CLINICAL
+	// concept: it is part of the model calibration, not demographic data
+	// (ADR-002 rule 3). profile-svc stores the country; the one that knows
+	// what it means for risk is this service.
 	ResolveRiskRegion(ctx context.Context, in *ResolveRiskRegionRequest, opts ...grpc.CallOption) (*ResolveRiskRegionResponse, error)
 }
 
@@ -118,29 +118,29 @@ func (c *assessmentClient) ResolveRiskRegion(ctx context.Context, in *ResolveRis
 // All implementations must embed UnimplementedAssessmentServer
 // for forward compatibility.
 //
-// Penilaian risiko kardiovaskular berbasis SCORE2, SCORE2-OP, dan
+// Cardiovascular risk assessment based on SCORE2, SCORE2-OP, and
 // SCORE2-Diabetes.
 //
-// Seluruh jawaban proksi dimodelkan sebagai enum bernilai semantik, bukan
-// string berbahasa Indonesia seperti di sistem lama. String itu detail
-// presentasi; memasukkannya ke kontrak berarti satu salah ketik diam-diam
-// menghasilkan skor yang berbeda. Pemetaan enum ke nilai lama hidup di
-// adapter dan diuji terhadap golden vector.
+// Every proxy answer is modelled as a semantically valued enum, not an
+// Indonesian string as in the legacy system. Those strings are a
+// presentation detail; putting them into the contract means one typo
+// silently yields a different score. The mapping from enum to legacy value
+// lives in the adapter and is tested against golden vectors.
 type AssessmentServer interface {
-	// Mengembalikan skor numerik dengan segera. Personalisasi naratif
-	// dikerjakan terpisah karena ia memanggil LLM.
+	// Returns the numeric score immediately. The narrative personalisation is
+	// done separately because it calls the LLM.
 	StartAssessment(context.Context, *StartAssessmentRequest) (*StartAssessmentResponse, error)
-	// Menjawab segera: pekerjaan dititipkan lewat outbox, bukan dikerjakan
-	// di dalam request seperti sistem lama.
+	// Answers immediately: the work is handed to the outbox, not done inside
+	// the request as in the legacy system.
 	RequestPersonalization(context.Context, *RequestPersonalizationRequest) (*RequestPersonalizationResponse, error)
 	GetAssessment(context.Context, *GetAssessmentRequest) (*GetAssessmentResponse, error)
 	ListAssessments(context.Context, *ListAssessmentsRequest) (*ListAssessmentsResponse, error)
-	// Memetakan negara tempat tinggal ke wilayah kalibrasi SCORE2.
+	// Maps the country of residence to its SCORE2 calibration region.
 	//
-	// Ia ada di sini, bukan di profile-svc, karena risk_region adalah konsep
-	// KLINIS: ia bagian dari kalibrasi model, bukan data demografis
-	// (ADR-002 aturan 3). profile-svc menyimpan negaranya; yang tahu artinya
-	// bagi risiko adalah service ini.
+	// It lives here, not in profile-svc, because risk_region is a CLINICAL
+	// concept: it is part of the model calibration, not demographic data
+	// (ADR-002 rule 3). profile-svc stores the country; the one that knows
+	// what it means for risk is this service.
 	ResolveRiskRegion(context.Context, *ResolveRiskRegionRequest) (*ResolveRiskRegionResponse, error)
 	mustEmbedUnimplementedAssessmentServer()
 }

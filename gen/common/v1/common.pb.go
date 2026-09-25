@@ -22,18 +22,17 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Kode galat yang dipetakan gateway menjadi status HTTP. Menyimpannya di
-// kontrak membuat pemetaan itu berada di satu tempat, bukan tersebar di
-// setiap handler.
+// Error codes the gateway maps to HTTP statuses. Keeping them in the
+// contract puts that mapping in one place, not scattered across every
+// handler.
 type ErrorCode int32
 
 const (
 	ErrorCode_ERROR_CODE_UNSPECIFIED      ErrorCode = 0
 	ErrorCode_ERROR_CODE_INVALID_ARGUMENT ErrorCode = 1
 	ErrorCode_ERROR_CODE_UNAUTHENTICATED  ErrorCode = 2
-	// Dipakai juga untuk sumber daya milik pengguna lain. Membedakan
-	// "tidak ada" dari "bukan milikmu" membocorkan keberadaannya
-	// (temuan S9).
+	// Also used for resources owned by another user. Telling "does not exist"
+	// from "not yours" leaks its existence (finding S9).
 	ErrorCode_ERROR_CODE_NOT_FOUND           ErrorCode = 3
 	ErrorCode_ERROR_CODE_ALREADY_EXISTS      ErrorCode = 4
 	ErrorCode_ERROR_CODE_FAILED_PRECONDITION ErrorCode = 5
@@ -95,19 +94,18 @@ func (ErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_common_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
-// Identitas pengguna. Dibawa di dalam token dan di header setiap event,
-// sehingga tidak ada unit yang perlu memanggil identity-svc per request
-// (ADR-007).
+// The user's identity. Carried inside the token and in the header of every
+// event, so no unit needs to call identity-svc per request (ADR-007).
 //
-// Kedua id berbentuk string di seluruh kontrak publik maupun internal.
-// Di balik layar sebagiannya bigint dan sebagiannya uuid; kontrak sengaja
-// tidak membocorkan perbedaan itu (ADR-005).
+// Both ids are strings throughout the public and internal contracts. Behind
+// the scenes some are bigint and some uuid; the contract deliberately does
+// not leak that difference (ADR-005).
 type Identity struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	// Kosong bila profil belum dibuat. Itu state yang sah, bukan galat:
-	// pendaftaran lewat penyedia sosial memang tidak membuat profil
-	// (temuan B7). Setiap konsumen wajib menanganinya.
+	// Empty when the profile has not been created yet. That is a valid state,
+	// not an error: registration through a social provider indeed creates no
+	// profile (finding B7). Every consumer has to handle it.
 	UserProfileId string `protobuf:"bytes,2,opt,name=user_profile_id,json=userProfileId,proto3" json:"user_profile_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -157,7 +155,7 @@ func (x *Identity) GetUserProfileId() string {
 	return ""
 }
 
-// Jejak audit yang sama untuk seluruh entitas.
+// The same audit trail for every entity.
 type Timestamps struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -210,9 +208,9 @@ func (x *Timestamps) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// Paginasi berbasis kursor. Offset sengaja tidak dipakai: ia melewatkan
-// atau menggandakan baris ketika data berubah di tengah penelusuran,
-// dan riwayat percakapan justru bertambah saat sedang dibaca.
+// Cursor-based pagination. Offsets are deliberately not used: they skip or
+// duplicate rows when the data changes mid-traversal, and conversation
+// history grows precisely while it is being read.
 type PageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
@@ -309,9 +307,9 @@ func (x *PageResponse) GetNextPageToken() string {
 	return ""
 }
 
-// Kunci idempotensi untuk operasi yang memicu pekerjaan asinkron.
-// Pengiriman lewat broker bersifat at-least-once, sehingga konsumen wajib
-// idempoten (ADR-004).
+// The idempotency key for operations that trigger asynchronous work.
+// Delivery through the broker is at-least-once, so consumers have to be
+// idempotent (ADR-004).
 type IdempotencyKey struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
