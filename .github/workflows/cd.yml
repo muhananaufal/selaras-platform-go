@@ -29,6 +29,7 @@ permissions:
   contents: read
   packages: write
   id-token: write
+  attestations: write
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -106,6 +107,40 @@ jobs:
       - name: Push
         run: docker push --all-tags ${{ env.IMAGE_PREFIX }}/${{ matrix.unit }}
 
+      # What was pushed is described and vouched for: a CycloneDX SBOM of the
+      # image and a SLSA build provenance, both signed keyless (Sigstore,
+      # through the workflow's OIDC identity) and pushed next to the image.
+      # The deploy job refuses an image without them
+      # (deploy/supply-chain/verify.sh). No storage record: those exist only
+      # for organization-owned repositories.
+      - name: Image digest
+        id: digest
+        run: |
+          ref=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_PREFIX/${{ matrix.unit }}:${{ github.ref_name }}")
+          echo "digest=${ref##*@}" >> "$GITHUB_OUTPUT"
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/${{ matrix.unit }}:${{ github.ref_name }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          syft-version: v1.51.1
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest the build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_PREFIX }}/${{ matrix.unit }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_PREFIX }}/${{ matrix.unit }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+
   # Deploy: helm upgrade --install --atomic to the cloud overlay with the
   # freshly built tag (or the tag given manually). --atomic makes a release
   # that fails --wait roll itself back to the previous revision - that is
@@ -133,6 +168,23 @@ jobs:
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
+
+      # Every image about to run must carry a provenance and an SBOM signed
+      # by THIS repository's cd.yml on a GitHub-hosted runner. An image pushed
+      # by hand, by another workflow, or altered after the build is refused
+      # before anything touches the cluster.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify image provenance and SBOM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for unit in identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway migrate topics; do
+            bash deploy/supply-chain/verify.sh "oci://$IMAGE_PREFIX/$unit:$TAG" .github/workflows/cd.yml
+          done
 
       # Error budget policy (docs/runbook/error-budget.md): a spent budget
       # freezes feature releases. The gate asks the cluster's Prometheus
