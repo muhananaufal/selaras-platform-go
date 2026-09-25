@@ -230,7 +230,7 @@ jobs:
       - name: Check and unit-test the rules
         working-directory: deploy/compose/observability
         run: |
-          docker run --rm -v "$PWD:/rules:ro" --entrypoint promtool prom/prometheus:v3.14.0 check rules /rules/alerts.yml
+          docker run --rm -v "$PWD:/rules:ro" --entrypoint promtool prom/prometheus:v3.14.0 check rules /rules/alerts.yml /rules/slo-rules.yml
           docker run --rm -v "$PWD:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v3.14.0 test rules alerts_test.yml
       - name: Validate the Alertmanager config
         working-directory: deploy/compose/observability
@@ -292,10 +292,11 @@ jobs:
   generated:
     name: generated code is current
     runs-on: ubuntu-latest
-    # Three buf templates now generate from api/proto: grpc-go for the services,
+    # Three buf templates generate from api/proto: grpc-go for the services,
     # Connect for the edge, OpenAPI for third parties. A forgotten run leaves a
     # contract and its code disagreeing without any other job noticing - it
-    # happened once already (the translated proto comments). This job
+    # happened once already (the translated proto comments). Sloth generates
+    # the SLO alert rules from deploy/slo/selaras.yml the same way. This job
     # regenerates everything and fails on any difference.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -316,12 +317,14 @@ jobs:
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
           go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0
           go install github.com/sudorandom/protoc-gen-connect-openapi@v0.26.0
+          go install github.com/slok/sloth/cmd/sloth@v0.16.0
       - name: Regenerate and compare
         run: |
           buf generate
           buf generate --template buf.gen.edge.yaml
           buf generate --template buf.gen.openapi.yaml
-          git diff --exit-code -- gen api/openapi
+          sloth generate -i deploy/slo/selaras.yml -o deploy/compose/observability/slo-rules.yml
+          git diff --exit-code -- gen api/openapi deploy/compose/observability/slo-rules.yml
 
   openapi:
     name: public contract (OpenAPI)

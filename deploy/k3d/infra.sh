@@ -30,9 +30,11 @@ log "initdb ConfigMap dari deploy/compose/initdb/01-schemas.sh (satu sumber untu
 kubectl -n selaras create configmap postgres-initdb \
   --from-file=01-schemas.sh="$ROOT/deploy/compose/initdb/01-schemas.sh" \
   --dry-run=client -o yaml | kubectl apply -f -
-# The alert rules from the SAME file as compose; tested by promtool in CI.
+# The alert rules from the SAME files as compose (slo-rules.yml is generated
+# by Sloth from deploy/slo/selaras.yml); tested by promtool in CI.
 kubectl -n observability create configmap prometheus-rules \
-  --from-file=alerts.yml="$ROOT/deploy/compose/observability/alerts.yml" --dry-run=client -o yaml | kubectl apply -f -
+  --from-file=alerts.yml="$ROOT/deploy/compose/observability/alerts.yml" \
+  --from-file=slo-rules.yml="$ROOT/deploy/compose/observability/slo-rules.yml" --dry-run=client -o yaml | kubectl apply -f -
 
 log "dependensi"
 kubectl apply -f "$ROOT/deploy/k8s/infra/"
