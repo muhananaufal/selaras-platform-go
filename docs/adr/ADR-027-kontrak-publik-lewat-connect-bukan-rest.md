@@ -62,8 +62,7 @@ tanpa lapisan transcoding terpisah.
    prosedur didaftarkan sebagai pola ServeMux sendiri sehingga `http_route`
    berisi path prosedur.
 9. **OpenAPI di-generate** dari proto (`buf.gen.openapi.yaml`) untuk pihak
-   ketiga dan pemindai. Job CI yang menggagalkan kode hasil generate yang basi
-   dikirim terpisah: mengubah `.github/workflows` butuh token ber-scope `workflow`.
+   ketiga dan pemindai; CI menggagalkan kode hasil generate yang basi.
 
 **Yang ditemukan saat menerapkannya.**
 
