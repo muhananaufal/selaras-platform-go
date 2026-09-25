@@ -114,7 +114,7 @@ func newFakeGoogle(t *testing.T) *fakeGoogle {
 func (s *stack) startSignIn(t *testing.T) string {
 	t.Helper()
 
-	req, err := http.NewRequest(http.MethodGet, s.server.URL+"/api/v1/auth/google/redirect", nil)
+	req, err := http.NewRequest(http.MethodGet, s.server.URL+"/auth/google/redirect", nil)
 	if err != nil {
 		t.Fatalf("building request: %v", err)
 	}
@@ -158,7 +158,7 @@ func noRedirect(s *stack) *http.Client {
 func (s *stack) callback(t *testing.T, query string) (int, string) {
 	t.Helper()
 
-	req, err := http.NewRequest(http.MethodGet, s.server.URL+"/api/v1/auth/google/callback?"+query, nil)
+	req, err := http.NewRequest(http.MethodGet, s.server.URL+"/auth/google/callback?"+query, nil)
 	if err != nil {
 		t.Fatalf("building request: %v", err)
 	}
@@ -198,24 +198,20 @@ func TestTheWholeSocialSignInFlow(t *testing.T) {
 	}
 
 	code := strings.SplitN(location, "#code=", 2)[1]
-	status, body := s.do(t, http.MethodPost, "/api/v1/auth/session", "", map[string]string{"code": code})
+	status, body := s.rpc(t, procExchangeSocial, "", map[string]string{"code": code})
 	if status != http.StatusOK {
 		t.Fatalf("session status = %d; want 200 (%v)", status, body)
 	}
 
-	token, _ := body["access_token"].(string)
-	if token == "" {
-		t.Fatal("no access token was returned")
-	}
+	token := accessToken(t, body)
 
 	// The token has to really work.
-	status, me := s.do(t, http.MethodGet, "/api/v1/me", token, nil)
+	status, me := s.rpc(t, procMe, token, nil)
 	if status != http.StatusOK {
-		t.Fatalf("me status = %d; want 200 (%v)", status, me)
+		t.Fatalf("GetMe status = %d; want 200 (%v)", status, me)
 	}
-	data, _ := me["data"].(map[string]any)
-	if data["email"] != "person@contoh.test" {
-		t.Errorf("email = %v; want the address Google asserted", data["email"])
+	if me["email"] != "person@contoh.test" {
+		t.Errorf("email = %v; want the address Google asserted", me["email"])
 	}
 }
 
@@ -268,11 +264,11 @@ func TestAHandoffCodeCannotBeUsedTwice(t *testing.T) {
 	_, location := s.callback(t, "state="+state+"&code=a-code")
 	code := strings.SplitN(location, "#code=", 2)[1]
 
-	if status, _ := s.do(t, http.MethodPost, "/api/v1/auth/session", "", map[string]string{"code": code}); status != http.StatusOK {
+	if status, _ := s.rpc(t, procExchangeSocial, "", map[string]string{"code": code}); status != http.StatusOK {
 		t.Fatalf("first exchange status = %d; want 200", status)
 	}
 
-	status, body := s.do(t, http.MethodPost, "/api/v1/auth/session", "", map[string]string{"code": code})
+	status, body := s.rpc(t, procExchangeSocial, "", map[string]string{"code": code})
 	if status != http.StatusUnauthorized {
 		t.Errorf("second exchange status = %d; want 401 (%v)", status, body)
 	}
@@ -281,7 +277,7 @@ func TestAHandoffCodeCannotBeUsedTwice(t *testing.T) {
 func TestAnInventedHandoffCodeIsRefused(t *testing.T) {
 	s := newStackWithGoogle(t)
 
-	status, _ := s.do(t, http.MethodPost, "/api/v1/auth/session", "", map[string]string{"code": "made-up"})
+	status, _ := s.rpc(t, procExchangeSocial, "", map[string]string{"code": "made-up"})
 	if status != http.StatusUnauthorized {
 		t.Errorf("status = %d; want 401", status)
 	}
@@ -334,7 +330,7 @@ func TestAnUnverifiedGoogleAddressIsRefused(t *testing.T) {
 func TestAnUnknownProviderIsNotFound(t *testing.T) {
 	s := newStackWithGoogle(t)
 
-	req, err := http.NewRequest(http.MethodGet, s.server.URL+"/api/v1/auth/facebook/redirect", nil)
+	req, err := http.NewRequest(http.MethodGet, s.server.URL+"/auth/facebook/redirect", nil)
 	if err != nil {
 		t.Fatalf("building request: %v", err)
 	}
@@ -349,13 +345,23 @@ func TestAnUnknownProviderIsNotFound(t *testing.T) {
 	}
 }
 
-// An environment without provider credentials does not mount the routes at
-// all, so the answer is 404 - not an endpoint that exists but always fails.
-func TestWithoutAProviderTheRoutesDoNotExist(t *testing.T) {
+// An environment without provider credentials does not mount the redirect
+// routes at all (404), and the session exchange says unimplemented - not a
+// procedure that exists and always fails with something vaguer.
+func TestWithoutAProviderSocialSignInIsAbsent(t *testing.T) {
 	s := newStack(t)
 
-	status, _ := s.do(t, http.MethodPost, "/api/v1/auth/session", "", map[string]string{"code": "x"})
-	if status != http.StatusNotFound {
-		t.Errorf("status = %d; want 404 when social sign-in is not configured", status)
+	status, body := s.rpc(t, procExchangeSocial, "", map[string]string{"code": "x"})
+	if status != http.StatusNotImplemented || body["code"] != "unimplemented" {
+		t.Errorf("got %d %v; want 501 unimplemented when social sign-in is not configured", status, body)
+	}
+
+	resp, err := noRedirect(s).Get(s.server.URL + "/auth/google/redirect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("redirect status = %d; want 404", resp.StatusCode)
 	}
 }

@@ -776,9 +776,11 @@ func (x *WatchConversationRequest) GetSlug() string {
 }
 
 type WatchConversationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Conversation  *Conversation          `protobuf:"bytes,1,opt,name=conversation,proto3" json:"conversation,omitempty"`
-	Messages      []*ChatMessage         `protobuf:"bytes,2,rep,name=messages,proto3" json:"messages,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Conversation *Conversation          `protobuf:"bytes,1,opt,name=conversation,proto3" json:"conversation,omitempty"`
+	// The NEWEST page of the conversation (up to 100 messages), oldest first -
+	// not the whole history. The history is read through GetConversation.
+	Messages      []*ChatMessage `protobuf:"bytes,2,rep,name=messages,proto3" json:"messages,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

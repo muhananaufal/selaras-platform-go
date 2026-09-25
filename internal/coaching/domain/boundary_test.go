@@ -27,6 +27,7 @@ func TestTheDomainKnowsNothingAboutAdapters(t *testing.T) {
 	forbidden := []string{
 		"github.com/jackc/pgx",
 		"github.com/gin-gonic/gin",
+		"connectrpc.com/connect",
 		"google.golang.org/grpc",
 		"github.com/twmb/franz-go",
 		"github.com/muhananaufal/selaras-platform-go/internal/coaching/adapter",

@@ -21,8 +21,8 @@ import (
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	profilev1 "github.com/muhananaufal/selaras-platform-go/gen/profile/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge"
-	"github.com/muhananaufal/selaras-platform-go/internal/edge/handler"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/oauth"
+	"github.com/muhananaufal/selaras-platform-go/internal/edge/service"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/crypto"
 	identitygrpc "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/grpc"
 	identitypg "github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/postgres"
@@ -38,7 +38,7 @@ import (
 	profileapp "github.com/muhananaufal/selaras-platform-go/internal/profile/app"
 )
 
-// The whole stack runs: the HTTP gateway, both gRPC services, and a real
+// The whole stack runs: the Connect gateway, both gRPC services, and a real
 // Postgres. Only the revocation checker is faked - it is already tested
 // separately against a real Redis, and bringing it in here would add one
 // dependency without adding anything proven.
@@ -221,17 +221,22 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 	probes := httpx.NewHealth()
 	probes.SetReady(true)
 
-	router := edge.NewRouter(edge.Deps{
+	social, handoff := buildSocialHandler(t, google, identityClient, redisClient)
+	handler, err := edge.NewHandler(edge.Deps{
 		Identity:    identityClient,
 		Profiles:    profileClient,
 		Tokens:      verifier,
 		Revocations: revocations,
 		Probes:      probes,
 		Now:         time.Now,
-		Social:      buildSocialHandler(t, google, identityClient, redisClient),
+		Social:      social,
+		Handoff:     handoff,
 	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
 
-	server := httptest.NewServer(router)
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
 	return &stack{server: server, links: links, revocations: revocations, google: google}
@@ -261,10 +266,10 @@ func buildSocialHandler(
 	google *fakeGoogle,
 	identity identityv1.IdentityClient,
 	redisClient *goredis.Client,
-) *handler.Social {
+) (*service.Social, service.HandoffCodes) {
 	t.Helper()
 	if google == nil {
-		return nil
+		return nil, nil
 	}
 
 	store, err := oauth.NewStore(redisClient, 10*time.Minute, time.Minute)
@@ -274,7 +279,7 @@ func buildSocialHandler(
 	provider, err := oauth.NewGoogle(oauth.GoogleConfig{
 		ClientID:     googleClientID,
 		ClientSecret: "not-a-secret-in-tests",
-		RedirectURL:  "http://127.0.0.1/api/v1/auth/google/callback",
+		RedirectURL:  "http://127.0.0.1/auth/google/callback",
 		AuthURL:      google.server.URL + "/auth",
 		TokenURL:     google.server.URL + "/token",
 		Client:       google.server.Client(),
@@ -283,12 +288,12 @@ func buildSocialHandler(
 		t.Fatalf("oauth.NewGoogle: %v", err)
 	}
 
-	return handler.NewSocial(
+	return service.NewSocial(
 		identity,
-		map[string]handler.ProviderClient{"google": provider},
+		map[string]service.ProviderClient{"google": provider},
 		store,
 		"http://frontend.test",
-	)
+	), store
 }
 
 func serveGRPC(t *testing.T, register func(*grpc.Server)) *grpc.ClientConn {
@@ -322,32 +327,33 @@ func serveGRPC(t *testing.T, register func(*grpc.Server)) *grpc.ClientConn {
 	return conn
 }
 
-func (s *stack) do(t *testing.T, method, path, bearer string, body any) (int, map[string]any) {
+// rpc calls one procedure over the Connect protocol with a JSON body - the
+// wire a browser uses - and decodes the JSON answer, success or error.
+func (s *stack) rpc(t *testing.T, procedure, bearer string, body any) (int, map[string]any) {
 	t.Helper()
 
-	var reader *bytes.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("encoding body: %v", err)
-		}
-		reader = bytes.NewReader(encoded)
-	} else {
-		reader = bytes.NewReader(nil)
+	if body == nil {
+		body = map[string]any{}
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encoding body: %v", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, s.server.URL+path, reader)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		s.server.URL+procedure, bytes.NewReader(encoded))
 	if err != nil {
 		t.Fatalf("building request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connect-Protocol-Version", "1")
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
 
 	resp, err := s.server.Client().Do(req)
 	if err != nil {
-		t.Fatalf("%s %s: %v", method, path, err)
+		t.Fatalf("%s: %v", procedure, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -355,9 +361,9 @@ func (s *stack) do(t *testing.T, method, path, bearer string, body any) (int, ma
 		}
 	}()
 
-	var decoded map[string]any
+	decoded := map[string]any{}
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		t.Fatalf("decoding %s %s: %v", method, path, err)
+		t.Fatalf("decoding %s: %v", procedure, err)
 	}
 	return resp.StatusCode, decoded
 }
@@ -365,19 +371,45 @@ func (s *stack) do(t *testing.T, method, path, bearer string, body any) (int, ma
 func (s *stack) registerUser(t *testing.T, email string) string {
 	t.Helper()
 
-	status, body := s.do(t, http.MethodPost, "/api/v1/register", "", map[string]string{
-		"email":                 email,
-		"password":              "a-long-enough-password",
-		"password_confirmation": "a-long-enough-password",
+	status, body := s.rpc(t, "/edge.v1.Auth/Register", "", map[string]string{
+		"email":                email,
+		"password":             "a-long-enough-password",
+		"passwordConfirmation": "a-long-enough-password",
 	})
-	if status != http.StatusCreated {
-		t.Fatalf("register status = %d; want 201 (%v)", status, body)
+	if status != http.StatusOK {
+		t.Fatalf("register status = %d; want 200 (%v)", status, body)
 	}
-	token, _ := body["access_token"].(string)
+	return accessToken(t, body)
+}
+
+// accessToken takes session.accessToken from a Register/Login answer.
+func accessToken(t *testing.T, body map[string]any) string {
+	t.Helper()
+	session, _ := body["session"].(map[string]any)
+	token, _ := session["accessToken"].(string)
 	if token == "" {
-		t.Fatal("register returned no token")
+		t.Fatalf("no session.accessToken in %v", body)
 	}
 	return token
+}
+
+// violations returns the field names of a google.rpc.BadRequest detail,
+// read from the "debug" form Connect adds to JSON errors.
+func violations(body map[string]any) []string {
+	var fields []string
+	details, _ := body["details"].([]any)
+	for _, d := range details {
+		detail, _ := d.(map[string]any)
+		debug, _ := detail["debug"].(map[string]any)
+		list, _ := debug["fieldViolations"].([]any)
+		for _, v := range list {
+			fv, _ := v.(map[string]any)
+			if f, ok := fv["field"].(string); ok {
+				fields = append(fields, f)
+			}
+		}
+	}
+	return fields
 }
 
 // errNoAnswer deliberately has its own type, not errors.New, so the test
