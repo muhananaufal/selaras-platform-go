@@ -359,6 +359,65 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Supply chain: the edge-gateway binary gets a CycloneDX SBOM and a SLSA
+  # build provenance, both signed keyless through Sigstore by actions/attest,
+  # and then both are VERIFIED the way the CD deploy job verifies images
+  # (deploy/supply-chain/verify.sh). CD only runs on a release tag, so this
+  # job is where the mechanism is proven on every change - including that a
+  # binary altered by one byte is refused. Skipped for forks, which get no
+  # OIDC token.
+  supply-chain:
+    name: supply chain (SBOM, provenance)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build the edge-gateway binary
+        run: CGO_ENABLED=0 go build -trimpath -o dist/edge-gateway ./cmd/edge-gateway
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          file: dist/edge-gateway
+          format: cyclonedx-json
+          output-file: dist/edge-gateway.cdx.json
+          syft-version: v1.51.1
+          upload-artifact: false
+          upload-release-assets: false
+      - name: The SBOM lists what the binary is built from
+        run: bash deploy/supply-chain/check-sbom.sh dist/edge-gateway.cdx.json connectrpc.com/connect google.golang.org/grpc go.opentelemetry.io/otel
+      - name: Attest the build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/edge-gateway
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/edge-gateway
+          sbom-path: dist/edge-gateway.cdx.json
+      - name: Verify both, and refuse a tampered binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash deploy/supply-chain/verify.sh dist/edge-gateway .github/workflows/ci.yml
+          # An attestation from a different workflow of the same repository
+          # must not count.
+          if bash deploy/supply-chain/verify.sh dist/edge-gateway .github/workflows/cd.yml 2>/dev/null; then
+            echo "::error::an attestation signed by ci.yml passed as cd.yml"; exit 1
+          fi
+          cp dist/edge-gateway dist/tampered
+          printf '\0' >> dist/tampered
+          if bash deploy/supply-chain/verify.sh dist/tampered .github/workflows/ci.yml 2>/dev/null; then
+            echo "::error::a tampered binary passed verification"; exit 1
+          fi
+          echo "refused: other workflow, tampered binary"
+
   # The whole system starts on the runner through compose - the same profile
   # as `task up:apps` - and then the e2e suite, the rule checklist (D1-D12,
   # S1-S11), and the k6 read scenario with the SLO thresholds (F9-11) run
