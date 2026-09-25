@@ -77,6 +77,31 @@ requests-availability         100.0% left
 requests-latency               77.4% left
 ```
 
+## Drill: budget dihabiskan sungguhan
+
+Tanggal 2026-09-25, di stack compose lokal. Prometheus yang dipakai adalah
+Prometheus **sekali pakai** di atas tmpfs, dengan scrape 5 s, `slo-rules.yml`
+yang sama, dan jaringan `selaras-core_default`. Dengan begitu data Prometheus
+lokal yang biasa tidak tercemar selama 30 hari. Pengguna uji login lewat
+`Auth/Register` dan `Auth/Login`.
+
+| Waktu | Kejadian | Hasil |
+| :--- | :--- | :--- |
+| 11:51:49 | 400 × `Auth/GetMe` bertoken | 400 × 200 |
+| 11:52:30 | gerbang | `requests-availability 100.0% left`, exit 0 |
+| 11:52:38 | `docker stop selaras-identity`, 150 × `GetMe` | 150 × 200. `GetMe` dijawab dari token dan tidak memanggil identity-svc, jadi percobaan ini **tidak** menghasilkan 5xx dan budget tetap utuh |
+| 11:53:32 | `docker stop selaras-profile`, 150 × `Profile/GetProfile` | 147 × 503, 3 × 504 |
+| 11:54:03 + 25 s | gerbang | `requests-availability -2059.8% EXHAUSTED`, exit **1**; `gate.sh` exit 1 dengan `::error::` |
+| idem | `gate.sh` dengan `BUDGET_OVERRIDE="drill: restore profile-svc"` | exit 0 dengan `::warning::` yang memuat alasannya |
+| idem | `GET /api/v1/alerts` | `SelarasAvailabilitySLOBurn` **firing**, page dan ticket |
+| 11:54:29 | `docker start selaras-profile` | 200 kembali pada 11:54:43 (startup ditambah reconnect gRPC) |
+
+Angka −2059,8 % berarti budget terlampaui sekitar 21 kali lipat. Angkanya
+sebesar itu karena total lalu lintas di jendela Prometheus sekali pakai
+hanya sekitar 700 request, dan 150 di antaranya gagal. Di produksi, kejadian
+yang sama tercampur dengan lalu lintas sebulan. Container drill dihapus
+sesudahnya.
+
 ## Saat alert burn-rate menyala
 
 | Alert | Artinya | Langkah pertama |
