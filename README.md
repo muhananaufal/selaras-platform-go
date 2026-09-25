@@ -2,14 +2,14 @@
 
 [![ci](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml)
 
-Sembilan unit Go — satu gateway REST, tujuh service domain, satu worker LLM —
+Sembilan unit Go — satu gateway Connect, tujuh service domain, satu worker LLM —
 hasil migrasi dari monolit Laravel `selaras-backend-api` (32 endpoint, nol
 test). Dibangun seolah produksi sejak baris pertama (ADR-016): setiap klaim
 di halaman ini menunjuk ke berkas yang memuat buktinya, dan yang belum
 terbukti ditulis sebagai yang belum terbukti.
 
 > **For English readers.** A Laravel monolith decomposed into nine Go units
-> (REST edge, seven gRPC domain services, one LLM worker) over PostgreSQL
+> (Connect edge, seven gRPC domain services, one LLM worker) over PostgreSQL
 > schema-per-service, Kafka with a transactional outbox, OpenTelemetry, Helm
 > on k3d, chaos and restore drills. Every number below links to the file that
 > measured it. Docs are in Indonesian; code, comments, identifiers, and logs are English.
@@ -18,7 +18,7 @@ terbukti ditulis sebagai yang belum terbukti.
 
 ```mermaid
 flowchart LR
-  FE[Klien] -->|REST /api/v1, JWT EdDSA| EG[edge-gateway]
+  FE[Klien] -->|Connect edge.v1: JSON/HTTP + stream, JWT EdDSA| EG[edge-gateway]
   EG -->|gRPC| ID[identity-svc]
   EG -->|gRPC| PR[profile-svc]
   EG -->|gRPC| AS[assessment-svc]
@@ -40,7 +40,7 @@ flowchart LR
 | :--- | :--- | :--- |
 | Batas unit | 9 unit, `profile-svc` berdiri sendiri | [ADR-002](docs/adr/ADR-002-topologi-9-unit-profile-svc-berdiri-sendiri.md) |
 | Konsistensi lintas unit | Outbox transaksional + referensi lunak, tanpa FK lintas skema | [ADR-004](docs/adr/ADR-004-konsistensi-transactional-outbox-referensi-lunak.md), [ADR-006](docs/adr/ADR-006-database-postgresql-schema-per-service-satu-inst.md) |
-| Transport | gRPC di dalam, REST di tepi, id publik berupa slug | [ADR-005](docs/adr/ADR-005-transport-grpc-internal-rest-di-edge-id-publik-b.md) |
+| Transport | gRPC di dalam, Connect di tepi (satu kontrak proto, JSON untuk browser, stream untuk hasil LLM), id publik berupa slug | [ADR-005](docs/adr/ADR-005-transport-grpc-internal-rest-di-edge-id-publik-b.md), [ADR-027](docs/adr/ADR-027-kontrak-publik-lewat-connect-bukan-rest.md) |
 | Sesi | JWT EdDSA berumur pendek, pencabutan lewat penghitung generasi di Redis, gagal-tertutup | [ADR-020](docs/adr/ADR-020-token-eddsa-pencabutan-lewat-penghitung-generasi.md) |
 | Kepemilikan | Service tidak mempercayai identitas yang sekadar dikirimkan; pemilik adalah pengguna | [ADR-023](docs/adr/ADR-023-service-tidak-mempercayai-identitas-yang-dikirimkan.md), [ADR-024](docs/adr/ADR-024-pemilik-adalah-pengguna-bukan-profilnya.md) |
 | Penghapusan akun | Saga dengan kompensasi, 14 probe verifikasi | [ADR-011](docs/adr/ADR-011-penghapusan-akun-sebagai-saga-dengan-kompensasi.md) |
@@ -48,7 +48,7 @@ flowchart LR
 | Kuota LLM | Pekerjaan diparkir saat kuota habis, bukan dimatikan | [ADR-025](docs/adr/ADR-025-kuota-penyedia-llm-memarkir-pekerjaan-bukan-mematikannya.md) |
 | Autentikasi antar-service | Setiap service memverifikasi token pengguna dengan kunci publik; `sub` harus sama dengan `user_id` | [ADR-026](docs/adr/ADR-026-setiap-service-memverifikasi-token-pengguna-sendiri.md) |
 
-Dua puluh enam ADR, masing-masing dengan **pembatal** — kondisi yang membuat
+Dua puluh tujuh ADR, masing-masing dengan **pembatal** — kondisi yang membuat
 keputusannya gugur: [`docs/adr/`](docs/adr/README.md). Mengapa sistemnya
 dipecah, dan apa yang dijanjikan: [RFC-000](docs/rfc/RFC-000-platform-decomposition.md).
 Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-retrospective.md).
@@ -58,7 +58,7 @@ Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-re
 | Klaim | Angka | Bukti |
 | :--- | :--- | :--- |
 | Paritas mesin risiko SCORE2 / SCORE2-OP / SCORE2-Diabetes dengan sistem lama | 288 dari 288 golden vector, selisih terbesar nol | [`docs/parity-report.md`](docs/parity-report.md) |
-| Latensi di bawah beban k6 | p95 baca 4,4 ms · tulis 14,5 ms · campuran 9,7 ms, nol gagal | [`docs/performance-report.md`](docs/performance-report.md) |
+| Latensi di bawah beban k6 | REST: p95 baca 4,4 ms · tulis 14,5 ms · campuran 9,7 ms, nol gagal. Connect (ulang 2026-09-25): p50 baca 3,1 ms, p95 8,7–16,6 ms antar-larian, nol gagal; SLO lulus, kenaikan median belum dijelaskan | [`docs/performance-report.md`](docs/performance-report.md) |
 | Satu trace menembus gateway → service → worker | 6 span, 3 unit, utuh di Tempo | [`docs/observability.md`](docs/observability.md) |
 | Broker dimatikan paksa di tengah beban | 18 event tertahan di outbox, 0 hilang, 8/8 pekerjaan selesai setelah broker kembali | [`test/chaos/broker.md`](test/chaos/broker.md) |
 | Satu service mati | Gateway menjawab 504 dalam 5 detik, bukan menggantung; pulih 2 detik | [`test/chaos/service.md`](test/chaos/service.md) |
@@ -122,7 +122,7 @@ dilakukan saat pukul tiga pagi.
 | **Domain bebas library** | `internal/<unit>/domain` tidak mengimpor adapter apa pun; penyedia LLM palsu tidak bisa menyentuh jaringan karena paket induknya tidak punya paket jaringan |
 | **Test yang disaksikan merah** | Bugfix membawa reproduksi yang merah lebih dulu; sekitar lima puluh mutasi sepanjang F6–F9 menyingkap test yang tidak menguji apa-apa |
 | **Nol** | Nol `TODO`, nol kredensial hardcode, nol `interface{}` telanjang, nol galat yang ditelan; `golangci-lint` bersih |
-| **Kontrak dulu** | `api/proto` adalah sumber kebenaran gRPC; `api/openapi/edge-v1.yaml` di-lint di CI; perubahan breaking terdeteksi `buf breaking` |
+| **Kontrak dulu** | `api/proto` adalah satu-satunya sumber kebenaran, termasuk kontrak publik `edge.v1`; kode Go, kode Connect, dan `api/openapi/edge-v1.yaml` di-generate darinya dan CI menolak hasil generate yang basi; perubahan breaking terdeteksi `buf breaking` |
 | **Skema per service** | Peran Postgres `svc_<unit>` hanya melihat skemanya; join lintas unit ditolak basis data, bukan oleh disiplin |
 
 ## Layout
@@ -131,7 +131,7 @@ dilakukan saat pukul tiga pagi.
 cmd/<unit>/            entrypoint tiap unit; migrate, topics, partitions, deletion-verify
 internal/<unit>/       domain · app · adapter (grpc, postgres, consumer)
 internal/platform/     outbox, kafka, idempotency, telemetry, partition, rpc
-api/proto · api/openapi   kontrak gRPC dan REST
+api/proto · api/openapi   kontrak gRPC (termasuk edge.v1 publik) dan OpenAPI hasil generate
 migrations/<unit>/     migrasi per skema
 deploy/compose · helm · k8s · k3d
 test/acceptance · e2e · chaos · k6 · drill

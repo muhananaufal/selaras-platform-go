@@ -4,13 +4,19 @@ Dua jalur dibatasi, dan alasannya berbeda.
 
 | Jalur | Batas bawaan | Kunci | Yang dilindungi |
 | :--- | :--- | :--- | :--- |
-| `POST /register`, `POST /login`, `POST /password-reset/*`, `DELETE /delete-account` | **5 per menit** | alamat IP | penebakan kata sandi |
+| `Auth/Register`, `Auth/Login`, `Auth/RequestPasswordReset`, `Auth/ConfirmPasswordReset`, `Auth/ExchangeSocialSession`, `Auth/DeleteAccount` | **5 per menit** | alamat IP | penebakan kata sandi dan kode |
 | endpoint yang mengantre pekerjaan LLM | **10 per menit** | pengguna | tagihan |
 
 Jalur LLM yang dibatasi: personalisasi penilaian, memulai program coaching,
-membuka thread, mengirim pesan coaching, membuat percakapan chat, mengirim pesan
+membuka thread, mengirim pesan coaching, laporan kelulusan (memicu laporan baru
+setiap kali yang sebelumnya gagal), membuat percakapan chat, mengirim pesan
 chat, dan meminta panduan menu harian. Semuanya menerbitkan pekerjaan yang
 dibayar per token.
+
+Daftarnya ada di `edge.RateLimitPolicies`, dan dua test menjaganya:
+setiap prosedur publik wajib dibatasi per alamat, dan setiap prosedur yang
+memakai `Idempotency-Key` (tanda ia mengantre pekerjaan LLM) wajib dibatasi
+per pengguna.
 
 ## Mengapa kuncinya berbeda
 
@@ -41,11 +47,13 @@ alih dibungkus dengan pembenaran yang tidak ada datanya.
 HTTP/1.1 429 Too Many Requests
 Retry-After: 60
 
-{"success":false,"message":"Too many requests. Try again in a moment.","code":"RATE_LIMITED"}
+{"code":"resource_exhausted","message":"too many requests, try again in a moment",
+ "details":[{"type":"google.rpc.RetryInfo","value":"…","debug":{"retryDelay":"60s"}}]}
 ```
 
-Bentuk galatnya sama dengan penolakan lain, sehingga klien tidak perlu cabang
-khusus. `Retry-After` dalam detik.
+Bentuk galatnya sama dengan penolakan lain (galat Connect), sehingga klien
+tidak perlu cabang khusus. Tunggunya dikirim dua kali: `Retry-After` dalam
+detik untuk klien apa pun, `RetryInfo` untuk klien hasil generate.
 
 ## Saat Redis mati
 
@@ -93,10 +101,15 @@ sungguhan adalah produksi.
   detik terakhir sebuah menit dan 5 lagi di detik pertama menit berikutnya.
   Jendela meluncur lebih adil tetapi menuntut penyimpanan per permintaan;
   jendela tetap muat dalam satu `INCR` dan cukup untuk yang dilindungi di sini.
-- **Alamat IP berasal dari `gin.ClientIP()`**, yang menghormati
-  `X-Forwarded-For` hanya dari proxy yang dipercaya. Bila gateway dipasang di
-  belakang proxy baru, `SetTrustedProxies` harus ikut disetel — kalau tidak,
-  pembatasan per IP membatasi alamat proxy-nya, bukan pemanggilnya.
+- **`X-Forwarded-For` hanya dipercaya dari `TRUSTED_PROXY_CIDRS`** (Helm:
+  `rateLimit.trustedProxyCIDRs`), dibaca dari kanan melewati hop yang
+  dipercaya. Kosong - bawaan - berarti memakai alamat peer langsung, benar
+  bila gateway dijangkau langsung seperti di compose. Di belakang Ingress,
+  nilai ini WAJIB diisi rentang proxy; kalau tidak, semua pengguna berbagi
+  satu penghitung. Gateway REST sebelumnya memakai `gin.ClientIP()` tanpa
+  `SetTrustedProxies`, dan gin bawaannya memercayai semua alamat: header
+  palsu memberi penghitung baru tiap permintaan. Itu ditutup di ADR-027,
+  dengan test regresi `TestSpoofedForwardedForDoesNotResetTheLimit`.
 - **Alamat yang tidak bisa diurai berbagi satu penghitung** bernama `unknown`.
   Itu terlalu ketat bagi mereka, dan itu pilihan yang disengaja: pembatasan yang
   bocor karena satu alamat gagal diurai tidak melindungi apa pun.

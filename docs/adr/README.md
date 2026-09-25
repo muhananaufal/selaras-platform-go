@@ -35,3 +35,4 @@ Bukti yang menopangnya ada di Evidence Ledger pada dokumen rencana di repo Larav
 | 024 | Pemilik sumber daya adalah pengguna, bukan profilnya |
 | 025 | Kuota penyedia LLM memarkir pekerjaan, bukan mematikannya |
 | 026 | Setiap service memverifikasi token pengguna sendiri |
+| 027 | Kontrak publik lewat Connect, bukan REST |
