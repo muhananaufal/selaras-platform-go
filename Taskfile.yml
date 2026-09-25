@@ -303,6 +303,19 @@ tasks:
     cmds:
       - npx --yes newman run test/postman/selaras.postman_collection.json --timeout-request 30000
 
+  slo:generate:
+    desc: Regenerate the SLO burn-rate rules from deploy/slo/selaras.yml (Sloth v0.16.0, the version CI checks against)
+    cmds:
+      - go run github.com/slok/sloth/cmd/sloth@v0.16.0 generate -i deploy/slo/selaras.yml -o deploy/compose/observability/slo-rules.yml
+
+  slo:budget:
+    desc: 'Fail when an SLO has spent its 30-day error budget (the release freeze gate). Usage: task slo:budget -- -prometheus http://127.0.0.1:19090'
+    # Built, not `go run`: go run reports every non-zero exit as 1, and the
+    # gate's 1 (budget spent) and 2 (no verdict) mean different things.
+    cmds:
+      - go build -o bin/ ./cmd/slo-budget
+      - ./bin/slo-budget {{.CLI_ARGS}}
+
   alerts:test:
     desc: Check and unit-test the Prometheus alert rules, and validate the Alertmanager config
     cmds:
