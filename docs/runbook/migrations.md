@@ -109,6 +109,14 @@ Hasil 2026-09-25, stack compose lokal:
 **662 request, 0 gagal**, p50 57 ms, p99 99 ms, maks 155 ms. Larian kedua:
 681 request, 0 gagal, p99 88 ms.
 
+Sejak PR #15, drill ini **wajib jalan di CI** pada setiap perubahan, sebagai
+langkah terpisah di job `e2e, acceptance, k6` sesudah k6. Sebelumnya drill
+ini men-skip dirinya sendiri di CI tanpa ada yang melihat. Gerbang skip
+(`test/skips/check.sh`) yang membuat skip itu terlihat. Larian pertama di
+CI: **5.731 request, 0 gagal**, p50 6 ms, p99 14 ms, maks 23 ms. Runner CI
+lebih cepat daripada laptop yang dipakai bersama, sehingga jumlah request
+dalam jendela waktu yang sama lebih banyak.
+
 Kontrol negatif, supaya drill ini terbukti bisa merah: migrasi expand diganti
 sementara dengan `RENAME COLUMN final_risk_percentage` - perubahan yang
 merusak kode N. Hasilnya **266 dari 700 request gagal** dan drill merah;
