@@ -45,15 +45,17 @@ alih dibungkus dengan pembenaran yang tidak ada datanya.
 
 ```
 HTTP/1.1 429 Too Many Requests
-Retry-After: 60
+Retry-After: 12
 
 {"code":"resource_exhausted","message":"too many requests, try again in a moment",
- "details":[{"type":"google.rpc.RetryInfo","value":"…","debug":{"retryDelay":"60s"}}]}
+ "details":[{"type":"google.rpc.RetryInfo","value":"…","debug":{"retryDelay":"12s"}}]}
 ```
 
 Bentuk galatnya sama dengan penolakan lain (galat Connect), sehingga klien
 tidak perlu cabang khusus. Tunggunya dikirim dua kali: `Retry-After` dalam
-detik untuk klien apa pun, `RetryInfo` untuk klien hasil generate.
+detik untuk klien apa pun, `RetryInfo` untuk klien hasil generate. Contoh di
+atas adalah permintaan autentikasi keenam dalam satu menit: kuota lima sudah
+habis, dan satu permintaan baru diberikan kembali 12 detik kemudian.
 
 ## Saat Redis mati
 
@@ -97,10 +99,22 @@ sungguhan adalah produksi.
 
 ## Batas yang perlu diketahui
 
-- **Jendelanya tetap, bukan meluncur.** Seseorang bisa mengirim 5 permintaan di
-  detik terakhir sebuah menit dan 5 lagi di detik pertama menit berikutnya.
-  Jendela meluncur lebih adil tetapi menuntut penyimpanan per permintaan;
-  jendela tetap muat dalam satu `INCR` dan cukup untuk yang dilindungi di sini.
+- **Algoritmanya GCRA, bukan jendela tetap** (sejak 2026-09-26, pustaka
+  `go-redis/redis_rate` v10). Seluruh kuota boleh dipakai sekaligus, lalu satu
+  permintaan diberikan kembali setiap `jendela / jumlah`, yaitu 12 detik untuk
+  autentikasi dan 6 detik untuk LLM. Status per subjek hanya satu stempel
+  waktu, dievaluasi atomik oleh skrip Lua di Redis dengan jam Redis sendiri,
+  sehingga semua replika gateway menilai dengan waktu yang sama.
+  - **Alasan penggantian.** Jendela tetap direset oleh jam, bukan oleh
+    pemanggil. Menghabiskan kuota tepat sebelum batas jendela memberi kuota
+    baru tepat sesudahnya. Pengukurannya: 10 permintaan lolos dalam sekitar
+    100 ms untuk batas 5 per detik
+    (`TestSpendingTheBudgetAtAWindowBoundaryDoesNotDoubleIt`).
+  - **Satu kuota lintas replika.** Klien yang membagi percobaannya ke dua
+    replika tetap mendapat satu kuota (`TestTwoReplicasShareOneBudget`).
+  - **Redis mati tetap gagal-terbuka** (`TestADeadRedisLetsRequestsThrough`).
+  - **`Retry-After`** kini waktu sampai permintaan berikutnya diizinkan,
+    dibulatkan ke atas ke detik, bukan panjang jendela penuh.
 - **`X-Forwarded-For` hanya dipercaya dari `TRUSTED_PROXY_CIDRS`** (Helm:
   `rateLimit.trustedProxyCIDRs`), dibaca dari kanan melewati hop yang
   dipercaya. Kosong - bawaan - berarti memakai alamat peer langsung, benar
