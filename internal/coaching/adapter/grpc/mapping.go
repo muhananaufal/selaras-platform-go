@@ -3,6 +3,7 @@ package grpc
 
 import (
 	"encoding/json"
+	"math"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -212,4 +213,39 @@ func roleToProto(r domain.Role) coachingv1.MessageRole {
 	default:
 		return coachingv1.MessageRole_MESSAGE_ROLE_UNSPECIFIED
 	}
+}
+
+// progressToProto maps what a clinician sees of one program: status, dates
+// and counts, nothing the patient wrote or was told (ADR-030).
+func progressToProto(p app.ProgramProgress) *coachingv1.ProgramProgress {
+	weeks := make([]*coachingv1.WeekProgress, 0, len(p.Weeks))
+	for _, w := range p.Weeks {
+		weeks = append(weeks, &coachingv1.WeekProgress{
+			WeekNumber:     int32(w.WeekNumber), //nolint:gosec // G115: 1..domain.MaxWeeks by Curriculum.Validate and SMALLINT
+			TasksTotal:     count32(w.Total),
+			TasksCompleted: count32(w.Completed),
+		})
+	}
+	return &coachingv1.ProgramProgress{
+		Slug:             p.Program.Slug,
+		Title:            p.Program.Title,
+		Status:           statusToProto(p.Program.Status),
+		Difficulty:       difficultyToProto(p.Program.Difficulty),
+		StartDate:        p.Program.StartDate.Format(time.DateOnly),
+		EndDate:          p.Program.EndDate.Format(time.DateOnly),
+		CurriculumStatus: curriculumToProto(p.Program.CurriculumStatus),
+		Weeks:            weeks,
+		TasksTotal:       count32(p.TasksTotal),
+		TasksCompleted:   count32(p.TasksCompleted),
+	}
+}
+
+// count32 fits a task count into the contract's int32, saturating instead of
+// wrapping: nothing bounds the tasks of a week, and a count that wrapped
+// negative would read as nonsense rather than as "very many".
+func count32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n) //nolint:gosec // G115: n <= math.MaxInt32 checked above; counts are never negative
 }
