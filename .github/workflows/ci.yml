@@ -266,6 +266,27 @@ jobs:
   # right after the apply is empty, that hand edits show up as drift, and
   # that the next apply undoes them. The wrapper of setup-opentofu is off:
   # the drift check reads plan's real exit code (0 no changes, 2 changes).
+  # Mutation testing (gremlins v0.6.0) on the domain packages, whose tests
+  # are pure: a package may not gain a surviving (LIVED) or an untested (NOT
+  # COVERED) mutant compared with test/mutation/baseline.txt, and a run with
+  # a timed-out mutant fails as inconclusive. Integration packages are left
+  # out on purpose - without their database here, every test would fail and
+  # every mutant would count as killed.
+  mutation:
+    name: mutation testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+      - name: Domain packages may not gain surviving or untested mutants
+        run: bash test/mutation/run.sh 4
+
   iac:
     name: infrastructure as code
     runs-on: ubuntu-latest
