@@ -1,0 +1,16 @@
+# A deliberately wrong expectation: a clinic admin without being a clinician
+# reading a patient. test.sh requires this file to FAIL, which proves a
+# failing assertion actually fails the gate.
+name: must fail
+model_file: ./model.fga
+tuples:
+  - {user: "user:clinic_admin", relation: admin, object: "clinic:heartcare"}
+  - {user: "clinic:heartcare", relation: care_clinic, object: "patient:ani"}
+  - {user: "user:clinic_admin", relation: consented_clinician, object: "patient:ani"}
+tests:
+  - name: an admin reads a patient
+    check:
+      - user: user:clinic_admin
+        object: patient:ani
+        assertions:
+          can_view_assessments: true
