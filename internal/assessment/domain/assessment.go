@@ -86,8 +86,13 @@ func NewSlug() (string, error) {
 // inputs cannot be disputed by anyone, including ourselves when investigating
 // a complaint.
 type Assessment struct {
-	ID              ID
-	UserProfileID   ProfileID
+	ID            ID
+	UserProfileID ProfileID
+
+	// UserID is the owner (ADR-024). Empty only on rows written before it was
+	// stored and not yet backfilled (cmd/backfill-assessment-owners).
+	UserID string
+
 	Slug            string
 	ModelUsed       string
 	RiskPercentage  float64
@@ -231,6 +236,10 @@ type Repository interface {
 	// limit of it. A nil after starts at the newest; otherwise the list
 	// starts right after that position.
 	ListForProfile(ctx context.Context, profileID ProfileID, limit int, after *HistoryCursor) ([]*Assessment, error)
+
+	// ListForUser is ListForProfile keyed by the owning user's id, for reads
+	// that name the user rather than the profile (a clinician's, ADR-030).
+	ListForUser(ctx context.Context, userID string, limit int, after *HistoryCursor) ([]*Assessment, error)
 
 	// SetResultDetails stores the personalisation report.
 	//

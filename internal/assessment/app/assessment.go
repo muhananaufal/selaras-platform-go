@@ -68,10 +68,6 @@ type Service struct {
 	// WithAccessChecker. Nil refuses every such read.
 	access AccessChecker
 
-	// patientProfiles is the profile cache clinicians' reads use, without a
-	// fallback; installed through WithPatientProfiles.
-	patientProfiles ProfileSource
-
 	// statusWriter is installed later through WithStatusWriter. Nil means this
 	// service only serves reads and computations - no reason to fail, but no
 	// reason to pretend to accept work that will never be recorded either.
@@ -152,6 +148,9 @@ func (s *Service) Start(
 	if err != nil {
 		return nil, err
 	}
+	// The owner's user id lets a consented clinician read the history by the
+	// id the consent names, without resolving a profile (ADR-030).
+	assessment.UserID = cmd.UserID
 
 	// Without an outbox, the assessment is still computed and stored. It just
 	// is not announced - and that is stated in the log at start-up, not
@@ -330,10 +329,16 @@ func pageOf(pageSize int, pageToken string) (int, *domain.HistoryCursor, error) 
 }
 
 func (s *Service) history(ctx context.Context, profileID domain.ProfileID, pageSize int, after *domain.HistoryCursor) (HistoryPage, error) {
+	return page(pageSize, func(limit int) ([]*domain.Assessment, error) {
+		return s.assessments.ListForProfile(ctx, profileID, limit, after)
+	})
+}
 
+// page reads one page through list and encodes the token to the next.
+func page(pageSize int, list func(limit int) ([]*domain.Assessment, error)) (HistoryPage, error) {
 	// One row more than the page says whether another page exists, without a
 	// count and without handing out a token to a page that turns out empty.
-	found, err := s.assessments.ListForProfile(ctx, profileID, pageSize+1, after)
+	found, err := list(pageSize + 1)
 	if err != nil {
 		return HistoryPage{}, err
 	}

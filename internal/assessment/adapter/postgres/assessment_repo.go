@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
@@ -19,12 +20,14 @@ const constraintSlugUnique = "risk_assessments_slug_unique"
 const assessmentColumns = `id, user_profile_id, slug, model_used, final_risk_percentage,
 	inputs, generated_values, result_details, created_at, updated_at`
 
-// readColumns adds the columns that are NOT written at creation.
+// readColumns adds the columns assessmentColumns does not list: the ones not
+// written at creation, and user_id, which the INSERT appends on its own.
 //
 // It is separate from assessmentColumns because the latter is also used by the
 // INSERT, and adding columns there would make its placeholder count stop
 // matching - a mistake only visible at runtime.
-const readColumns = assessmentColumns + `, personalization_status, coalesce(personalization_error, '')`
+const readColumns = assessmentColumns + `, personalization_status, coalesce(personalization_error, ''),
+	coalesce(user_id::text, '')`
 
 // Repository implements domain.Repository.
 type Repository struct {
@@ -46,12 +49,16 @@ func (r *Repository) Create(ctx context.Context, a *domain.Assessment) error {
 	}
 
 	const q = `
-		INSERT INTO risk_assessments (` + assessmentColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+		INSERT INTO risk_assessments (` + assessmentColumns + `, user_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
+	var userID any
+	if a.UserID != "" {
+		userID = a.UserID
+	}
 	_, err = r.db.Exec(ctx, q,
 		a.ID.String(), a.UserProfileID.String(), a.Slug, a.ModelUsed, a.RiskPercentage,
-		inputs, generated, nullableJSON(a.ResultDetails), a.CreatedAt, a.UpdatedAt,
+		inputs, generated, nullableJSON(a.ResultDetails), a.CreatedAt, a.UpdatedAt, userID,
 	)
 	if err != nil {
 		if pg.IsUniqueViolation(err, constraintSlugUnique) {
@@ -82,33 +89,56 @@ func (r *Repository) ListForProfile(
 	limit int,
 	after *domain.HistoryCursor,
 ) ([]*domain.Assessment, error) {
-	// The ordering and the limit are in the query, not in Go. Reading the
-	// whole history and cutting it in memory moves database work into the
-	// service, and the composite index in migration 0006 was made for exactly
-	// these queries: equality on the profile, then (created_at, id) in the
-	// index's own order, so a page is a range scan that stops after limit rows
-	// however deep into the history it starts.
-	//
-	// Two statements rather than one with "$2 IS NULL OR ...": a generic plan
-	// cannot use the row comparison as an index bound when it may be switched
-	// off at run time.
-	const first = `
-		SELECT ` + readColumns + `
-		FROM risk_assessments
-		WHERE user_profile_id = $1
-		ORDER BY created_at DESC, id DESC
-		LIMIT $2`
-	const next = `
-		SELECT ` + readColumns + `
-		FROM risk_assessments
-		WHERE user_profile_id = $1
-		  AND (created_at, id) < ($3, $4)
-		ORDER BY created_at DESC, id DESC
-		LIMIT $2`
+	return r.list(ctx, byProfile, profileID.String(), limit, after)
+}
 
-	q, args := first, []any{profileID.String(), limit}
+// ListForUser reads by the owning user's id (migration 0008), for a
+// clinician's read (ADR-030): it needs no profile lookup, so it cannot lag
+// behind the profile cache.
+func (r *Repository) ListForUser(
+	ctx context.Context,
+	userID string,
+	limit int,
+	after *domain.HistoryCursor,
+) ([]*domain.Assessment, error) {
+	return r.list(ctx, byUser, userID, limit, after)
+}
+
+// historyQuery is one keyset-paged history query: its first page and every
+// page after a cursor.
+type historyQuery struct{ first, next string }
+
+// The ordering and the limit are in the query, not in Go. Reading the whole
+// history and cutting it in memory moves database work into the service, and
+// the composite indexes (migrations 0006 and 0009) were made for exactly
+// these queries: equality on the key, then (created_at, id) in the index's
+// own order, so a page is a range scan that stops after limit rows however
+// deep into the history it starts.
+//
+// Two statements rather than one with "$2 IS NULL OR ...": a generic plan
+// cannot use the row comparison as an index bound when it may be switched off
+// at run time.
+var (
+	byProfile = historyQuery{
+		first: `SELECT ` + readColumns + ` FROM risk_assessments WHERE user_profile_id = $1
+			ORDER BY created_at DESC, id DESC LIMIT $2`,
+		next: `SELECT ` + readColumns + ` FROM risk_assessments WHERE user_profile_id = $1
+			AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $2`,
+	}
+	byUser = historyQuery{
+		first: `SELECT ` + readColumns + ` FROM risk_assessments WHERE user_id = $1
+			ORDER BY created_at DESC, id DESC LIMIT $2`,
+		next: `SELECT ` + readColumns + ` FROM risk_assessments WHERE user_id = $1
+			AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $2`,
+	}
+)
+
+func (r *Repository) list(
+	ctx context.Context, hq historyQuery, key string, limit int, after *domain.HistoryCursor,
+) ([]*domain.Assessment, error) {
+	q, args := hq.first, []any{key, limit}
 	if after != nil {
-		q, args = next, append(args, after.CreatedAt, after.ID.String())
+		q, args = hq.next, append(args, after.CreatedAt, after.ID.String())
 	}
 
 	rows, err := r.db.Query(ctx, q, args...)
@@ -146,11 +176,12 @@ func scanAssessment(s scanner) (*domain.Assessment, error) {
 		inputs, generated, details []byte
 		createdAt, updatedAt       time.Time
 		personalization, failure   string
+		userID                     string
 	)
 
 	if err := s.Scan(&id, &profileID, &slug, &model, &risk,
 		&inputs, &generated, &details, &createdAt, &updatedAt,
-		&personalization, &failure); err != nil {
+		&personalization, &failure, &userID); err != nil {
 		return nil, err
 	}
 
@@ -166,6 +197,7 @@ func scanAssessment(s scanner) (*domain.Assessment, error) {
 	a := &domain.Assessment{
 		ID:                    parsedID,
 		UserProfileID:         parsedProfile,
+		UserID:                userID,
 		Slug:                  slug,
 		PersonalizationStatus: domain.PersonalizationStatus(personalization),
 		PersonalizationError:  failure,
@@ -297,4 +329,61 @@ func nullable(s string) any {
 		return nil
 	}
 	return s
+}
+
+// OwnerBackfill is one batch of BackfillOwners.
+type OwnerBackfill struct {
+	// Last is the last profile-cache user id the batch covered: the cursor
+	// for the next batch. Empty when the batch covered nobody - the end.
+	Last string
+
+	// Updated counts the assessments that got their owner in this batch.
+	Updated int64
+}
+
+// BackfillOwners fills user_id on assessments written before migration 0008,
+// for the next batch of users in the profile cache after afterUserID.
+//
+// The batch walks the cache by its primary key (keyset, not OFFSET, and not
+// "WHERE user_id IS NULL LIMIT n", which rescans the rows it could not fill
+// on every batch), and each user's rows are found through the history index
+// of migration 0006. Each batch is its own short statement, outside any
+// migration's transaction (runbook migrations: backfill in small batches).
+//
+// It is idempotent: only rows still without an owner are written, so a run
+// that stops halfway is resumed by running it again.
+func (r *Repository) BackfillOwners(ctx context.Context, afterUserID string, batch int) (OwnerBackfill, error) {
+	const q = `
+		WITH users AS (
+			SELECT user_id, user_profile_id FROM profile_snapshots
+			WHERE user_id > $1 ORDER BY user_id LIMIT $2
+		), filled AS (
+			UPDATE risk_assessments r SET user_id = u.user_id
+			FROM users u
+			WHERE r.user_profile_id = u.user_profile_id AND r.user_id IS NULL
+			RETURNING 1
+		)
+		SELECT coalesce((SELECT user_id::text FROM users ORDER BY user_id DESC LIMIT 1), ''),
+		       (SELECT count(*) FROM filled)`
+
+	// The first batch starts below every id: the nil uuid is no user's id.
+	if afterUserID == "" {
+		afterUserID = uuid.Nil.String()
+	}
+	var out OwnerBackfill
+	if err := r.db.QueryRow(ctx, q, afterUserID, batch).Scan(&out.Last, &out.Updated); err != nil {
+		return OwnerBackfill{}, fmt.Errorf("backfilling assessment owners: %w", err)
+	}
+	return out, nil
+}
+
+// CountWithoutOwner counts the assessments that still have no user_id: rows
+// whose profile the cache does not know yet. Clinicians' reads do not see
+// them until they are filled.
+func (r *Repository) CountWithoutOwner(ctx context.Context) (int64, error) {
+	var n int64
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM risk_assessments WHERE user_id IS NULL`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting assessments without an owner: %w", err)
+	}
+	return n, nil
 }

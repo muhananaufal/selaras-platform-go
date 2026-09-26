@@ -11,6 +11,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
+	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
 )
 
@@ -289,6 +290,170 @@ func TestHistoryPagesNeitherSkipNorRepeat(t *testing.T) {
 		if got[i] != a.Slug {
 			t.Fatalf("position %d is %q; want %q (a row was skipped, repeated or misordered)", i, got[i], a.Slug)
 		}
+	}
+}
+
+// newOwnedAssessment is an assessment of userID's profile, carrying userID
+// as its owner the way StartAssessment writes it.
+func newOwnedAssessment(t *testing.T, userID string, profileID domain.ProfileID, at time.Time) *domain.Assessment {
+	t.Helper()
+	a := newAssessment(t, profileID)
+	a.UserID = userID
+	a.CreatedAt, a.UpdatedAt = at, at
+	return a
+}
+
+// A clinician's read (ADR-030) pages one user's history by the owner's id:
+// newest first, only that user's rows, and the cursor neither skips nor
+// repeats. Rows without an owner (written before migration 0008) are not
+// anyone's by this read.
+func TestHistoryByUserIsScopedOrderedAndPaged(t *testing.T) {
+	repo, ctx := newRepo(t)
+	mine, theirs := "018f4c1e-0000-7000-8000-00000000aaaa", "018f4c1e-0000-7000-8000-00000000bbbb"
+	myProfile := mustProfileID(t)
+
+	base := time.Now().Add(-time.Hour).Truncate(time.Microsecond)
+	var want []string
+	for i := range 5 {
+		a := newOwnedAssessment(t, mine, myProfile, base.Add(time.Duration(i/2)*time.Minute))
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		want = append(want, a.Slug)
+	}
+	for _, a := range []*domain.Assessment{
+		newOwnedAssessment(t, theirs, mustProfileID(t), base),
+		newAssessment(t, myProfile), // no owner yet
+	} {
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	var got []*domain.Assessment
+	var after *domain.HistoryCursor
+	for pages := 0; ; pages++ {
+		if pages > 5 {
+			t.Fatal("still paging; the cursor does not move")
+		}
+		page, err := repo.ListForUser(ctx, mine, 2, after)
+		if err != nil {
+			t.Fatalf("ListForUser: %v", err)
+		}
+		got = append(got, page...)
+		if len(page) < 2 {
+			break
+		}
+		last := page[len(page)-1]
+		after = &domain.HistoryCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("%d assessments; want the user's %d", len(got), len(want))
+	}
+	seen := map[string]bool{}
+	for i, a := range got {
+		if a.UserID != mine {
+			t.Fatalf("an assessment of %q came back", a.UserID)
+		}
+		if seen[a.Slug] {
+			t.Fatalf("%q came back twice", a.Slug)
+		}
+		seen[a.Slug] = true
+		if i > 0 && got[i-1].CreatedAt.Before(a.CreatedAt) {
+			t.Fatalf("position %d is newer than the one before it", i)
+		}
+	}
+	for _, slug := range want {
+		if !seen[slug] {
+			t.Fatalf("%q was skipped", slug)
+		}
+	}
+}
+
+// snapshot puts userID -> profileID into the profile cache, the mapping the
+// backfill reads.
+func snapshot(t *testing.T, ctx context.Context, db pg.Querier, userID string, profileID domain.ProfileID) {
+	t.Helper()
+	if _, err := db.Exec(ctx,
+		`INSERT INTO profile_snapshots (user_id, user_profile_id, observed_at) VALUES ($1, $2, now())`,
+		userID, profileID.String()); err != nil {
+		t.Fatalf("seeding the profile cache: %v", err)
+	}
+}
+
+// Rows written before migration 0008 get their owner from the profile cache,
+// batch by batch; a row whose profile the cache does not know stays without
+// one and is counted, and a second run changes nothing.
+func TestBackfillFillsOwnersTheCacheKnows(t *testing.T) {
+	pool := pgtest.Open(t, "assessment")
+	pgtest.Truncate(t, pool, "risk_assessments", "profile_snapshots")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	repo := postgres.NewRepository(pool)
+
+	users := []string{
+		"018f4c1e-0000-7000-8000-000000000001",
+		"018f4c1e-0000-7000-8000-000000000002",
+		"018f4c1e-0000-7000-8000-000000000003",
+	}
+	profiles := map[string]domain.ProfileID{}
+	for _, u := range users {
+		profiles[u] = mustProfileID(t)
+		snapshot(t, ctx, pool, u, profiles[u])
+		for range 2 {
+			if err := repo.Create(ctx, newAssessment(t, profiles[u])); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+		}
+	}
+	unknown := newAssessment(t, mustProfileID(t))
+	if err := repo.Create(ctx, unknown); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	run := func() (updated int64, batches int) {
+		t.Helper()
+		after := ""
+		for {
+			if batches > len(users) {
+				t.Fatal("still backfilling; the cursor does not move")
+			}
+			b, err := repo.BackfillOwners(ctx, after, 2)
+			if err != nil {
+				t.Fatalf("BackfillOwners: %v", err)
+			}
+			batches++
+			updated += b.Updated
+			if b.Last == "" {
+				return updated, batches
+			}
+			after = b.Last
+		}
+	}
+
+	if updated, batches := run(); updated != 6 || batches != 3 {
+		t.Fatalf("first run filled %d rows in %d batches; want 6 in 3 (two users, two users, the end)", updated, batches)
+	}
+	for _, u := range users {
+		page, err := repo.ListForUser(ctx, u, 10, nil)
+		if err != nil {
+			t.Fatalf("ListForUser: %v", err)
+		}
+		if len(page) != 2 {
+			t.Fatalf("user %s owns %d assessments after the backfill; want 2", u, len(page))
+		}
+		for _, a := range page {
+			if a.UserProfileID != profiles[u] {
+				t.Fatalf("user %s got an assessment of profile %s", u, a.UserProfileID)
+			}
+		}
+	}
+	if left, err := repo.CountWithoutOwner(ctx); err != nil || left != 1 {
+		t.Fatalf("CountWithoutOwner = %d, %v; want the 1 row whose profile the cache does not know", left, err)
+	}
+	if updated, _ := run(); updated != 0 {
+		t.Fatalf("a second run filled %d rows; want 0", updated)
 	}
 }
 

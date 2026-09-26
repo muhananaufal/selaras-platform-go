@@ -38,7 +38,7 @@ func TestAConsentedClinicianReadsAndTheReadIsRecorded(t *testing.T) {
 	svc, _, _ := newService(t)
 	seedAssessment(t, svc)
 	access := consented()
-	svc = svc.WithAccessChecker(access).WithPatientProfiles(&cacheOnly{known: map[string]string{mineID: profileIDFor(mineID)}})
+	svc = svc.WithAccessChecker(access)
 	writer, uow := &recordingWriter{}, &directUOW{}
 
 	page, err := svc.PatientHistory(context.Background(), uow, writerFor(writer), clinicianID, mineID, 0, "")
@@ -138,33 +138,18 @@ func TestMalformedInputIsRefusedBeforeAnythingIsChecked(t *testing.T) {
 	}
 }
 
-// cacheOnly is the profile cache without a fallback: it knows the users in
-// known and answers ErrProfileNotCached for anyone else.
-type cacheOnly struct {
-	known map[string]string // user id -> profile id
-	calls int
-}
-
-func (c *cacheOnly) Snapshot(_ context.Context, userID string) (app.ProfileSnapshot, error) {
-	c.calls++
-	id, ok := c.known[userID]
-	if !ok {
-		return app.ProfileSnapshot{}, app.ErrProfileNotCached
-	}
-	return app.ProfileSnapshot{UserProfileID: id}, nil
-}
-
-// A clinician's read never reaches profile-svc. That call would carry the
-// clinician's token for the patient's user id, and profile-svc refuses it
-// (sub is not user_id): seen on the stack as "reading the profile: rpc
-// error: code = PermissionDenied", answered as Internal. The patient's
-// profile id comes from the event-fed cache only.
-func TestAClinicianReadUsesOnlyTheProfileCache(t *testing.T) {
+// A clinician's read resolves no profile at all: it reads by the patient's
+// user id, which every assessment carries. Resolving the profile first went
+// wrong both ways it was tried - profile-svc refuses the clinician's token for
+// another user, and the event-fed cache lags behind a profile just completed,
+// so a patient with an assessment read as having none. The profile source
+// failing here stands for both.
+func TestAClinicianReadNeedsNoProfile(t *testing.T) {
 	svc, _, profiles := newService(t)
 	seedAssessment(t, svc)
+	profiles.err = errors.New("PermissionDenied: sub is not user_id")
 	before := profiles.calls
-	cache := &cacheOnly{known: map[string]string{mineID: profileIDFor(mineID)}}
-	svc = svc.WithAccessChecker(consented()).WithPatientProfiles(cache)
+	svc = svc.WithAccessChecker(consented())
 
 	page, err := svc.PatientHistory(context.Background(), &directUOW{}, writerFor(&recordingWriter{}), clinicianID, mineID, 0, "")
 	if err != nil {
@@ -174,30 +159,37 @@ func TestAClinicianReadUsesOnlyTheProfileCache(t *testing.T) {
 		t.Fatalf("%d assessments; want the patient's 1", len(page.Assessments))
 	}
 	if profiles.calls != before {
-		t.Fatalf("the clinician's read called the profile source %d time(s); it must use the cache only", profiles.calls-before)
-	}
-	if cache.calls != 1 {
-		t.Fatalf("the cache was asked %d times; want once", cache.calls)
+		t.Fatalf("the clinician's read asked the profile source %d time(s); want none", profiles.calls-before)
 	}
 }
 
-// A patient the cache does not know has no assessments this service could
-// have computed: computing one needs a complete profile, and completing it
-// fills the cache. The read answers with an empty history, not an error.
-func TestAPatientTheCacheDoesNotKnowHasAnEmptyHistory(t *testing.T) {
+// The clinician's read pages like the patient's own: a token while more
+// remains, none on the last page, and the patient's rows only.
+func TestAClinicianReadPagesThePatientsHistoryOnly(t *testing.T) {
 	svc, _, _ := newService(t)
-	svc = svc.WithAccessChecker(consented()).WithPatientProfiles(&cacheOnly{})
-	page, err := svc.PatientHistory(context.Background(), &directUOW{}, writerFor(&recordingWriter{}), clinicianID, mineID, 0, "")
-	if err != nil || len(page.Assessments) != 0 || page.NextPageToken != "" {
-		t.Fatalf("PatientHistory = %+v, %v; want an empty history", page, err)
-	}
-}
-
-func TestWithoutAProfileCacheAClinicianReadIsRefused(t *testing.T) {
-	svc, _, _ := newService(t)
+	startN(t, svc, mineID, 3)
+	startN(t, svc, theirsID, 2)
 	svc = svc.WithAccessChecker(consented())
-	_, err := svc.PatientHistory(context.Background(), &directUOW{}, writerFor(&recordingWriter{}), clinicianID, mineID, 0, "")
-	if !errors.Is(err, app.ErrAccessUnavailable) {
-		t.Fatalf("PatientHistory without a profile cache returned %v; want ErrAccessUnavailable", err)
+	read := func(token string) app.HistoryPage {
+		t.Helper()
+		page, err := svc.PatientHistory(context.Background(), &directUOW{}, writerFor(&recordingWriter{}), clinicianID, mineID, 2, token)
+		if err != nil {
+			t.Fatalf("PatientHistory: %v", err)
+		}
+		return page
+	}
+
+	first := read("")
+	if len(first.Assessments) != 2 || first.NextPageToken == "" {
+		t.Fatalf("first page: %d assessments, token %q; want 2 and a token", len(first.Assessments), first.NextPageToken)
+	}
+	second := read(first.NextPageToken)
+	if len(second.Assessments) != 1 || second.NextPageToken != "" {
+		t.Fatalf("last page: %d assessments, token %q; want 1 and no token", len(second.Assessments), second.NextPageToken)
+	}
+	for _, a := range append(first.Assessments, second.Assessments...) {
+		if a.UserID != mineID {
+			t.Fatalf("the page holds an assessment of user %q; want only the patient's", a.UserID)
+		}
 	}
 }
