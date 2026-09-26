@@ -72,10 +72,28 @@ func sqlState(err error) string {
 	return ""
 }
 
+// ProjectionLock names the advisory lock that orders changes to the tuples
+// against a rebuild (RebuildTuples): every change takes it shared, a rebuild
+// takes it exclusive.
+const ProjectionLock = "authz-projection"
+
 // enqueue writes tuple changes to the projection's outbox, in the caller's
 // transaction: they reach OpenFGA exactly when the change that implies them
 // commits.
+//
+// It takes the projection lock shared first, until the transaction ends.
+// Changes never wait on each other for it; they wait only for a rebuild, and
+// a rebuild waits for them. A change whose rows were written before the
+// rebuild began but queued after it is still right: the rebuild could not see
+// the uncommitted rows, and the change's own queue entries come after the
+// rebuild's.
 func enqueue(ctx context.Context, tx pg.Querier, changes []domain.TupleChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))", ProjectionLock); err != nil {
+		return fmt.Errorf("taking the projection lock: %w", err)
+	}
 	for _, c := range changes {
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO authz_changes (op, tuple_user, relation, object) VALUES ($1, $2, $3, $4)",

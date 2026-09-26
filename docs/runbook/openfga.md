@@ -8,7 +8,7 @@ adalah ledger, bukan OpenFGA.
 ## Alurnya
 
 1. Use case clinic-svc (grant, revoke, tambah/keluarkan anggota, buat
-   klinik) menulis perubahannya **dan** perubahan tuple yang ditimbulkannya
+   klinik, hapus akun) menulis perubahannya **dan** perubahan tuple yang ditimbulkannya
    ke `clinic.authz_changes` dalam satu transaksi. Perubahan consent
    diserialkan per pasien dengan advisory lock.
 2. Projector di clinic-svc membaca `authz_changes` yang belum diterapkan,
@@ -49,12 +49,54 @@ revoke 199 ms.
 - **Saat start.** clinic-svc menulis model hanya bila maknanya berubah.
   Restart memakai store dan model yang sama (terverifikasi di stack lokal).
 
+## Membangun ulang tuple dari ledger
+
+Basis data `openfga` tidak ikut backup aplikasi, karena isinya proyeksi.
+Bila basis data atau store-nya hilang, tidak ada klinisi yang bisa membaca.
+Itu arah yang gagal-tertutup, tetapi tetap gangguan. Langkah pulihnya:
+
+1. **Pulihkan OpenFGA** (basis data dan `openfga migrate`), lalu **restart
+   clinic-svc**. clinic-svc mem-bootstrap store `selaras` dan modelnya bila
+   belum ada.
+2. **Antrekan ulang semua tuple:**
+
+   ```bash
+   CLINIC_DATABASE_DSN='postgres://svc_clinic:...@.../selaras?search_path=clinic' \
+     go run ./cmd/clinic-rebuild-tuples
+   ```
+
+   Projector clinic-svc lalu menerapkannya sebagai perubahan biasa. Selesai
+   bila `SELECT count(*) FROM clinic.authz_changes WHERE applied_at IS NULL`
+   kembali 0.
+3. **Restart assessment-svc dan coaching-svc bila store dibuat ulang.**
+   Checker mereka mengingat id store sejak pemeriksaan pertama. Tanpa
+   restart, mereka terus menolak (gagal-tertutup) karena bertanya ke store
+   yang sudah tidak ada.
+
+Sifat yang perlu diketahui:
+
+- **Hanya menambah.** Tuple yang tidak lagi didukung state tidak dihapus.
+  Store yang dipulihkan kosong memang tidak punya tuple seperti itu.
+- **Aman terhadap perubahan yang berjalan bersamaan.** Setiap perubahan
+  tuple mengambil advisory lock `authz-projection` secara shared di
+  `enqueue`, sedangkan rebuild mengambilnya secara eksklusif dalam satu
+  transaksi. Perubahan yang sedang berjalan selesai dulu dan terlihat oleh
+  rebuild. Perubahan yang datang selama rebuild antre sesudahnya, jadi grant
+  lama tidak pernah diterapkan setelah pencabutannya. Selama rebuild
+  berjalan, penulisan consent dan keanggotaan menunggu.
+- **Tidak menyentuh OpenFGA secara langsung.** Karena itu ia tidak butuh
+  kredensial OpenFGA.
+
+Drill 2026-09-27 di stack compose lokal:
+
+| Langkah | Hasil |
+| :--- | :--- |
+| Store `selaras` dihapus, clinic-svc/assessment-svc/coaching-svc di-restart | store baru, 0 tuple |
+| Sebelum rebuild: consent aktif, consent dicabut, klinisi yang keluar | ketiganya `allowed:false` |
+| Rebuild | 129 keanggotaan, 64 consent aktif, 257 tuple diantrekan dalam 195 ms |
+| Sesudah rebuild | consent aktif `true`; dicabut `false`; keluar `false`; antrean 0, gagal 0 |
+
 ## Yang belum ada
 
-- **Membangun ulang tuple dari ledger.** Basis data `openfga` tidak ikut
-  backup aplikasi karena isinya proyeksi, tetapi alat rebuild-nya belum
-  ditulis. Sampai alat itu ada, kehilangan basis data `openfga` berarti
-  tidak ada klinisi yang bisa membaca. Arahnya gagal-tertutup, tetapi tetap
-  gangguan.
 - **OpenFGA di chart/k3d.** Belum ada. clinic-svc di klaster berjalan tanpa
   `OPENFGA_URL`, jadi proyeksi mati dan log mengatakannya.
