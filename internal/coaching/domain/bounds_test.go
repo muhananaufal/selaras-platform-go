@@ -46,6 +46,18 @@ func TestACurriculumCannotNumberWeeksBeyondStorage(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("week %d, the largest storable number: Validate returned %v", domain.MaxWeeks, err)
 	}
+
+	// And the smallest: week 1 on its own. The case above that holds week 1
+	// fails anyway (on its second week), so it never showed that week 1 is
+	// accepted (mutation testing: < 1 -> <= 1 survived).
+	c = &domain.Curriculum{Title: "Program", Weeks: []*domain.Week{week(1)}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("week 1, the smallest number: Validate returned %v", err)
+	}
+	c = &domain.Curriculum{Title: "Program", Weeks: []*domain.Week{week(0)}}
+	if err := c.Validate(); !errors.Is(err, domain.ErrInvalidWeekNumber) {
+		t.Fatalf("week 0: Validate returned %v, want ErrInvalidWeekNumber", err)
+	}
 }
 
 // TestADaylightSavingWeekIsStillSevenDays pins the rounding in the day count:
