@@ -229,6 +229,23 @@ tasks:
     cmds:
       - docker run --rm -v selaras-core_backups:/backups alpine ls -la /backups
 
+  pitr:info:
+    desc: Show the pgBackRest backups and the archived WAL range (point-in-time recovery window)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "docker exec selaras-pitr sh -c 'PGBACKREST_PG1_USER=\$PGBACKREST_PG1_USER pgbackrest --stanza=selaras info'"
+
+  pitr:backup:
+    desc: 'Take a pgBackRest backup now. Usage: task pitr:backup -- full   (or diff, incr)'
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "docker exec selaras-pitr pgbackrest --stanza=selaras --type={{.CLI_ARGS}} backup"
+
+  pitr:test:
+    desc: Prove point-in-time recovery end to end against throwaway containers
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/test/drill/pitr.test.sh
+
   # ---------------------------------------------------------------- k3d
   k3d:up:
     desc: Create the local k3d cluster from deploy/k3d/cluster.yaml (F9-04)

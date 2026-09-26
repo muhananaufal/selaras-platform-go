@@ -256,10 +256,11 @@ jobs:
   # The Helm chart is treated like code: strict lint for both value profiles,
   # then the rendered manifests are validated against the Kubernetes schemas
   # (kubeconform). The KEDA CRD has no schema there and is skipped explicitly.
-  # Backup and restore scripts, against throwaway Postgres containers: a
-  # failed round must leave no file under a final name, a round must carry
-  # all eight schemas and all eight unit roles, and restoring roles may
-  # ignore only "role ... already exists".
+  # Backup, restore and point-in-time recovery, against throwaway Postgres
+  # containers: a failed round must leave no file under a final name, a
+  # round must carry all eight schemas and all eight unit roles, restoring
+  # roles may ignore only "role ... already exists", and a restore to a
+  # point in time must hold what was written before it and nothing after.
   backup:
     name: backup and restore scripts
     runs-on: ubuntu-latest
@@ -269,6 +270,8 @@ jobs:
         run: bash test/drill/backup.test.sh
       - name: Restoring roles
         run: bash test/drill/restore-globals.test.sh
+      - name: Point-in-time recovery
+        run: bash test/drill/pitr.test.sh
 
   chart:
     name: helm chart
