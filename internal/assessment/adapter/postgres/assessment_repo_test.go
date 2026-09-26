@@ -3,6 +3,8 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,7 +195,7 @@ func TestHistoryIsScopedAndOrdered(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	found, err := repo.ListForProfile(ctx, mine, 10)
+	found, err := repo.ListForProfile(ctx, mine, 10, nil)
 	if err != nil {
 		t.Fatalf("ListForProfile: %v", err)
 	}
@@ -219,12 +221,74 @@ func TestHistoryRespectsItsLimit(t *testing.T) {
 		}
 	}
 
-	found, err := repo.ListForProfile(ctx, profileID, 2)
+	found, err := repo.ListForProfile(ctx, profileID, 2, nil)
 	if err != nil {
 		t.Fatalf("ListForProfile: %v", err)
 	}
 	if len(found) != 2 {
 		t.Errorf("%d assessments; want 2", len(found))
+	}
+}
+
+// A history is read one page at a time, each page starting after the last
+// row of the one before. Rows created in the same instant are the trap: a
+// cursor on created_at alone skips or repeats them at a page boundary, so a
+// third of these share their timestamp with a neighbour.
+func TestHistoryPagesNeitherSkipNorRepeat(t *testing.T) {
+	repo, ctx := newRepo(t)
+	mine := mustProfileID(t)
+
+	base := time.Now().Add(-time.Hour).Truncate(time.Microsecond)
+	var want []*domain.Assessment
+	for i := range 25 {
+		a := newAssessment(t, mine)
+		a.CreatedAt = base.Add(time.Duration(i/3) * time.Minute)
+		a.UpdatedAt = a.CreatedAt
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		want = append(want, a)
+	}
+	if err := repo.Create(ctx, newAssessment(t, mustProfileID(t))); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Newest first, and the id breaks ties: Postgres orders uuids by their
+	// bytes, which is the order of their lowercase text form.
+	slices.SortFunc(want, func(a, b *domain.Assessment) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID.String(), a.ID.String())
+	})
+
+	var got []string
+	var after *domain.HistoryCursor
+	for pages := 0; ; pages++ {
+		if pages > 5 {
+			t.Fatalf("still paging after %d pages; the cursor does not move", pages)
+		}
+		page, err := repo.ListForProfile(ctx, mine, 10, after)
+		if err != nil {
+			t.Fatalf("ListForProfile: %v", err)
+		}
+		for _, a := range page {
+			got = append(got, a.Slug)
+		}
+		if len(page) < 10 {
+			break
+		}
+		last := page[len(page)-1]
+		after = &domain.HistoryCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("paging returned %d assessments; want %d", len(got), len(want))
+	}
+	for i, a := range want {
+		if got[i] != a.Slug {
+			t.Fatalf("position %d is %q; want %q (a row was skipped, repeated or misordered)", i, got[i], a.Slug)
+		}
 	}
 }
 

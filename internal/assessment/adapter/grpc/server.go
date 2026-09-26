@@ -80,16 +80,19 @@ func (s *Server) ListAssessments(
 	ctx context.Context,
 	req *assessmentv1.ListAssessmentsRequest,
 ) (*assessmentv1.ListAssessmentsResponse, error) {
-	found, err := s.svc.History(ctx, req.GetUserId(), int(req.GetPage().GetPageSize()))
+	page, err := s.svc.History(ctx, req.GetUserId(), int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
 	if err != nil {
 		return nil, toStatus(ctx, "ListAssessments", err)
 	}
 
-	out := make([]*assessmentv1.RiskAssessment, 0, len(found))
-	for _, a := range found {
+	out := make([]*assessmentv1.RiskAssessment, 0, len(page.Assessments))
+	for _, a := range page.Assessments {
 		out = append(out, toProto(a, nil))
 	}
-	return &assessmentv1.ListAssessmentsResponse{Assessments: out}, nil
+	return &assessmentv1.ListAssessmentsResponse{
+		Assessments: out,
+		Page:        &commonv1.PageResponse{NextPageToken: page.NextPageToken},
+	}, nil
 }
 
 // ResolveRiskRegion maps a country to a calibration region.
@@ -305,6 +308,9 @@ func toStatus(ctx context.Context, op string, err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	case errors.Is(err, domain.ErrInvalidProfileID), errors.Is(err, domain.ErrInvalidID):
+		return status.Error(codes.InvalidArgument, err.Error())
+
+	case errors.Is(err, app.ErrInvalidPageToken), errors.Is(err, app.ErrInvalidPageSize):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	case errors.Is(err, score.ErrUnknownSex), errors.Is(err, score.ErrMissingDiabetesInput):

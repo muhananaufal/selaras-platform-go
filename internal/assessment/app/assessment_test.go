@@ -2,7 +2,10 @@ package app_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +26,9 @@ type fakeRepo struct {
 	mu      sync.Mutex
 	bySlug  map[string]*domain.Assessment
 	failNow error
+
+	// lastLimit is the limit the service last asked the database for.
+	lastLimit int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -53,18 +59,33 @@ func (r *fakeRepo) FindBySlug(_ context.Context, slug string) (*domain.Assessmen
 	return a, nil
 }
 
-func (r *fakeRepo) ListForProfile(_ context.Context, id domain.ProfileID, limit int) ([]*domain.Assessment, error) {
+// ListForProfile orders and pages the way the database query does:
+// (created_at, id) descending, starting right after the cursor.
+func (r *fakeRepo) ListForProfile(_ context.Context, id domain.ProfileID, limit int, after *domain.HistoryCursor) ([]*domain.Assessment, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.lastLimit = limit
+
+	newestFirst := func(a, b *domain.Assessment) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID.String(), a.ID.String())
+	}
 
 	var out []*domain.Assessment
 	for _, a := range r.bySlug {
-		if a.UserProfileID == id {
-			out = append(out, a)
+		if a.UserProfileID != id {
+			continue
 		}
-		if len(out) == limit {
-			break
+		if after != nil && newestFirst(a, &domain.Assessment{CreatedAt: after.CreatedAt, ID: after.ID}) <= 0 {
+			continue
 		}
+		out = append(out, a)
+	}
+	slices.SortFunc(out, newestFirst)
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
@@ -330,27 +351,129 @@ func TestSlugLookupIgnoresCaseAndSpace(t *testing.T) {
 	}
 }
 
-func TestHistoryIsCappedEvenWhenTheCallerAsksForMore(t *testing.T) {
-	svc, _, _ := newService(t)
-
-	for range 3 {
-		if _, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
-			UserID: mineID, Answers: validAnswers(),
-		}); err != nil {
+// startN stores n assessments for one user and returns their slugs.
+func startN(t *testing.T, svc *app.Service, userID string, n int) []string {
+	t.Helper()
+	var slugs []string
+	for range n {
+		a, err := svc.Start(context.Background(), nil, nil, app.StartCommand{
+			UserID: userID, Answers: validAnswers(),
+		})
+		if err != nil {
 			t.Fatalf("Start: %v", err)
+		}
+		slugs = append(slugs, a.Slug)
+	}
+	return slugs
+}
+
+// The page size follows AIP-158: unset means the default, more than the
+// maximum is lowered to the maximum, negative is the caller's mistake. The
+// database is asked for one row more than the page, to learn whether another
+// page exists without a second query.
+func TestHistoryPageSizeIsBounded(t *testing.T) {
+	svc, repo, _ := newService(t)
+	startN(t, svc, mineID, 3)
+
+	for _, tc := range []struct{ asked, queried int }{
+		{0, 21},
+		{1, 2},
+		{100, 101},
+		{101, 101},
+		{10000, 101},
+	} {
+		page, err := svc.History(context.Background(), mineID, tc.asked, "")
+		if err != nil {
+			t.Fatalf("History(size %d): %v", tc.asked, err)
+		}
+		if repo.lastLimit != tc.queried {
+			t.Errorf("size %d asked the database for %d rows; want %d", tc.asked, repo.lastLimit, tc.queried)
+		}
+		if want := min(3, max(tc.asked, 1)); tc.asked != 0 && len(page.Assessments) != want {
+			t.Errorf("size %d returned %d; want %d", tc.asked, len(page.Assessments), want)
 		}
 	}
 
-	// An unreasonable limit is replaced with the default, not passed on to the
-	// database.
-	for _, limit := range []int{0, -1, 10000} {
-		found, err := svc.History(context.Background(), mineID, limit)
+	if _, err := svc.History(context.Background(), mineID, -1, ""); !errors.Is(err, app.ErrInvalidPageSize) {
+		t.Errorf("a negative size returned %v; want ErrInvalidPageSize", err)
+	}
+}
+
+func TestHistoryPagesThroughEveryAssessmentOnce(t *testing.T) {
+	svc, _, _ := newService(t)
+	stored := startN(t, svc, mineID, 5)
+	startN(t, svc, theirsID, 2)
+
+	seen := map[string]bool{}
+	token := ""
+	var sizes []int
+	for range 5 {
+		page, err := svc.History(context.Background(), mineID, 2, token)
 		if err != nil {
-			t.Fatalf("History(%d): %v", limit, err)
+			t.Fatalf("History: %v", err)
 		}
-		if len(found) != 3 {
-			t.Errorf("History(%d) returned %d; want 3", limit, len(found))
+		sizes = append(sizes, len(page.Assessments))
+		for _, a := range page.Assessments {
+			if seen[a.Slug] {
+				t.Fatalf("%q came back on two pages", a.Slug)
+			}
+			seen[a.Slug] = true
 		}
+		if token = page.NextPageToken; token == "" {
+			break
+		}
+	}
+
+	if !slices.Equal(sizes, []int{2, 2, 1}) {
+		t.Errorf("page sizes %v; want [2 2 1]", sizes)
+	}
+	for _, slug := range stored {
+		if !seen[slug] {
+			t.Errorf("%q never came back", slug)
+		}
+	}
+}
+
+// A history that ends exactly at a page boundary has no next page. A token
+// there would send the client for a page that is always empty.
+func TestTheLastFullPageHasNoNextToken(t *testing.T) {
+	svc, _, _ := newService(t)
+	startN(t, svc, mineID, 4)
+
+	first, err := svc.History(context.Background(), mineID, 2, "")
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if first.NextPageToken == "" {
+		t.Fatal("the first of two full pages has no next token")
+	}
+	second, err := svc.History(context.Background(), mineID, 2, first.NextPageToken)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(second.Assessments) != 2 || second.NextPageToken != "" {
+		t.Errorf("last page: %d assessments, token %q; want 2 and no token", len(second.Assessments), second.NextPageToken)
+	}
+}
+
+func TestAMalformedPageTokenIsRefused(t *testing.T) {
+	svc, _, _ := newService(t)
+	startN(t, svc, mineID, 1)
+
+	encode := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	for name, token := range map[string]string{
+		"not base64":       "%%%",
+		"not JSON":         encode("page two"),
+		"no position":      encode(`{}`),
+		"an unreadable id": encode(`{"t":"2026-09-26T10:00:00Z","i":"x"}`),
+		"a bad timestamp":  encode(`{"t":"yesterday","i":"018f4c1e-0000-7000-8000-00000000aaaa"}`),
+		"trailing data":    encode(`{"t":"2026-09-26T10:00:00Z","i":"018f4c1e-0000-7000-8000-00000000aaaa"}x`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := svc.History(context.Background(), mineID, 2, token); !errors.Is(err, app.ErrInvalidPageToken) {
+				t.Errorf("History returned %v; want ErrInvalidPageToken", err)
+			}
+		})
 	}
 }
 

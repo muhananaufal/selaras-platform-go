@@ -265,19 +265,69 @@ func (s *Service) Get(ctx context.Context, slug, userID string) (*domain.Assessm
 	return assessment, nil
 }
 
-// History returns the most recent assessments of one profile.
-func (s *Service) History(ctx context.Context, userID string, limit int) ([]*domain.Assessment, error) {
+// Page sizes of the history (AIP-158).
+const (
+	defaultHistoryPageSize = 20
+
+	// maxHistoryPageSize is fixed, not left to the caller. An unbounded
+	// request is the cheapest way to make the database send someone's entire
+	// history in one answer.
+	maxHistoryPageSize = 100
+)
+
+// HistoryPage is one page of a history.
+type HistoryPage struct {
+	Assessments []*domain.Assessment
+
+	// NextPageToken is empty on the last page, and only there.
+	NextPageToken string
+}
+
+// History returns one page of a profile's assessments, newest first.
+//
+// An empty pageToken asks for the first page; any other value must be a
+// NextPageToken this service returned.
+func (s *Service) History(ctx context.Context, userID string, pageSize int, pageToken string) (HistoryPage, error) {
+	switch {
+	case pageSize < 0:
+		return HistoryPage{}, ErrInvalidPageSize
+	case pageSize == 0:
+		pageSize = defaultHistoryPageSize
+	case pageSize > maxHistoryPageSize:
+		pageSize = maxHistoryPageSize
+	}
+
+	var after *domain.HistoryCursor
+	if pageToken != "" {
+		cursor, err := decodePageToken(pageToken)
+		if err != nil {
+			return HistoryPage{}, err
+		}
+		after = cursor
+	}
+
 	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return HistoryPage{}, err
 	}
-	if limit <= 0 || limit > 100 {
-		// The upper bound is fixed, not left to the caller. An unbounded request
-		// is the cheapest way to make the database send someone's entire history
-		// in one answer.
-		limit = 20
+
+	// One row more than the page says whether another page exists, without a
+	// count and without handing out a token to a page that turns out empty.
+	found, err := s.assessments.ListForProfile(ctx, profileID, pageSize+1, after)
+	if err != nil {
+		return HistoryPage{}, err
 	}
-	return s.assessments.ListForProfile(ctx, profileID, limit)
+	if len(found) <= pageSize {
+		return HistoryPage{Assessments: found}, nil
+	}
+
+	found = found[:pageSize]
+	last := found[len(found)-1]
+	next, err := encodePageToken(domain.HistoryCursor{CreatedAt: last.CreatedAt, ID: last.ID})
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	return HistoryPage{Assessments: found, NextPageToken: next}, nil
 }
 
 // validate checks the profile snapshot before anything is computed.
