@@ -161,6 +161,16 @@ func (d *Dashboard) IsEmpty() bool { return d.Total == 0 }
 // Thirty days, the same as the legacy system.
 const TrendWindow = 30 * 24 * time.Hour
 
+// HistoryLimit is how many of the latest assessments the dashboard carries.
+//
+// The dashboard used to load a user's whole history on every read, so the
+// most loyal users paid the most for every page view. The limit bounds that;
+// Total still counts every assessment, and the full history is the
+// assessment service's to list. The risk trend is drawn from the same loaded
+// assessments, so it would only lose points for a user with more than this
+// many assessments inside TrendWindow.
+const HistoryLimit = 100
+
 // RiskTrend returns the chart points inside the window, OLDEST first.
 //
 // The order is deliberately the reverse of the history: a chart is read left
