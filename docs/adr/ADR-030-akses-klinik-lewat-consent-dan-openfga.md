@@ -72,8 +72,14 @@ dijawab dengan melonggarkan aturan kepemilikan.
      kedua relasi di atas.
 3. **clinic-svc** (skema `clinic`) memegang klinik, keanggotaan, **consent
    ledger**, dan **audit akses**. Kedua tabel terakhir *append-only*: peran
-   service tidak punya `UPDATE`/`DELETE`, dan trigger menolak keduanya bahkan
-   bagi pemilik tabel.
+   runtime tidak punya `UPDATE`/`DELETE`, dan trigger menolak keduanya.
+   - **Pemilik tabel bukan peran runtime.** Di service lain, migrasi berjalan
+     dengan peran runtime (`svc_<svc>`, `deploy/compose/initdb/01-schemas.sh`),
+     sehingga peran itu memiliki tabelnya. Pemilik bisa `DISABLE TRIGGER`
+     dan `NO FORCE ROW LEVEL SECURITY` dengan DDL, jadi trigger dan RLS hanya
+     sekuat peran yang tidak memiliki tabelnya. Skema `clinic` karena itu
+     dimiliki peran migrasi `clinic_owner`, dan `svc_clinic` hanya mendapat
+     `SELECT, INSERT` pada ledger dan audit.
    - Pencabutan adalah baris baru, bukan penghapusan.
    - Tuple OpenFGA adalah **proyeksi** ledger lewat outbox. Consent dan event
      proyeksinya ditulis dalam satu transaksi, lalu consumer menulis atau
@@ -94,8 +100,9 @@ dijawab dengan melonggarkan aturan kepemilikan.
      membacanya.
 6. **Row Level Security** mulai dari skema `clinic`. Setiap transaksi
    menyetel `SET LOCAL app.user_id`, dan kebijakan membatasi baris consent
-   dan audit ke pasien atau klinisi yang bersangkutan dengan `FORCE ROW LEVEL
-   SECURITY`, supaya pemilik tabel pun terikat.
+   dan audit ke pasien atau klinisi yang bersangkutan. `svc_clinic` bukan
+   pemilik tabel, jadi kebijakan itu mengikatnya tanpa bisa dimatikan dari
+   peran runtime; `FORCE ROW LEVEL SECURITY` tetap dipasang untuk pemiliknya.
    - `SET LOCAL` hidup selama transaksi, jadi ia aman di PgBouncer mode
      transaksi. Keadaan ini dibuktikan dengan test lewat PgBouncer, bukan
      diasumsikan.
@@ -133,8 +140,8 @@ Negatif:
   - klinisi yang keluar dari klinik;
   - pasien lain.
 - Pencabutan diukur dari commit ledger sampai `Check` menolak.
-- Append-only dibuktikan: `UPDATE`/`DELETE` pada ledger dan audit gagal,
-  juga sebagai pemilik tabel.
+- Append-only dibuktikan: `UPDATE`/`DELETE` pada ledger dan audit gagal, dan
+  `svc_clinic` tidak bisa `ALTER TABLE` (menonaktifkan trigger atau RLS).
 - RLS dibuktikan lewat PgBouncer: dua transaksi berurutan di koneksi server
   yang sama tidak saling melihat baris.
 
