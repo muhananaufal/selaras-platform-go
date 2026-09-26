@@ -47,7 +47,7 @@ const (
 // created and all of its rows pile up in the DEFAULT partition.
 func catalog() []partition.Table {
 	var tables []partition.Table
-	for _, schema := range []string{"identity", "profile", "assessment", "coaching", "chat", "nutrition", "dashboard", "llm"} {
+	for _, schema := range []string{"identity", "profile", "assessment", "coaching", "chat", "nutrition", "dashboard", "llm", "clinic"} {
 		tables = append(tables, partition.Table{
 			Schema: schema, Name: "outbox", Column: partitionKey,
 			Retention: outboxRetention, Prune: "published_at IS NOT NULL",

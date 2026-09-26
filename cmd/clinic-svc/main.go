@@ -87,6 +87,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer stopAccess()
+	stopDeletion, err := startDeletion(ctx, log, pool, cfg.KafkaBrokers)
+	if err != nil {
+		return err
+	}
+	defer stopDeletion()
 	server, err := clinicgrpc.NewServer(svc)
 	if err != nil {
 		return err
