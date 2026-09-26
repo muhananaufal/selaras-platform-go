@@ -123,9 +123,9 @@ type DeleteAccountCommand struct {
 // Execute starts the account-deletion saga (F8-01).
 //
 // It deletes NOTHING itself. What it does: makes sure the person is who they
-// say, records the saga, and announces the request. Six units delete their own
-// data and then confirm, and the account is deleted only once all six have
-// answered.
+// say, records the saga, and announces the request. The participant units
+// delete their own data and then confirm, and the account is deleted only
+// once all of them have answered.
 //
 // The order is deliberate. Deleting the account first would remove the only
 // place that knows a deletion is in progress, and a unit that fails to delete
@@ -205,7 +205,7 @@ func (d *DeleteAccount) Execute(
 
 	// The saga and its event are written in ONE transaction (E10). If the two
 	// could come apart, the system could have a saga that was never announced -
-	// hanging forever waiting for six units that were never told - or an
+	// hanging forever waiting for units that were never told - or an
 	// announcement without a saga, deleting a user's data without a single
 	// record that it was requested.
 	if err := d.uow.Do(ctx, func(r Repositories) error {
@@ -271,7 +271,7 @@ func (d *DeleteAccount) ConfirmDeletion(
 			return err
 		}
 
-		// The account is deleted ONLY once all six units confirmed success.
+		// The account is deleted ONLY once every participant unit confirmed success.
 		//
 		// A failed saga leaves the account intact - and that is deliberate.
 		// Deleting the account while its data still exists in some unit means

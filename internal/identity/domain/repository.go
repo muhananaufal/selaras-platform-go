@@ -47,7 +47,7 @@ type UserRepository interface {
 
 	// Delete removes the account PERMANENTLY.
 	//
-	// Called only at the end of the deletion saga, once all six units have
+	// Called only at the end of the deletion saga, once every participant unit has
 	// confirmed their data is really gone. It is not a soft delete: a row left
 	// behind after someone asked for their account to be deleted is personal
 	// data nobody knows still exists.

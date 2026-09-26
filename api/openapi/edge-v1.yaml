@@ -2518,7 +2518,7 @@ paths:
       summary: DeleteAccount
       description: |-
         Starts the permanent deletion of the caller's account. The deletion
-         crosses six units and is NOT finished when this returns.
+         crosses every participant unit and is NOT finished when this returns.
       operationId: edge.v1.Auth.DeleteAccount
       parameters:
         - name: Connect-Protocol-Version
