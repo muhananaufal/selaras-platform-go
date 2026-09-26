@@ -300,6 +300,8 @@ services:
       CLINIC_HEALTH_ADDR: ":9902"
       # The consent projection (ADR-030).
       OPENFGA_URL: http://openfga:8080
+      # Clinicians' reads arrive here for the access audit.
+      KAFKA_BROKERS: kafka:9092
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
@@ -312,6 +314,10 @@ services:
         condition: service_healthy
       openfga:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      topics:
+        condition: service_completed_successfully
     healthcheck:
       disable: true
     deploy:

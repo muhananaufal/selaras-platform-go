@@ -82,6 +82,11 @@ func run(log *slog.Logger) error {
 	if err := startProjection(ctx, log, cfg, repo); err != nil {
 		return err
 	}
+	stopAccess, err := startAccessConsumer(ctx, log, cfg.KafkaBrokers, repo)
+	if err != nil {
+		return err
+	}
+	defer stopAccess()
 	server, err := clinicgrpc.NewServer(svc)
 	if err != nil {
 		return err
