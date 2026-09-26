@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -919,5 +920,74 @@ func TestAQuotaRefusalParksTheJobInsteadOfKillingIt(t *testing.T) {
 	}
 	if events := h.dlqEventsFor(t, assessmentID); events != 0 {
 		t.Fatalf("parking published %d failure events, want 0", events)
+	}
+}
+
+// sendCurriculum publishes a CurriculumRequested for a program.
+func (h *harness) sendCurriculum(t *testing.T, programID string) {
+	t.Helper()
+
+	env := &eventsv1.Envelope{
+		EventId:        uuid.NewString(),
+		OccurredAt:     timestamppb.Now(),
+		SchemaVersion:  1,
+		IdempotencyKey: &commonv1.IdempotencyKey{Value: "curriculum-" + programID},
+		Payload: &eventsv1.Envelope_CurriculumRequested{
+			CurriculumRequested: &eventsv1.CurriculumRequested{
+				ProgramId:  programID,
+				Difficulty: "Standar & Konsisten",
+			},
+		},
+	}
+	payload, err := proto.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshalling: %v", err)
+	}
+	if _, err := kafka.NewPublisher(h.producer).Publish(h.ctx, []kafka.Message{{
+		Topic: h.topic, Key: []byte(programID), Value: payload,
+	}}); err != nil {
+		t.Fatalf("publishing: %v", err)
+	}
+}
+
+// TestACurriculumThatBreaksThePromptIsRetriedThenGivenUp: a well-formed JSON
+// answer with three weeks where the prompt asks for four is not stored as a
+// curriculum. Each attempt counts as a failure, it is retried, and after the
+// limit the job is dead with the contract named as the reason - so the
+// program is told it failed instead of receiving a curriculum that silently
+// changes its end date.
+func TestACurriculumThatBreaksThePromptIsRetriedThenGivenUp(t *testing.T) {
+	h := newHarness(t)
+	h.provider.Answer = `{"program_title":"Program","weeks":[` +
+		`{"week_number":1,"tasks":[]},{"week_number":2,"tasks":[]},{"week_number":3,"tasks":[]}]}`
+
+	programID := uuid.NewString()
+	h.sendCurriculum(t, programID)
+
+	if err := h.runUntil(t, 90*time.Second, func() bool {
+		return h.statusOf(t, programID) == llmworker.StatusDead
+	}); err != nil {
+		t.Fatalf("Run returned %v", err)
+	}
+
+	if got := h.provider.CallCount(); got != llmworker.MaxAttempts {
+		t.Fatalf("the provider was asked %d times, want %d: a broken contract is worth retrying", got, llmworker.MaxAttempts)
+	}
+	var lastError string
+	if err := h.pool.QueryRow(h.ctx,
+		`SELECT coalesce(last_error,'') FROM llm_jobs WHERE aggregate_id = $1`, programID).Scan(&lastError); err != nil {
+		t.Fatalf("reading the job: %v", err)
+	}
+	if !strings.Contains(lastError, llmworker.ErrContractViolation.Error()) {
+		t.Fatalf("the job gave up with %q; it should name the broken contract", lastError)
+	}
+	var completed int
+	if err := h.pool.QueryRow(h.ctx,
+		`SELECT count(*) FROM outbox WHERE aggregate_id = $1 AND event_type LIKE '%CurriculumCompleted%'`,
+		programID).Scan(&completed); err != nil {
+		t.Fatalf("counting completion events: %v", err)
+	}
+	if completed != 0 {
+		t.Fatalf("%d completion events were published for a curriculum that breaks the contract", completed)
 	}
 }
