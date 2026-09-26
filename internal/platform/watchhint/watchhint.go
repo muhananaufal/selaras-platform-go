@@ -16,6 +16,9 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -83,13 +86,41 @@ func parseKey(raw string) (Key, bool) {
 	return Key{Type: typ, ID: id}, true
 }
 
+const (
+	// queueSize bounds the hints waiting to be sent. It only fills while Redis
+	// is slow or down, and a hint dropped then is covered by the fallback
+	// poll.
+	queueSize = 1024
+
+	// publishTimeout bounds one PUBLISH, so a Redis that stopped answering
+	// holds the sender for this long at most. It takes effect only on a client
+	// with ContextTimeoutEnabled (see PublisherFromEnv).
+	publishTimeout = 2 * time.Second
+)
+
 // Publisher sends hints. It is used by the service that owns the data, after
 // the change is committed.
+//
+// Sending happens on its own goroutine: Announce only queues. A synchronous
+// PUBLISH held its caller about 1.7 s per hint against a refused connection,
+// and the caller is a Kafka consumer that must not fall behind because a
+// latency optimisation is unavailable.
 type Publisher struct {
 	client *goredis.Client
 	log    *slog.Logger
+
+	queue   chan Key
+	stop    chan struct{}
+	stopped chan struct{}
+	once    sync.Once
+
+	// An outage is logged when it starts and when it ends, not once per
+	// hint: thousands of identical warnings bury the one that matters.
+	dropped atomic.Int64
+	failing bool // touched only by the sender goroutine
 }
 
+// NewPublisher starts the sender. Close stops it.
 func NewPublisher(client *goredis.Client, log *slog.Logger) (*Publisher, error) {
 	switch {
 	case client == nil:
@@ -97,18 +128,77 @@ func NewPublisher(client *goredis.Client, log *slog.Logger) (*Publisher, error) 
 	case log == nil:
 		return nil, errors.New("nil logger")
 	}
-	return &Publisher{client: client, log: log}, nil
+	p := &Publisher{
+		client:  client,
+		log:     log,
+		queue:   make(chan Key, queueSize),
+		stop:    make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+	go p.run()
+	return p, nil
 }
 
-// Announce says the aggregate changed.
+// Announce says the aggregate changed. It never blocks.
 //
-// A failure is logged, not returned. The change is already committed and
-// correct; the hint only makes a waiting stream see it sooner, and the
-// stream's fallback poll finds it anyway. Returning the error would tempt a
-// consumer into redelivering a record that was handled correctly.
+// Nothing is returned. The change is already committed and correct; the hint
+// only makes a waiting stream see it sooner, and the stream's fallback poll
+// finds it anyway. Returning an error would tempt a consumer into
+// redelivering a record that was handled correctly.
 func (p *Publisher) Announce(ctx context.Context, key Key) {
-	if err := p.client.Publish(ctx, Channel, key.String()).Err(); err != nil {
-		p.log.WarnContext(ctx, "a watch hint was not published; waiting streams fall back to polling",
-			"aggregate_type", key.Type, "aggregate_id", key.ID, "error", err)
+	select {
+	case <-p.stop:
+		return
+	default:
+	}
+	select {
+	case p.queue <- key:
+	default:
+		if p.dropped.Add(1) == 1 {
+			p.log.WarnContext(ctx, "the watch hint queue is full; hints are dropped and waiting streams fall back to polling")
+		}
 	}
 }
+
+// Close stops the sender. Hints still queued are dropped.
+func (p *Publisher) Close() {
+	p.once.Do(func() { close(p.stop) })
+	<-p.stopped
+}
+
+func (p *Publisher) run() {
+	defer close(p.stopped)
+	for {
+		select {
+		case <-p.stop:
+			return
+		case key := <-p.queue:
+			p.publish(key)
+		}
+	}
+}
+
+func (p *Publisher) publish(key Key) {
+	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
+	defer cancel()
+	if err := p.client.Publish(ctx, Channel, key.String()).Err(); err != nil {
+		if !p.failing {
+			p.failing = true
+			p.log.WarnContext(ctx, "watch hints cannot be published; waiting streams fall back to polling",
+				"error", err)
+		}
+		return
+	}
+	if dropped := p.dropped.Swap(0); p.failing || dropped > 0 {
+		p.log.InfoContext(ctx, "watch hints are being published again", "dropped", dropped)
+	}
+	p.failing = false
+}
+
+// Announcer is what a result consumer needs: *Publisher, or a recorder in
+// tests.
+type Announcer interface {
+	Announce(ctx context.Context, key Key)
+}
+
+var _ Announcer = (*Publisher)(nil)

@@ -81,6 +81,7 @@ func TestAHintWakesItsWatchersOnEveryReplicaAndNoOthers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPublisher: %v", err)
 	}
+	t.Cleanup(publisher.Close)
 	publisher.Announce(context.Background(), mine)
 
 	expectWake(t, "the watcher on replica A", onA, watchhint.ReasonHint)
@@ -127,6 +128,7 @@ func TestAClosedSubscriptionIsNotWoken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPublisher: %v", err)
 	}
+	t.Cleanup(publisher.Close)
 	publisher.Announce(context.Background(), key)
 	expectQuiet(t, "a closed subscription", s)
 }

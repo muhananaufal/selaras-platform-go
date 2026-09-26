@@ -17,9 +17,12 @@ import (
 // An unreachable Redis is logged, not refused: refusing would make every
 // Redis outage an outage of this unit too, the first time it restarts. The
 // client reconnects on its own once Redis is back. A malformed URL is still
-// refused - that is a configuration mistake, not an outage.
-func OpenBestEffort(ctx context.Context, url string, log *slog.Logger) (*goredis.Client, error) {
-	client, err := newClient(url)
+// refused - that is a configuration mistake, not an outage. tune adjusts the
+// options parsed from the URL.
+func OpenBestEffort(
+	ctx context.Context, url string, log *slog.Logger, tune ...func(*goredis.Options),
+) (*goredis.Client, error) {
+	client, err := newClient(url, tune...)
 	if err != nil {
 		return nil, err
 	}
@@ -33,13 +36,16 @@ func OpenBestEffort(ctx context.Context, url string, log *slog.Logger) (*goredis
 	return client, nil
 }
 
-func newClient(url string) (*goredis.Client, error) {
+func newClient(url string, tune ...func(*goredis.Options)) (*goredis.Client, error) {
 	if url == "" {
 		return nil, errors.New("empty redis url")
 	}
 	opts, err := goredis.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("parsing redis url: %w", err)
+	}
+	for _, t := range tune {
+		t(opts)
 	}
 	return goredis.NewClient(opts), nil
 }
