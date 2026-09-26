@@ -67,6 +67,7 @@ kubectl -n selaras create secret generic selaras-secrets \
   --from-literal=NUTRITION_DATABASE_DSN="$(dsn nutrition "$SVC_NUTRITION_PASSWORD")" \
   --from-literal=DASHBOARD_DATABASE_DSN="$(dsn dashboard "$SVC_DASHBOARD_PASSWORD")" \
   --from-literal=LLM_POSTGRES_DSN="$(dsn llm "$SVC_LLM_PASSWORD")" \
+  --from-literal=CLINIC_DATABASE_DSN="$(dsn clinic "$SVC_CLINIC_PASSWORD")" \
   --from-literal=MIGRATE_DSN_IDENTITY="$(direct identity "$SVC_IDENTITY_PASSWORD")" \
   --from-literal=MIGRATE_DSN_PROFILE="$(direct profile "$SVC_PROFILE_PASSWORD")" \
   --from-literal=MIGRATE_DSN_ASSESSMENT="$(direct assessment "$SVC_ASSESSMENT_PASSWORD")" \

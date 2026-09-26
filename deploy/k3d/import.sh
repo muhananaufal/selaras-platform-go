@@ -13,7 +13,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TAG="${TAG:-dev}"
 REVISION=$(git -C "$ROOT" rev-parse --short HEAD)
-UNITS="identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway migrate topics"
+UNITS="identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc clinic-svc llm-worker edge-gateway migrate topics"
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 

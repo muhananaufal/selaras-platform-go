@@ -58,6 +58,7 @@ jobs:
           - chat-svc
           - nutrition-svc
           - dashboard-svc
+          - clinic-svc
           - llm-worker
           - edge-gateway
           - migrate
@@ -182,7 +183,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for unit in identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway migrate topics; do
+          for unit in identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc clinic-svc llm-worker edge-gateway migrate topics; do
             bash deploy/supply-chain/verify.sh "oci://$IMAGE_PREFIX/$unit:$TAG" .github/workflows/cd.yml
           done
 
