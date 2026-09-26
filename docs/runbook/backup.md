@@ -4,6 +4,13 @@ F9-30. Backup yang tidak pernah dipulihkan bukan backup; latihan
 pemulihannya ada di `docs/runbook/restore-drill.md`, dan dokumen ini hanya
 tentang MEMBUAT dan MEMERIKSA arsipnya.
 
+Ada dua lapis backup, dan keduanya dipakai untuk hal yang berbeda:
+
+| Lapis | Menjawab | RPO |
+| :--- | :--- | :--- |
+| `pg_dump` logis (dokumen ini) | salinan portabel: bisa dipulihkan ke versi Postgres lain atau per skema | sampai satu putaran (bawaan 6 jam) |
+| pgBackRest fisik + WAL ([`pitr.md`](pitr.md)) | kembali ke **detik** tertentu, misalnya sesaat sebelum `DELETE` yang salah | ≤ 60 detik saat idle |
+
 ## Apa yang dibackup, dan apa yang tidak
 
 | Sumber | Dibackup? | Alasan |
