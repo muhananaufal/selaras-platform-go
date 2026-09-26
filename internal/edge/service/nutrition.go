@@ -10,6 +10,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
 	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // Nutrition implements edge.v1.Nutrition.
@@ -125,18 +126,22 @@ func (h *Nutrition) WatchDailyGuide(
 		return err
 	}
 
-	return watch(ctx, h.watch, stream, func(ctx context.Context) (*edgev1.WatchDailyGuideResponse, bool, error) {
+	type result = watchResult[*edgev1.WatchDailyGuideResponse]
+	return watch(ctx, h.watch, stream, func(ctx context.Context) (result, error) {
 		resp, err := h.nutrition.GetHubData(ctx, &nutritionv1.GetHubDataRequest{UserId: c.UserID.String()})
 		if err != nil {
-			return nil, false, rpcerr.FromUpstream(ctx, edgev1connect.NutritionWatchDailyGuideProcedure, err)
+			return result{}, rpcerr.FromUpstream(ctx, edgev1connect.NutritionWatchDailyGuideProcedure, err)
 		}
 		for _, g := range resp.GetHistory() {
 			if g.GetId() == req.GetGuideId() {
-				done := g.GetStatus() != nutritionv1.GuideStatus_GUIDE_STATUS_PENDING
-				return &edgev1.WatchDailyGuideResponse{Guide: guideView(g)}, done, nil
+				return result{
+					Msg:  &edgev1.WatchDailyGuideResponse{Guide: guideView(g)},
+					Done: g.GetStatus() != nutritionv1.GuideStatus_GUIDE_STATUS_PENDING,
+					Key:  watchhint.Key{Type: watchhint.TypeMealGuide, ID: g.GetId()},
+				}, nil
 			}
 		}
-		return nil, false, connect.NewError(connect.CodeNotFound, errGuideNotFound)
+		return result{}, connect.NewError(connect.CodeNotFound, errGuideNotFound)
 	})
 }
 

@@ -9,6 +9,7 @@ import (
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // Coaching implements edge.v1.Coaching.
@@ -45,7 +46,7 @@ func (h *Coaching) StartProgram(ctx context.Context, req *edgev1.StartProgramReq
 }
 
 func (h *Coaching) GetProgram(ctx context.Context, req *edgev1.GetProgramRequest) (*edgev1.GetProgramResponse, error) {
-	program, err := h.program(ctx, req.GetSlug(), edgev1connect.CoachingGetProgramProcedure)
+	program, _, err := h.program(ctx, req.GetSlug(), edgev1connect.CoachingGetProgramProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (h *Coaching) StartThread(ctx context.Context, req *edgev1.StartThreadReque
 }
 
 func (h *Coaching) GetThread(ctx context.Context, req *edgev1.GetThreadRequest) (*edgev1.GetThreadResponse, error) {
-	thread, messages, err := h.thread(ctx, req.GetSlug(), edgev1connect.CoachingGetThreadProcedure)
+	thread, messages, _, err := h.thread(ctx, req.GetSlug(), edgev1connect.CoachingGetThreadProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -212,13 +213,17 @@ func (h *Coaching) WatchProgram(
 	if err := invalid(required(field("slug", req.GetSlug()))); err != nil {
 		return err
 	}
-	return watch(ctx, h.watch, stream, func(ctx context.Context) (*edgev1.WatchProgramResponse, bool, error) {
-		program, err := h.program(ctx, req.GetSlug(), edgev1connect.CoachingWatchProgramProcedure)
+	type result = watchResult[*edgev1.WatchProgramResponse]
+	return watch(ctx, h.watch, stream, func(ctx context.Context) (result, error) {
+		program, id, err := h.program(ctx, req.GetSlug(), edgev1connect.CoachingWatchProgramProcedure)
 		if err != nil {
-			return nil, false, err
+			return result{}, err
 		}
-		done := program.GetCurriculumStatus() != coachingv1.CurriculumStatus_CURRICULUM_STATUS_PENDING
-		return &edgev1.WatchProgramResponse{Program: program}, done, nil
+		return result{
+			Msg:  &edgev1.WatchProgramResponse{Program: program},
+			Done: program.GetCurriculumStatus() != coachingv1.CurriculumStatus_CURRICULUM_STATUS_PENDING,
+			Key:  watchhint.Key{Type: watchhint.TypeCoachingProgram, ID: id},
+		}, nil
 	})
 }
 
@@ -230,42 +235,50 @@ func (h *Coaching) WatchThread(
 	if err := invalid(required(field("slug", req.GetSlug()))); err != nil {
 		return err
 	}
-	return watch(ctx, h.watch, stream, func(ctx context.Context) (*edgev1.WatchThreadResponse, bool, error) {
-		thread, messages, err := h.thread(ctx, req.GetSlug(), edgev1connect.CoachingWatchThreadProcedure)
+	type result = watchResult[*edgev1.WatchThreadResponse]
+	return watch(ctx, h.watch, stream, func(ctx context.Context) (result, error) {
+		thread, messages, id, err := h.thread(ctx, req.GetSlug(), edgev1connect.CoachingWatchThreadProcedure)
 		if err != nil {
-			return nil, false, err
+			return result{}, err
 		}
-		done := len(messages) > 0 && messages[len(messages)-1].GetRole() == coachingv1.MessageRole_MESSAGE_ROLE_MODEL
-		return &edgev1.WatchThreadResponse{Thread: thread, Messages: messages}, done, nil
+		return result{
+			Msg:  &edgev1.WatchThreadResponse{Thread: thread, Messages: messages},
+			Done: len(messages) > 0 && messages[len(messages)-1].GetRole() == coachingv1.MessageRole_MESSAGE_ROLE_MODEL,
+			Key:  watchhint.Key{Type: watchhint.TypeCoachingThread, ID: id},
+		}, nil
 	})
 }
 
-func (h *Coaching) program(ctx context.Context, slug, procedure string) (*edgev1.CoachingProgram, error) {
+// program also returns the program id, the aggregate its watch hints name.
+func (h *Coaching) program(ctx context.Context, slug, procedure string) (*edgev1.CoachingProgram, string, error) {
 	c, err := slugCall(ctx, slug)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	resp, err := h.coaching.GetProgram(ctx, &coachingv1.GetProgramRequest{Slug: slug, UserId: c})
 	if err != nil {
-		return nil, rpcerr.FromUpstream(ctx, procedure, err)
+		return nil, "", rpcerr.FromUpstream(ctx, procedure, err)
 	}
-	return programView(resp.GetProgram()), nil
+	return programView(resp.GetProgram()), resp.GetProgram().GetId(), nil
 }
 
-func (h *Coaching) thread(ctx context.Context, slug, procedure string) (*edgev1.CoachingThread, []*edgev1.CoachingMessage, error) {
+// thread also returns the thread id, the aggregate its watch hints name.
+func (h *Coaching) thread(
+	ctx context.Context, slug, procedure string,
+) (*edgev1.CoachingThread, []*edgev1.CoachingMessage, string, error) {
 	c, err := slugCall(ctx, slug)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	resp, err := h.coaching.GetThread(ctx, &coachingv1.GetThreadRequest{Slug: slug, UserId: c})
 	if err != nil {
-		return nil, nil, rpcerr.FromUpstream(ctx, procedure, err)
+		return nil, nil, "", rpcerr.FromUpstream(ctx, procedure, err)
 	}
 	messages := make([]*edgev1.CoachingMessage, 0, len(resp.GetMessages()))
 	for _, m := range resp.GetMessages() {
 		messages = append(messages, coachingMessageView(m))
 	}
-	return threadView(resp.GetThread()), messages, nil
+	return threadView(resp.GetThread()), messages, resp.GetThread().GetId(), nil
 }
 
 // slugCall checks the claims and a required slug, and returns the user id.

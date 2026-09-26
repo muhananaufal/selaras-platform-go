@@ -9,6 +9,7 @@ import (
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // Assessment implements edge.v1.Assessment.
@@ -112,17 +113,31 @@ func (a *Assessment) WatchAssessment(
 	if err := invalid(required(field("slug", req.GetSlug()))); err != nil {
 		return err
 	}
-	return watch(ctx, a.watch, stream, func(ctx context.Context) (*edgev1.WatchAssessmentResponse, bool, error) {
-		view, err := a.get(ctx, req.GetSlug(), edgev1connect.AssessmentWatchAssessmentProcedure)
+	type result = watchResult[*edgev1.WatchAssessmentResponse]
+	return watch(ctx, a.watch, stream, func(ctx context.Context) (result, error) {
+		found, err := a.fetch(ctx, req.GetSlug(), edgev1connect.AssessmentWatchAssessmentProcedure)
 		if err != nil {
-			return nil, false, err
+			return result{}, err
 		}
-		done := view.GetPersonalizationStatus() != assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING
-		return &edgev1.WatchAssessmentResponse{Assessment: view}, done, nil
+		view := assessmentView(found)
+		return result{
+			Msg:  &edgev1.WatchAssessmentResponse{Assessment: view},
+			Done: view.GetPersonalizationStatus() != assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING,
+			Key:  watchhint.Key{Type: watchhint.TypeAssessment, ID: found.GetId()},
+		}, nil
 	})
 }
 
 func (a *Assessment) get(ctx context.Context, slug, procedure string) (*edgev1.RiskAssessment, error) {
+	found, err := a.fetch(ctx, slug, procedure)
+	if err != nil {
+		return nil, err
+	}
+	return assessmentView(found), nil
+}
+
+// fetch reads the caller's assessment as assessment-svc returns it.
+func (a *Assessment) fetch(ctx context.Context, slug, procedure string) (*assessmentv1.RiskAssessment, error) {
 	c, err := claims(ctx)
 	if err != nil {
 		return nil, err
@@ -137,7 +152,7 @@ func (a *Assessment) get(ctx context.Context, slug, procedure string) (*edgev1.R
 	if err != nil {
 		return nil, rpcerr.FromUpstream(ctx, procedure, err)
 	}
-	return assessmentView(resp.GetAssessment()), nil
+	return resp.GetAssessment(), nil
 }
 
 func assessmentView(in *assessmentv1.RiskAssessment) *edgev1.RiskAssessment {
