@@ -28,6 +28,22 @@ digabung**. Ia bukan milik kode Go: satu-satunya perannya adalah membantah.
 Sapuannya: 2 jenis kelamin × 4 wilayah risiko × 9 usia (40–85) × diabetes ya/tidak ×
 2 mode masukan (manual dan proksi) = 288.
 
+> **Koreksi 2026-09-26 — cakupannya lebih sempit daripada kesan angka 288.**
+> Eksporter (`ExportGoldenVectors.php` di branch oracle) menetapkan
+> `'smoking_status' => 'Perokok aktif'` untuk **setiap** vektor. Nilai lab juga
+> tetap: di mode manual SBP 140, kolesterol total 6,0, HDL 1,2, dan satu set
+> jawaban proksi. Jadi paritas di atas terbukti **hanya untuk perokok aktif,
+> dengan satu set nilai lab per mode**. Jalur bukan-perokok dan variasi nilai lab
+> **belum pernah dibandingkan dengan sistem lama**.
+>
+> Hal ini ditemukan lewat mutation testing (gremlins v0.6.0, paket
+> `internal/assessment/domain/score`). Mengganti `coef.Smoking*smoking` dengan
+> `coef.Smoking/smoking`, yang berarti pembagian dengan nol untuk bukan perokok,
+> **lolos seluruh test**, dan 21 mutan lain di mesin risiko juga lolos. Menutup
+> celah ini butuh vektor baru dari sistem lama sebagai oracle, bukan rumus yang
+> dihitung ulang di test. Itu berarti mengubah eksporter di repo
+> `selaras-backend-api`, yang merupakan keputusan pemilik.
+
 Ketiga model tercakup: SCORE2 (usia < 70 tanpa diabetes), SCORE2-OP (≥ 70 tanpa
 diabetes), dan SCORE2-Diabetes.
 
