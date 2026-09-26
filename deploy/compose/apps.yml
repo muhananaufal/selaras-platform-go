@@ -296,6 +296,8 @@ services:
         postgres://svc_clinic:${SVC_CLINIC_PASSWORD:?set SVC_CLINIC_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=clinic
       CLINIC_GRPC_ADDR: ":9901"
       CLINIC_HEALTH_ADDR: ":9902"
+      # The consent projection (ADR-030).
+      OPENFGA_URL: http://openfga:8080
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
     ports:
@@ -305,6 +307,8 @@ services:
       pgbouncer:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      openfga:
         condition: service_healthy
     healthcheck:
       disable: true

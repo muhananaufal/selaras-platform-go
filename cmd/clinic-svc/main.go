@@ -73,8 +73,13 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	svc, err := app.NewService(clinicpg.NewRepository(pool), time.Now)
+	repo := clinicpg.NewRepository(pool)
+	svc, err := app.NewService(repo, time.Now)
 	if err != nil {
+		return err
+	}
+
+	if err := startProjection(ctx, log, cfg, repo); err != nil {
 		return err
 	}
 	server, err := clinicgrpc.NewServer(svc)

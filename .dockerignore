@@ -5,6 +5,10 @@
 .github
 bin
 deploy
+# The access model is embedded in clinic-svc (ADR-030); the rest of deploy/
+# is not code.
+!deploy/openfga/model.go
+!deploy/openfga/model.json
 docs
 test
 *.md
