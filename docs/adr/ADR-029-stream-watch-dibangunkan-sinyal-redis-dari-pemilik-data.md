@@ -22,8 +22,8 @@ Alur hasil saat ini:
 3. Edge baru melihat hasil itu pada tick poll berikutnya.
 
 Setiap record `llm.results` membawa identitas agregatnya: header
-`aggregate_type` (`assessment`, `conversation`, `program`, `thread`,
-`guide`) dan key partisi berupa id agregat. Keduanya diisi relay outbox, dan
+`aggregate_type` (`assessment`, `conversation`, `coaching_program`,
+`coaching_thread`, `meal_guide`) dan key partisi berupa id agregat. Keduanya diisi relay outbox, dan
 consumer keempat service sudah membacanya untuk memilih record miliknya.
 
 Yang harus dijaga: **sinyal tidak boleh mendahului commit pemilik data.**
