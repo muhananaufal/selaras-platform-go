@@ -295,3 +295,44 @@ func (r *ProgramRepository) FindByID(ctx context.Context, id domain.ID) (*domain
 	}
 	return p, nil
 }
+
+// ListForUser pages a user's programs, newest first by (created_at, id).
+//
+// Two statements rather than one with "$2 IS NULL OR ...": a generic plan
+// cannot use the row comparison as an index bound when it may be switched off
+// at run time. Both walk coaching_programs_by_user (user_id, created_at DESC);
+// a user has few programs - one active at a time - so the id tie-break is
+// settled among the rows of one instant without an index of its own.
+func (r *ProgramRepository) ListForUser(
+	ctx context.Context, userID domain.UserID, limit int, after *domain.ProgramCursor,
+) ([]*domain.Program, error) {
+	const (
+		first = `SELECT ` + programColumns + ` FROM coaching_programs p WHERE p.user_id = $1
+			ORDER BY p.created_at DESC, p.id DESC LIMIT $2`
+		next = `SELECT ` + programColumns + ` FROM coaching_programs p WHERE p.user_id = $1
+			AND (p.created_at, p.id) < ($3, $4) ORDER BY p.created_at DESC, p.id DESC LIMIT $2`
+	)
+	q, args := first, []any{userID.String(), limit}
+	if after != nil {
+		q, args = next, append(args, after.CreatedAt, after.ID.String())
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying the user's programs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*domain.Program
+	for rows.Next() {
+		p, err := scanProgram(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning a program: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading the user's programs: %w", err)
+	}
+	return out, nil
+}

@@ -30,6 +30,7 @@ const (
 	Coaching_UpdateThreadTitle_FullMethodName   = "/coaching.v1.Coaching/UpdateThreadTitle"
 	Coaching_DeleteThread_FullMethodName        = "/coaching.v1.Coaching/DeleteThread"
 	Coaching_SendThreadMessage_FullMethodName   = "/coaching.v1.Coaching/SendThreadMessage"
+	Coaching_ListPatientProgress_FullMethodName = "/coaching.v1.Coaching/ListPatientProgress"
 )
 
 // CoachingClient is the client API for Coaching service.
@@ -60,6 +61,17 @@ type CoachingClient interface {
 	DeleteThread(ctx context.Context, in *DeleteThreadRequest, opts ...grpc.CallOption) (*DeleteThreadResponse, error)
 	// Answers immediately; the coach's reply arrives through the worker.
 	SendThreadMessage(ctx context.Context, in *SendThreadMessageRequest, opts ...grpc.CallOption) (*SendThreadMessageResponse, error)
+	// A clinician reads a patient's coaching progress, only under the
+	// patient's consent to that clinician (ADR-030). The caller is the
+	// authenticated principal; the request names the patient and deliberately
+	// has no user_id, so the owner's rule (user_id matches the token) does not
+	// apply. Every read that returns data is recorded in the patient's access
+	// audit first.
+	//
+	// Progress only: status, dates, and how many tasks of each week are done.
+	// Discussions, task wording, descriptions, and the graduation report are
+	// never part of it - what the patient wrote or was told stays theirs.
+	ListPatientProgress(ctx context.Context, in *ListPatientProgressRequest, opts ...grpc.CallOption) (*ListPatientProgressResponse, error)
 }
 
 type coachingClient struct {
@@ -180,6 +192,16 @@ func (c *coachingClient) SendThreadMessage(ctx context.Context, in *SendThreadMe
 	return out, nil
 }
 
+func (c *coachingClient) ListPatientProgress(ctx context.Context, in *ListPatientProgressRequest, opts ...grpc.CallOption) (*ListPatientProgressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPatientProgressResponse)
+	err := c.cc.Invoke(ctx, Coaching_ListPatientProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoachingServer is the server API for Coaching service.
 // All implementations must embed UnimplementedCoachingServer
 // for forward compatibility.
@@ -208,6 +230,17 @@ type CoachingServer interface {
 	DeleteThread(context.Context, *DeleteThreadRequest) (*DeleteThreadResponse, error)
 	// Answers immediately; the coach's reply arrives through the worker.
 	SendThreadMessage(context.Context, *SendThreadMessageRequest) (*SendThreadMessageResponse, error)
+	// A clinician reads a patient's coaching progress, only under the
+	// patient's consent to that clinician (ADR-030). The caller is the
+	// authenticated principal; the request names the patient and deliberately
+	// has no user_id, so the owner's rule (user_id matches the token) does not
+	// apply. Every read that returns data is recorded in the patient's access
+	// audit first.
+	//
+	// Progress only: status, dates, and how many tasks of each week are done.
+	// Discussions, task wording, descriptions, and the graduation report are
+	// never part of it - what the patient wrote or was told stays theirs.
+	ListPatientProgress(context.Context, *ListPatientProgressRequest) (*ListPatientProgressResponse, error)
 	mustEmbedUnimplementedCoachingServer()
 }
 
@@ -250,6 +283,9 @@ func (UnimplementedCoachingServer) DeleteThread(context.Context, *DeleteThreadRe
 }
 func (UnimplementedCoachingServer) SendThreadMessage(context.Context, *SendThreadMessageRequest) (*SendThreadMessageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendThreadMessage not implemented")
+}
+func (UnimplementedCoachingServer) ListPatientProgress(context.Context, *ListPatientProgressRequest) (*ListPatientProgressResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPatientProgress not implemented")
 }
 func (UnimplementedCoachingServer) mustEmbedUnimplementedCoachingServer() {}
 func (UnimplementedCoachingServer) testEmbeddedByValue()                  {}
@@ -470,6 +506,24 @@ func _Coaching_SendThreadMessage_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Coaching_ListPatientProgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPatientProgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoachingServer).ListPatientProgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Coaching_ListPatientProgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoachingServer).ListPatientProgress(ctx, req.(*ListPatientProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Coaching_ServiceDesc is the grpc.ServiceDesc for Coaching service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -520,6 +574,10 @@ var Coaching_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendThreadMessage",
 			Handler:    _Coaching_SendThreadMessage_Handler,
+		},
+		{
+			MethodName: "ListPatientProgress",
+			Handler:    _Coaching_ListPatientProgress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
