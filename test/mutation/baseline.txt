@@ -9,9 +9,9 @@
 # mutant fails the job. When a count falls, lower it here so the ratchet
 # holds the gain. docs/runbook/mutation-testing.md explains every number.
 internal/assessment/domain 21 29
-internal/coaching/domain 6 14
-internal/chat/domain 7 2
-internal/dashboard/domain 1 9
-internal/identity/domain 3 3
-internal/nutrition/domain 7 14
+internal/coaching/domain 1 14
+internal/chat/domain 2 2
+internal/dashboard/domain 0 9
+internal/identity/domain 2 3
+internal/nutrition/domain 2 14
 internal/profile/domain 0 2
