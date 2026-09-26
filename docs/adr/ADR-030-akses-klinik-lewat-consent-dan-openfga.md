@@ -102,7 +102,14 @@ dijawab dengan melonggarkan aturan kepemilikan.
    menyetel `SET LOCAL app.user_id`, dan kebijakan membatasi baris consent
    dan audit ke pasien atau klinisi yang bersangkutan. `svc_clinic` bukan
    pemilik tabel, jadi kebijakan itu mengikatnya tanpa bisa dimatikan dari
-   peran runtime; `FORCE ROW LEVEL SECURITY` tetap dipasang untuk pemiliknya.
+   peran runtime.
+   - `FORCE ROW LEVEL SECURITY` **tidak** dipasang. Pemiliknya,
+     `clinic_owner`, adalah peran migrasi dan peran penghapusan akun, yang
+     memang harus melihat semua baris. FORCE ditambah kebijakan "semua baris"
+     untuk pemilik tidak menambah perlindungan apa pun.
+   - Kebijakan ini melindungi dari query yang lupa `WHERE`, bukan dari unit
+     yang dibobol. `svc_clinic` sendiri yang menyetel `app.user_id` dan
+     `app.scope` (`projection`, `ingest`).
    - `SET LOCAL` hidup selama transaksi, jadi ia aman di PgBouncer mode
      transaksi. Keadaan ini dibuktikan dengan test lewat PgBouncer, bukan
      diasumsikan.
