@@ -26,7 +26,12 @@ need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY 
 # checks them itself at start, F3-16).
 [ "$LLM_PROVIDER" != "gemini" ] || need GEMINI_API_KEY GEMINI_MODEL
 
-kubectl get namespace selaras >/dev/null 2>&1 || kubectl create namespace selaras
+# The namespace belongs to OpenTofu (deploy/iac/k3d); creating it here would
+# make the next `tofu apply` fail on "already exists".
+kubectl get namespace selaras >/dev/null 2>&1 || {
+  echo "FATAL: namespace selaras does not exist; run task k3d:iac first" >&2
+  exit 1
+}
 
 # The DSNs point at PgBouncer, not Postgres (F9-27). The search_path in the
 # DSN is ignored by PgBouncer; the roles have their default from initdb.
