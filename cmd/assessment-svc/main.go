@@ -155,6 +155,10 @@ func run(log *slog.Logger) error {
 	// OPENFGA_URL every such read is refused, and the log says so; the store
 	// is opened on the first check, since clinic-svc bootstraps it and may
 	// start later.
+	// Their patients' profile ids come from the event-fed cache only: the
+	// fallback to profile-svc would carry the clinician's token for the
+	// patient's user id, which profile-svc refuses.
+	svc = svc.WithPatientProfiles(cache.NewProfiles(pool))
 	if cfg.OpenFGAURL != "" {
 		svc = svc.WithAccessChecker(authz.NewLazy(cfg.OpenFGAURL, cfg.OpenFGAStore))
 	} else {
