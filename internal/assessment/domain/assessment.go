@@ -202,6 +202,21 @@ const (
 	PersonalizationFailed       PersonalizationStatus = "failed"
 )
 
+// HistoryCursor is a position in a history: the assessment a page ended on.
+//
+// The history is ordered by (CreatedAt, ID), both descending. CreatedAt
+// alone is not a position: two assessments stored in the same instant tie,
+// and a page boundary between them would skip one or repeat it. The ID
+// breaks every tie.
+//
+// A position, not an offset, because an offset moves under the reader: an
+// assessment added while someone pages shifts every row by one, and the next
+// page repeats a row it already showed.
+type HistoryCursor struct {
+	CreatedAt time.Time
+	ID        ID
+}
+
 // Repository is the storage port for assessments.
 type Repository interface {
 	// Create stores a new assessment. A clashing slug yields ErrSlugTaken, and
@@ -212,8 +227,10 @@ type Repository interface {
 	// FindBySlug looks an assessment up by its public slug.
 	FindBySlug(ctx context.Context, slug string) (*Assessment, error)
 
-	// ListForProfile returns one profile's history, newest first.
-	ListForProfile(ctx context.Context, profileID ProfileID, limit int) ([]*Assessment, error)
+	// ListForProfile returns one profile's history, newest first, at most
+	// limit of it. A nil after starts at the newest; otherwise the list
+	// starts right after that position.
+	ListForProfile(ctx context.Context, profileID ProfileID, limit int, after *HistoryCursor) ([]*Assessment, error)
 
 	// SetResultDetails stores the personalisation report.
 	//

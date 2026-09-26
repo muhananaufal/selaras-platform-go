@@ -80,19 +80,38 @@ func (r *Repository) ListForProfile(
 	ctx context.Context,
 	profileID domain.ProfileID,
 	limit int,
+	after *domain.HistoryCursor,
 ) ([]*domain.Assessment, error) {
 	// The ordering and the limit are in the query, not in Go. Reading the
 	// whole history and cutting it in memory moves database work into the
-	// service, and the composite index in the migration was made for exactly
-	// this query.
-	const q = `
+	// service, and the composite index in migration 0006 was made for exactly
+	// these queries: equality on the profile, then (created_at, id) in the
+	// index's own order, so a page is a range scan that stops after limit rows
+	// however deep into the history it starts.
+	//
+	// Two statements rather than one with "$2 IS NULL OR ...": a generic plan
+	// cannot use the row comparison as an index bound when it may be switched
+	// off at run time.
+	const first = `
 		SELECT ` + readColumns + `
 		FROM risk_assessments
 		WHERE user_profile_id = $1
-		ORDER BY created_at DESC
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2`
+	const next = `
+		SELECT ` + readColumns + `
+		FROM risk_assessments
+		WHERE user_profile_id = $1
+		  AND (created_at, id) < ($3, $4)
+		ORDER BY created_at DESC, id DESC
 		LIMIT $2`
 
-	rows, err := r.db.Query(ctx, q, profileID.String(), limit)
+	q, args := first, []any{profileID.String(), limit}
+	if after != nil {
+		q, args = next, append(args, after.CreatedAt, after.ID.String())
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying assessments: %w", err)
 	}
