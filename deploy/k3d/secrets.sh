@@ -21,7 +21,7 @@ need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "FATAL: $v is not set in .
 need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY LLM_PROVIDER \
   SVC_IDENTITY_PASSWORD SVC_PROFILE_PASSWORD SVC_ASSESSMENT_PASSWORD SVC_COACHING_PASSWORD \
   SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD \
-  CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD
+  CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD OPENFGA_DB_PASSWORD
 # The Gemini key and model name are required only when the provider is
 # Gemini; with the fake provider both are empty and never read (llm-worker
 # checks them itself at start, F3-16).
@@ -56,6 +56,7 @@ kubectl -n selaras create secret generic selaras-infra \
   --from-literal=SVC_LLM_PASSWORD="$SVC_LLM_PASSWORD" \
   --from-literal=CLINIC_OWNER_PASSWORD="$CLINIC_OWNER_PASSWORD" \
   --from-literal=SVC_CLINIC_PASSWORD="$SVC_CLINIC_PASSWORD" \
+  --from-literal=OPENFGA_DB_PASSWORD="$OPENFGA_DB_PASSWORD" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n selaras create secret generic selaras-secrets \

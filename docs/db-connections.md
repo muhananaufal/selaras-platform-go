@@ -140,17 +140,30 @@ Secret bila klaster punya replika), failover otomatis (replika tidak pernah
 dipromosikan sendiri), dan PgBouncer di depan replika (satu kolam kecil
 langsung, dinyatakan cukup untuk satu pembaca).
 
-## Peran dan skema pada basis data yang sudah ada
+## Peran, skema, dan basis data pada klaster yang sudah ada
 
 `deploy/compose/initdb/01-schemas.sh` membuat satu skema dan satu peran per
-unit. Sebagai initdb, skrip ini hanya berjalan sekali, pada volume yang masih
-kosong. Unit yang ditambahkan kemudian, atau password yang dirotasi di `.env`,
-tidak akan pernah sampai ke basis data yang initdb-nya sudah lama berjalan.
+unit, skema `clinic` dengan pemilik terpisah (ADR-030), dan basis data
+`openfga` dengan perannya sendiri. Sebagai initdb, skrip ini hanya berjalan
+sekali, pada volume yang masih kosong. Karena itu skrip ini idempoten
+(`test/drill/provision.test.sh`, di CI), dan dua tugas menjalankannya pada
+Postgres yang sedang berjalan:
 
-Karena itu skrip ini idempoten:
-- membuat skema dan peran yang belum ada;
-- menyetel password setiap peran dari environment;
-- aman dijalankan berulang (`test/drill/provision.test.sh`, di CI).
+| Tugas | Yang dilakukan |
+| :--- | :--- |
+| `task db:provision` | Membuat yang belum ada. Password peran yang **sudah ada tidak disentuh** |
+| `task db:rotate-passwords` | Menyetel password setiap peran dari `.env`, lalu me-restart PgBouncer |
 
-Jalankan `task db:provision` untuk menerapkannya ke Postgres yang sedang
-berjalan, dengan password dari `.env`.
+**Kenapa rotasi dipisahkan.** Versi pertama skrip menyetel ulang password
+setiap kali dijalankan. `ALTER ROLE ... PASSWORD` meng-hash ulang password
+yang sama dengan salt SCRAM baru, sementara PgBouncer masih memegang secret
+lama. Akibatnya setiap unit di belakangnya gagal login
+(`password authentication failed`, `server_login_retry`) sampai PgBouncer
+di-restart. Ini terlihat di stack lokal: 19 test e2e gagal setelah
+provisioning, dan kembali hijau setelah restart. Test sekarang memastikan
+verifier SCRAM tidak berubah pada jalan ulang tanpa rotasi.
+
+**Hak `CONNECT`.** Postgres memberi `CONNECT` ke `PUBLIC` secara bawaan.
+Skrip mencabutnya di basis data aplikasi dan di `openfga`, lalu
+memberikannya per peran. Dengan begitu `svc_openfga` tidak bisa masuk ke
+basis data aplikasi, dan tidak ada peran unit yang bisa masuk ke `openfga`.
