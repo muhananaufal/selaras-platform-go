@@ -3,6 +3,12 @@
 # rights. ADR-006: isolation is enforced by the database engine, not by
 # developer discipline. A service that tries to touch its neighbour's schema
 # is refused by Postgres, not merely in breach of a convention.
+#
+# Idempotent: initdb runs it once on a fresh volume, and `task db:provision`
+# runs it again on a database that already has everything - the only way a
+# unit added later, or a rotated password in .env, reaches a cluster whose
+# initdb ran long ago (test/drill/provision.test.sh). Every run sets each
+# role's password from the environment.
 set -euo pipefail
 
 SERVICES="identity profile assessment coaching chat nutrition dashboard llm"
@@ -17,7 +23,9 @@ for svc in $SERVICES; do
 
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
     CREATE SCHEMA IF NOT EXISTS ${svc};
-    CREATE ROLE svc_${svc} LOGIN PASSWORD '${pw}';
+    SELECT format('CREATE ROLE %I LOGIN', 'svc_${svc}')
+      WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'svc_${svc}') \gexec
+    ALTER ROLE svc_${svc} LOGIN PASSWORD '${pw}';
 
     -- Only its own schema is visible.
     REVOKE ALL ON SCHEMA public FROM svc_${svc};
@@ -30,7 +38,7 @@ for svc in $SERVICES; do
     ALTER DEFAULT PRIVILEGES IN SCHEMA ${svc}
       GRANT USAGE, SELECT ON SEQUENCES TO svc_${svc};
 SQL
-  echo "  schema ${svc} + role svc_${svc} created"
+  echo "  schema ${svc} + role svc_${svc} ensured"
 done
 
 # Keep any role from creating objects in public.

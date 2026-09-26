@@ -356,6 +356,22 @@ tasks:
     cmds:
       - go run ./cmd/topics -brokers 127.0.0.1:19092
 
+  db:provision:
+    desc: Create missing unit schemas and roles, and set every role's password from .env, on the running Postgres
+    # initdb runs 01-schemas.sh only on a fresh volume; this runs the same
+    # script again, so a unit added later or a rotated password reaches an
+    # existing database. It is idempotent (test/drill/provision.test.sh).
+    # The passwords come from .env now, not from the container's environment,
+    # which holds the values from when the container was created.
+    dotenv: ['.env']
+    cmds:
+      - >-
+        docker exec
+        -e SVC_IDENTITY_PASSWORD -e SVC_PROFILE_PASSWORD -e SVC_ASSESSMENT_PASSWORD
+        -e SVC_COACHING_PASSWORD -e SVC_CHAT_PASSWORD -e SVC_NUTRITION_PASSWORD
+        -e SVC_DASHBOARD_PASSWORD -e SVC_LLM_PASSWORD
+        selaras-postgres bash /docker-entrypoint-initdb.d/01-schemas.sh
+
   migrate:
     desc: 'Apply migrations for one service. Usage: task migrate -- identity'
     requires:

@@ -139,3 +139,18 @@ KEDA dan replika HTTP; `values.yaml` menerima `DASHBOARD_READ_DSN` lewat
 Secret bila klaster punya replika), failover otomatis (replika tidak pernah
 dipromosikan sendiri), dan PgBouncer di depan replika (satu kolam kecil
 langsung, dinyatakan cukup untuk satu pembaca).
+
+## Peran dan skema pada basis data yang sudah ada
+
+`deploy/compose/initdb/01-schemas.sh` membuat satu skema dan satu peran per
+unit. Sebagai initdb, skrip ini hanya berjalan sekali, pada volume yang masih
+kosong. Unit yang ditambahkan kemudian, atau password yang dirotasi di `.env`,
+tidak akan pernah sampai ke basis data yang initdb-nya sudah lama berjalan.
+
+Karena itu skrip ini idempoten:
+- membuat skema dan peran yang belum ada;
+- menyetel password setiap peran dari environment;
+- aman dijalankan berulang (`test/drill/provision.test.sh`, di CI).
+
+Jalankan `task db:provision` untuk menerapkannya ke Postgres yang sedang
+berjalan, dengan password dari `.env`.
