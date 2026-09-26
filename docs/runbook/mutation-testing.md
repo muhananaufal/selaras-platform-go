@@ -38,7 +38,9 @@ test-nya sendiri.
 | `nutrition/domain`: `timeout-coefficient` bawaan menghasilkan 10 timeout (efikasi 82,50%); koefisien 10 menghasilkan 0 timeout (86,00%), dengan durasi yang praktis sama | `.gremlins.yaml` memakai `timeout-coefficient: 10`, dan run yang masih timeout ditolak |
 | Baseline pertama tercemar timeout (misalnya `profile/domain`: 0 killed karena 30 mutan timeout) | Baseline diukur ulang dengan konfigurasi final; semua paket tanpa timeout |
 
-## Baseline (2026-09-26, runner CI Linux, tanpa timeout)
+## Baseline awal (2026-09-26, runner CI Linux, tanpa timeout)
+
+Angka terkini ada di `test/mutation/baseline.txt`; lihat juga "Mutan yang ditutup" di bawah.
 
 Satu path adalah satu **pohon direktori**: gremlins memutasi setiap paket di
 bawahnya. Karena itu `assessment/domain` mencakup subpaket `score`.
@@ -52,6 +54,42 @@ bawahnya. Karena itu `assessment/domain` mencakup subpaket `score`.
 | `identity/domain` | 44 | 3 | 3 |
 | `nutrition/domain` | 43 | 7 | 14 |
 | `profile/domain` | 30 | 0 | 2 |
+
+## Mutan yang ditutup (2026-09-26)
+
+Setiap mutan LIVED di luar mesin risiko dianalisis satu per satu. Sebagian
+besar adalah batas yang hanya diuji jauh melewati garis: panjang judul,
+pesan, masakan, alergi, jumlah tag, panjang tag, ukuran halaman 1, pekan 1,
+dan selisih tepat di deadband tren. Setiap mutan ditutup dengan test yang
+**lulus dengan kode asli** dan **gagal saat mutan itu dipasang manual**.
+
+| Pohon | Lived sebelum → sesudah |
+| :--- | :--- |
+| `dashboard/domain` | 1 → 0 |
+| `identity/domain` | 3 → 2 |
+| `chat/domain` | 7 → 2 |
+| `nutrition/domain` | 7 → 2 |
+| `coaching/domain` | 6 → 1 |
+
+Dua di antaranya mengungkap hal yang layak dicatat:
+
+- **Test deadband dashboard tidak pernah menyentuh batasnya.** Kasus "just
+  inside" memakai 12,6 − 12,5, yang dalam float bernilai 0,0999...96 dan
+  bukan 0,1. Test batas yang benar memakai selisih yang tepat 0,1 (0,1 − 0).
+- **Test batas pekan yang saya tulis di PR #19 tidak pernah memvalidasi pekan
+  1 sendirian.** Kasus yang memuat pekan 1 sudah gagal di pekan keduanya.
+
+### Mutan ekuivalen yang tersisa, dan alasannya
+
+Mutan ekuivalen tidak mengubah perilaku, jadi tidak ada test yang bisa, atau
+perlu, membunuhnya. Semuanya diperiksa manual:
+
+| Mutan | Kenapa ekuivalen |
+| :--- | :--- |
+| `identity/domain/email.go:40` (2 mutan pada `len(v)-1`) | Cek "@ di akhir" berlebih: baris 43 (domain harus memuat titik) sudah menolak domain kosong. Cek eksplisitnya dipertahankan karena mendokumentasikan maksud |
+| `chat/domain/repository.go:20` dan `nutrition/domain/repository.go:21` (`Number < 1` → `<= 1`) | Nomor 1 dipetakan ke 1 oleh kedua versi |
+| `chat/domain/repository.go:26` dan `nutrition/domain/repository.go:27` (`Size > 100` → `>= 100`) | Ukuran 100 dipetakan ke 100 oleh kedua versi |
+| `coaching/domain/program.go:318` (`MaxWeeks*7` di argumen `Errorf`) | Hanya mengubah teks pesan error, bukan keputusan |
 
 ## Yang ditemukan, dan belum diperbaiki
 
