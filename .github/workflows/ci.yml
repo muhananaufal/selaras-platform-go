@@ -242,6 +242,24 @@ jobs:
         working-directory: deploy/compose/observability
         run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
 
+  # The clinic access model (ADR-030) is tested with the official OpenFGA
+  # CLI: every rule the owner set has a check, and the script first proves a
+  # wrong assertion fails the test - for the assertion, not for another
+  # reason.
+  authz-model:
+    name: authorization model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install the fga CLI
+        run: go install github.com/openfga/cli/cmd/fga@v0.8.1
+      - name: Test the model
+        run: bash deploy/openfga/test.sh
+
   # Migrations are linted with squawk (the pinned image) against the rules in
   # .squawk.toml; files older than the frozen baseline are not rewritten. The
   # script first proves the gate refuses a known-unsafe fixture.
