@@ -212,7 +212,7 @@ jobs:
           kubectl -n selaras delete job topics --ignore-not-found
           sed "s|selaras/\([a-z-]*\):dev|$IMAGE_PREFIX/\1:$TAG|; s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|" \
             deploy/k8s/jobs/migrate.yaml | kubectl apply -f -
-          for s in identity profile assessment coaching chat nutrition dashboard llm; do
+          for s in identity profile assessment coaching chat nutrition dashboard llm clinic; do
             kubectl -n selaras label job "migrate-$s" selaras/job=migrate --overwrite >/dev/null
             kubectl -n selaras wait --for=condition=complete "job/migrate-$s" --timeout=300s
           done
