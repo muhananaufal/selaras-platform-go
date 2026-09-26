@@ -423,6 +423,7 @@ services:
       CHAT_GRPC_TARGET: chat-svc:9501
       NUTRITION_GRPC_TARGET: nutrition-svc:9601
       DASHBOARD_GRPC_TARGET: dashboard-svc:9701
+      CLINIC_GRPC_TARGET: clinic-svc:9901
       # Empty means sign-in through a social provider is not mounted, and
       # the routes do not exist. Partially filled fails start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

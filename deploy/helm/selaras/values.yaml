@@ -209,6 +209,7 @@ units:
       CHAT_GRPC_TARGET: chat-svc:9501
       NUTRITION_GRPC_TARGET: nutrition-svc:9601
       DASHBOARD_GRPC_TARGET: dashboard-svc:9701
+      CLINIC_GRPC_TARGET: clinic-svc:9901
     secretEnv: [JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 50m, memory: 32Mi }

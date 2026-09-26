@@ -18,6 +18,13 @@ service Assessment {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
+  // A clinician reads a patient's assessment history, only under the
+  // patient's consent to that clinician (ADR-030). Every read that returns
+  // data is recorded in the patient's access audit first.
+  rpc ListPatientAssessments(ListPatientAssessmentsRequest) returns (ListPatientAssessmentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
   rpc GetAssessment(GetAssessmentRequest) returns (GetAssessmentResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -75,6 +82,16 @@ message ListAssessmentsRequest {
 }
 
 message ListAssessmentsResponse {
+  repeated RiskAssessment assessments = 1;
+  PageResponse page = 2;
+}
+
+message ListPatientAssessmentsRequest {
+  string patient_user_id = 1;
+  PageRequest page = 2;
+}
+
+message ListPatientAssessmentsResponse {
   repeated RiskAssessment assessments = 1;
   PageResponse page = 2;
 }

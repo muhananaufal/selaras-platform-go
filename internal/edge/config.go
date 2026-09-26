@@ -34,6 +34,9 @@ type Config struct {
 	ChatAddr      string
 	NutritionAddr string
 	DashboardAddr string
+
+	// ClinicAddr may be empty: the clinic routes are not mounted (ADR-030).
+	ClinicAddr    string
 	VerifyKey     ed25519.PublicKey
 	TokenIssuer   string
 	RevocationTTL time.Duration
@@ -61,6 +64,7 @@ func LoadConfig() (Config, error) {
 		CoachingAddr:   os.Getenv("COACHING_GRPC_TARGET"),
 		ChatAddr:       os.Getenv("CHAT_GRPC_TARGET"),
 		DashboardAddr:  os.Getenv("DASHBOARD_GRPC_TARGET"),
+		ClinicAddr:     os.Getenv("CLINIC_GRPC_TARGET"),
 		NutritionAddr:  os.Getenv("NUTRITION_GRPC_TARGET"),
 		TokenIssuer:    envOr("JWT_ISSUER", "identity-svc"),
 		TrustedProxies: os.Getenv("TRUSTED_PROXY_CIDRS"),
