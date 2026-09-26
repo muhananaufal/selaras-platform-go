@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Channel is the single Pub/Sub channel every hint goes through.
@@ -27,6 +28,41 @@ import (
 // per replica keeps the subscriber free of per-stream SUBSCRIBE traffic.
 // ADR-029 names the measurement that would reverse this.
 const Channel = "watch.hints"
+
+// The aggregates a Watch stream waits on. The values are the aggregate_type
+// the outbox writes for them (and llm-worker copies onto its results), so a
+// result record names its aggregate without being unpacked.
+const (
+	TypeAssessment      = "assessment"
+	TypeConversation    = "conversation"
+	TypeCoachingProgram = "coaching_program"
+	TypeCoachingThread  = "coaching_thread"
+	TypeMealGuide       = "meal_guide"
+)
+
+// KeyOf is the aggregate a result record changes, when a stream can be
+// waiting on it.
+//
+// The id is the record key: the relay fills it from the outbox row's
+// aggregate_id, and the result consumers already read it from there.
+func KeyOf(rec *kgo.Record) (Key, bool) {
+	var typ string
+	for _, h := range rec.Headers {
+		if h.Key == "aggregate_type" {
+			typ = string(h.Value)
+			break
+		}
+	}
+	switch typ {
+	case TypeAssessment, TypeConversation, TypeCoachingProgram, TypeCoachingThread, TypeMealGuide:
+	default:
+		return Key{}, false
+	}
+	if len(rec.Key) == 0 {
+		return Key{}, false
+	}
+	return Key{Type: typ, ID: string(rec.Key)}, true
+}
 
 // Key identifies one aggregate: the aggregate_type of its outbox events and
 // its id.
