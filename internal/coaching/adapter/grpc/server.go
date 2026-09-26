@@ -10,8 +10,10 @@ import (
 	"google.golang.org/grpc/status"
 
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
+	commonv1 "github.com/muhananaufal/selaras-platform-go/gen/common/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 )
 
 // Server serves coaching.v1.
@@ -186,6 +188,35 @@ func (s *Server) SendThreadMessage(
 	}, nil
 }
 
+// ListPatientProgress is a clinician reading a patient's coaching progress
+// under the patient's consent (ADR-030).
+//
+// The request has no user_id, so the authn interceptor passes it without a
+// token like any public RPC; the caller must therefore be read here, from
+// the verified principal, and a request without one is refused before
+// anything else happens. The clinician is never taken from the request.
+func (s *Server) ListPatientProgress(
+	ctx context.Context, req *coachingv1.ListPatientProgressRequest,
+) (*coachingv1.ListPatientProgressResponse, error) {
+	caller, err := authn.PrincipalFrom(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "reading a patient's coaching progress needs an access token")
+	}
+	page, err := s.svc.PatientProgress(ctx, caller.UserID,
+		req.GetPatientUserId(), int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
+	if err != nil {
+		return nil, toStatus(ctx, "ListPatientProgress", err)
+	}
+	out := make([]*coachingv1.ProgramProgress, 0, len(page.Programs))
+	for _, p := range page.Programs {
+		out = append(out, progressToProto(p))
+	}
+	return &coachingv1.ListPatientProgressResponse{
+		Programs: out,
+		Page:     &commonv1.PageResponse{NextPageToken: page.NextPageToken},
+	}, nil
+}
+
 // toStatus translates a domain error into a gRPC code.
 //
 // What is NOT recognised becomes Internal and is logged in full. Translating
@@ -224,8 +255,18 @@ func toStatus(ctx context.Context, op string, err error) error {
 		errors.Is(err, domain.ErrNoMessageAtAll),
 		errors.Is(err, domain.ErrTitleTooLong),
 		errors.Is(err, domain.ErrMessageTooLong),
-		errors.Is(err, domain.ErrInvalidID):
+		errors.Is(err, domain.ErrInvalidID),
+		errors.Is(err, app.ErrInvalidPageSize),
+		errors.Is(err, app.ErrInvalidPageToken):
 		return status.Error(codes.InvalidArgument, err.Error())
+
+	// A clinician's read (ADR-030): no consent is the caller's answer; not
+	// being able to settle it is the platform's, and is logged.
+	case errors.Is(err, app.ErrNotPermitted):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, app.ErrAccessUnavailable):
+		slog.WarnContext(ctx, "a clinician's read was refused because access could not be settled", "operation", op, "error", err)
+		return status.Error(codes.Unavailable, "access to patient data cannot be checked right now")
 
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "the caller went away")

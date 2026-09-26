@@ -339,6 +339,8 @@ services:
       COACHING_HEALTH_ADDR: ":9403"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Clinicians' reads of patients are checked here (ADR-030).
+      OPENFGA_URL: http://openfga:8080
       # Watch hints (ADR-029): results are announced to the gateway's streams.
       REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is

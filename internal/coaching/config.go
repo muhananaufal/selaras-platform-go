@@ -19,6 +19,11 @@ type Config struct {
 	// that publishes an event is refused with a message naming the reason,
 	// rather than succeeding while losing its event.
 	KafkaBrokers string
+
+	// OpenFGAURL decides clinicians' reads of patients (ADR-030). Empty
+	// refuses every such read, and the start-up log says so.
+	OpenFGAURL   string
+	OpenFGAStore string
 }
 
 // LoadConfig reads the configuration and refuses an incomplete one.
@@ -32,6 +37,8 @@ func LoadConfig() (Config, error) {
 		HealthAddr:   envOr("COACHING_HEALTH_ADDR", ":9402"),
 		DatabaseDSN:  os.Getenv("COACHING_DATABASE_DSN"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
+		OpenFGAURL:   os.Getenv("OPENFGA_URL"),
+		OpenFGAStore: envOr("OPENFGA_STORE", "selaras"),
 	}
 	if cfg.DatabaseDSN == "" {
 		return Config{}, fmt.Errorf("missing required configuration: %v", []string{"COACHING_DATABASE_DSN"})

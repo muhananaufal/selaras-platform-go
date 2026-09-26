@@ -58,6 +58,10 @@ type Service struct {
 	threads   domain.ThreadRepository
 	uow       UnitOfWork
 	now       func() time.Time
+
+	// access decides clinicians' reads (ADR-030); installed through
+	// WithAccessChecker. Nil refuses every such read.
+	access AccessChecker
 }
 
 func NewService(

@@ -23,6 +23,7 @@ import (
 	coachingpg "github.com/muhananaufal/selaras-platform-go/internal/coaching/adapter/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authz"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
@@ -92,6 +93,16 @@ func run(log *slog.Logger) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	// Clinicians' reads (ADR-030) are checked against OpenFGA. Without
+	// OPENFGA_URL every such read is refused, and the log says so; the store
+	// is opened on the first check, since clinic-svc bootstraps it and may
+	// start later.
+	if cfg.OpenFGAURL != "" {
+		svc = svc.WithAccessChecker(authz.NewLazy(cfg.OpenFGAURL, cfg.OpenFGAStore))
+	} else {
+		log.Warn("OPENFGA_URL is not set; every clinician's read of a patient is refused")
 	}
 
 	stopRelay, err := startRelay(ctx, log, pool, cfg.KafkaBrokers)
