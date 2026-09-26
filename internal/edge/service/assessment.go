@@ -6,14 +6,10 @@ import (
 	"connectrpc.com/connect"
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
-	commonv1 "github.com/muhananaufal/selaras-platform-go/gen/common/v1"
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
 )
-
-// historyPageSize is the number of assessments ListAssessments returns.
-const historyPageSize = 20
 
 // Assessment implements edge.v1.Assessment.
 type Assessment struct {
@@ -51,7 +47,7 @@ func (a *Assessment) StartAssessment(
 }
 
 func (a *Assessment) ListAssessments(
-	ctx context.Context, _ *edgev1.ListAssessmentsRequest,
+	ctx context.Context, req *edgev1.ListAssessmentsRequest,
 ) (*edgev1.ListAssessmentsResponse, error) {
 	c, err := claims(ctx)
 	if err != nil {
@@ -59,13 +55,13 @@ func (a *Assessment) ListAssessments(
 	}
 	resp, err := a.assessments.ListAssessments(ctx, &assessmentv1.ListAssessmentsRequest{
 		UserId: c.UserID.String(),
-		Page:   &commonv1.PageRequest{PageSize: historyPageSize},
+		Page:   pageFrom(req.GetPage()),
 	})
 	if err != nil {
 		return nil, rpcerr.FromUpstream(ctx, edgev1connect.AssessmentListAssessmentsProcedure, err)
 	}
 
-	out := &edgev1.ListAssessmentsResponse{}
+	out := &edgev1.ListAssessmentsResponse{Page: pageOut(resp.GetPage())}
 	for _, item := range resp.GetAssessments() {
 		out.Assessments = append(out.Assessments, assessmentView(item))
 	}

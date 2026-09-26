@@ -215,7 +215,10 @@ func (x *StartAssessmentResponse) GetAssessment() *RiskAssessment {
 }
 
 type ListAssessmentsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unset means the first page of the service default size (20); the
+	// largest page is 100.
+	Page          *PageRequest `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -250,9 +253,17 @@ func (*ListAssessmentsRequest) Descriptor() ([]byte, []int) {
 	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{3}
 }
 
+func (x *ListAssessmentsRequest) GetPage() *PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 type ListAssessmentsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Assessments   []*RiskAssessment      `protobuf:"bytes,1,rep,name=assessments,proto3" json:"assessments,omitempty"`
+	Page          *PageResponse          `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -290,6 +301,13 @@ func (*ListAssessmentsResponse) Descriptor() ([]byte, []int) {
 func (x *ListAssessmentsResponse) GetAssessments() []*RiskAssessment {
 	if x != nil {
 		return x.Assessments
+	}
+	return nil
+}
+
+func (x *ListAssessmentsResponse) GetPage() *PageResponse {
+	if x != nil {
+		return x.Page
 	}
 	return nil
 }
@@ -571,7 +589,7 @@ var File_edge_v1_assessment_proto protoreflect.FileDescriptor
 
 const file_edge_v1_assessment_proto_rawDesc = "" +
 	"\n" +
-	"\x18edge/v1/assessment.proto\x12\aedge.v1\x1a\x1eassessment/v1/assessment.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb7\x03\n" +
+	"\x18edge/v1/assessment.proto\x12\aedge.v1\x1a\x1eassessment/v1/assessment.proto\x1a\x12edge/v1/page.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb7\x03\n" +
 	"\x0eRiskAssessment\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x127\n" +
 	"\n" +
@@ -587,10 +605,12 @@ const file_edge_v1_assessment_proto_rawDesc = "" +
 	"\x17StartAssessmentResponse\x127\n" +
 	"\n" +
 	"assessment\x18\x01 \x01(\v2\x17.edge.v1.RiskAssessmentR\n" +
-	"assessment\"\x18\n" +
-	"\x16ListAssessmentsRequest\"T\n" +
+	"assessment\"B\n" +
+	"\x16ListAssessmentsRequest\x12(\n" +
+	"\x04page\x18\x01 \x01(\v2\x14.edge.v1.PageRequestR\x04page\"\x7f\n" +
 	"\x17ListAssessmentsResponse\x129\n" +
-	"\vassessments\x18\x01 \x03(\v2\x17.edge.v1.RiskAssessmentR\vassessments\"*\n" +
+	"\vassessments\x18\x01 \x03(\v2\x17.edge.v1.RiskAssessmentR\vassessments\x12)\n" +
+	"\x04page\x18\x02 \x01(\v2\x15.edge.v1.PageResponseR\x04page\"*\n" +
 	"\x14GetAssessmentRequest\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\"P\n" +
 	"\x15GetAssessmentResponse\x127\n" +
@@ -648,6 +668,8 @@ var file_edge_v1_assessment_proto_goTypes = []any{
 	(*structpb.Value)(nil),                 // 14: google.protobuf.Value
 	(*timestamppb.Timestamp)(nil),          // 15: google.protobuf.Timestamp
 	(*v1.AssessmentInput)(nil),             // 16: assessment.v1.AssessmentInput
+	(*PageRequest)(nil),                    // 17: edge.v1.PageRequest
+	(*PageResponse)(nil),                   // 18: edge.v1.PageResponse
 }
 var file_edge_v1_assessment_proto_depIdxs = []int32{
 	11, // 0: edge.v1.RiskAssessment.model_used:type_name -> assessment.v1.RiskModel
@@ -657,25 +679,27 @@ var file_edge_v1_assessment_proto_depIdxs = []int32{
 	15, // 4: edge.v1.RiskAssessment.created_at:type_name -> google.protobuf.Timestamp
 	16, // 5: edge.v1.StartAssessmentRequest.input:type_name -> assessment.v1.AssessmentInput
 	0,  // 6: edge.v1.StartAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
-	0,  // 7: edge.v1.ListAssessmentsResponse.assessments:type_name -> edge.v1.RiskAssessment
-	0,  // 8: edge.v1.GetAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
-	13, // 9: edge.v1.RequestPersonalizationResponse.status:type_name -> assessment.v1.PersonalizationStatus
-	0,  // 10: edge.v1.WatchAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
-	1,  // 11: edge.v1.Assessment.StartAssessment:input_type -> edge.v1.StartAssessmentRequest
-	3,  // 12: edge.v1.Assessment.ListAssessments:input_type -> edge.v1.ListAssessmentsRequest
-	5,  // 13: edge.v1.Assessment.GetAssessment:input_type -> edge.v1.GetAssessmentRequest
-	7,  // 14: edge.v1.Assessment.RequestPersonalization:input_type -> edge.v1.RequestPersonalizationRequest
-	9,  // 15: edge.v1.Assessment.WatchAssessment:input_type -> edge.v1.WatchAssessmentRequest
-	2,  // 16: edge.v1.Assessment.StartAssessment:output_type -> edge.v1.StartAssessmentResponse
-	4,  // 17: edge.v1.Assessment.ListAssessments:output_type -> edge.v1.ListAssessmentsResponse
-	6,  // 18: edge.v1.Assessment.GetAssessment:output_type -> edge.v1.GetAssessmentResponse
-	8,  // 19: edge.v1.Assessment.RequestPersonalization:output_type -> edge.v1.RequestPersonalizationResponse
-	10, // 20: edge.v1.Assessment.WatchAssessment:output_type -> edge.v1.WatchAssessmentResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	17, // 7: edge.v1.ListAssessmentsRequest.page:type_name -> edge.v1.PageRequest
+	0,  // 8: edge.v1.ListAssessmentsResponse.assessments:type_name -> edge.v1.RiskAssessment
+	18, // 9: edge.v1.ListAssessmentsResponse.page:type_name -> edge.v1.PageResponse
+	0,  // 10: edge.v1.GetAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
+	13, // 11: edge.v1.RequestPersonalizationResponse.status:type_name -> assessment.v1.PersonalizationStatus
+	0,  // 12: edge.v1.WatchAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
+	1,  // 13: edge.v1.Assessment.StartAssessment:input_type -> edge.v1.StartAssessmentRequest
+	3,  // 14: edge.v1.Assessment.ListAssessments:input_type -> edge.v1.ListAssessmentsRequest
+	5,  // 15: edge.v1.Assessment.GetAssessment:input_type -> edge.v1.GetAssessmentRequest
+	7,  // 16: edge.v1.Assessment.RequestPersonalization:input_type -> edge.v1.RequestPersonalizationRequest
+	9,  // 17: edge.v1.Assessment.WatchAssessment:input_type -> edge.v1.WatchAssessmentRequest
+	2,  // 18: edge.v1.Assessment.StartAssessment:output_type -> edge.v1.StartAssessmentResponse
+	4,  // 19: edge.v1.Assessment.ListAssessments:output_type -> edge.v1.ListAssessmentsResponse
+	6,  // 20: edge.v1.Assessment.GetAssessment:output_type -> edge.v1.GetAssessmentResponse
+	8,  // 21: edge.v1.Assessment.RequestPersonalization:output_type -> edge.v1.RequestPersonalizationResponse
+	10, // 22: edge.v1.Assessment.WatchAssessment:output_type -> edge.v1.WatchAssessmentResponse
+	18, // [18:23] is the sub-list for method output_type
+	13, // [13:18] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_edge_v1_assessment_proto_init() }
@@ -683,6 +707,7 @@ func file_edge_v1_assessment_proto_init() {
 	if File_edge_v1_assessment_proto != nil {
 		return
 	}
+	file_edge_v1_page_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
