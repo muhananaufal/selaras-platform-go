@@ -87,6 +87,21 @@ for s in identity profile assessment coaching chat nutrition dashboard llm; do
         EXECUTE format('ALTER TABLE %I.%I OWNER TO %I', '$s', r.relname, 'svc_$s');
       END LOOP; END \$\$;"
 done
+# The clinic schema goes back to its MIGRATION role, not to svc_clinic
+# (ADR-030): a runtime role that owns the consent ledger can switch its
+# append-only trigger and row level security off. The loop above would hand
+# it to svc_clinic and undo that without a single error.
+docker exec -i selaras-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q -c "
+  ALTER SCHEMA clinic OWNER TO clinic_owner;
+  DO \$\$ DECLARE r record; BEGIN
+    FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'clinic' AND c.relkind IN ('r','p','S','v') LOOP
+      EXECUTE format('ALTER TABLE clinic.%I OWNER TO clinic_owner', r.relname);
+    END LOOP;
+    FOR r IN SELECT p.oid::regprocedure AS fn FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'clinic' LOOP
+      EXECUTE format('ALTER FUNCTION %s OWNER TO clinic_owner', r.fn);
+    END LOOP; END \$\$;"
 log "ownership restored at +$(mark)s"
 
 AFTER=$(psql_app "SELECT (SELECT count(*) FROM identity.users) || ' users, ' || (SELECT count(*) FROM assessment.risk_assessments) || ' assessments'")

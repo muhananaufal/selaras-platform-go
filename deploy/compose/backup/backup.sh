@@ -6,7 +6,7 @@
 #
 #   1. pg_dumpall --globals-only -> the roles and their passwords (svc_*);
 #      without this a restore produces schemas without owners.
-#   2. pg_dump -Fc -> the whole database (eight schemas) in the custom format:
+#   2. pg_dump -Fc -> the whole database (every unit schema) in the custom format:
 #      compressed, and partially restorable.
 #   3. pg_restore --list -> verifies the archive is readable. A backup that is
 #      not verified is a hope, not a backup.
@@ -30,8 +30,11 @@ BACKUP_KEEP="${BACKUP_KEEP:-14}"              # hari
 
 log() { printf '%s backup %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
-# The eight unit roles a role file must carry to be restorable.
-UNITS="identity profile assessment coaching chat nutrition dashboard llm"
+# The unit roles a role file must carry to be restorable, and the one role
+# that is not a unit's runtime role: clinic_owner owns the clinic schema
+# (ADR-030), and a restore without it has nobody to give the schema back to.
+UNITS="identity profile assessment coaching chat nutrition dashboard llm clinic"
+OTHER_ROLES="clinic_owner"
 
 # fail removes this round's temporary files and reports why it failed; the
 # caller returns 1 itself.
@@ -55,18 +58,19 @@ run_once() {
   pg_dumpall --globals-only > "$globals.tmp" || { fail "pg_dumpall --globals-only"; return 1; }
   pg_dump --format=custom --compress=6 --file="$dump.tmp" "$PGDATABASE" || { fail "pg_dump"; return 1; }
 
-  # Verification: the archive has to be readable and hold all eight schemas,
+  # Verification: the archive has to be readable and hold every unit's schema,
   # and the role file has to carry every unit role - a dump restores into
   # schemas nobody can log in to without them.
   listing=$(pg_restore --list "$dump.tmp") || { fail "pg_restore --list cannot read the archive"; return 1; }
   schemas=$(printf '%s\n' "$listing" | grep -c ' SCHEMA - ' || true)
-  [ "$schemas" -ge 8 ] || { fail "archive lists $schemas schemas, want at least 8"; return 1; }
+  want=$(echo $UNITS | wc -w)
+  [ "$schemas" -ge "$want" ] || { fail "archive lists $schemas schemas, want at least $want"; return 1; }
   roles=0
-  for unit in $UNITS; do
-    if grep -q "^CREATE ROLE svc_$unit;" "$globals.tmp"; then
+  for role in $(for unit in $UNITS; do echo "svc_$unit"; done) $OTHER_ROLES; do
+    if grep -q "^CREATE ROLE $role;" "$globals.tmp"; then
       roles=$((roles + 1))
     else
-      fail "role file lacks svc_$unit"; return 1
+      fail "role file lacks $role"; return 1
     fi
   done
 

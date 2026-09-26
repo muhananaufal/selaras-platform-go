@@ -47,7 +47,7 @@ log "migrasi per skema dan topic Kafka (Job)"
 kubectl -n selaras delete job -l selaras/job=migrate --ignore-not-found >/dev/null
 kubectl -n selaras delete job topics --ignore-not-found >/dev/null
 kubectl apply -f "$ROOT/deploy/k8s/jobs/migrate.yaml"
-for s in identity profile assessment coaching chat nutrition dashboard llm; do
+for s in identity profile assessment coaching chat nutrition dashboard llm clinic; do
   kubectl -n selaras label job "migrate-$s" selaras/job=migrate --overwrite >/dev/null
   kubectl -n selaras wait --for=condition=complete "job/migrate-$s" --timeout=180s
 done

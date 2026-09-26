@@ -20,7 +20,8 @@ set -a; . "$ROOT/.env"; set +a
 need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "FATAL: $v is not set in .env" >&2; exit 1; }; done; }
 need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY LLM_PROVIDER \
   SVC_IDENTITY_PASSWORD SVC_PROFILE_PASSWORD SVC_ASSESSMENT_PASSWORD SVC_COACHING_PASSWORD \
-  SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD
+  SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD \
+  CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD
 # The Gemini key and model name are required only when the provider is
 # Gemini; with the fake provider both are empty and never read (llm-worker
 # checks them itself at start, F3-16).
@@ -53,6 +54,8 @@ kubectl -n selaras create secret generic selaras-infra \
   --from-literal=SVC_NUTRITION_PASSWORD="$SVC_NUTRITION_PASSWORD" \
   --from-literal=SVC_DASHBOARD_PASSWORD="$SVC_DASHBOARD_PASSWORD" \
   --from-literal=SVC_LLM_PASSWORD="$SVC_LLM_PASSWORD" \
+  --from-literal=CLINIC_OWNER_PASSWORD="$CLINIC_OWNER_PASSWORD" \
+  --from-literal=SVC_CLINIC_PASSWORD="$SVC_CLINIC_PASSWORD" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n selaras create secret generic selaras-secrets \
@@ -72,6 +75,7 @@ kubectl -n selaras create secret generic selaras-secrets \
   --from-literal=MIGRATE_DSN_NUTRITION="$(direct nutrition "$SVC_NUTRITION_PASSWORD")" \
   --from-literal=MIGRATE_DSN_DASHBOARD="$(direct dashboard "$SVC_DASHBOARD_PASSWORD")" \
   --from-literal=MIGRATE_DSN_LLM="$(direct llm "$SVC_LLM_PASSWORD")" \
+  --from-literal=MIGRATE_DSN_CLINIC="postgres://clinic_owner:${CLINIC_OWNER_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&search_path=clinic" \
   --from-literal=JWT_SIGNING_KEY="$JWT_SIGNING_KEY" \
   --from-literal=JWT_VERIFY_KEY="$JWT_VERIFY_KEY" \
   --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
