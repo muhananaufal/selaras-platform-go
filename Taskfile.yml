@@ -154,6 +154,9 @@ tasks:
         TEST_DSN_NUTRITION="postgres://svc_nutrition:$SVC_NUTRITION_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=nutrition"
         TEST_DSN_DASHBOARD="postgres://svc_dashboard:$SVC_DASHBOARD_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=dashboard"
         TEST_DSN_LLM="postgres://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=llm"
+        TEST_DSN_CLINIC="postgres://svc_clinic:$SVC_CLINIC_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=clinic"
+        TEST_DSN_CLINIC_OWNER="postgres://clinic_owner:$CLINIC_OWNER_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=clinic"
+        TEST_DSN_CLINIC_PGBOUNCER="postgres://svc_clinic:$SVC_CLINIC_PASSWORD@127.0.0.1:16432/$POSTGRES_DB?sslmode=disable&search_path=clinic"
         TEST_KAFKA_BROKERS="127.0.0.1:19092"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
         TEST_SMTP_HOST="127.0.0.1"
@@ -370,6 +373,7 @@ tasks:
         -e SVC_IDENTITY_PASSWORD -e SVC_PROFILE_PASSWORD -e SVC_ASSESSMENT_PASSWORD
         -e SVC_COACHING_PASSWORD -e SVC_CHAT_PASSWORD -e SVC_NUTRITION_PASSWORD
         -e SVC_DASHBOARD_PASSWORD -e SVC_LLM_PASSWORD
+        -e CLINIC_OWNER_PASSWORD -e SVC_CLINIC_PASSWORD
         selaras-postgres bash /docker-entrypoint-initdb.d/01-schemas.sh
 
   migrate:

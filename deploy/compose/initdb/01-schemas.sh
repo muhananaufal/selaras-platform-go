@@ -41,6 +41,35 @@ SQL
   echo "  schema ${svc} + role svc_${svc} ensured"
 done
 
+# The clinic schema (ADR-030) is owned by a migration role, NOT by the unit's
+# runtime role. A table's owner can DISABLE TRIGGER and NO FORCE ROW LEVEL
+# SECURITY with DDL, so the append-only consent ledger and access audit, and
+# their row level security, are only as strong as a runtime role that does
+# not own them. clinic_owner runs the migrations and grants svc_clinic
+# exactly what each table allows; svc_clinic cannot create anything.
+for var in CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD; do
+  if [ -z "${!var-}" ]; then
+    echo "FATAL: $var is not set. Refusing to create a role with a default password." >&2
+    exit 1
+  fi
+done
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
+  SELECT 'CREATE ROLE clinic_owner LOGIN'
+    WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'clinic_owner') \gexec
+  ALTER ROLE clinic_owner LOGIN PASSWORD '${CLINIC_OWNER_PASSWORD}';
+  SELECT 'CREATE ROLE svc_clinic LOGIN'
+    WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'svc_clinic') \gexec
+  ALTER ROLE svc_clinic LOGIN PASSWORD '${SVC_CLINIC_PASSWORD}';
+
+  CREATE SCHEMA IF NOT EXISTS clinic AUTHORIZATION clinic_owner;
+  REVOKE ALL ON SCHEMA public FROM clinic_owner, svc_clinic;
+  REVOKE CREATE ON SCHEMA clinic FROM svc_clinic;
+  GRANT USAGE ON SCHEMA clinic TO svc_clinic;
+  ALTER ROLE clinic_owner SET search_path TO clinic;
+  ALTER ROLE svc_clinic SET search_path TO clinic;
+SQL
+echo "  schema clinic (owner clinic_owner) + role svc_clinic ensured"
+
 # Keep any role from creating objects in public.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
   -c "REVOKE CREATE ON SCHEMA public FROM PUBLIC;"
