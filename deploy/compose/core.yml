@@ -33,6 +33,7 @@ services:
       SVC_LLM_PASSWORD: ${SVC_LLM_PASSWORD:?set SVC_LLM_PASSWORD}
       CLINIC_OWNER_PASSWORD: ${CLINIC_OWNER_PASSWORD:?set CLINIC_OWNER_PASSWORD}
       SVC_CLINIC_PASSWORD: ${SVC_CLINIC_PASSWORD:?set SVC_CLINIC_PASSWORD}
+      OPENFGA_DB_PASSWORD: ${OPENFGA_DB_PASSWORD:?set OPENFGA_DB_PASSWORD}
       # The replication role for the read replica (initdb/02-replication.sh,
       # F9-32).
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
@@ -255,6 +256,52 @@ services:
       resources:
         limits:
           memory: 128M
+
+  # OpenFGA (ADR-030): who may read a patient's data. Its tuples live in
+  # their own database, owned by svc_openfga, and are a projection of the
+  # clinic's consent ledger - rebuildable from it, which is why the openfga
+  # database is not part of the application backup.
+  #
+  # Straight to Postgres, not through PgBouncer: its migrations hold a
+  # session-level lock, which transaction pooling would silently lose.
+  openfga-migrate:
+    image: openfga/openfga:v1.21.0
+    container_name: selaras-openfga-migrate
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: >-
+        postgres://svc_openfga:${OPENFGA_DB_PASSWORD:?set OPENFGA_DB_PASSWORD}@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  openfga:
+    image: openfga/openfga:v1.21.0
+    restart: unless-stopped
+    container_name: selaras-openfga
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: >-
+        postgres://svc_openfga:${OPENFGA_DB_PASSWORD:?set OPENFGA_DB_PASSWORD}@postgres:5432/openfga?sslmode=disable
+      # A small pool: Postgres has 100 connections for everything.
+      OPENFGA_DATASTORE_MAX_OPEN_CONNS: 10
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    ports:
+      - "127.0.0.1:18180:8080"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=127.0.0.1:8081"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres-data:

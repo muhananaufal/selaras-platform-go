@@ -145,6 +145,7 @@ jobs:
           SVC_LLM_PASSWORD: ci-not-a-secret
           CLINIC_OWNER_PASSWORD: ci-not-a-secret
           SVC_CLINIC_PASSWORD: ci-not-a-secret
+          OPENFGA_DB_PASSWORD: ci-not-a-secret
           POSTGRES_USER: selaras_admin
           POSTGRES_DB: selaras
         run: |
@@ -588,6 +589,7 @@ jobs:
             for s in IDENTITY PROFILE ASSESSMENT COACHING CHAT NUTRITION DASHBOARD LLM; do echo "SVC_${s}_PASSWORD=ci-not-a-secret"; done
             echo "CLINIC_OWNER_PASSWORD=ci-not-a-secret"
             echo "SVC_CLINIC_PASSWORD=ci-not-a-secret"
+            echo "OPENFGA_DB_PASSWORD=ci-not-a-secret"
             echo "KAFKA_BROKERS=127.0.0.1:19092"
             echo "REDIS_ADDR=127.0.0.1:16379"
             echo "GRAFANA_ADMIN_PASSWORD=ci-not-a-secret"
