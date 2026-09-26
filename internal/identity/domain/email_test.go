@@ -23,6 +23,11 @@ func TestNewEmail(t *testing.T) {
 		{name: "rejects a missing domain", input: "user@", wantErr: true},
 		{name: "rejects a missing local part", input: "@example.com", wantErr: true},
 		{name: "rejects an embedded space", input: "us er@example.com", wantErr: true},
+		// The dot has to be in the DOMAIN. A check that looked one character
+		// too early would see the dot before the @ here and accept a domain
+		// with none (found by mutation testing: at+1 -> at-1 survived).
+		{name: "rejects a dot only before the at sign", input: "john.@localhost", wantErr: true},
+		{name: "rejects a domain without a dot", input: "user@localhost", wantErr: true},
 	}
 
 	for _, tt := range tests {
