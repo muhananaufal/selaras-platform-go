@@ -66,6 +66,7 @@ type client struct {
 	chat       edgev1connect.ChatClient
 	nutrition  edgev1connect.NutritionClient
 	dashboard  edgev1connect.DashboardClient
+	clinic     edgev1connect.ClinicClient
 }
 
 func newClient(t *testing.T) *client {
@@ -94,6 +95,7 @@ func newClient(t *testing.T) *client {
 	c.chat = edgev1connect.NewChatClient(c.http, c.base, opts...)
 	c.nutrition = edgev1connect.NewNutritionClient(c.http, c.base, opts...)
 	c.dashboard = edgev1connect.NewDashboardClient(c.http, c.base, opts...)
+	c.clinic = edgev1connect.NewClinicClient(c.http, c.base, opts...)
 	return c
 }
 
