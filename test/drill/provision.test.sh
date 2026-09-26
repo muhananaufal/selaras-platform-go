@@ -21,7 +21,7 @@ trap cleanup EXIT
 
 envs=()
 for u in $UNITS; do envs+=(-e "SVC_${u}_PASSWORD=first-${u}"); done
-envs+=(-e CLINIC_OWNER_PASSWORD=first-OWNER -e SVC_CLINIC_PASSWORD=first-CLINIC)
+envs+=(-e CLINIC_OWNER_PASSWORD=first-OWNER -e SVC_CLINIC_PASSWORD=first-CLINIC -e OPENFGA_DB_PASSWORD=first-OPENFGA)
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=throwaway -e POSTGRES_DB=selaras "${envs[@]}" "$IMAGE" >/dev/null
 for _ in $(seq 1 60); do
   # Over TCP: the entrypoint's temporary init server listens on the socket
@@ -54,7 +54,14 @@ check() { # check <name> <command...>
 refused() { ! "$@"; }
 
 check "a fresh database is provisioned" run
+# The stored SCRAM verifier, read as the superuser on the socket.
+verifier() { docker exec "$NAME" psql -U postgres -d selaras -qtAc "SELECT rolpassword FROM pg_authid WHERE rolname = '$1'"; }
+before=$(verifier svc_chat)
 check "running it again on a provisioned database succeeds" run
+# A rerun must not re-hash an unchanged password: a new SCRAM salt breaks
+# PgBouncer, which still holds the old secret, and every unit behind it
+# fails to log in until PgBouncer restarts (seen on the local stack).
+check "a rerun leaves the password verifier as it was" test "$(verifier svc_chat)" = "$before"
 check "a unit role works in its own schema" \
   as_role svc_chat first-CHAT "CREATE TABLE chat.provision_probe (id int); DROP TABLE chat.provision_probe;"
 check "a unit role is refused its neighbour's schema" \
@@ -64,8 +71,11 @@ check "a unit role is refused its neighbour's schema" \
 # connection that does not ask for a password.
 check "a wrong password is refused" refused as_role svc_chat not-the-password "SELECT 1"
 
-# A rotated password in the environment reaches the role on the next run.
-check "a rotated password is applied on the next run" run -e SVC_CHAT_PASSWORD=rotated-CHAT
+# A changed password in the environment is applied only when a rotation is
+# asked for - and then it is.
+check "a changed password is not applied without a rotation" run -e SVC_CHAT_PASSWORD=rotated-CHAT
+check "the role still logs in with its old password" as_role svc_chat first-CHAT "SELECT 1"
+check "a rotation applies the changed password" run -e SVC_CHAT_PASSWORD=rotated-CHAT -e ROTATE_PASSWORDS=yes
 check "the role logs in with the rotated password" as_role svc_chat rotated-CHAT "SELECT 1"
 check "the old password no longer works" refused as_role svc_chat first-CHAT "SELECT 1"
 
@@ -83,6 +93,18 @@ check "svc_clinic cannot create in the clinic schema" \
 check "svc_clinic is refused another unit's schema" \
   refused as_role svc_clinic first-CLINIC "CREATE TABLE chat.provision_probe (id int);"
 check "a missing clinic password is refused" refused run -e SVC_CLINIC_PASSWORD=
+
+# OpenFGA keeps its tuples in its own database, owned by its own role
+# (ADR-030): its migrations create their own tables, and nothing of theirs
+# belongs in a unit's schema.
+check "svc_openfga works in the openfga database" \
+  docker exec -e PGPASSWORD=first-OPENFGA "$NAME" psql -h "$ADDR" -U svc_openfga -d openfga -v ON_ERROR_STOP=1 -qc \
+  "CREATE TABLE provision_probe (id int); DROP TABLE provision_probe;"
+check "svc_openfga cannot reach the application database" \
+  refused as_role svc_openfga first-OPENFGA "SELECT 1"
+check "a unit role cannot reach the openfga database" \
+  refused docker exec -e PGPASSWORD=first-CHAT "$NAME" psql -h "$ADDR" -U svc_chat -d openfga -v ON_ERROR_STOP=1 -qc "SELECT 1"
+check "a missing openfga password is refused" refused run -e OPENFGA_DB_PASSWORD=
 
 # A missing password is still refused, on a rerun too.
 check "a missing password is refused" refused run -e SVC_LLM_PASSWORD=

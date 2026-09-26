@@ -359,8 +359,25 @@ tasks:
     cmds:
       - go run ./cmd/topics -brokers 127.0.0.1:19092
 
+  db:rotate-passwords:
+    desc: Set every role's password from .env on the running Postgres, then restart PgBouncer
+    # Separate from db:provision on purpose. Setting a password re-hashes it
+    # with a new SCRAM salt, and PgBouncer keeps the old secret: until it
+    # restarts, every unit behind it fails to log in. A rotation therefore
+    # always ends with that restart.
+    dotenv: ['.env']
+    cmds:
+      - >-
+        docker exec -e ROTATE_PASSWORDS=yes
+        -e SVC_IDENTITY_PASSWORD -e SVC_PROFILE_PASSWORD -e SVC_ASSESSMENT_PASSWORD
+        -e SVC_COACHING_PASSWORD -e SVC_CHAT_PASSWORD -e SVC_NUTRITION_PASSWORD
+        -e SVC_DASHBOARD_PASSWORD -e SVC_LLM_PASSWORD
+        -e CLINIC_OWNER_PASSWORD -e SVC_CLINIC_PASSWORD -e OPENFGA_DB_PASSWORD
+        selaras-postgres bash /docker-entrypoint-initdb.d/01-schemas.sh
+      - docker restart selaras-pgbouncer
+
   db:provision:
-    desc: Create missing unit schemas and roles, and set every role's password from .env, on the running Postgres
+    desc: Create missing unit schemas, roles and databases on the running Postgres; passwords of existing roles are left alone
     # initdb runs 01-schemas.sh only on a fresh volume; this runs the same
     # script again, so a unit added later or a rotated password reaches an
     # existing database. It is idempotent (test/drill/provision.test.sh).
@@ -373,7 +390,7 @@ tasks:
         -e SVC_IDENTITY_PASSWORD -e SVC_PROFILE_PASSWORD -e SVC_ASSESSMENT_PASSWORD
         -e SVC_COACHING_PASSWORD -e SVC_CHAT_PASSWORD -e SVC_NUTRITION_PASSWORD
         -e SVC_DASHBOARD_PASSWORD -e SVC_LLM_PASSWORD
-        -e CLINIC_OWNER_PASSWORD -e SVC_CLINIC_PASSWORD
+        -e CLINIC_OWNER_PASSWORD -e SVC_CLINIC_PASSWORD -e OPENFGA_DB_PASSWORD
         selaras-postgres bash /docker-entrypoint-initdb.d/01-schemas.sh
 
   migrate:
