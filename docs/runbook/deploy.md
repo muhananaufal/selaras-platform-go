@@ -6,18 +6,29 @@ sama dan hanya berbeda nilai (ADR-010).
 ## Lokal — k3d
 
 ```
-task k3d:all        # klaster + Secret + infra + image + chart, dari nol
+task k3d:all        # klaster + IaC + Secret + image + Job + chart, dari nol
+task k3d:plan       # cek drift isi klaster terhadap deploy/iac/k3d
 task k3d:import     # bangun ulang 11 image dan impor ke node
 task k3d:deploy     # helm upgrade --install dengan values-local.yaml
-task k3d:down       # buang klaster beserta isinya
+task k3d:down       # buang klaster beserta isinya dan state OpenTofu-nya
 ```
 
-Yang terjadi di `k3d:all`, berurutan: klaster dibuat (`deploy/k3d/cluster.yaml`),
-dua Secret ditulis dari `.env` (`secrets.sh`), dependensi dan observability
-dipasang lalu migrasi dan topic dijalankan sebagai Job (`infra.sh`), sebelas
-image dibangun dua-dua dan diimpor (`import.sh`), chart dipasang
-(`deploy.sh`). Edge menjawab di `http://127.0.0.1:28080`, Grafana di
-`http://127.0.0.1:23000`.
+Yang terjadi di `k3d:all`, berurutan:
+
+1. Klaster dibuat dari `deploy/k3d/cluster.yaml`.
+2. Isi klaster di-apply oleh OpenTofu (`iac.sh`, [`iac.md`](iac.md)):
+   namespace, ConfigMap, dependensi, KEDA, observability.
+3. Dua Secret ditulis dari `.env` (`secrets.sh`).
+4. Sebelas image dibangun dua-dua dan diimpor (`import.sh`).
+5. Secret Grafana dibuat, lalu migrasi dan topic dijalankan sebagai Job
+   (`infra.sh`). Langkah ini **sesudah** import, karena Job memakai image
+   lokal dengan `imagePullPolicy: Never`.
+6. Chart dipasang (`deploy.sh`).
+
+Edge menjawab di `http://127.0.0.1:28080`, Grafana di `http://127.0.0.1:23000`.
+
+Diverifikasi ulang 2026-09-26 dari klaster kosong dengan urutan ini: exit 0,
+35 objek di-apply OpenTofu, 9 Job Complete, 16 pod Running, `readyz` 200.
 
 Diverifikasi 2026-09-07: node Ready, 8 Job migrasi + Job topic Complete,
 9 unit Running, 8 HPA membaca CPU dari metrics-server bawaan k3s, ScaledObject
