@@ -195,11 +195,11 @@ func TestEveryParticipantIsAServiceThatActuallyConsumesTheTopic(t *testing.T) {
 		seen[name] = struct{}{}
 	}
 
-	// Six units hold user data: profile, assessment, coaching, chat,
-	// nutrition, and dashboard. The number is written here so an accidental
+	// Seven units hold user data: profile, assessment, coaching, chat,
+	// nutrition, dashboard, and clinic. The number is written here so an accidental
 	// shrink shows up.
-	if len(domain.DeletionParticipants) != 6 {
-		t.Errorf("the saga has %d participants, want 6: %v",
+	if len(domain.DeletionParticipants) != 7 {
+		t.Errorf("the saga has %d participants, want 7: %v",
 			len(domain.DeletionParticipants), domain.DeletionParticipants)
 	}
 }

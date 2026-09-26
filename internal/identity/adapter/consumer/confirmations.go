@@ -1,4 +1,4 @@
-// Package consumer reads deletion confirmations from the six units.
+// Package consumer reads deletion confirmations from the participant units.
 package consumer
 
 import (

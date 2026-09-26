@@ -30,7 +30,7 @@ type Repositories interface {
 	// Sagas and Events are used by account deletion.
 	//
 	// Both sit in the SAME unit of work as the saga write: a saga recorded
-	// without its event hangs forever waiting for six units that were never
+	// without its event hangs forever waiting for units that were never
 	// told, and an event without its saga deletes someone's data without a
 	// single record that it was requested.
 	Sagas() SagaRepository

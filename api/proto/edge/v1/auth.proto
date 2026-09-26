@@ -38,7 +38,7 @@ service Auth {
   rpc ExchangeSocialSession(ExchangeSocialSessionRequest) returns (ExchangeSocialSessionResponse);
 
   // Starts the permanent deletion of the caller's account. The deletion
-  // crosses six units and is NOT finished when this returns.
+  // crosses every participant unit and is NOT finished when this returns.
   rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
 
   // Returns the identity carried by the token, without a network call.
