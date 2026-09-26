@@ -35,6 +35,18 @@ service Coaching {
 
   // Answers immediately; the coach's reply arrives through the worker.
   rpc SendThreadMessage(SendThreadMessageRequest) returns (SendThreadMessageResponse);
+
+  // A clinician reads a patient's coaching progress, only under the
+  // patient's consent to that clinician (ADR-030). The caller is the
+  // authenticated principal; the request names the patient and deliberately
+  // has no user_id, so the owner's rule (user_id matches the token) does not
+  // apply. Every read that returns data is recorded in the patient's access
+  // audit first.
+  //
+  // Progress only: status, dates, and how many tasks of each week are done.
+  // Discussions, task wording, descriptions, and the graduation report are
+  // never part of it - what the patient wrote or was told stays theirs.
+  rpc ListPatientProgress(ListPatientProgressRequest) returns (ListPatientProgressResponse);
 }
 
 enum ProgramStatus {
@@ -279,4 +291,35 @@ message SendThreadMessageRequest {
 message SendThreadMessageResponse {
   CoachingMessage message = 1;
   string job_id = 2;
+}
+
+message ListPatientProgressRequest {
+  string patient_user_id = 1;
+  common.v1.PageRequest page = 2;
+}
+
+// Programs newest first (AIP-158 paging).
+message ListPatientProgressResponse {
+  repeated ProgramProgress programs = 1;
+  common.v1.PageResponse page = 2;
+}
+
+message ProgramProgress {
+  string slug = 1;
+  string title = 2;
+  ProgramStatus status = 3;
+  Difficulty difficulty = 4;
+  string start_date = 5;
+  string end_date = 6;
+  CurriculumStatus curriculum_status = 7;
+  // Empty while the curriculum is not stored yet.
+  repeated WeekProgress weeks = 8;
+  int32 tasks_total = 9;
+  int32 tasks_completed = 10;
+}
+
+message WeekProgress {
+  int32 week_number = 1;
+  int32 tasks_total = 2;
+  int32 tasks_completed = 3;
 }

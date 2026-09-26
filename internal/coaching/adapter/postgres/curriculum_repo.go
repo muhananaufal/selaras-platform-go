@@ -310,3 +310,52 @@ func scanTask(row pgx.Row) (*domain.Task, string, error) {
 		UpdatedAt:   updatedAt,
 	}, weekID, nil
 }
+
+// WeeklyProgress counts each week's tasks and the completed ones, for
+// several programs in one query - counted by the database, like CountTasks,
+// not by loading every task.
+func (r *CurriculumRepository) WeeklyProgress(
+	ctx context.Context, programIDs []domain.ID,
+) (map[domain.ID][]domain.WeekProgress, error) {
+	out := map[domain.ID][]domain.WeekProgress{}
+	if len(programIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(programIDs))
+	for _, id := range programIDs {
+		ids = append(ids, id.String())
+	}
+
+	const q = `
+		SELECT w.coaching_program_id::text, w.week_number,
+		       count(t.id), count(t.id) FILTER (WHERE t.is_completed)
+		FROM coaching_weeks w
+		LEFT JOIN coaching_tasks t ON t.coaching_week_id = w.id
+		WHERE w.coaching_program_id = ANY($1)
+		GROUP BY w.coaching_program_id, w.week_number
+		ORDER BY w.coaching_program_id, w.week_number`
+
+	rows, err := r.db.Query(ctx, q, ids)
+	if err != nil {
+		return nil, fmt.Errorf("counting weekly progress: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			programID string
+			week      domain.WeekProgress
+		)
+		if err := rows.Scan(&programID, &week.WeekNumber, &week.Total, &week.Completed); err != nil {
+			return nil, fmt.Errorf("scanning weekly progress: %w", err)
+		}
+		id, err := domain.ParseID(programID)
+		if err != nil {
+			return nil, fmt.Errorf("stored program id is not a uuid: %w", err)
+		}
+		out[id] = append(out[id], week)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading weekly progress: %w", err)
+	}
+	return out, nil
+}
