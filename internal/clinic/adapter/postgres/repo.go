@@ -21,11 +21,12 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/clinic/domain"
 )
 
-// Errors the application recognises.
+// The storage outcomes, defined by the domain so the application does not
+// import this package.
 var (
-	ErrClinicNotFound = errors.New("clinic not found")
-	ErrAlreadyMember  = errors.New("already a member in this role")
-	ErrNotMember      = errors.New("not a member in this role")
+	ErrClinicNotFound = domain.ErrClinicNotFound
+	ErrAlreadyMember  = domain.ErrAlreadyMember
+	ErrNotMember      = domain.ErrNotMember
 )
 
 // Scopes for the jobs that act for nobody in particular.

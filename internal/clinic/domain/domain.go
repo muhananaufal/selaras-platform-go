@@ -19,6 +19,11 @@ var (
 	ErrInvalidName        = errors.New("invalid clinic name")
 	ErrInvalidRole        = errors.New("invalid member role")
 	ErrInvalidConsentKind = errors.New("invalid consent kind")
+
+	// Storage outcomes the application acts on.
+	ErrClinicNotFound = errors.New("clinic not found")
+	ErrAlreadyMember  = errors.New("already a member in this role")
+	ErrNotMember      = errors.New("not a member in this role")
 )
 
 // maxNameRunes bounds a clinic name, the same bound as the column's CHECK.
