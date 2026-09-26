@@ -19,6 +19,8 @@ func TestAClinicNameIsTrimmedAndBounded(t *testing.T) {
 		"201 runes":  strings.Repeat("é", 201),
 		"a newline":  "Klinik\nJantung",
 		"a tab only": "\t",
+		// BEL is not whitespace, so trimming keeps it, at index 0.
+		"a control character first": "\u0007Klinik",
 	} {
 		if _, err := domain.NewClinicName(raw); !errors.Is(err, domain.ErrInvalidName) {
 			t.Errorf("%s: got %v; want ErrInvalidName", name, err)

@@ -15,3 +15,4 @@ internal/dashboard/domain 0 9
 internal/identity/domain 2 3
 internal/nutrition/domain 2 14
 internal/profile/domain 0 2
+internal/clinic/domain 0 5
