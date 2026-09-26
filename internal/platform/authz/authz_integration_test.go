@@ -134,3 +134,42 @@ func TestOpenReadsWhatBootstrapWrote(t *testing.T) {
 		t.Fatal("Open created or found a store that was never bootstrapped")
 	}
 }
+
+// A unit may start before clinic-svc has bootstrapped the store. The lazy
+// checker then answers with an error - the caller refuses, fail closed -
+// and opens the store on a later check once it exists.
+func TestALazyCheckerOpensTheStoreOnceItExists(t *testing.T) {
+	url := os.Getenv("TEST_OPENFGA_URL")
+	if url == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatal("TEST_OPENFGA_URL is not set; integration tests must not be skipped in CI")
+		}
+		t.Skip("TEST_OPENFGA_URL is not set")
+	}
+	ctx := context.Background()
+	store := "lazy-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	lazy := authz.NewLazy(url, store)
+
+	if ok, err := lazy.Check(ctx, "user:rina", "can_view_assessments", "patient:ani"); err == nil || ok {
+		t.Fatalf("a check before the store exists = %v, %v; want an error", ok, err)
+	}
+
+	model, err := os.ReadFile("../../../deploy/openfga/model.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boot, err := authz.Bootstrap(ctx, url, store, model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := boot.Write(ctx, []authz.Tuple{
+		{User: "user:rina", Relation: "clinician", Object: "clinic:c1"},
+		{User: "clinic:c1", Relation: "care_clinic", Object: "patient:ani"},
+		{User: "user:rina", Relation: "consented_clinician", Object: "patient:ani"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := lazy.Check(ctx, "user:rina", "can_view_assessments", "patient:ani"); err != nil || !ok {
+		t.Fatalf("a check after the store exists = %v, %v; want true", ok, err)
+	}
+}

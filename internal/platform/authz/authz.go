@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	fga "github.com/openfga/go-sdk"
 	fgaclient "github.com/openfga/go-sdk/client"
@@ -190,4 +191,41 @@ func (c *Client) Write(ctx context.Context, writes, deletes []Tuple) error {
 		return fmt.Errorf("writing tuples: %w", err)
 	}
 	return nil
+}
+
+// Lazy is a checker for units that only read (ADR-030). It opens the store
+// on the first check rather than at start, so a unit does not depend on
+// clinic-svc having bootstrapped the store before it started; until then
+// every check is an error, which callers answer with a refusal.
+type Lazy struct {
+	url, store string
+
+	mu     sync.Mutex
+	client *Client
+}
+
+// NewLazy returns a checker for the store named store at url.
+func NewLazy(url, store string) *Lazy { return &Lazy{url: url, store: store} }
+
+// Check opens the store if needed, then checks with higher consistency.
+func (l *Lazy) Check(ctx context.Context, user, relation, object string) (bool, error) {
+	c, err := l.open(ctx)
+	if err != nil {
+		return false, err
+	}
+	return c.Check(ctx, user, relation, object)
+}
+
+func (l *Lazy) open(ctx context.Context) (*Client, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.client != nil {
+		return l.client, nil
+	}
+	c, err := Open(ctx, l.url, l.store)
+	if err != nil {
+		return nil, err
+	}
+	l.client = c
+	return c, nil
 }
