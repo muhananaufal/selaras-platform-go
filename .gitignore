@@ -35,3 +35,10 @@ Thumbs.db
 # Data lokal
 /tmp/
 /data/
+
+# OpenTofu: providers and state stay local; .terraform.lock.hcl is committed
+# (it pins the provider checksums).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
