@@ -347,6 +347,8 @@ jobs:
         run: bash test/drill/restore-globals.test.sh
       - name: Point-in-time recovery
         run: bash test/drill/pitr.test.sh
+      - name: Provisioning is idempotent
+        run: bash test/drill/provision.test.sh
 
   chart:
     name: helm chart
