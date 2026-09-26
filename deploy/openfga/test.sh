@@ -22,3 +22,12 @@ echo "gate proven: a wrong assertion fails the test"
 
 "$FGA" model validate --file model.fga
 "$FGA" model test --tests model.fga.yaml
+
+# model.json is what the bootstrap writes to the server; the DSL is what
+# people read and the tests above check. The JSON is generated from the DSL
+# by the same CLI and must not drift from it.
+if ! "$FGA" model transform --file model.fga --output-format json | cmp -s - model.json; then
+  echo "model.json is out of date: fga model transform --file model.fga --output-format json > model.json" >&2
+  exit 1
+fi
+echo "model.json matches model.fga"

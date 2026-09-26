@@ -180,6 +180,15 @@ jobs:
 
       # The topics are created through the same tool used locally, not
       # through a separate script. Two copies would drift silently.
+      # OpenFGA for internal/platform/authz (ADR-030), in memory. Started
+      # here rather than as a service container: the image has no default
+      # command, and a service container cannot be given `run`.
+      - name: Start OpenFGA
+        run: |
+          docker run -d --name openfga -p 127.0.0.1:8090:8080 openfga/openfga:v1.21.0 run
+          for _ in $(seq 1 30); do curl -sf http://127.0.0.1:8090/healthz >/dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:8090/healthz
+
       - name: Create Kafka topics
         run: go run ./cmd/topics -brokers 127.0.0.1:9092
       # -p 1: several test packages share one Postgres schema and truncate the
@@ -199,6 +208,7 @@ jobs:
           TEST_SMTP_HOST: 127.0.0.1
           TEST_SMTP_PORT: "1025"
           TEST_MAILPIT_URL: http://127.0.0.1:8025
+          TEST_OPENFGA_URL: http://127.0.0.1:8090
         run: |
           export TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
           export TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
