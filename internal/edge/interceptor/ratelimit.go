@@ -3,7 +3,6 @@ package interceptor
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,12 +10,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/go-redis/redis_rate/v10"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
 )
 
-// Limit is how many requests are allowed within one window.
+// Limit is how many requests are allowed within one window: all of them at
+// once, after which one is earned back every Window/Requests (see admit).
 type Limit struct {
 	Requests int
 	Window   time.Duration
@@ -63,11 +64,10 @@ type Policy struct {
 //
 // It MUST be installed after Authenticator, so ByUser sees the claims.
 type RateLimiter struct {
-	redis    *redis.Client
+	gcra     *redis_rate.Limiter
 	log      *slog.Logger
 	proxies  TrustedProxies
 	policies map[string]Policy
-	now      func() time.Time
 }
 
 // NewRateLimiter builds the interceptor. policies maps full procedure names to
@@ -84,7 +84,7 @@ func NewRateLimiter(
 	case log == nil:
 		return nil, errors.New("nil logger")
 	}
-	return &RateLimiter{redis: client, log: log, proxies: proxies, policies: policies, now: time.Now}, nil
+	return &RateLimiter{gcra: redis_rate.NewLimiter(client), log: log, proxies: proxies, policies: policies}, nil
 }
 
 var _ connect.Interceptor = (*RateLimiter)(nil)
@@ -113,8 +113,14 @@ func (l *RateLimiter) WrapStreamingHandler(next connect.StreamingHandlerFunc) co
 
 // admit counts the call and refuses it when over the limit.
 //
-// The window is FIXED, not sliding: enough for what is protected here -
-// password guessing and LLM cost - and the whole thing is one INCR.
+// The limit is a GCRA (generic cell rate algorithm, the token bucket kept as
+// one timestamp) evaluated atomically in Redis by go-redis/redis_rate: a
+// subject may spend its whole budget at once, and after that earns one call
+// back every Window/Requests. It replaced a fixed window, which reset on the
+// clock rather than on the caller - spending the budget just before the
+// boundary bought a fresh one just after it, twice the limit within a moment
+// (TestSpendingTheBudgetAtAWindowBoundaryDoesNotDoubleIt). The script reads
+// Redis's own clock, so every gateway replica judges by the same time.
 func (l *RateLimiter) admit(ctx context.Context, procedure, peer string, header http.Header) error {
 	policy, ok := l.policies[procedure]
 	if !ok {
@@ -128,10 +134,11 @@ func (l *RateLimiter) admit(ctx context.Context, procedure, peer string, header 
 		}
 	}
 
-	key := fmt.Sprintf("ratelimit:%s:%s:%d", policy.Name, subject,
-		l.now().UnixNano()/int64(policy.Limit.Window))
-
-	count, err := l.hit(ctx, key, policy.Limit.Window)
+	res, err := l.gcra.Allow(ctx, "ratelimit:"+policy.Name+":"+subject, redis_rate.Limit{
+		Rate:   policy.Limit.Requests,
+		Burst:  policy.Limit.Requests,
+		Period: policy.Limit.Window,
+	})
 	if err != nil {
 		// FAIL-OPEN, the opposite of the revocation check (ADR-020). Revocation
 		// guards WHO may enter; rate limiting guards HOW OFTEN, and a dead Redis
@@ -140,28 +147,10 @@ func (l *RateLimiter) admit(ctx context.Context, procedure, peer string, header 
 			"limit", policy.Name, "error", err)
 		return nil
 	}
-	if count > policy.Limit.Requests {
-		return rpcerr.RateLimited(policy.Limit.Window)
+	if res.Allowed == 0 {
+		return rpcerr.RateLimited(res.RetryAfter)
 	}
 	return nil
-}
-
-// hit increments the counter and sets its expiry only when it is fresh.
-// Extending it on every request would keep a persistent caller in its window
-// forever.
-func (l *RateLimiter) hit(ctx context.Context, key string, window time.Duration) (int, error) {
-	count, err := l.redis.Incr(ctx, key).Result()
-	if err != nil {
-		return 0, fmt.Errorf("counting the request: %w", err)
-	}
-	if count == 1 {
-		if err := l.redis.Expire(ctx, key, window+time.Second).Err(); err != nil {
-			// A counter without an expiry would hold its caller forever.
-			l.redis.Del(ctx, key)
-			return 0, fmt.Errorf("setting the window: %w", err)
-		}
-	}
-	return int(count), nil
 }
 
 // LimitsFromEnv reads the limits from the environment, falling back to the
