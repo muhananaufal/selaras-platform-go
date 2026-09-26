@@ -1361,6 +1361,31 @@ components:
           $ref: '#/components/schemas/edge.v1.PageResponse'
       title: ListPatientAssessmentsResponse
       additionalProperties: false
+    edge.v1.ListPatientProgressRequest:
+      type: object
+      properties:
+        patientUserId:
+          type: string
+          title: patient_user_id
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageRequest'
+      title: ListPatientProgressRequest
+      additionalProperties: false
+    edge.v1.ListPatientProgressResponse:
+      type: object
+      properties:
+        programs:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.ProgramProgress'
+          title: programs
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
+      title: ListPatientProgressResponse
+      additionalProperties: false
+      description: The patient's programs, newest first.
     edge.v1.LoginRequest:
       type: object
       properties:
@@ -1414,6 +1439,47 @@ components:
           title: next_page_token
           description: Absent on the last page.
       title: PageResponse
+      additionalProperties: false
+    edge.v1.ProgramProgress:
+      type: object
+      properties:
+        slug:
+          type: string
+          title: slug
+        title:
+          type: string
+          title: title
+        status:
+          title: status
+          $ref: '#/components/schemas/coaching.v1.ProgramStatus'
+        difficulty:
+          title: difficulty
+          $ref: '#/components/schemas/coaching.v1.Difficulty'
+        startDate:
+          type: string
+          title: start_date
+          description: ISO-8601 dates.
+        endDate:
+          type: string
+          title: end_date
+        curriculumStatus:
+          title: curriculum_status
+          $ref: '#/components/schemas/coaching.v1.CurriculumStatus'
+        weeks:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.WeekProgress'
+          title: weeks
+          description: Empty while the curriculum is not stored yet.
+        tasksTotal:
+          type: integer
+          title: tasks_total
+          format: int32
+        tasksCompleted:
+          type: integer
+          title: tasks_completed
+          format: int32
+      title: ProgramProgress
       additionalProperties: false
     edge.v1.RegisterRequest:
       type: object
@@ -2023,6 +2089,23 @@ components:
             $ref: '#/components/schemas/edge.v1.CoachingMessage'
           title: messages
       title: WatchThreadResponse
+      additionalProperties: false
+    edge.v1.WeekProgress:
+      type: object
+      properties:
+        weekNumber:
+          type: integer
+          title: week_number
+          format: int32
+        tasksTotal:
+          type: integer
+          title: tasks_total
+          format: int32
+        tasksCompleted:
+          type: integer
+          title: tasks_completed
+          format: int32
+      title: WeekProgress
       additionalProperties: false
     google.protobuf.ListValue:
       type: object
@@ -3415,6 +3498,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/edge.v1.GetThreadResponse'
+  /edge.v1.Coaching/ListPatientProgress:
+    post:
+      tags:
+        - Coaching
+      summary: ListPatientProgress
+      description: |-
+        A clinician reads a patient's coaching progress, only under the
+         patient's consent to that clinician (ADR-030). Progress only: status,
+         dates and how many tasks of each week are done - never discussions,
+         task wording or the graduation report. Every read that returns data is
+         recorded in the patient's access audit first.
+      operationId: edge.v1.Coaching.ListPatientProgress
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListPatientProgressRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListPatientProgressResponse'
   /edge.v1.Coaching/SendThreadMessage:
     post:
       tags:

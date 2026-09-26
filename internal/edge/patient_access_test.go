@@ -16,6 +16,7 @@ import (
 // Adding one here is a decision, not a formality.
 var readsOfAnotherUser = []string{
 	"edge.v1.Assessment.ListPatientAssessments",
+	"edge.v1.Coaching.ListPatientProgress",
 }
 
 // The owner's rule is that chat is never visible to anyone else, and the
