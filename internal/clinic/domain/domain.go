@@ -277,3 +277,10 @@ type ConsentDecision struct {
 	Append  *ConsentEvent
 	Changes []TupleChange
 }
+
+// QueuedChange is a tuple change waiting in the projection's outbox, with
+// its position in the queue.
+type QueuedChange struct {
+	ID int64
+	TupleChange
+}
