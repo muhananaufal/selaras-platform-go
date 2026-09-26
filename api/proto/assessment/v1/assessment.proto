@@ -24,6 +24,14 @@ service Assessment {
   rpc GetAssessment(GetAssessmentRequest) returns (GetAssessmentResponse);
   rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse);
 
+  // A clinician reads a patient's assessment history, only under the
+  // patient's consent to that clinician (ADR-030). The caller is the
+  // authenticated principal; the request names the patient, and there is
+  // deliberately no user_id field - the owner's rule (user_id matches the
+  // token) does not apply to a read of someone else's data. Every read that
+  // returns data is recorded in the patient's access audit first.
+  rpc ListPatientAssessments(ListPatientAssessmentsRequest) returns (ListPatientAssessmentsResponse);
+
   // Maps the country of residence to its SCORE2 calibration region.
   //
   // It lives here, not in profile-svc, because risk_region is a CLINICAL
@@ -293,6 +301,16 @@ message ListAssessmentsRequest {
 }
 
 message ListAssessmentsResponse {
+  repeated RiskAssessment assessments = 1;
+  common.v1.PageResponse page = 2;
+}
+
+message ListPatientAssessmentsRequest {
+  string patient_user_id = 1;
+  common.v1.PageRequest page = 2;
+}
+
+message ListPatientAssessmentsResponse {
   repeated RiskAssessment assessments = 1;
   common.v1.PageResponse page = 2;
 }

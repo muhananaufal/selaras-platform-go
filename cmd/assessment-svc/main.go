@@ -29,6 +29,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authz"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/httpx"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
@@ -149,6 +150,16 @@ func run(log *slog.Logger) error {
 	svc = svc.WithRepositoryFor(func(q pg.Querier) domain.Repository {
 		return assessmentpg.NewRepository(q)
 	})
+
+	// Clinicians' reads (ADR-030) are checked against OpenFGA. Without
+	// OPENFGA_URL every such read is refused, and the log says so; the store
+	// is opened on the first check, since clinic-svc bootstraps it and may
+	// start later.
+	if cfg.OpenFGAURL != "" {
+		svc = svc.WithAccessChecker(authz.NewLazy(cfg.OpenFGAURL, cfg.OpenFGAStore))
+	} else {
+		log.Warn("OPENFGA_URL is not set; every clinician's read of a patient is refused")
+	}
 
 	stopDeletion, err := startDeletionConsumer(ctx, log, pool, os.Getenv("KAFKA_BROKERS"))
 	if err != nil {

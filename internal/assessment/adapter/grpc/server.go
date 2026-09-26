@@ -15,6 +15,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/domain/score"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authn"
 )
 
 // Server serves assessment.v1.
@@ -90,6 +91,36 @@ func (s *Server) ListAssessments(
 		out = append(out, toProto(a, nil))
 	}
 	return &assessmentv1.ListAssessmentsResponse{
+		Assessments: out,
+		Page:        &commonv1.PageResponse{NextPageToken: page.NextPageToken},
+	}, nil
+}
+
+// ListPatientAssessments is a clinician reading a patient's history under
+// the patient's consent (ADR-030).
+//
+// The request has no user_id, so the authn interceptor passes it without a
+// token like any public RPC; the caller must therefore be read here, from
+// the verified principal, and a request without one is refused before
+// anything else happens. The clinician is never taken from the request.
+func (s *Server) ListPatientAssessments(
+	ctx context.Context,
+	req *assessmentv1.ListPatientAssessmentsRequest,
+) (*assessmentv1.ListPatientAssessmentsResponse, error) {
+	caller, err := authn.PrincipalFrom(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "reading a patient's assessments needs an access token")
+	}
+	page, err := s.svc.PatientHistory(ctx, s.uow, s.events, caller.UserID,
+		req.GetPatientUserId(), int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
+	if err != nil {
+		return nil, toStatus(ctx, "ListPatientAssessments", err)
+	}
+	out := make([]*assessmentv1.RiskAssessment, 0, len(page.Assessments))
+	for _, a := range page.Assessments {
+		out = append(out, toProto(a, nil))
+	}
+	return &assessmentv1.ListPatientAssessmentsResponse{
 		Assessments: out,
 		Page:        &commonv1.PageResponse{NextPageToken: page.NextPageToken},
 	}, nil
@@ -312,6 +343,19 @@ func toStatus(ctx context.Context, op string, err error) error {
 
 	case errors.Is(err, app.ErrInvalidPageToken), errors.Is(err, app.ErrInvalidPageSize):
 		return status.Error(codes.InvalidArgument, err.Error())
+
+	case errors.Is(err, app.ErrInvalidUserID):
+		return status.Error(codes.InvalidArgument, err.Error())
+
+	// No consent: the caller is at fault and entitled to know.
+	case errors.Is(err, app.ErrNotPermitted):
+		return status.Error(codes.PermissionDenied, err.Error())
+
+	// OpenFGA or the audit could not be reached. The read is refused (fail
+	// closed), and Unavailable tells the caller it may retry.
+	case errors.Is(err, app.ErrAccessUnavailable):
+		slog.WarnContext(ctx, "a clinician's read was refused because access could not be settled", "operation", op, "error", err)
+		return status.Error(codes.Unavailable, "access to patient data cannot be checked right now")
 
 	case errors.Is(err, score.ErrUnknownSex), errors.Is(err, score.ErrMissingDiabetesInput):
 		return status.Error(codes.InvalidArgument, err.Error())

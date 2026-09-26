@@ -131,6 +131,8 @@ services:
       ASSESSMENT_DATABASE_DSN: >-
         postgres://svc_assessment:${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=assessment
       PROFILE_GRPC_TARGET: profile-svc:9201
+      # Clinicians' reads of patients are checked here (ADR-030).
+      OPENFGA_URL: http://openfga:8080
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
