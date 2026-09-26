@@ -153,6 +153,20 @@ units:
       limits: { memory: 160Mi }
     autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
 
+  # Clinics, members, consent and the access audit (ADR-030). Its DSN is for
+  # svc_clinic; clinic_owner is used only by the migrate-clinic job.
+  clinic-svc:
+    grpcPort: 9901
+    healthPort: 9902
+    env:
+      CLINIC_GRPC_ADDR: ":9901"
+      CLINIC_HEALTH_ADDR: ":9902"
+    secretEnv: [CLINIC_DATABASE_DSN, JWT_VERIFY_KEY]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 128Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
   llm-worker:
     # No gRPC port: it is a consumer. healthPort serves /metrics and the
     # probes.

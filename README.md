@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml)
 
-Sembilan unit Go — satu gateway Connect, tujuh service domain, satu worker LLM —
+Sepuluh unit Go — satu gateway Connect, delapan service domain, satu worker LLM —
 hasil migrasi dari monolit Laravel `selaras-backend-api` (32 endpoint, nol
 test). Dibangun seolah produksi sejak baris pertama (ADR-016): setiap klaim
 di halaman ini menunjuk ke berkas yang memuat buktinya, dan yang belum
@@ -38,7 +38,7 @@ flowchart LR
 
 | Lapisan | Pilihan | Alasan tertulis |
 | :--- | :--- | :--- |
-| Batas unit | 9 unit, `profile-svc` berdiri sendiri | [ADR-002](docs/adr/ADR-002-topologi-9-unit-profile-svc-berdiri-sendiri.md) |
+| Batas unit | 10 unit: 9 dari ADR-002 (`profile-svc` berdiri sendiri) + `clinic-svc` dari ADR-030 | [ADR-002](docs/adr/ADR-002-topologi-9-unit-profile-svc-berdiri-sendiri.md), [ADR-030](docs/adr/ADR-030-akses-klinik-lewat-consent-dan-openfga.md) |
 | Konsistensi lintas unit | Outbox transaksional + referensi lunak, tanpa FK lintas skema | [ADR-004](docs/adr/ADR-004-konsistensi-transactional-outbox-referensi-lunak.md), [ADR-006](docs/adr/ADR-006-database-postgresql-schema-per-service-satu-inst.md) |
 | Transport | gRPC di dalam, Connect di tepi (satu kontrak proto, JSON untuk browser, stream untuk hasil LLM), id publik berupa slug | [ADR-005](docs/adr/ADR-005-transport-grpc-internal-rest-di-edge-id-publik-b.md), [ADR-027](docs/adr/ADR-027-kontrak-publik-lewat-connect-bukan-rest.md) |
 | Sesi | JWT EdDSA berumur pendek, pencabutan lewat penghitung generasi di Redis, gagal-tertutup | [ADR-020](docs/adr/ADR-020-token-eddsa-pencabutan-lewat-penghitung-generasi.md) |
@@ -109,7 +109,7 @@ Prasyarat: Go (versi di `go.mod`), Docker, [Task](https://taskfile.dev),
 pun (ADR-016): salin `.env.example` ke `.env` dan isi.
 
 ```bash
-task up:full          # postgres, pgbouncer, replika, kafka, redis, mailpit, 9 unit, observabilitas
+task up:full          # postgres, pgbouncer, replika, kafka, redis, mailpit, 10 unit, observabilitas
 task test:e2e         # suite ujung ke ujung terhadap stack yang menyala
 task k6 -- read       # beban baca; write, mixed
 task down:apps        # unit dimatikan, dependensi tetap

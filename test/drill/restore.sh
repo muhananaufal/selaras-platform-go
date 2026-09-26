@@ -19,7 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 set -a; . "$ROOT/.env"; set +a
 COMPOSE="docker compose --env-file $ROOT/.env -f $ROOT/deploy/compose/core.yml -f $ROOT/deploy/compose/apps.yml -f $ROOT/deploy/compose/full.yml -f $ROOT/deploy/compose/backup.yml"
-UNITS="identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway pgbouncer backup"
+UNITS="identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc clinic-svc llm-worker edge-gateway pgbouncer backup"
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 # psql_admin speaks to the "postgres" database (for DROP/CREATE), psql_app to

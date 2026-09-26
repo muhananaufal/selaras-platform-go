@@ -172,7 +172,7 @@ tasks:
   down:apps:
     desc: Stop the application units, leaving the dependencies running
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway topics"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc clinic-svc llm-worker edge-gateway topics"
 
   keygen:
     desc: Print a matching pair of token signing and verification keys

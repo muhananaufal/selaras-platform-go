@@ -281,6 +281,38 @@ services:
         limits:
           memory: 160M
 
+  # Clinics, members, consent and the access audit (ADR-030). It connects as
+  # svc_clinic, the runtime role; the schema belongs to clinic_owner, which
+  # only migrations use.
+  clinic-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: clinic-svc
+    restart: unless-stopped
+    container_name: selaras-clinic
+    environment:
+      CLINIC_DATABASE_DSN: >-
+        postgres://svc_clinic:${SVC_CLINIC_PASSWORD:?set SVC_CLINIC_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=clinic
+      CLINIC_GRPC_ADDR: ":9901"
+      CLINIC_HEALTH_ADDR: ":9902"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
+    ports:
+      - "127.0.0.1:19901:9901"
+      - "127.0.0.1:19902:9902"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   coaching-svc:
     build:
       context: ../..
