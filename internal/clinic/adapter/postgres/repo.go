@@ -71,8 +71,23 @@ func sqlState(err error) string {
 	return ""
 }
 
-// CreateClinic stores a clinic and its owner in one transaction: a clinic
-// without an owner could never have members added.
+// enqueue writes tuple changes to the projection's outbox, in the caller's
+// transaction: they reach OpenFGA exactly when the change that implies them
+// commits.
+func enqueue(ctx context.Context, tx pgx.Tx, changes []domain.TupleChange) error {
+	for _, c := range changes {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO authz_changes (op, tuple_user, relation, object) VALUES ($1, $2, $3, $4)",
+			string(c.Op), c.User, c.Relation, c.Object); err != nil {
+			return fmt.Errorf("queueing a tuple change: %w", err)
+		}
+	}
+	return nil
+}
+
+// CreateClinic stores a clinic and its owner in one transaction - a clinic
+// without an owner could never have members added - and queues the owner's
+// tuple.
 func (r *Repository) CreateClinic(ctx context.Context, id string, name domain.ClinicName, ownerUserID string, now time.Time) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, "INSERT INTO clinics (id, name, created_at) VALUES ($1, $2, $3)",
@@ -83,7 +98,9 @@ func (r *Repository) CreateClinic(ctx context.Context, id string, name domain.Cl
 			id, ownerUserID, domain.RoleOwner.String(), now); err != nil {
 			return fmt.Errorf("storing the owner: %w", err)
 		}
-		return nil
+		return enqueue(ctx, tx, []domain.TupleChange{
+			domain.MembershipChange(domain.OpWrite, id, ownerUserID, domain.RoleOwner),
+		})
 	})
 }
 
@@ -110,12 +127,20 @@ func (r *Repository) MemberRoles(ctx context.Context, clinicID, userID string) (
 	return roles, nil
 }
 
-// AddMember gives userID a role in the clinic.
+// AddMember gives userID a role in the clinic and queues its tuple.
 func (r *Repository) AddMember(ctx context.Context, clinicID, userID string, role domain.Role) error {
-	_, err := r.pool.Exec(ctx, "INSERT INTO clinic_members (clinic_id, user_id, role) VALUES ($1, $2, $3)",
-		clinicID, userID, role.String())
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "INSERT INTO clinic_members (clinic_id, user_id, role) VALUES ($1, $2, $3)",
+			clinicID, userID, role.String()); err != nil {
+			return err
+		}
+		return enqueue(ctx, tx, []domain.TupleChange{domain.MembershipChange(domain.OpWrite, clinicID, userID, role)})
+	})
 	switch sqlState(err) {
 	case "":
+		if err != nil {
+			return fmt.Errorf("adding a member: %w", err)
+		}
 		return nil
 	case uniqueViolation:
 		return ErrAlreadyMember
@@ -126,32 +151,57 @@ func (r *Repository) AddMember(ctx context.Context, clinicID, userID string, rol
 	}
 }
 
-// RemoveMember takes one role away from userID.
+// RemoveMember takes one role away from userID and queues the tuple's
+// deletion.
 func (r *Repository) RemoveMember(ctx context.Context, clinicID, userID string, role domain.Role) error {
-	tag, err := r.pool.Exec(ctx, "DELETE FROM clinic_members WHERE clinic_id = $1 AND user_id = $2 AND role = $3",
-		clinicID, userID, role.String())
-	if err != nil {
-		return fmt.Errorf("removing a member: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotMember
-	}
-	return nil
+	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, "DELETE FROM clinic_members WHERE clinic_id = $1 AND user_id = $2 AND role = $3",
+			clinicID, userID, role.String())
+		if err != nil {
+			return fmt.Errorf("removing a member: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotMember
+		}
+		return enqueue(ctx, tx, []domain.TupleChange{domain.MembershipChange(domain.OpDelete, clinicID, userID, role)})
+	})
 }
 
-// AppendConsent writes one ledger entry, as the patient: row level security
-// refuses an entry in anyone else's name.
-func (r *Repository) AppendConsent(ctx context.Context, patientUserID, clinicID, clinicianUserID string, kind domain.ConsentKind) error {
+// UpdateConsents runs decide on the patient's ledger and applies what it
+// returns, all in one transaction serialised per patient.
+//
+// Reading the ledger, deciding, appending and queueing the tuple changes
+// happen together because the changes depend on what else is in force: two
+// concurrent changes to one patient's consents that each read the ledger
+// before the other wrote would queue tuple changes computed from a state
+// that no longer exists. The advisory lock is per patient, so different
+// patients never wait on each other.
+func (r *Repository) UpdateConsents(
+	ctx context.Context, patientUserID string, decide func([]domain.ConsentEvent) (domain.ConsentDecision, error),
+) error {
 	return r.actingAs(ctx, patientUserID, "", func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO consent_events (patient_user_id, clinician_user_id, clinic_id, kind)
-			VALUES ($1, $2, $3, $4)`, patientUserID, clinicianUserID, clinicID, string(kind))
-		if sqlState(err) == foreignKeyViolation {
-			return ErrClinicNotFound
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('consent:' || $1, 0))", patientUserID); err != nil {
+			return fmt.Errorf("serialising consent changes: %w", err)
 		}
+		events, err := readEvents(ctx, tx, patientUserID)
 		if err != nil {
-			return fmt.Errorf("appending consent: %w", err)
+			return err
 		}
-		return nil
+		d, err := decide(events)
+		if err != nil {
+			return err
+		}
+		if d.Append != nil {
+			_, err := tx.Exec(ctx, `INSERT INTO consent_events (patient_user_id, clinician_user_id, clinic_id, kind)
+				VALUES ($1, $2, $3, $4)`, patientUserID, d.Append.ClinicianUserID, d.Append.ClinicID, string(d.Append.Kind))
+			if sqlState(err) == foreignKeyViolation {
+				return ErrClinicNotFound
+			}
+			if err != nil {
+				return fmt.Errorf("appending consent: %w", err)
+			}
+		}
+		return enqueue(ctx, tx, d.Changes)
 	})
 }
 
@@ -159,26 +209,33 @@ func (r *Repository) AppendConsent(ctx context.Context, patientUserID, clinicID,
 func (r *Repository) ConsentEvents(ctx context.Context, patientUserID string) ([]domain.ConsentEvent, error) {
 	var out []domain.ConsentEvent
 	err := r.actingAs(ctx, patientUserID, "", func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT clinic_id::text, clinician_user_id::text, kind, recorded_at
-			FROM consent_events WHERE patient_user_id = $1 ORDER BY id`, patientUserID)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var e domain.ConsentEvent
-			var kind string
-			if err := rows.Scan(&e.ClinicID, &e.ClinicianUserID, &kind, &e.RecordedAt); err != nil {
-				return err
-			}
-			if e.Kind, err = domain.ParseConsentKind(kind); err != nil {
-				return err
-			}
-			out = append(out, e)
-		}
-		return rows.Err()
+		var err error
+		out, err = readEvents(ctx, tx, patientUserID)
+		return err
 	})
+	return out, err
+}
+
+func readEvents(ctx context.Context, tx pgx.Tx, patientUserID string) ([]domain.ConsentEvent, error) {
+	rows, err := tx.Query(ctx, `SELECT clinic_id::text, clinician_user_id::text, kind, recorded_at
+		FROM consent_events WHERE patient_user_id = $1 ORDER BY id`, patientUserID)
 	if err != nil {
+		return nil, fmt.Errorf("reading the consent ledger: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.ConsentEvent
+	for rows.Next() {
+		var e domain.ConsentEvent
+		var kind string
+		if err := rows.Scan(&e.ClinicID, &e.ClinicianUserID, &kind, &e.RecordedAt); err != nil {
+			return nil, fmt.Errorf("reading the consent ledger: %w", err)
+		}
+		if e.Kind, err = domain.ParseConsentKind(kind); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading the consent ledger: %w", err)
 	}
 	return out, nil
@@ -265,4 +322,52 @@ func (r *Repository) AccessAudit(
 		out[i] = rw.a
 	}
 	return out, cursor, nil
+}
+
+// PendingChange is a queued tuple change and its position in the queue.
+type PendingChange struct {
+	ID int64
+	domain.TupleChange
+}
+
+// PendingChanges returns up to limit changes not yet applied, oldest first.
+func (r *Repository) PendingChanges(ctx context.Context, limit int) ([]PendingChange, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id, op, tuple_user, relation, object FROM authz_changes
+		WHERE applied_at IS NULL ORDER BY id LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("reading queued tuple changes: %w", err)
+	}
+	defer rows.Close()
+	var out []PendingChange
+	for rows.Next() {
+		var p PendingChange
+		var op string
+		if err := rows.Scan(&p.ID, &op, &p.User, &p.Relation, &p.Object); err != nil {
+			return nil, fmt.Errorf("reading queued tuple changes: %w", err)
+		}
+		p.Op = domain.TupleOp(op)
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading queued tuple changes: %w", err)
+	}
+	return out, nil
+}
+
+// MarkApplied records that a change reached OpenFGA.
+func (r *Repository) MarkApplied(ctx context.Context, id int64, at time.Time) error {
+	if _, err := r.pool.Exec(ctx, "UPDATE authz_changes SET applied_at = $2 WHERE id = $1", id, at); err != nil {
+		return fmt.Errorf("marking a tuple change applied: %w", err)
+	}
+	return nil
+}
+
+// MarkFailed records a failed attempt, so a change that keeps failing can be
+// found rather than silently holding up the queue.
+func (r *Repository) MarkFailed(ctx context.Context, id int64, cause string) error {
+	if _, err := r.pool.Exec(ctx,
+		"UPDATE authz_changes SET attempts = attempts + 1, last_error = $2 WHERE id = $1", id, cause); err != nil {
+		return fmt.Errorf("recording a failed tuple change: %w", err)
+	}
+	return nil
 }

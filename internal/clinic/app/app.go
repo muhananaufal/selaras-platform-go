@@ -32,7 +32,7 @@ type Repository interface {
 	MemberRoles(ctx context.Context, clinicID, userID string) ([]domain.Role, error)
 	AddMember(ctx context.Context, clinicID, userID string, role domain.Role) error
 	RemoveMember(ctx context.Context, clinicID, userID string, role domain.Role) error
-	AppendConsent(ctx context.Context, patientUserID, clinicID, clinicianUserID string, kind domain.ConsentKind) error
+	UpdateConsents(ctx context.Context, patientUserID string, decide func([]domain.ConsentEvent) (domain.ConsentDecision, error)) error
 	ConsentEvents(ctx context.Context, patientUserID string) ([]domain.ConsentEvent, error)
 	AccessAudit(ctx context.Context, patientUserID string, limit int, after *domain.AuditCursor) ([]domain.Access, *domain.AuditCursor, error)
 }
@@ -130,12 +130,8 @@ func (s *Service) inForce(ctx context.Context, patient, clinicID, clinician stri
 	if err != nil {
 		return domain.Consent{}, false, err
 	}
-	for _, c := range domain.InForce(events) {
-		if c.ClinicID == clinicID && c.ClinicianUserID == clinician {
-			return c, true, nil
-		}
-	}
-	return domain.Consent{}, false, nil
+	c, ok := find(domain.InForce(events), clinicID, clinician)
+	return c, ok, nil
 }
 
 // GrantConsent lets clinician read the patient's risk assessments and
@@ -156,10 +152,21 @@ func (s *Service) GrantConsent(ctx context.Context, patient, clinicID, clinician
 		return domain.Consent{}, ErrNotAClinician
 	}
 
-	if c, ok, err := s.inForce(ctx, patient, clinicID, clinician); err != nil || ok {
-		return c, err
-	}
-	if err := s.repo.AppendConsent(ctx, patient, clinicID, clinician, domain.ConsentGranted); err != nil {
+	// Decided inside the repository's transaction, which holds the patient's
+	// lock: whether the consent is already in force is read from the same
+	// ledger the grant is appended to.
+	appended := false
+	err = s.repo.UpdateConsents(ctx, patient, func(events []domain.ConsentEvent) (domain.ConsentDecision, error) {
+		if _, ok := find(domain.InForce(events), clinicID, clinician); ok {
+			return domain.ConsentDecision{}, nil
+		}
+		appended = true
+		return domain.ConsentDecision{
+			Append:  &domain.ConsentEvent{ClinicID: clinicID, ClinicianUserID: clinician, Kind: domain.ConsentGranted},
+			Changes: domain.GrantChanges(patient, clinicID, clinician),
+		}, nil
+	})
+	if err != nil {
 		return domain.Consent{}, err
 	}
 	c, ok, err := s.inForce(ctx, patient, clinicID, clinician)
@@ -167,7 +174,7 @@ func (s *Service) GrantConsent(ctx context.Context, patient, clinicID, clinician
 		return domain.Consent{}, err
 	}
 	if !ok {
-		return domain.Consent{}, errors.New("a consent just granted is not in force")
+		return domain.Consent{}, fmt.Errorf("a consent just granted is not in force (appended: %v)", appended)
 	}
 	return c, nil
 }
@@ -175,18 +182,39 @@ func (s *Service) GrantConsent(ctx context.Context, patient, clinicID, clinician
 // RevokeConsent withdraws a consent in force. It does not check the
 // clinician's membership: a patient must always be able to withdraw,
 // including from a clinician who has since left.
+//
+// The tuples deleted are only those no remaining consent needs
+// (domain.RevokeChanges), decided from the ledger inside the same locked
+// transaction the revocation is appended in.
 func (s *Service) RevokeConsent(ctx context.Context, patient, clinicID, clinician string) error {
 	if err := ids(patient, clinicID, clinician); err != nil {
 		return err
 	}
-	_, ok, err := s.inForce(ctx, patient, clinicID, clinician)
-	if err != nil {
-		return err
+	return s.repo.UpdateConsents(ctx, patient, func(events []domain.ConsentEvent) (domain.ConsentDecision, error) {
+		inForce := domain.InForce(events)
+		if _, ok := find(inForce, clinicID, clinician); !ok {
+			return domain.ConsentDecision{}, ErrConsentNotFound
+		}
+		remaining := make([]domain.Consent, 0, len(inForce))
+		for _, c := range inForce {
+			if c.ClinicID != clinicID || c.ClinicianUserID != clinician {
+				remaining = append(remaining, c)
+			}
+		}
+		return domain.ConsentDecision{
+			Append:  &domain.ConsentEvent{ClinicID: clinicID, ClinicianUserID: clinician, Kind: domain.ConsentRevoked},
+			Changes: domain.RevokeChanges(patient, clinicID, clinician, remaining),
+		}, nil
+	})
+}
+
+func find(consents []domain.Consent, clinicID, clinician string) (domain.Consent, bool) {
+	for _, c := range consents {
+		if c.ClinicID == clinicID && c.ClinicianUserID == clinician {
+			return c, true
+		}
 	}
-	if !ok {
-		return ErrConsentNotFound
-	}
-	return s.repo.AppendConsent(ctx, patient, clinicID, clinician, domain.ConsentRevoked)
+	return domain.Consent{}, false
 }
 
 // ListConsents returns the patient's consents in force.

@@ -55,10 +55,18 @@ func (m *memRepo) RemoveMember(_ context.Context, clinic, user string, role doma
 	return nil
 }
 
-func (m *memRepo) AppendConsent(_ context.Context, patient, clinic, clinician string, kind domain.ConsentKind) error {
-	m.ledger[patient] = append(m.ledger[patient], domain.ConsentEvent{
-		ClinicID: clinic, ClinicianUserID: clinician, Kind: kind, RecordedAt: time.Now(),
-	})
+func (m *memRepo) UpdateConsents(
+	_ context.Context, patient string, decide func([]domain.ConsentEvent) (domain.ConsentDecision, error),
+) error {
+	d, err := decide(m.ledger[patient])
+	if err != nil {
+		return err
+	}
+	if d.Append != nil {
+		e := *d.Append
+		e.RecordedAt = time.Now()
+		m.ledger[patient] = append(m.ledger[patient], e)
+	}
 	return nil
 }
 

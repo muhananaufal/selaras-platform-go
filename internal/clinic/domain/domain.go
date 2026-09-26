@@ -206,3 +206,74 @@ type AuditCursor struct {
 	AccessedAt time.Time
 	ID         int64
 }
+
+// TupleOp is what the projection does with one relationship tuple.
+type TupleOp string
+
+const (
+	OpWrite  TupleOp = "write"
+	OpDelete TupleOp = "delete"
+)
+
+// TupleChange is one change to the OpenFGA tuples (deploy/openfga/model.fga)
+// that a change in this domain implies. It is written in the same
+// transaction as the change and applied later, in order, by the projector.
+type TupleChange struct {
+	Op       TupleOp
+	User     string
+	Relation string
+	Object   string
+}
+
+func userObj(id string) string    { return "user:" + id }
+func clinicObj(id string) string  { return "clinic:" + id }
+func patientObj(id string) string { return "patient:" + id }
+
+// MembershipChange is the tuple a member's role in a clinic is.
+func MembershipChange(op TupleOp, clinicID, userID string, role Role) TupleChange {
+	return TupleChange{Op: op, User: userObj(userID), Relation: role.String(), Object: clinicObj(clinicID)}
+}
+
+// GrantChanges opens the read through both halves of the model's
+// intersection: the consent to the clinician, and the clinic caring for the
+// patient.
+func GrantChanges(patientID, clinicID, clinicianID string) []TupleChange {
+	return []TupleChange{
+		{Op: OpWrite, User: userObj(clinicianID), Relation: "consented_clinician", Object: patientObj(patientID)},
+		{Op: OpWrite, User: clinicObj(clinicID), Relation: "care_clinic", Object: patientObj(patientID)},
+	}
+}
+
+// RevokeChanges closes what the revoked consent alone was holding open.
+//
+// The model keys consent by clinician and care by clinic, so a tuple is
+// deleted only when no consent still in force (remaining) needs it:
+// revoking (c1, rina) must not delete rina's consented_clinician tuple while
+// (c2, rina) is in force, nor c1's care_clinic tuple while (c1, budi) is.
+func RevokeChanges(patientID, clinicID, clinicianID string, remaining []Consent) []TupleChange {
+	clinicianStill, clinicStill := false, false
+	for _, c := range remaining {
+		if c.ClinicianUserID == clinicianID {
+			clinicianStill = true
+		}
+		if c.ClinicID == clinicID {
+			clinicStill = true
+		}
+	}
+	var out []TupleChange
+	if !clinicianStill {
+		out = append(out, TupleChange{Op: OpDelete, User: userObj(clinicianID), Relation: "consented_clinician", Object: patientObj(patientID)})
+	}
+	if !clinicStill {
+		out = append(out, TupleChange{Op: OpDelete, User: clinicObj(clinicID), Relation: "care_clinic", Object: patientObj(patientID)})
+	}
+	return out
+}
+
+// ConsentDecision is what a consent use case decided from a patient's
+// ledger: the entry to append, if any, and the tuple changes it implies.
+// They are stored together, in one transaction.
+type ConsentDecision struct {
+	Append  *ConsentEvent
+	Changes []TupleChange
+}
