@@ -68,6 +68,10 @@ type Service struct {
 	// WithAccessChecker. Nil refuses every such read.
 	access AccessChecker
 
+	// patientProfiles is the profile cache clinicians' reads use, without a
+	// fallback; installed through WithPatientProfiles.
+	patientProfiles ProfileSource
+
 	// statusWriter is installed later through WithStatusWriter. Nil means this
 	// service only serves reads and computations - no reason to fail, but no
 	// reason to pretend to accept work that will never be recorded either.
@@ -296,7 +300,11 @@ func (s *Service) History(ctx context.Context, userID string, pageSize int, page
 	if err != nil {
 		return HistoryPage{}, err
 	}
-	return s.history(ctx, userID, size, after)
+	profileID, err := s.resolveProfileID(ctx, userID)
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	return s.history(ctx, profileID, size, after)
 }
 
 // pageOf validates a page request: the size bounded by AIP-158, the token
@@ -321,11 +329,7 @@ func pageOf(pageSize int, pageToken string) (int, *domain.HistoryCursor, error) 
 	return pageSize, cursor, nil
 }
 
-func (s *Service) history(ctx context.Context, userID string, pageSize int, after *domain.HistoryCursor) (HistoryPage, error) {
-	profileID, err := s.resolveProfileID(ctx, userID)
-	if err != nil {
-		return HistoryPage{}, err
-	}
+func (s *Service) history(ctx context.Context, profileID domain.ProfileID, pageSize int, after *domain.HistoryCursor) (HistoryPage, error) {
 
 	// One row more than the page says whether another page exists, without a
 	// count and without handing out a token to a page that turns out empty.
