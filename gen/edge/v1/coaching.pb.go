@@ -1680,11 +1680,294 @@ func (x *WatchThreadResponse) GetMessages() []*CoachingMessage {
 	return nil
 }
 
+type ListPatientProgressRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PatientUserId string                 `protobuf:"bytes,1,opt,name=patient_user_id,json=patientUserId,proto3" json:"patient_user_id,omitempty"`
+	Page          *PageRequest           `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientProgressRequest) Reset() {
+	*x = ListPatientProgressRequest{}
+	mi := &file_edge_v1_coaching_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientProgressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientProgressRequest) ProtoMessage() {}
+
+func (x *ListPatientProgressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_coaching_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientProgressRequest.ProtoReflect.Descriptor instead.
+func (*ListPatientProgressRequest) Descriptor() ([]byte, []int) {
+	return file_edge_v1_coaching_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListPatientProgressRequest) GetPatientUserId() string {
+	if x != nil {
+		return x.PatientUserId
+	}
+	return ""
+}
+
+func (x *ListPatientProgressRequest) GetPage() *PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+// The patient's programs, newest first.
+type ListPatientProgressResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Programs      []*ProgramProgress     `protobuf:"bytes,1,rep,name=programs,proto3" json:"programs,omitempty"`
+	Page          *PageResponse          `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientProgressResponse) Reset() {
+	*x = ListPatientProgressResponse{}
+	mi := &file_edge_v1_coaching_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientProgressResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientProgressResponse) ProtoMessage() {}
+
+func (x *ListPatientProgressResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_coaching_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientProgressResponse.ProtoReflect.Descriptor instead.
+func (*ListPatientProgressResponse) Descriptor() ([]byte, []int) {
+	return file_edge_v1_coaching_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ListPatientProgressResponse) GetPrograms() []*ProgramProgress {
+	if x != nil {
+		return x.Programs
+	}
+	return nil
+}
+
+func (x *ListPatientProgressResponse) GetPage() *PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ProgramProgress struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Slug       string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
+	Title      string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Status     v1.ProgramStatus       `protobuf:"varint,3,opt,name=status,proto3,enum=coaching.v1.ProgramStatus" json:"status,omitempty"`
+	Difficulty v1.Difficulty          `protobuf:"varint,4,opt,name=difficulty,proto3,enum=coaching.v1.Difficulty" json:"difficulty,omitempty"`
+	// ISO-8601 dates.
+	StartDate        string              `protobuf:"bytes,5,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
+	EndDate          string              `protobuf:"bytes,6,opt,name=end_date,json=endDate,proto3" json:"end_date,omitempty"`
+	CurriculumStatus v1.CurriculumStatus `protobuf:"varint,7,opt,name=curriculum_status,json=curriculumStatus,proto3,enum=coaching.v1.CurriculumStatus" json:"curriculum_status,omitempty"`
+	// Empty while the curriculum is not stored yet.
+	Weeks          []*WeekProgress `protobuf:"bytes,8,rep,name=weeks,proto3" json:"weeks,omitempty"`
+	TasksTotal     int32           `protobuf:"varint,9,opt,name=tasks_total,json=tasksTotal,proto3" json:"tasks_total,omitempty"`
+	TasksCompleted int32           `protobuf:"varint,10,opt,name=tasks_completed,json=tasksCompleted,proto3" json:"tasks_completed,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProgramProgress) Reset() {
+	*x = ProgramProgress{}
+	mi := &file_edge_v1_coaching_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramProgress) ProtoMessage() {}
+
+func (x *ProgramProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_coaching_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramProgress.ProtoReflect.Descriptor instead.
+func (*ProgramProgress) Descriptor() ([]byte, []int) {
+	return file_edge_v1_coaching_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ProgramProgress) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetStatus() v1.ProgramStatus {
+	if x != nil {
+		return x.Status
+	}
+	return v1.ProgramStatus(0)
+}
+
+func (x *ProgramProgress) GetDifficulty() v1.Difficulty {
+	if x != nil {
+		return x.Difficulty
+	}
+	return v1.Difficulty(0)
+}
+
+func (x *ProgramProgress) GetStartDate() string {
+	if x != nil {
+		return x.StartDate
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetEndDate() string {
+	if x != nil {
+		return x.EndDate
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetCurriculumStatus() v1.CurriculumStatus {
+	if x != nil {
+		return x.CurriculumStatus
+	}
+	return v1.CurriculumStatus(0)
+}
+
+func (x *ProgramProgress) GetWeeks() []*WeekProgress {
+	if x != nil {
+		return x.Weeks
+	}
+	return nil
+}
+
+func (x *ProgramProgress) GetTasksTotal() int32 {
+	if x != nil {
+		return x.TasksTotal
+	}
+	return 0
+}
+
+func (x *ProgramProgress) GetTasksCompleted() int32 {
+	if x != nil {
+		return x.TasksCompleted
+	}
+	return 0
+}
+
+type WeekProgress struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	WeekNumber     int32                  `protobuf:"varint,1,opt,name=week_number,json=weekNumber,proto3" json:"week_number,omitempty"`
+	TasksTotal     int32                  `protobuf:"varint,2,opt,name=tasks_total,json=tasksTotal,proto3" json:"tasks_total,omitempty"`
+	TasksCompleted int32                  `protobuf:"varint,3,opt,name=tasks_completed,json=tasksCompleted,proto3" json:"tasks_completed,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *WeekProgress) Reset() {
+	*x = WeekProgress{}
+	mi := &file_edge_v1_coaching_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WeekProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WeekProgress) ProtoMessage() {}
+
+func (x *WeekProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_coaching_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WeekProgress.ProtoReflect.Descriptor instead.
+func (*WeekProgress) Descriptor() ([]byte, []int) {
+	return file_edge_v1_coaching_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *WeekProgress) GetWeekNumber() int32 {
+	if x != nil {
+		return x.WeekNumber
+	}
+	return 0
+}
+
+func (x *WeekProgress) GetTasksTotal() int32 {
+	if x != nil {
+		return x.TasksTotal
+	}
+	return 0
+}
+
+func (x *WeekProgress) GetTasksCompleted() int32 {
+	if x != nil {
+		return x.TasksCompleted
+	}
+	return 0
+}
+
 var File_edge_v1_coaching_proto protoreflect.FileDescriptor
 
 const file_edge_v1_coaching_proto_rawDesc = "" +
 	"\n" +
-	"\x16edge/v1/coaching.proto\x12\aedge.v1\x1a\x1acoaching/v1/coaching.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc5\x01\n" +
+	"\x16edge/v1/coaching.proto\x12\aedge.v1\x1a\x1acoaching/v1/coaching.proto\x1a\x12edge/v1/page.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc5\x01\n" +
 	"\fCoachingTask\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttask_date\x18\x02 \x01(\tR\btaskDate\x122\n" +
@@ -1789,11 +2072,40 @@ const file_edge_v1_coaching_proto_rawDesc = "" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\"|\n" +
 	"\x13WatchThreadResponse\x12/\n" +
 	"\x06thread\x18\x01 \x01(\v2\x17.edge.v1.CoachingThreadR\x06thread\x124\n" +
-	"\bmessages\x18\x02 \x03(\v2\x18.edge.v1.CoachingMessageR\bmessages2\xcd\b\n" +
+	"\bmessages\x18\x02 \x03(\v2\x18.edge.v1.CoachingMessageR\bmessages\"n\n" +
+	"\x1aListPatientProgressRequest\x12&\n" +
+	"\x0fpatient_user_id\x18\x01 \x01(\tR\rpatientUserId\x12(\n" +
+	"\x04page\x18\x02 \x01(\v2\x14.edge.v1.PageRequestR\x04page\"~\n" +
+	"\x1bListPatientProgressResponse\x124\n" +
+	"\bprograms\x18\x01 \x03(\v2\x18.edge.v1.ProgramProgressR\bprograms\x12)\n" +
+	"\x04page\x18\x02 \x01(\v2\x15.edge.v1.PageResponseR\x04page\"\xa5\x03\n" +
+	"\x0fProgramProgress\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x122\n" +
+	"\x06status\x18\x03 \x01(\x0e2\x1a.coaching.v1.ProgramStatusR\x06status\x127\n" +
+	"\n" +
+	"difficulty\x18\x04 \x01(\x0e2\x17.coaching.v1.DifficultyR\n" +
+	"difficulty\x12\x1d\n" +
+	"\n" +
+	"start_date\x18\x05 \x01(\tR\tstartDate\x12\x19\n" +
+	"\bend_date\x18\x06 \x01(\tR\aendDate\x12J\n" +
+	"\x11curriculum_status\x18\a \x01(\x0e2\x1d.coaching.v1.CurriculumStatusR\x10curriculumStatus\x12+\n" +
+	"\x05weeks\x18\b \x03(\v2\x15.edge.v1.WeekProgressR\x05weeks\x12\x1f\n" +
+	"\vtasks_total\x18\t \x01(\x05R\n" +
+	"tasksTotal\x12'\n" +
+	"\x0ftasks_completed\x18\n" +
+	" \x01(\x05R\x0etasksCompleted\"y\n" +
+	"\fWeekProgress\x12\x1f\n" +
+	"\vweek_number\x18\x01 \x01(\x05R\n" +
+	"weekNumber\x12\x1f\n" +
+	"\vtasks_total\x18\x02 \x01(\x05R\n" +
+	"tasksTotal\x12'\n" +
+	"\x0ftasks_completed\x18\x03 \x01(\x05R\x0etasksCompleted2\xb4\t\n" +
 	"\bCoaching\x12K\n" +
 	"\fStartProgram\x12\x1c.edge.v1.StartProgramRequest\x1a\x1d.edge.v1.StartProgramResponse\x12J\n" +
 	"\n" +
-	"GetProgram\x12\x1a.edge.v1.GetProgramRequest\x1a\x1b.edge.v1.GetProgramResponse\"\x03\x90\x02\x01\x12`\n" +
+	"GetProgram\x12\x1a.edge.v1.GetProgramRequest\x1a\x1b.edge.v1.GetProgramResponse\"\x03\x90\x02\x01\x12e\n" +
+	"\x13ListPatientProgress\x12#.edge.v1.ListPatientProgressRequest\x1a$.edge.v1.ListPatientProgressResponse\"\x03\x90\x02\x01\x12`\n" +
 	"\x13ToggleProgramStatus\x12#.edge.v1.ToggleProgramStatusRequest\x1a$.edge.v1.ToggleProgramStatusResponse\x12N\n" +
 	"\rDeleteProgram\x12\x1d.edge.v1.DeleteProgramRequest\x1a\x1e.edge.v1.DeleteProgramResponse\x12`\n" +
 	"\x13GetGraduationReport\x12#.edge.v1.GetGraduationReportRequest\x1a$.edge.v1.GetGraduationReportResponse\x12W\n" +
@@ -1819,7 +2131,7 @@ func file_edge_v1_coaching_proto_rawDescGZIP() []byte {
 	return file_edge_v1_coaching_proto_rawDescData
 }
 
-var file_edge_v1_coaching_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_edge_v1_coaching_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_edge_v1_coaching_proto_goTypes = []any{
 	(*CoachingTask)(nil),                // 0: edge.v1.CoachingTask
 	(*CoachingWeek)(nil),                // 1: edge.v1.CoachingWeek
@@ -1853,34 +2165,40 @@ var file_edge_v1_coaching_proto_goTypes = []any{
 	(*WatchProgramResponse)(nil),        // 29: edge.v1.WatchProgramResponse
 	(*WatchThreadRequest)(nil),          // 30: edge.v1.WatchThreadRequest
 	(*WatchThreadResponse)(nil),         // 31: edge.v1.WatchThreadResponse
-	(v1.TaskType)(0),                    // 32: coaching.v1.TaskType
-	(v1.MessageRole)(0),                 // 33: coaching.v1.MessageRole
-	(*structpb.Value)(nil),              // 34: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),       // 35: google.protobuf.Timestamp
-	(v1.ProgramStatus)(0),               // 36: coaching.v1.ProgramStatus
-	(v1.Difficulty)(0),                  // 37: coaching.v1.Difficulty
-	(v1.CurriculumStatus)(0),            // 38: coaching.v1.CurriculumStatus
-	(v1.GraduationStatus)(0),            // 39: coaching.v1.GraduationStatus
+	(*ListPatientProgressRequest)(nil),  // 32: edge.v1.ListPatientProgressRequest
+	(*ListPatientProgressResponse)(nil), // 33: edge.v1.ListPatientProgressResponse
+	(*ProgramProgress)(nil),             // 34: edge.v1.ProgramProgress
+	(*WeekProgress)(nil),                // 35: edge.v1.WeekProgress
+	(v1.TaskType)(0),                    // 36: coaching.v1.TaskType
+	(v1.MessageRole)(0),                 // 37: coaching.v1.MessageRole
+	(*structpb.Value)(nil),              // 38: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),       // 39: google.protobuf.Timestamp
+	(v1.ProgramStatus)(0),               // 40: coaching.v1.ProgramStatus
+	(v1.Difficulty)(0),                  // 41: coaching.v1.Difficulty
+	(v1.CurriculumStatus)(0),            // 42: coaching.v1.CurriculumStatus
+	(v1.GraduationStatus)(0),            // 43: coaching.v1.GraduationStatus
+	(*PageRequest)(nil),                 // 44: edge.v1.PageRequest
+	(*PageResponse)(nil),                // 45: edge.v1.PageResponse
 }
 var file_edge_v1_coaching_proto_depIdxs = []int32{
-	32, // 0: edge.v1.CoachingTask.task_type:type_name -> coaching.v1.TaskType
+	36, // 0: edge.v1.CoachingTask.task_type:type_name -> coaching.v1.TaskType
 	0,  // 1: edge.v1.CoachingWeek.tasks:type_name -> edge.v1.CoachingTask
-	33, // 2: edge.v1.CoachingMessage.role:type_name -> coaching.v1.MessageRole
-	34, // 3: edge.v1.CoachingMessage.content:type_name -> google.protobuf.Value
-	35, // 4: edge.v1.CoachingMessage.created_at:type_name -> google.protobuf.Timestamp
-	36, // 5: edge.v1.CoachingProgram.status:type_name -> coaching.v1.ProgramStatus
-	37, // 6: edge.v1.CoachingProgram.difficulty:type_name -> coaching.v1.Difficulty
-	38, // 7: edge.v1.CoachingProgram.curriculum_status:type_name -> coaching.v1.CurriculumStatus
+	37, // 2: edge.v1.CoachingMessage.role:type_name -> coaching.v1.MessageRole
+	38, // 3: edge.v1.CoachingMessage.content:type_name -> google.protobuf.Value
+	39, // 4: edge.v1.CoachingMessage.created_at:type_name -> google.protobuf.Timestamp
+	40, // 5: edge.v1.CoachingProgram.status:type_name -> coaching.v1.ProgramStatus
+	41, // 6: edge.v1.CoachingProgram.difficulty:type_name -> coaching.v1.Difficulty
+	42, // 7: edge.v1.CoachingProgram.curriculum_status:type_name -> coaching.v1.CurriculumStatus
 	1,  // 8: edge.v1.CoachingProgram.weeks:type_name -> edge.v1.CoachingWeek
 	2,  // 9: edge.v1.CoachingProgram.threads:type_name -> edge.v1.CoachingThread
 	4,  // 10: edge.v1.CoachingProgram.source_assessment:type_name -> edge.v1.SourceAssessment
-	34, // 11: edge.v1.CoachingProgram.graduation_report:type_name -> google.protobuf.Value
-	37, // 12: edge.v1.StartProgramRequest.difficulty:type_name -> coaching.v1.Difficulty
+	38, // 11: edge.v1.CoachingProgram.graduation_report:type_name -> google.protobuf.Value
+	41, // 12: edge.v1.StartProgramRequest.difficulty:type_name -> coaching.v1.Difficulty
 	5,  // 13: edge.v1.StartProgramResponse.program:type_name -> edge.v1.CoachingProgram
 	5,  // 14: edge.v1.GetProgramResponse.program:type_name -> edge.v1.CoachingProgram
 	5,  // 15: edge.v1.ToggleProgramStatusResponse.program:type_name -> edge.v1.CoachingProgram
-	39, // 16: edge.v1.GetGraduationReportResponse.status:type_name -> coaching.v1.GraduationStatus
-	34, // 17: edge.v1.GetGraduationReportResponse.report:type_name -> google.protobuf.Value
+	43, // 16: edge.v1.GetGraduationReportResponse.status:type_name -> coaching.v1.GraduationStatus
+	38, // 17: edge.v1.GetGraduationReportResponse.report:type_name -> google.protobuf.Value
 	0,  // 18: edge.v1.ToggleTaskStatusResponse.task:type_name -> edge.v1.CoachingTask
 	2,  // 19: edge.v1.StartThreadResponse.thread:type_name -> edge.v1.CoachingThread
 	2,  // 20: edge.v1.GetThreadResponse.thread:type_name -> edge.v1.CoachingThread
@@ -1890,37 +2208,46 @@ var file_edge_v1_coaching_proto_depIdxs = []int32{
 	5,  // 24: edge.v1.WatchProgramResponse.program:type_name -> edge.v1.CoachingProgram
 	2,  // 25: edge.v1.WatchThreadResponse.thread:type_name -> edge.v1.CoachingThread
 	3,  // 26: edge.v1.WatchThreadResponse.messages:type_name -> edge.v1.CoachingMessage
-	6,  // 27: edge.v1.Coaching.StartProgram:input_type -> edge.v1.StartProgramRequest
-	8,  // 28: edge.v1.Coaching.GetProgram:input_type -> edge.v1.GetProgramRequest
-	10, // 29: edge.v1.Coaching.ToggleProgramStatus:input_type -> edge.v1.ToggleProgramStatusRequest
-	12, // 30: edge.v1.Coaching.DeleteProgram:input_type -> edge.v1.DeleteProgramRequest
-	14, // 31: edge.v1.Coaching.GetGraduationReport:input_type -> edge.v1.GetGraduationReportRequest
-	16, // 32: edge.v1.Coaching.ToggleTaskStatus:input_type -> edge.v1.ToggleTaskStatusRequest
-	18, // 33: edge.v1.Coaching.StartThread:input_type -> edge.v1.StartThreadRequest
-	20, // 34: edge.v1.Coaching.GetThread:input_type -> edge.v1.GetThreadRequest
-	22, // 35: edge.v1.Coaching.UpdateThreadTitle:input_type -> edge.v1.UpdateThreadTitleRequest
-	24, // 36: edge.v1.Coaching.DeleteThread:input_type -> edge.v1.DeleteThreadRequest
-	26, // 37: edge.v1.Coaching.SendThreadMessage:input_type -> edge.v1.SendThreadMessageRequest
-	28, // 38: edge.v1.Coaching.WatchProgram:input_type -> edge.v1.WatchProgramRequest
-	30, // 39: edge.v1.Coaching.WatchThread:input_type -> edge.v1.WatchThreadRequest
-	7,  // 40: edge.v1.Coaching.StartProgram:output_type -> edge.v1.StartProgramResponse
-	9,  // 41: edge.v1.Coaching.GetProgram:output_type -> edge.v1.GetProgramResponse
-	11, // 42: edge.v1.Coaching.ToggleProgramStatus:output_type -> edge.v1.ToggleProgramStatusResponse
-	13, // 43: edge.v1.Coaching.DeleteProgram:output_type -> edge.v1.DeleteProgramResponse
-	15, // 44: edge.v1.Coaching.GetGraduationReport:output_type -> edge.v1.GetGraduationReportResponse
-	17, // 45: edge.v1.Coaching.ToggleTaskStatus:output_type -> edge.v1.ToggleTaskStatusResponse
-	19, // 46: edge.v1.Coaching.StartThread:output_type -> edge.v1.StartThreadResponse
-	21, // 47: edge.v1.Coaching.GetThread:output_type -> edge.v1.GetThreadResponse
-	23, // 48: edge.v1.Coaching.UpdateThreadTitle:output_type -> edge.v1.UpdateThreadTitleResponse
-	25, // 49: edge.v1.Coaching.DeleteThread:output_type -> edge.v1.DeleteThreadResponse
-	27, // 50: edge.v1.Coaching.SendThreadMessage:output_type -> edge.v1.SendThreadMessageResponse
-	29, // 51: edge.v1.Coaching.WatchProgram:output_type -> edge.v1.WatchProgramResponse
-	31, // 52: edge.v1.Coaching.WatchThread:output_type -> edge.v1.WatchThreadResponse
-	40, // [40:53] is the sub-list for method output_type
-	27, // [27:40] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	44, // 27: edge.v1.ListPatientProgressRequest.page:type_name -> edge.v1.PageRequest
+	34, // 28: edge.v1.ListPatientProgressResponse.programs:type_name -> edge.v1.ProgramProgress
+	45, // 29: edge.v1.ListPatientProgressResponse.page:type_name -> edge.v1.PageResponse
+	40, // 30: edge.v1.ProgramProgress.status:type_name -> coaching.v1.ProgramStatus
+	41, // 31: edge.v1.ProgramProgress.difficulty:type_name -> coaching.v1.Difficulty
+	42, // 32: edge.v1.ProgramProgress.curriculum_status:type_name -> coaching.v1.CurriculumStatus
+	35, // 33: edge.v1.ProgramProgress.weeks:type_name -> edge.v1.WeekProgress
+	6,  // 34: edge.v1.Coaching.StartProgram:input_type -> edge.v1.StartProgramRequest
+	8,  // 35: edge.v1.Coaching.GetProgram:input_type -> edge.v1.GetProgramRequest
+	32, // 36: edge.v1.Coaching.ListPatientProgress:input_type -> edge.v1.ListPatientProgressRequest
+	10, // 37: edge.v1.Coaching.ToggleProgramStatus:input_type -> edge.v1.ToggleProgramStatusRequest
+	12, // 38: edge.v1.Coaching.DeleteProgram:input_type -> edge.v1.DeleteProgramRequest
+	14, // 39: edge.v1.Coaching.GetGraduationReport:input_type -> edge.v1.GetGraduationReportRequest
+	16, // 40: edge.v1.Coaching.ToggleTaskStatus:input_type -> edge.v1.ToggleTaskStatusRequest
+	18, // 41: edge.v1.Coaching.StartThread:input_type -> edge.v1.StartThreadRequest
+	20, // 42: edge.v1.Coaching.GetThread:input_type -> edge.v1.GetThreadRequest
+	22, // 43: edge.v1.Coaching.UpdateThreadTitle:input_type -> edge.v1.UpdateThreadTitleRequest
+	24, // 44: edge.v1.Coaching.DeleteThread:input_type -> edge.v1.DeleteThreadRequest
+	26, // 45: edge.v1.Coaching.SendThreadMessage:input_type -> edge.v1.SendThreadMessageRequest
+	28, // 46: edge.v1.Coaching.WatchProgram:input_type -> edge.v1.WatchProgramRequest
+	30, // 47: edge.v1.Coaching.WatchThread:input_type -> edge.v1.WatchThreadRequest
+	7,  // 48: edge.v1.Coaching.StartProgram:output_type -> edge.v1.StartProgramResponse
+	9,  // 49: edge.v1.Coaching.GetProgram:output_type -> edge.v1.GetProgramResponse
+	33, // 50: edge.v1.Coaching.ListPatientProgress:output_type -> edge.v1.ListPatientProgressResponse
+	11, // 51: edge.v1.Coaching.ToggleProgramStatus:output_type -> edge.v1.ToggleProgramStatusResponse
+	13, // 52: edge.v1.Coaching.DeleteProgram:output_type -> edge.v1.DeleteProgramResponse
+	15, // 53: edge.v1.Coaching.GetGraduationReport:output_type -> edge.v1.GetGraduationReportResponse
+	17, // 54: edge.v1.Coaching.ToggleTaskStatus:output_type -> edge.v1.ToggleTaskStatusResponse
+	19, // 55: edge.v1.Coaching.StartThread:output_type -> edge.v1.StartThreadResponse
+	21, // 56: edge.v1.Coaching.GetThread:output_type -> edge.v1.GetThreadResponse
+	23, // 57: edge.v1.Coaching.UpdateThreadTitle:output_type -> edge.v1.UpdateThreadTitleResponse
+	25, // 58: edge.v1.Coaching.DeleteThread:output_type -> edge.v1.DeleteThreadResponse
+	27, // 59: edge.v1.Coaching.SendThreadMessage:output_type -> edge.v1.SendThreadMessageResponse
+	29, // 60: edge.v1.Coaching.WatchProgram:output_type -> edge.v1.WatchProgramResponse
+	31, // 61: edge.v1.Coaching.WatchThread:output_type -> edge.v1.WatchThreadResponse
+	48, // [48:62] is the sub-list for method output_type
+	34, // [34:48] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_edge_v1_coaching_proto_init() }
@@ -1928,6 +2255,7 @@ func file_edge_v1_coaching_proto_init() {
 	if File_edge_v1_coaching_proto != nil {
 		return
 	}
+	file_edge_v1_page_proto_init()
 	file_edge_v1_coaching_proto_msgTypes[18].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1935,7 +2263,7 @@ func file_edge_v1_coaching_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_edge_v1_coaching_proto_rawDesc), len(file_edge_v1_coaching_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

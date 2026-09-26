@@ -3,6 +3,7 @@ syntax = "proto3";
 package edge.v1;
 
 import "coaching/v1/coaching.proto";
+import "edge/v1/page.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -14,6 +15,15 @@ service Coaching {
   rpc StartProgram(StartProgramRequest) returns (StartProgramResponse);
 
   rpc GetProgram(GetProgramRequest) returns (GetProgramResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // A clinician reads a patient's coaching progress, only under the
+  // patient's consent to that clinician (ADR-030). Progress only: status,
+  // dates and how many tasks of each week are done - never discussions,
+  // task wording or the graduation report. Every read that returns data is
+  // recorded in the patient's access audit first.
+  rpc ListPatientProgress(ListPatientProgressRequest) returns (ListPatientProgressResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
@@ -229,4 +239,39 @@ message WatchThreadRequest {
 message WatchThreadResponse {
   CoachingThread thread = 1;
   repeated CoachingMessage messages = 2;
+}
+
+message ListPatientProgressRequest {
+  string patient_user_id = 1;
+  PageRequest page = 2;
+}
+
+// The patient's programs, newest first.
+message ListPatientProgressResponse {
+  repeated ProgramProgress programs = 1;
+  PageResponse page = 2;
+}
+
+message ProgramProgress {
+  string slug = 1;
+  string title = 2;
+  coaching.v1.ProgramStatus status = 3;
+  coaching.v1.Difficulty difficulty = 4;
+
+  // ISO-8601 dates.
+  string start_date = 5;
+  string end_date = 6;
+
+  coaching.v1.CurriculumStatus curriculum_status = 7;
+
+  // Empty while the curriculum is not stored yet.
+  repeated WeekProgress weeks = 8;
+  int32 tasks_total = 9;
+  int32 tasks_completed = 10;
+}
+
+message WeekProgress {
+  int32 week_number = 1;
+  int32 tasks_total = 2;
+  int32 tasks_completed = 3;
 }

@@ -53,6 +53,56 @@ func (h *Coaching) GetProgram(ctx context.Context, req *edgev1.GetProgramRequest
 	return &edgev1.GetProgramResponse{Program: program}, nil
 }
 
+// ListPatientProgress is a clinician reading a patient's coaching progress
+// under the patient's consent (ADR-030). The clinician is the caller of the
+// token, which is forwarded: coaching-svc reads it from its own
+// verification, not from anything the gateway says. The claims are required
+// here too, so an anonymous request stops at the gateway.
+func (h *Coaching) ListPatientProgress(
+	ctx context.Context, req *edgev1.ListPatientProgressRequest,
+) (*edgev1.ListPatientProgressResponse, error) {
+	if _, err := claims(ctx); err != nil {
+		return nil, err
+	}
+	if err := invalid(required(field("patientUserId", req.GetPatientUserId()))); err != nil {
+		return nil, err
+	}
+	resp, err := h.coaching.ListPatientProgress(ctx, &coachingv1.ListPatientProgressRequest{
+		PatientUserId: req.GetPatientUserId(),
+		Page:          pageFrom(req.GetPage()),
+	})
+	if err != nil {
+		return nil, rpcerr.FromUpstream(ctx, edgev1connect.CoachingListPatientProgressProcedure, err)
+	}
+	out := &edgev1.ListPatientProgressResponse{Page: pageOut(resp.GetPage())}
+	for _, p := range resp.GetPrograms() {
+		out.Programs = append(out.Programs, progressView(p))
+	}
+	return out, nil
+}
+
+func progressView(p *coachingv1.ProgramProgress) *edgev1.ProgramProgress {
+	out := &edgev1.ProgramProgress{
+		Slug:             p.GetSlug(),
+		Title:            p.GetTitle(),
+		Status:           p.GetStatus(),
+		Difficulty:       p.GetDifficulty(),
+		StartDate:        p.GetStartDate(),
+		EndDate:          p.GetEndDate(),
+		CurriculumStatus: p.GetCurriculumStatus(),
+		TasksTotal:       p.GetTasksTotal(),
+		TasksCompleted:   p.GetTasksCompleted(),
+	}
+	for _, w := range p.GetWeeks() {
+		out.Weeks = append(out.Weeks, &edgev1.WeekProgress{
+			WeekNumber:     w.GetWeekNumber(),
+			TasksTotal:     w.GetTasksTotal(),
+			TasksCompleted: w.GetTasksCompleted(),
+		})
+	}
+	return out
+}
+
 func (h *Coaching) ToggleProgramStatus(
 	ctx context.Context, req *edgev1.ToggleProgramStatusRequest,
 ) (*edgev1.ToggleProgramStatusResponse, error) {
