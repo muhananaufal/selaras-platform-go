@@ -36,3 +36,4 @@ Bukti yang menopangnya ada di Evidence Ledger pada dokumen rencana di repo Larav
 | 025 | Kuota penyedia LLM memarkir pekerjaan, bukan mematikannya |
 | 026 | Setiap service memverifikasi token pengguna sendiri |
 | 027 | Kontrak publik lewat Connect, bukan REST |
+| 028 | Test integrasi memakai service nyata dari CI/compose, bukan testcontainers |
