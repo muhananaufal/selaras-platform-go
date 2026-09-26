@@ -69,6 +69,34 @@ func (a *Assessment) ListAssessments(
 	return out, nil
 }
 
+// ListPatientAssessments is a clinician reading a patient's history under
+// the patient's consent (ADR-030). The clinician is the caller of the token,
+// which is forwarded: assessment-svc reads it from its own verification, not
+// from anything the gateway says. The claims are required here too, so an
+// anonymous request stops at the gateway.
+func (a *Assessment) ListPatientAssessments(
+	ctx context.Context, req *edgev1.ListPatientAssessmentsRequest,
+) (*edgev1.ListPatientAssessmentsResponse, error) {
+	if _, err := claims(ctx); err != nil {
+		return nil, err
+	}
+	if err := invalid(required(field("patientUserId", req.GetPatientUserId()))); err != nil {
+		return nil, err
+	}
+	resp, err := a.assessments.ListPatientAssessments(ctx, &assessmentv1.ListPatientAssessmentsRequest{
+		PatientUserId: req.GetPatientUserId(),
+		Page:          pageFrom(req.GetPage()),
+	})
+	if err != nil {
+		return nil, rpcerr.FromUpstream(ctx, edgev1connect.AssessmentListPatientAssessmentsProcedure, err)
+	}
+	out := &edgev1.ListPatientAssessmentsResponse{Page: pageOut(resp.GetPage())}
+	for _, item := range resp.GetAssessments() {
+		out.Assessments = append(out.Assessments, assessmentView(item))
+	}
+	return out, nil
+}
+
 func (a *Assessment) GetAssessment(
 	ctx context.Context, req *edgev1.GetAssessmentRequest,
 ) (*edgev1.GetAssessmentResponse, error) {

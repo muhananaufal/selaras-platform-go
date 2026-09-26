@@ -21,6 +21,7 @@ import (
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
+	clinicv1 "github.com/muhananaufal/selaras-platform-go/gen/clinic/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	dashboardv1 "github.com/muhananaufal/selaras-platform-go/gen/dashboard/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
@@ -201,6 +202,20 @@ func run(log *slog.Logger) error {
 			"variable", "DASHBOARD_GRPC_TARGET")
 	}
 
+	var clinics clinicv1.ClinicClient
+	if cfg.ClinicAddr != "" {
+		conn, err := dial(cfg.ClinicAddr)
+		if err != nil {
+			return fmt.Errorf("clinic-svc: %w", err)
+		}
+		defer closeConn(conn, "clinic-svc", log)
+
+		clinics = clinicv1.NewClinicClient(conn)
+	} else {
+		log.Warn("clinic-svc is not configured; its procedures are not mounted",
+			"variable", "CLINIC_GRPC_TARGET")
+	}
+
 	social, handoff, err := buildSocial(cfg, identityClient, redisClient, log)
 	if err != nil {
 		return err
@@ -234,6 +249,7 @@ func run(log *slog.Logger) error {
 		Chat:        chat,
 		Nutrition:   nutrition,
 		Dashboards:  dashboards,
+		Clinics:     clinics,
 		Tokens:      verifier,
 		Revocations: revocations,
 		Limiter:     limiter,

@@ -312,6 +312,110 @@ func (x *ListAssessmentsResponse) GetPage() *PageResponse {
 	return nil
 }
 
+type ListPatientAssessmentsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PatientUserId string                 `protobuf:"bytes,1,opt,name=patient_user_id,json=patientUserId,proto3" json:"patient_user_id,omitempty"`
+	Page          *PageRequest           `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientAssessmentsRequest) Reset() {
+	*x = ListPatientAssessmentsRequest{}
+	mi := &file_edge_v1_assessment_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientAssessmentsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientAssessmentsRequest) ProtoMessage() {}
+
+func (x *ListPatientAssessmentsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_assessment_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientAssessmentsRequest.ProtoReflect.Descriptor instead.
+func (*ListPatientAssessmentsRequest) Descriptor() ([]byte, []int) {
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListPatientAssessmentsRequest) GetPatientUserId() string {
+	if x != nil {
+		return x.PatientUserId
+	}
+	return ""
+}
+
+func (x *ListPatientAssessmentsRequest) GetPage() *PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListPatientAssessmentsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Assessments   []*RiskAssessment      `protobuf:"bytes,1,rep,name=assessments,proto3" json:"assessments,omitempty"`
+	Page          *PageResponse          `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientAssessmentsResponse) Reset() {
+	*x = ListPatientAssessmentsResponse{}
+	mi := &file_edge_v1_assessment_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientAssessmentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientAssessmentsResponse) ProtoMessage() {}
+
+func (x *ListPatientAssessmentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_assessment_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientAssessmentsResponse.ProtoReflect.Descriptor instead.
+func (*ListPatientAssessmentsResponse) Descriptor() ([]byte, []int) {
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListPatientAssessmentsResponse) GetAssessments() []*RiskAssessment {
+	if x != nil {
+		return x.Assessments
+	}
+	return nil
+}
+
+func (x *ListPatientAssessmentsResponse) GetPage() *PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 type GetAssessmentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
@@ -321,7 +425,7 @@ type GetAssessmentRequest struct {
 
 func (x *GetAssessmentRequest) Reset() {
 	*x = GetAssessmentRequest{}
-	mi := &file_edge_v1_assessment_proto_msgTypes[5]
+	mi := &file_edge_v1_assessment_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -333,7 +437,7 @@ func (x *GetAssessmentRequest) String() string {
 func (*GetAssessmentRequest) ProtoMessage() {}
 
 func (x *GetAssessmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_assessment_proto_msgTypes[5]
+	mi := &file_edge_v1_assessment_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -346,7 +450,7 @@ func (x *GetAssessmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssessmentRequest.ProtoReflect.Descriptor instead.
 func (*GetAssessmentRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{5}
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetAssessmentRequest) GetSlug() string {
@@ -365,7 +469,7 @@ type GetAssessmentResponse struct {
 
 func (x *GetAssessmentResponse) Reset() {
 	*x = GetAssessmentResponse{}
-	mi := &file_edge_v1_assessment_proto_msgTypes[6]
+	mi := &file_edge_v1_assessment_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -377,7 +481,7 @@ func (x *GetAssessmentResponse) String() string {
 func (*GetAssessmentResponse) ProtoMessage() {}
 
 func (x *GetAssessmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_assessment_proto_msgTypes[6]
+	mi := &file_edge_v1_assessment_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -390,7 +494,7 @@ func (x *GetAssessmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssessmentResponse.ProtoReflect.Descriptor instead.
 func (*GetAssessmentResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{6}
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetAssessmentResponse) GetAssessment() *RiskAssessment {
@@ -409,7 +513,7 @@ type RequestPersonalizationRequest struct {
 
 func (x *RequestPersonalizationRequest) Reset() {
 	*x = RequestPersonalizationRequest{}
-	mi := &file_edge_v1_assessment_proto_msgTypes[7]
+	mi := &file_edge_v1_assessment_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -421,7 +525,7 @@ func (x *RequestPersonalizationRequest) String() string {
 func (*RequestPersonalizationRequest) ProtoMessage() {}
 
 func (x *RequestPersonalizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_assessment_proto_msgTypes[7]
+	mi := &file_edge_v1_assessment_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -434,7 +538,7 @@ func (x *RequestPersonalizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestPersonalizationRequest.ProtoReflect.Descriptor instead.
 func (*RequestPersonalizationRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{7}
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RequestPersonalizationRequest) GetSlug() string {
@@ -455,7 +559,7 @@ type RequestPersonalizationResponse struct {
 
 func (x *RequestPersonalizationResponse) Reset() {
 	*x = RequestPersonalizationResponse{}
-	mi := &file_edge_v1_assessment_proto_msgTypes[8]
+	mi := &file_edge_v1_assessment_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -467,7 +571,7 @@ func (x *RequestPersonalizationResponse) String() string {
 func (*RequestPersonalizationResponse) ProtoMessage() {}
 
 func (x *RequestPersonalizationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_assessment_proto_msgTypes[8]
+	mi := &file_edge_v1_assessment_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -480,7 +584,7 @@ func (x *RequestPersonalizationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestPersonalizationResponse.ProtoReflect.Descriptor instead.
 func (*RequestPersonalizationResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{8}
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RequestPersonalizationResponse) GetJobId() string {
@@ -506,7 +610,7 @@ type WatchAssessmentRequest struct {
 
 func (x *WatchAssessmentRequest) Reset() {
 	*x = WatchAssessmentRequest{}
-	mi := &file_edge_v1_assessment_proto_msgTypes[9]
+	mi := &file_edge_v1_assessment_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -518,7 +622,7 @@ func (x *WatchAssessmentRequest) String() string {
 func (*WatchAssessmentRequest) ProtoMessage() {}
 
 func (x *WatchAssessmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_assessment_proto_msgTypes[9]
+	mi := &file_edge_v1_assessment_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -531,7 +635,7 @@ func (x *WatchAssessmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchAssessmentRequest.ProtoReflect.Descriptor instead.
 func (*WatchAssessmentRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{9}
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WatchAssessmentRequest) GetSlug() string {
@@ -550,7 +654,7 @@ type WatchAssessmentResponse struct {
 
 func (x *WatchAssessmentResponse) Reset() {
 	*x = WatchAssessmentResponse{}
-	mi := &file_edge_v1_assessment_proto_msgTypes[10]
+	mi := &file_edge_v1_assessment_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -562,7 +666,7 @@ func (x *WatchAssessmentResponse) String() string {
 func (*WatchAssessmentResponse) ProtoMessage() {}
 
 func (x *WatchAssessmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_assessment_proto_msgTypes[10]
+	mi := &file_edge_v1_assessment_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -575,7 +679,7 @@ func (x *WatchAssessmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchAssessmentResponse.ProtoReflect.Descriptor instead.
 func (*WatchAssessmentResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{10}
+	return file_edge_v1_assessment_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WatchAssessmentResponse) GetAssessment() *RiskAssessment {
@@ -610,6 +714,12 @@ const file_edge_v1_assessment_proto_rawDesc = "" +
 	"\x04page\x18\x01 \x01(\v2\x14.edge.v1.PageRequestR\x04page\"\x7f\n" +
 	"\x17ListAssessmentsResponse\x129\n" +
 	"\vassessments\x18\x01 \x03(\v2\x17.edge.v1.RiskAssessmentR\vassessments\x12)\n" +
+	"\x04page\x18\x02 \x01(\v2\x15.edge.v1.PageResponseR\x04page\"q\n" +
+	"\x1dListPatientAssessmentsRequest\x12&\n" +
+	"\x0fpatient_user_id\x18\x01 \x01(\tR\rpatientUserId\x12(\n" +
+	"\x04page\x18\x02 \x01(\v2\x14.edge.v1.PageRequestR\x04page\"\x86\x01\n" +
+	"\x1eListPatientAssessmentsResponse\x129\n" +
+	"\vassessments\x18\x01 \x03(\v2\x17.edge.v1.RiskAssessmentR\vassessments\x12)\n" +
 	"\x04page\x18\x02 \x01(\v2\x15.edge.v1.PageResponseR\x04page\"*\n" +
 	"\x14GetAssessmentRequest\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\"P\n" +
@@ -627,11 +737,12 @@ const file_edge_v1_assessment_proto_rawDesc = "" +
 	"\x17WatchAssessmentResponse\x127\n" +
 	"\n" +
 	"assessment\x18\x01 \x01(\v2\x17.edge.v1.RiskAssessmentR\n" +
-	"assessment2\xda\x03\n" +
+	"assessment2\xca\x04\n" +
 	"\n" +
 	"Assessment\x12T\n" +
 	"\x0fStartAssessment\x12\x1f.edge.v1.StartAssessmentRequest\x1a .edge.v1.StartAssessmentResponse\x12Y\n" +
-	"\x0fListAssessments\x12\x1f.edge.v1.ListAssessmentsRequest\x1a .edge.v1.ListAssessmentsResponse\"\x03\x90\x02\x01\x12S\n" +
+	"\x0fListAssessments\x12\x1f.edge.v1.ListAssessmentsRequest\x1a .edge.v1.ListAssessmentsResponse\"\x03\x90\x02\x01\x12n\n" +
+	"\x16ListPatientAssessments\x12&.edge.v1.ListPatientAssessmentsRequest\x1a'.edge.v1.ListPatientAssessmentsResponse\"\x03\x90\x02\x01\x12S\n" +
 	"\rGetAssessment\x12\x1d.edge.v1.GetAssessmentRequest\x1a\x1e.edge.v1.GetAssessmentResponse\"\x03\x90\x02\x01\x12i\n" +
 	"\x16RequestPersonalization\x12&.edge.v1.RequestPersonalizationRequest\x1a'.edge.v1.RequestPersonalizationResponse\x12[\n" +
 	"\x0fWatchAssessment\x12\x1f.edge.v1.WatchAssessmentRequest\x1a .edge.v1.WatchAssessmentResponse\"\x03\x90\x02\x010\x01B\x9b\x01\n" +
@@ -649,57 +760,64 @@ func file_edge_v1_assessment_proto_rawDescGZIP() []byte {
 	return file_edge_v1_assessment_proto_rawDescData
 }
 
-var file_edge_v1_assessment_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_edge_v1_assessment_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_edge_v1_assessment_proto_goTypes = []any{
 	(*RiskAssessment)(nil),                 // 0: edge.v1.RiskAssessment
 	(*StartAssessmentRequest)(nil),         // 1: edge.v1.StartAssessmentRequest
 	(*StartAssessmentResponse)(nil),        // 2: edge.v1.StartAssessmentResponse
 	(*ListAssessmentsRequest)(nil),         // 3: edge.v1.ListAssessmentsRequest
 	(*ListAssessmentsResponse)(nil),        // 4: edge.v1.ListAssessmentsResponse
-	(*GetAssessmentRequest)(nil),           // 5: edge.v1.GetAssessmentRequest
-	(*GetAssessmentResponse)(nil),          // 6: edge.v1.GetAssessmentResponse
-	(*RequestPersonalizationRequest)(nil),  // 7: edge.v1.RequestPersonalizationRequest
-	(*RequestPersonalizationResponse)(nil), // 8: edge.v1.RequestPersonalizationResponse
-	(*WatchAssessmentRequest)(nil),         // 9: edge.v1.WatchAssessmentRequest
-	(*WatchAssessmentResponse)(nil),        // 10: edge.v1.WatchAssessmentResponse
-	(v1.RiskModel)(0),                      // 11: assessment.v1.RiskModel
-	(*v1.ResolvedClinicalValues)(nil),      // 12: assessment.v1.ResolvedClinicalValues
-	(v1.PersonalizationStatus)(0),          // 13: assessment.v1.PersonalizationStatus
-	(*structpb.Value)(nil),                 // 14: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),          // 15: google.protobuf.Timestamp
-	(*v1.AssessmentInput)(nil),             // 16: assessment.v1.AssessmentInput
-	(*PageRequest)(nil),                    // 17: edge.v1.PageRequest
-	(*PageResponse)(nil),                   // 18: edge.v1.PageResponse
+	(*ListPatientAssessmentsRequest)(nil),  // 5: edge.v1.ListPatientAssessmentsRequest
+	(*ListPatientAssessmentsResponse)(nil), // 6: edge.v1.ListPatientAssessmentsResponse
+	(*GetAssessmentRequest)(nil),           // 7: edge.v1.GetAssessmentRequest
+	(*GetAssessmentResponse)(nil),          // 8: edge.v1.GetAssessmentResponse
+	(*RequestPersonalizationRequest)(nil),  // 9: edge.v1.RequestPersonalizationRequest
+	(*RequestPersonalizationResponse)(nil), // 10: edge.v1.RequestPersonalizationResponse
+	(*WatchAssessmentRequest)(nil),         // 11: edge.v1.WatchAssessmentRequest
+	(*WatchAssessmentResponse)(nil),        // 12: edge.v1.WatchAssessmentResponse
+	(v1.RiskModel)(0),                      // 13: assessment.v1.RiskModel
+	(*v1.ResolvedClinicalValues)(nil),      // 14: assessment.v1.ResolvedClinicalValues
+	(v1.PersonalizationStatus)(0),          // 15: assessment.v1.PersonalizationStatus
+	(*structpb.Value)(nil),                 // 16: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),          // 17: google.protobuf.Timestamp
+	(*v1.AssessmentInput)(nil),             // 18: assessment.v1.AssessmentInput
+	(*PageRequest)(nil),                    // 19: edge.v1.PageRequest
+	(*PageResponse)(nil),                   // 20: edge.v1.PageResponse
 }
 var file_edge_v1_assessment_proto_depIdxs = []int32{
-	11, // 0: edge.v1.RiskAssessment.model_used:type_name -> assessment.v1.RiskModel
-	12, // 1: edge.v1.RiskAssessment.resolved_values:type_name -> assessment.v1.ResolvedClinicalValues
-	13, // 2: edge.v1.RiskAssessment.personalization_status:type_name -> assessment.v1.PersonalizationStatus
-	14, // 3: edge.v1.RiskAssessment.personalized_report:type_name -> google.protobuf.Value
-	15, // 4: edge.v1.RiskAssessment.created_at:type_name -> google.protobuf.Timestamp
-	16, // 5: edge.v1.StartAssessmentRequest.input:type_name -> assessment.v1.AssessmentInput
+	13, // 0: edge.v1.RiskAssessment.model_used:type_name -> assessment.v1.RiskModel
+	14, // 1: edge.v1.RiskAssessment.resolved_values:type_name -> assessment.v1.ResolvedClinicalValues
+	15, // 2: edge.v1.RiskAssessment.personalization_status:type_name -> assessment.v1.PersonalizationStatus
+	16, // 3: edge.v1.RiskAssessment.personalized_report:type_name -> google.protobuf.Value
+	17, // 4: edge.v1.RiskAssessment.created_at:type_name -> google.protobuf.Timestamp
+	18, // 5: edge.v1.StartAssessmentRequest.input:type_name -> assessment.v1.AssessmentInput
 	0,  // 6: edge.v1.StartAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
-	17, // 7: edge.v1.ListAssessmentsRequest.page:type_name -> edge.v1.PageRequest
+	19, // 7: edge.v1.ListAssessmentsRequest.page:type_name -> edge.v1.PageRequest
 	0,  // 8: edge.v1.ListAssessmentsResponse.assessments:type_name -> edge.v1.RiskAssessment
-	18, // 9: edge.v1.ListAssessmentsResponse.page:type_name -> edge.v1.PageResponse
-	0,  // 10: edge.v1.GetAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
-	13, // 11: edge.v1.RequestPersonalizationResponse.status:type_name -> assessment.v1.PersonalizationStatus
-	0,  // 12: edge.v1.WatchAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
-	1,  // 13: edge.v1.Assessment.StartAssessment:input_type -> edge.v1.StartAssessmentRequest
-	3,  // 14: edge.v1.Assessment.ListAssessments:input_type -> edge.v1.ListAssessmentsRequest
-	5,  // 15: edge.v1.Assessment.GetAssessment:input_type -> edge.v1.GetAssessmentRequest
-	7,  // 16: edge.v1.Assessment.RequestPersonalization:input_type -> edge.v1.RequestPersonalizationRequest
-	9,  // 17: edge.v1.Assessment.WatchAssessment:input_type -> edge.v1.WatchAssessmentRequest
-	2,  // 18: edge.v1.Assessment.StartAssessment:output_type -> edge.v1.StartAssessmentResponse
-	4,  // 19: edge.v1.Assessment.ListAssessments:output_type -> edge.v1.ListAssessmentsResponse
-	6,  // 20: edge.v1.Assessment.GetAssessment:output_type -> edge.v1.GetAssessmentResponse
-	8,  // 21: edge.v1.Assessment.RequestPersonalization:output_type -> edge.v1.RequestPersonalizationResponse
-	10, // 22: edge.v1.Assessment.WatchAssessment:output_type -> edge.v1.WatchAssessmentResponse
-	18, // [18:23] is the sub-list for method output_type
-	13, // [13:18] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	20, // 9: edge.v1.ListAssessmentsResponse.page:type_name -> edge.v1.PageResponse
+	19, // 10: edge.v1.ListPatientAssessmentsRequest.page:type_name -> edge.v1.PageRequest
+	0,  // 11: edge.v1.ListPatientAssessmentsResponse.assessments:type_name -> edge.v1.RiskAssessment
+	20, // 12: edge.v1.ListPatientAssessmentsResponse.page:type_name -> edge.v1.PageResponse
+	0,  // 13: edge.v1.GetAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
+	15, // 14: edge.v1.RequestPersonalizationResponse.status:type_name -> assessment.v1.PersonalizationStatus
+	0,  // 15: edge.v1.WatchAssessmentResponse.assessment:type_name -> edge.v1.RiskAssessment
+	1,  // 16: edge.v1.Assessment.StartAssessment:input_type -> edge.v1.StartAssessmentRequest
+	3,  // 17: edge.v1.Assessment.ListAssessments:input_type -> edge.v1.ListAssessmentsRequest
+	5,  // 18: edge.v1.Assessment.ListPatientAssessments:input_type -> edge.v1.ListPatientAssessmentsRequest
+	7,  // 19: edge.v1.Assessment.GetAssessment:input_type -> edge.v1.GetAssessmentRequest
+	9,  // 20: edge.v1.Assessment.RequestPersonalization:input_type -> edge.v1.RequestPersonalizationRequest
+	11, // 21: edge.v1.Assessment.WatchAssessment:input_type -> edge.v1.WatchAssessmentRequest
+	2,  // 22: edge.v1.Assessment.StartAssessment:output_type -> edge.v1.StartAssessmentResponse
+	4,  // 23: edge.v1.Assessment.ListAssessments:output_type -> edge.v1.ListAssessmentsResponse
+	6,  // 24: edge.v1.Assessment.ListPatientAssessments:output_type -> edge.v1.ListPatientAssessmentsResponse
+	8,  // 25: edge.v1.Assessment.GetAssessment:output_type -> edge.v1.GetAssessmentResponse
+	10, // 26: edge.v1.Assessment.RequestPersonalization:output_type -> edge.v1.RequestPersonalizationResponse
+	12, // 27: edge.v1.Assessment.WatchAssessment:output_type -> edge.v1.WatchAssessmentResponse
+	22, // [22:28] is the sub-list for method output_type
+	16, // [16:22] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_edge_v1_assessment_proto_init() }
@@ -714,7 +832,7 @@ func file_edge_v1_assessment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_edge_v1_assessment_proto_rawDesc), len(file_edge_v1_assessment_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

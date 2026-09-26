@@ -383,6 +383,66 @@ components:
         - MESSAGE_ROLE_UNSPECIFIED
         - MESSAGE_ROLE_USER
         - MESSAGE_ROLE_MODEL
+    clinic.v1.AccessRecord:
+      type: object
+      properties:
+        clinicianUserId:
+          type: string
+          title: clinician_user_id
+        resource:
+          title: resource
+          $ref: '#/components/schemas/clinic.v1.Resource'
+        accessedAt:
+          title: accessed_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: AccessRecord
+      additionalProperties: false
+    clinic.v1.ClinicView:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        name:
+          type: string
+          title: name
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: ClinicView
+      additionalProperties: false
+    clinic.v1.Consent:
+      type: object
+      properties:
+        clinicId:
+          type: string
+          title: clinic_id
+        clinicianUserId:
+          type: string
+          title: clinician_user_id
+        grantedAt:
+          title: granted_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: Consent
+      additionalProperties: false
+    clinic.v1.MemberRole:
+      type: string
+      title: MemberRole
+      enum:
+        - MEMBER_ROLE_UNSPECIFIED
+        - MEMBER_ROLE_OWNER
+        - MEMBER_ROLE_ADMIN
+        - MEMBER_ROLE_CLINICIAN
+    clinic.v1.Resource:
+      type: string
+      title: Resource
+      enum:
+        - RESOURCE_UNSPECIFIED
+        - RESOURCE_RISK_ASSESSMENTS
+        - RESOURCE_COACHING_PROGRESS
+      description: |-
+        The patient data a consent opens. Chat is not one of them, and never will
+         be: the owner's rule is that chat is not visible to anyone.
     coaching.v1.CurriculumStatus:
       type: string
       title: CurriculumStatus
@@ -576,6 +636,24 @@ components:
           format: double
       title: RiskTrendPoint
       additionalProperties: false
+    edge.v1.AddMemberRequest:
+      type: object
+      properties:
+        clinicId:
+          type: string
+          title: clinic_id
+        memberUserId:
+          type: string
+          title: member_user_id
+        role:
+          title: role
+          $ref: '#/components/schemas/clinic.v1.MemberRole'
+      title: AddMemberRequest
+      additionalProperties: false
+    edge.v1.AddMemberResponse:
+      type: object
+      title: AddMemberResponse
+      additionalProperties: false
     edge.v1.ChatMessage:
       type: object
       properties:
@@ -745,6 +823,22 @@ components:
           title: updated_at
           $ref: '#/components/schemas/google.protobuf.Timestamp'
       title: Conversation
+      additionalProperties: false
+    edge.v1.CreateClinicRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          title: name
+      title: CreateClinicRequest
+      additionalProperties: false
+    edge.v1.CreateClinicResponse:
+      type: object
+      properties:
+        clinic:
+          title: clinic
+          $ref: '#/components/schemas/clinic.v1.ClinicView'
+      title: CreateClinicResponse
       additionalProperties: false
     edge.v1.CreateConversationRequest:
       type: object
@@ -1144,6 +1238,46 @@ components:
           title: messages
       title: GetThreadResponse
       additionalProperties: false
+    edge.v1.GrantConsentRequest:
+      type: object
+      properties:
+        clinicId:
+          type: string
+          title: clinic_id
+        clinicianUserId:
+          type: string
+          title: clinician_user_id
+      title: GrantConsentRequest
+      additionalProperties: false
+    edge.v1.GrantConsentResponse:
+      type: object
+      properties:
+        consent:
+          title: consent
+          $ref: '#/components/schemas/clinic.v1.Consent'
+      title: GrantConsentResponse
+      additionalProperties: false
+    edge.v1.ListAccessAuditRequest:
+      type: object
+      properties:
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageRequest'
+      title: ListAccessAuditRequest
+      additionalProperties: false
+    edge.v1.ListAccessAuditResponse:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/clinic.v1.AccessRecord'
+          title: records
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
+      title: ListAccessAuditResponse
+      additionalProperties: false
     edge.v1.ListAssessmentsRequest:
       type: object
       properties:
@@ -1168,6 +1302,20 @@ components:
           $ref: '#/components/schemas/edge.v1.PageResponse'
       title: ListAssessmentsResponse
       additionalProperties: false
+    edge.v1.ListConsentsRequest:
+      type: object
+      title: ListConsentsRequest
+      additionalProperties: false
+    edge.v1.ListConsentsResponse:
+      type: object
+      properties:
+        consents:
+          type: array
+          items:
+            $ref: '#/components/schemas/clinic.v1.Consent'
+          title: consents
+      title: ListConsentsResponse
+      additionalProperties: false
     edge.v1.ListConversationsRequest:
       type: object
       properties:
@@ -1188,6 +1336,30 @@ components:
           title: page
           $ref: '#/components/schemas/edge.v1.PageResponse'
       title: ListConversationsResponse
+      additionalProperties: false
+    edge.v1.ListPatientAssessmentsRequest:
+      type: object
+      properties:
+        patientUserId:
+          type: string
+          title: patient_user_id
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageRequest'
+      title: ListPatientAssessmentsRequest
+      additionalProperties: false
+    edge.v1.ListPatientAssessmentsResponse:
+      type: object
+      properties:
+        assessments:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.RiskAssessment'
+          title: assessments
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
+      title: ListPatientAssessmentsResponse
       additionalProperties: false
     edge.v1.LoginRequest:
       type: object
@@ -1268,6 +1440,24 @@ components:
           $ref: '#/components/schemas/edge.v1.Session'
       title: RegisterResponse
       additionalProperties: false
+    edge.v1.RemoveMemberRequest:
+      type: object
+      properties:
+        clinicId:
+          type: string
+          title: clinic_id
+        memberUserId:
+          type: string
+          title: member_user_id
+        role:
+          title: role
+          $ref: '#/components/schemas/clinic.v1.MemberRole'
+      title: RemoveMemberRequest
+      additionalProperties: false
+    edge.v1.RemoveMemberResponse:
+      type: object
+      title: RemoveMemberResponse
+      additionalProperties: false
     edge.v1.RequestPasswordResetRequest:
       type: object
       properties:
@@ -1299,6 +1489,21 @@ components:
           description: 'COMPLETED when the report already exists: there is nothing to wait for.'
           $ref: '#/components/schemas/assessment.v1.PersonalizationStatus'
       title: RequestPersonalizationResponse
+      additionalProperties: false
+    edge.v1.RevokeConsentRequest:
+      type: object
+      properties:
+        clinicId:
+          type: string
+          title: clinic_id
+        clinicianUserId:
+          type: string
+          title: clinician_user_id
+      title: RevokeConsentRequest
+      additionalProperties: false
+    edge.v1.RevokeConsentResponse:
+      type: object
+      title: RevokeConsentResponse
       additionalProperties: false
     edge.v1.RiskAssessment:
       type: object
@@ -2154,6 +2359,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/edge.v1.ListAssessmentsResponse'
+  /edge.v1.Assessment/ListPatientAssessments:
+    post:
+      tags:
+        - Assessment
+      summary: ListPatientAssessments
+      description: |-
+        A clinician reads a patient's assessment history, only under the
+         patient's consent to that clinician (ADR-030). Every read that returns
+         data is recorded in the patient's access audit first.
+      operationId: edge.v1.Assessment.ListPatientAssessments
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListPatientAssessmentsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListPatientAssessmentsResponse'
   /edge.v1.Assessment/RequestPersonalization:
     post:
       tags:
@@ -2740,6 +2984,258 @@ paths:
               schema:
                 $ref: '#/components/schemas/edge.v1.UpdateConversationTitleResponse'
   /edge.v1.Chat/WatchConversation: {}
+  /edge.v1.Clinic/AddMember:
+    post:
+      tags:
+        - Clinic
+      summary: AddMember
+      description: The owner adds admins and clinicians, an admin adds clinicians.
+      operationId: edge.v1.Clinic.AddMember
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.AddMemberRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.AddMemberResponse'
+  /edge.v1.Clinic/CreateClinic:
+    post:
+      tags:
+        - Clinic
+      summary: CreateClinic
+      description: Creates a clinic; the caller becomes its owner.
+      operationId: edge.v1.Clinic.CreateClinic
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.CreateClinicRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.CreateClinicResponse'
+  /edge.v1.Clinic/GrantConsent:
+    post:
+      tags:
+        - Clinic
+      summary: GrantConsent
+      description: |-
+        The caller, as a patient, lets one clinician of one clinic read their
+         risk assessments and coaching progress. Never their chat.
+      operationId: edge.v1.Clinic.GrantConsent
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GrantConsentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GrantConsentResponse'
+  /edge.v1.Clinic/ListAccessAudit:
+    post:
+      tags:
+        - Clinic
+      summary: ListAccessAudit
+      description: Who read the caller's data, and when - newest first.
+      operationId: edge.v1.Clinic.ListAccessAudit
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListAccessAuditRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListAccessAuditResponse'
+  /edge.v1.Clinic/ListConsents:
+    post:
+      tags:
+        - Clinic
+      summary: ListConsents
+      description: The caller's consents in force.
+      operationId: edge.v1.Clinic.ListConsents
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListConsentsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListConsentsResponse'
+  /edge.v1.Clinic/RemoveMember:
+    post:
+      tags:
+        - Clinic
+      summary: RemoveMember
+      operationId: edge.v1.Clinic.RemoveMember
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.RemoveMemberRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.RemoveMemberResponse'
+  /edge.v1.Clinic/RevokeConsent:
+    post:
+      tags:
+        - Clinic
+      summary: RevokeConsent
+      operationId: edge.v1.Clinic.RevokeConsent
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.RevokeConsentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.RevokeConsentResponse'
   /edge.v1.Coaching/DeleteProgram:
     post:
       tags:
@@ -3383,6 +3879,11 @@ tags:
        procedure is protected unless someone deliberately makes it public.
   - name: Chat
     description: Chat serves the caller's conversations with the general assistant.
+  - name: Clinic
+    description: |-
+      Clinic: clinics, their members, and a patient's consent to be read by a
+       clinician (ADR-030). The acting user is always the caller of the token;
+       no request names who is acting.
   - name: Coaching
     description: Coaching serves the caller's coaching programs and their threads.
   - name: Dashboard

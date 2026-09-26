@@ -14,6 +14,7 @@ import (
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
+	clinicv1 "github.com/muhananaufal/selaras-platform-go/gen/clinic/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	dashboardv1 "github.com/muhananaufal/selaras-platform-go/gen/dashboard/v1"
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
@@ -54,6 +55,7 @@ type Deps struct {
 	Chat        chatv1.ChatClient
 	Nutrition   nutritionv1.NutritionClient
 	Dashboards  dashboardv1.DashboardClient
+	Clinics     clinicv1.ClinicClient
 
 	Tokens      interceptor.TokenVerifier
 	Revocations domain.RevocationChecker
@@ -127,6 +129,9 @@ func NewHandler(deps Deps) (http.Handler, error) {
 	}
 	if deps.Dashboards != nil {
 		m.mount(edgev1connect.NewDashboardHandler(service.NewDashboard(deps.Dashboards), opts...))
+	}
+	if deps.Clinics != nil {
+		m.mount(edgev1connect.NewClinicHandler(service.NewClinic(deps.Clinics), opts...))
 	}
 	if m.err != nil {
 		return nil, m.err
@@ -203,6 +208,7 @@ func serviceFor(prefix string) (protoreflect.ServiceDescriptor, bool) {
 		edgev1.File_edge_v1_chat_proto,
 		edgev1.File_edge_v1_nutrition_proto,
 		edgev1.File_edge_v1_dashboard_proto,
+		edgev1.File_edge_v1_clinic_proto,
 	}
 	for _, f := range files {
 		services := f.Services()
