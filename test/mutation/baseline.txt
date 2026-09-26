@@ -8,7 +8,7 @@
 # The counts may not grow: a change that adds a surviving or an untested
 # mutant fails the job. When a count falls, lower it here so the ratchet
 # holds the gain. docs/runbook/mutation-testing.md explains every number.
-internal/assessment/domain 21 29
+internal/assessment/domain 17 25
 internal/coaching/domain 1 14
 internal/chat/domain 2 2
 internal/dashboard/domain 0 9
