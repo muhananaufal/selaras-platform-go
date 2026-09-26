@@ -23,6 +23,8 @@ const (
 
 	EventLLMJobFailed = "llm.job.failed"
 
+	EventClinicianAccess = "clinic.access.recorded"
+
 	EventUserDeletionRequested = "user.deletion.requested"
 	EventUserDeletionConfirmed = "user.deletion.confirmed"
 )
@@ -36,4 +38,5 @@ const (
 	TopicLLMResults          = "llm.results"
 	TopicLLMDeadLetter       = "llm.dlq"
 	TopicUserDeletion        = "user.deletion"
+	TopicClinicAccess        = "clinic.access"
 )

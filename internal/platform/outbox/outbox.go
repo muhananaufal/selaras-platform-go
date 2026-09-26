@@ -239,6 +239,8 @@ func EventTypeOf(e *eventsv1.Envelope) string {
 		return EventUserDeletionConfirmed
 	case *eventsv1.Envelope_LlmJobFailed:
 		return EventLLMJobFailed
+	case *eventsv1.Envelope_ClinicianAccessRecorded:
+		return EventClinicianAccess
 	default:
 		return ""
 	}

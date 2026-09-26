@@ -117,3 +117,20 @@ func TestAnUnreachableServerIsAnError(t *testing.T) {
 		t.Fatal("Bootstrap against nothing succeeded")
 	}
 }
+
+// Units other than clinic-svc only check. Open finds the store and its
+// latest model and writes nothing - a reader that wrote the model would
+// race clinic-svc over which version is current.
+func TestOpenReadsWhatBootstrapWrote(t *testing.T) {
+	boot, store, ctx := openStore(t)
+	reader, err := authz.Open(ctx, os.Getenv("TEST_OPENFGA_URL"), store)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if reader.StoreID() != boot.StoreID() || reader.ModelID() != boot.ModelID() {
+		t.Fatalf("Open found store %s model %s; want %s %s", reader.StoreID(), reader.ModelID(), boot.StoreID(), boot.ModelID())
+	}
+	if _, err := authz.Open(ctx, os.Getenv("TEST_OPENFGA_URL"), store+"-missing"); err == nil {
+		t.Fatal("Open created or found a store that was never bootstrapped")
+	}
+}

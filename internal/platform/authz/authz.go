@@ -70,6 +70,42 @@ func Bootstrap(ctx context.Context, apiURL, storeName string, model []byte) (*Cl
 	return &Client{fga: c, storeID: storeID, modelID: modelID}, nil
 }
 
+// Open connects to the store named storeName and its latest model, and
+// writes nothing: the store and the model belong to clinic-svc, which
+// bootstraps them. A store that does not exist is an error, not something to
+// create - a reader that created it would answer every check with no.
+func Open(ctx context.Context, apiURL, storeName string) (*Client, error) {
+	c, err := fgaclient.NewSdkClient(&fgaclient.ClientConfiguration{ApiUrl: apiURL})
+	if err != nil {
+		return nil, fmt.Errorf("building the OpenFGA client: %w", err)
+	}
+	listed, err := c.ListStores(ctx).Options(fgaclient.ClientListStoresOptions{Name: &storeName}).Execute()
+	if err != nil {
+		return nil, fmt.Errorf("listing stores: %w", err)
+	}
+	storeID := ""
+	for _, s := range listed.GetStores() {
+		if s.GetName() == storeName {
+			storeID = s.GetId()
+		}
+	}
+	if storeID == "" {
+		return nil, fmt.Errorf("no OpenFGA store named %q; clinic-svc bootstraps it", storeName)
+	}
+	if err := c.SetStoreId(storeID); err != nil {
+		return nil, fmt.Errorf("selecting the store: %w", err)
+	}
+	latest, err := c.ReadLatestAuthorizationModel(ctx).Execute()
+	if err != nil || latest.AuthorizationModel == nil {
+		return nil, fmt.Errorf("reading the latest model of store %q: %w", storeName, err)
+	}
+	modelID := latest.AuthorizationModel.GetId()
+	if err := c.SetAuthorizationModelId(modelID); err != nil {
+		return nil, fmt.Errorf("selecting the model: %w", err)
+	}
+	return &Client{fga: c, storeID: storeID, modelID: modelID}, nil
+}
+
 func findOrCreateStore(ctx context.Context, c *fgaclient.OpenFgaClient, name string) (string, error) {
 	listed, err := c.ListStores(ctx).Options(fgaclient.ClientListStoresOptions{Name: &name}).Execute()
 	if err != nil {
