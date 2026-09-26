@@ -37,3 +37,4 @@ Bukti yang menopangnya ada di Evidence Ledger pada dokumen rencana di repo Larav
 | 026 | Setiap service memverifikasi token pengguna sendiri |
 | 027 | Kontrak publik lewat Connect, bukan REST |
 | 028 | Test integrasi memakai service nyata dari CI/compose, bukan testcontainers |
+| 029 | Stream `Watch*` dibangunkan sinyal Redis dari pemilik data, dengan poll cadangan |

@@ -48,7 +48,7 @@ flowchart LR
 | Kuota LLM | Pekerjaan diparkir saat kuota habis, bukan dimatikan | [ADR-025](docs/adr/ADR-025-kuota-penyedia-llm-memarkir-pekerjaan-bukan-mematikannya.md) |
 | Autentikasi antar-service | Setiap service memverifikasi token pengguna dengan kunci publik; `sub` harus sama dengan `user_id` | [ADR-026](docs/adr/ADR-026-setiap-service-memverifikasi-token-pengguna-sendiri.md) |
 
-Dua puluh delapan ADR, masing-masing dengan **pembatal** — kondisi yang membuat
+Dua puluh sembilan ADR, masing-masing dengan **pembatal** — kondisi yang membuat
 keputusannya gugur: [`docs/adr/`](docs/adr/README.md). Mengapa sistemnya
 dipecah, dan apa yang dijanjikan: [RFC-000](docs/rfc/RFC-000-platform-decomposition.md).
 Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-retrospective.md).
