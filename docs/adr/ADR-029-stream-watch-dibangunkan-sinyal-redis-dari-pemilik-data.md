@@ -75,8 +75,10 @@ Positif:
   bisa melayani stream mana pun.
 
 Negatif:
-- Assessment, chat, coaching, dan nutrition mendapat `REDIS_URL` beserta
-  aturan NetworkPolicy ke Redis.
+- Assessment, chat, coaching, dan nutrition mendapat dependensi Redis
+  (`REDIS_URL`). NetworkPolicy chart hanya membatasi ingress, jadi tidak ada
+  aturan jaringan baru; yang bertambah adalah satu hal lagi yang bisa salah
+  konfigurasi.
 - Hilangnya Redis tidak mematikan stream, tetapi latensinya kembali ke batas
   cadangan 10 detik.
 
