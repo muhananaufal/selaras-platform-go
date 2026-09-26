@@ -117,3 +117,17 @@ func TestAConsentWasEitherGrantedOrRevoked(t *testing.T) {
 		t.Errorf("an unknown kind was accepted: %v", err)
 	}
 }
+
+// The resources a clinician can read. Chat is not one of them.
+func TestOnlyTwoResourcesExist(t *testing.T) {
+	for _, raw := range []string{"risk_assessments", "coaching_progress"} {
+		if r, err := domain.ParseResource(raw); err != nil || r.String() != raw {
+			t.Errorf("ParseResource(%q) = %v, %v", raw, r, err)
+		}
+	}
+	for _, raw := range []string{"chat", "conversations", ""} {
+		if _, err := domain.ParseResource(raw); !errors.Is(err, domain.ErrInvalidResource) {
+			t.Errorf("ParseResource(%q) = %v; want ErrInvalidResource", raw, err)
+		}
+	}
+}

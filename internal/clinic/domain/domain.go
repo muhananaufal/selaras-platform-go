@@ -157,3 +157,47 @@ func InForce(events []ConsentEvent) []Consent {
 	}
 	return out
 }
+
+// ErrInvalidResource marks a resource a consent cannot name.
+var ErrInvalidResource = errors.New("invalid resource")
+
+// Resource is patient data a clinician may read with consent. There is no
+// resource for chat, and ParseResource refuses one: the owner's rule is that
+// chat is never visible to anyone else.
+type Resource string
+
+const (
+	ResourceRiskAssessments  Resource = "risk_assessments"
+	ResourceCoachingProgress Resource = "coaching_progress"
+)
+
+func (r Resource) String() string { return string(r) }
+
+// ParseResource reads a resource from its stored name.
+func ParseResource(raw string) (Resource, error) {
+	switch r := Resource(raw); r {
+	case ResourceRiskAssessments, ResourceCoachingProgress:
+		return r, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrInvalidResource, raw)
+	}
+}
+
+// Access is one read a clinician made of a patient's data.
+type Access struct {
+	// EventID is the owning service's event id; the same event recorded
+	// twice is one access.
+	EventID         string
+	ClinicianUserID string
+	PatientUserID   string
+	Resource        Resource
+	AccessedAt      time.Time
+}
+
+// AuditCursor is where one page of a patient's access audit ended. The
+// audit is ordered by (AccessedAt, ID), newest first: accesses can arrive
+// out of order, and the patient reads them by when they happened.
+type AuditCursor struct {
+	AccessedAt time.Time
+	ID         int64
+}
