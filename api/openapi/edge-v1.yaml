@@ -1146,6 +1146,13 @@ components:
       additionalProperties: false
     edge.v1.ListAssessmentsRequest:
       type: object
+      properties:
+        page:
+          title: page
+          description: |-
+            Unset means the first page of the service default size (20); the
+             largest page is 100.
+          $ref: '#/components/schemas/edge.v1.PageRequest'
       title: ListAssessmentsRequest
       additionalProperties: false
     edge.v1.ListAssessmentsResponse:
@@ -1156,6 +1163,9 @@ components:
           items:
             $ref: '#/components/schemas/edge.v1.RiskAssessment'
           title: assessments
+        page:
+          title: page
+          $ref: '#/components/schemas/edge.v1.PageResponse'
       title: ListAssessmentsResponse
       additionalProperties: false
     edge.v1.ListConversationsRequest:

@@ -3,6 +3,7 @@ syntax = "proto3";
 package edge.v1;
 
 import "assessment/v1/assessment.proto";
+import "edge/v1/page.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -67,10 +68,15 @@ message StartAssessmentResponse {
   RiskAssessment assessment = 1;
 }
 
-message ListAssessmentsRequest {}
+message ListAssessmentsRequest {
+  // Unset means the first page of the service default size (20); the
+  // largest page is 100.
+  PageRequest page = 1;
+}
 
 message ListAssessmentsResponse {
   repeated RiskAssessment assessments = 1;
+  PageResponse page = 2;
 }
 
 message GetAssessmentRequest {
