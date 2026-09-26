@@ -17,14 +17,21 @@ type Config struct {
 	// nothing without a profile: without age, sex, and country there is
 	// nothing to compute.
 	ProfileAddr string
+
+	// OpenFGAURL decides clinicians' reads of patients (ADR-030). Empty
+	// refuses every such read, and the start-up log says so.
+	OpenFGAURL   string
+	OpenFGAStore string
 }
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		GRPCAddr:    envOr("ASSESSMENT_GRPC_ADDR", ":9301"),
-		HealthAddr:  envOr("ASSESSMENT_HEALTH_ADDR", ":9302"),
-		DatabaseDSN: os.Getenv("ASSESSMENT_DATABASE_DSN"),
-		ProfileAddr: os.Getenv("PROFILE_GRPC_TARGET"),
+		GRPCAddr:     envOr("ASSESSMENT_GRPC_ADDR", ":9301"),
+		HealthAddr:   envOr("ASSESSMENT_HEALTH_ADDR", ":9302"),
+		DatabaseDSN:  os.Getenv("ASSESSMENT_DATABASE_DSN"),
+		ProfileAddr:  os.Getenv("PROFILE_GRPC_TARGET"),
+		OpenFGAURL:   os.Getenv("OPENFGA_URL"),
+		OpenFGAStore: envOr("OPENFGA_STORE", "selaras"),
 	}
 
 	var missing []string

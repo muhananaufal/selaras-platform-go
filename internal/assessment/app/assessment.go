@@ -64,6 +64,10 @@ type Service struct {
 	engine      *score.Engine
 	now         func() time.Time
 
+	// access decides clinicians' reads (ADR-030); installed through
+	// WithAccessChecker. Nil refuses every such read.
+	access AccessChecker
+
 	// statusWriter is installed later through WithStatusWriter. Nil means this
 	// service only serves reads and computations - no reason to fail, but no
 	// reason to pretend to accept work that will never be recorded either.
@@ -288,24 +292,36 @@ type HistoryPage struct {
 // An empty pageToken asks for the first page; any other value must be a
 // NextPageToken this service returned.
 func (s *Service) History(ctx context.Context, userID string, pageSize int, pageToken string) (HistoryPage, error) {
+	size, after, err := pageOf(pageSize, pageToken)
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	return s.history(ctx, userID, size, after)
+}
+
+// pageOf validates a page request: the size bounded by AIP-158, the token
+// decoded. Kept apart from reading so a caller can refuse bad input before
+// doing anything else.
+func pageOf(pageSize int, pageToken string) (int, *domain.HistoryCursor, error) {
 	switch {
 	case pageSize < 0:
-		return HistoryPage{}, ErrInvalidPageSize
+		return 0, nil, ErrInvalidPageSize
 	case pageSize == 0:
 		pageSize = defaultHistoryPageSize
 	case pageSize > maxHistoryPageSize:
 		pageSize = maxHistoryPageSize
 	}
-
-	var after *domain.HistoryCursor
-	if pageToken != "" {
-		cursor, err := decodePageToken(pageToken)
-		if err != nil {
-			return HistoryPage{}, err
-		}
-		after = cursor
+	if pageToken == "" {
+		return pageSize, nil, nil
 	}
+	cursor, err := decodePageToken(pageToken)
+	if err != nil {
+		return 0, nil, err
+	}
+	return pageSize, cursor, nil
+}
 
+func (s *Service) history(ctx context.Context, userID string, pageSize int, after *domain.HistoryCursor) (HistoryPage, error) {
 	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
 		return HistoryPage{}, err

@@ -2128,6 +2128,110 @@ func (x *ListAssessmentsResponse) GetPage() *v1.PageResponse {
 	return nil
 }
 
+type ListPatientAssessmentsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PatientUserId string                 `protobuf:"bytes,1,opt,name=patient_user_id,json=patientUserId,proto3" json:"patient_user_id,omitempty"`
+	Page          *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientAssessmentsRequest) Reset() {
+	*x = ListPatientAssessmentsRequest{}
+	mi := &file_assessment_v1_assessment_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientAssessmentsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientAssessmentsRequest) ProtoMessage() {}
+
+func (x *ListPatientAssessmentsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_assessment_v1_assessment_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientAssessmentsRequest.ProtoReflect.Descriptor instead.
+func (*ListPatientAssessmentsRequest) Descriptor() ([]byte, []int) {
+	return file_assessment_v1_assessment_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListPatientAssessmentsRequest) GetPatientUserId() string {
+	if x != nil {
+		return x.PatientUserId
+	}
+	return ""
+}
+
+func (x *ListPatientAssessmentsRequest) GetPage() *v1.PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListPatientAssessmentsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Assessments   []*RiskAssessment      `protobuf:"bytes,1,rep,name=assessments,proto3" json:"assessments,omitempty"`
+	Page          *v1.PageResponse       `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientAssessmentsResponse) Reset() {
+	*x = ListPatientAssessmentsResponse{}
+	mi := &file_assessment_v1_assessment_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientAssessmentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientAssessmentsResponse) ProtoMessage() {}
+
+func (x *ListPatientAssessmentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_assessment_v1_assessment_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientAssessmentsResponse.ProtoReflect.Descriptor instead.
+func (*ListPatientAssessmentsResponse) Descriptor() ([]byte, []int) {
+	return file_assessment_v1_assessment_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListPatientAssessmentsResponse) GetAssessments() []*RiskAssessment {
+	if x != nil {
+		return x.Assessments
+	}
+	return nil
+}
+
+func (x *ListPatientAssessmentsResponse) GetPage() *v1.PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 type ResolveRiskRegionRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	CountryOfResidence string                 `protobuf:"bytes,1,opt,name=country_of_residence,json=countryOfResidence,proto3" json:"country_of_residence,omitempty"`
@@ -2137,7 +2241,7 @@ type ResolveRiskRegionRequest struct {
 
 func (x *ResolveRiskRegionRequest) Reset() {
 	*x = ResolveRiskRegionRequest{}
-	mi := &file_assessment_v1_assessment_proto_msgTypes[17]
+	mi := &file_assessment_v1_assessment_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2149,7 +2253,7 @@ func (x *ResolveRiskRegionRequest) String() string {
 func (*ResolveRiskRegionRequest) ProtoMessage() {}
 
 func (x *ResolveRiskRegionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_assessment_v1_assessment_proto_msgTypes[17]
+	mi := &file_assessment_v1_assessment_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2162,7 +2266,7 @@ func (x *ResolveRiskRegionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRiskRegionRequest.ProtoReflect.Descriptor instead.
 func (*ResolveRiskRegionRequest) Descriptor() ([]byte, []int) {
-	return file_assessment_v1_assessment_proto_rawDescGZIP(), []int{17}
+	return file_assessment_v1_assessment_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ResolveRiskRegionRequest) GetCountryOfResidence() string {
@@ -2185,7 +2289,7 @@ type ResolveRiskRegionResponse struct {
 
 func (x *ResolveRiskRegionResponse) Reset() {
 	*x = ResolveRiskRegionResponse{}
-	mi := &file_assessment_v1_assessment_proto_msgTypes[18]
+	mi := &file_assessment_v1_assessment_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2197,7 +2301,7 @@ func (x *ResolveRiskRegionResponse) String() string {
 func (*ResolveRiskRegionResponse) ProtoMessage() {}
 
 func (x *ResolveRiskRegionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_assessment_v1_assessment_proto_msgTypes[18]
+	mi := &file_assessment_v1_assessment_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2210,7 +2314,7 @@ func (x *ResolveRiskRegionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRiskRegionResponse.ProtoReflect.Descriptor instead.
 func (*ResolveRiskRegionResponse) Descriptor() ([]byte, []int) {
-	return file_assessment_v1_assessment_proto_rawDescGZIP(), []int{18}
+	return file_assessment_v1_assessment_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ResolveRiskRegionResponse) GetRiskRegion() string {
@@ -2335,6 +2439,12 @@ const file_assessment_v1_assessment_proto_rawDesc = "" +
 	"\x04page\x18\x02 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\x87\x01\n" +
 	"\x17ListAssessmentsResponse\x12?\n" +
 	"\vassessments\x18\x01 \x03(\v2\x1d.assessment.v1.RiskAssessmentR\vassessments\x12+\n" +
+	"\x04page\x18\x02 \x01(\v2\x17.common.v1.PageResponseR\x04page\"s\n" +
+	"\x1dListPatientAssessmentsRequest\x12&\n" +
+	"\x0fpatient_user_id\x18\x01 \x01(\tR\rpatientUserId\x12*\n" +
+	"\x04page\x18\x02 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\x8e\x01\n" +
+	"\x1eListPatientAssessmentsResponse\x12?\n" +
+	"\vassessments\x18\x01 \x03(\v2\x1d.assessment.v1.RiskAssessmentR\vassessments\x12+\n" +
 	"\x04page\x18\x02 \x01(\v2\x17.common.v1.PageResponseR\x04page\"L\n" +
 	"\x18ResolveRiskRegionRequest\x120\n" +
 	"\x14country_of_residence\x18\x01 \x01(\tR\x12countryOfResidence\"<\n" +
@@ -2426,13 +2536,14 @@ const file_assessment_v1_assessment_proto_rawDesc = "" +
 	"$PERSONALIZATION_STATUS_NOT_REQUESTED\x10\x01\x12\"\n" +
 	"\x1ePERSONALIZATION_STATUS_PENDING\x10\x02\x12$\n" +
 	" PERSONALIZATION_STATUS_COMPLETED\x10\x03\x12!\n" +
-	"\x1dPERSONALIZATION_STATUS_FAILED\x10\x042\x8b\x04\n" +
+	"\x1dPERSONALIZATION_STATUS_FAILED\x10\x042\x82\x05\n" +
 	"\n" +
 	"Assessment\x12`\n" +
 	"\x0fStartAssessment\x12%.assessment.v1.StartAssessmentRequest\x1a&.assessment.v1.StartAssessmentResponse\x12u\n" +
 	"\x16RequestPersonalization\x12,.assessment.v1.RequestPersonalizationRequest\x1a-.assessment.v1.RequestPersonalizationResponse\x12Z\n" +
 	"\rGetAssessment\x12#.assessment.v1.GetAssessmentRequest\x1a$.assessment.v1.GetAssessmentResponse\x12`\n" +
-	"\x0fListAssessments\x12%.assessment.v1.ListAssessmentsRequest\x1a&.assessment.v1.ListAssessmentsResponse\x12f\n" +
+	"\x0fListAssessments\x12%.assessment.v1.ListAssessmentsRequest\x1a&.assessment.v1.ListAssessmentsResponse\x12u\n" +
+	"\x16ListPatientAssessments\x12,.assessment.v1.ListPatientAssessmentsRequest\x1a-.assessment.v1.ListPatientAssessmentsResponse\x12f\n" +
 	"\x11ResolveRiskRegion\x12'.assessment.v1.ResolveRiskRegionRequest\x1a(.assessment.v1.ResolveRiskRegionResponseB\xc5\x01\n" +
 	"\x11com.assessment.v1B\x0fAssessmentProtoP\x01ZJgithub.com/muhananaufal/selaras-platform-go/gen/assessment/v1;assessmentv1\xa2\x02\x03AXX\xaa\x02\rAssessment.V1\xca\x02\rAssessment\\V1\xe2\x02\x19Assessment\\V1\\GPBMetadata\xea\x02\x0eAssessment::V1b\x06proto3"
 
@@ -2449,7 +2560,7 @@ func file_assessment_v1_assessment_proto_rawDescGZIP() []byte {
 }
 
 var file_assessment_v1_assessment_proto_enumTypes = make([]protoimpl.EnumInfo, 18)
-var file_assessment_v1_assessment_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_assessment_v1_assessment_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_assessment_v1_assessment_proto_goTypes = []any{
 	(InputMode)(0),                         // 0: assessment.v1.InputMode
 	(SmokingStatus)(0),                     // 1: assessment.v1.SmokingStatus
@@ -2486,12 +2597,14 @@ var file_assessment_v1_assessment_proto_goTypes = []any{
 	(*GetAssessmentResponse)(nil),          // 32: assessment.v1.GetAssessmentResponse
 	(*ListAssessmentsRequest)(nil),         // 33: assessment.v1.ListAssessmentsRequest
 	(*ListAssessmentsResponse)(nil),        // 34: assessment.v1.ListAssessmentsResponse
-	(*ResolveRiskRegionRequest)(nil),       // 35: assessment.v1.ResolveRiskRegionRequest
-	(*ResolveRiskRegionResponse)(nil),      // 36: assessment.v1.ResolveRiskRegionResponse
-	(*v1.Timestamps)(nil),                  // 37: common.v1.Timestamps
-	(*v1.IdempotencyKey)(nil),              // 38: common.v1.IdempotencyKey
-	(*v1.PageRequest)(nil),                 // 39: common.v1.PageRequest
-	(*v1.PageResponse)(nil),                // 40: common.v1.PageResponse
+	(*ListPatientAssessmentsRequest)(nil),  // 35: assessment.v1.ListPatientAssessmentsRequest
+	(*ListPatientAssessmentsResponse)(nil), // 36: assessment.v1.ListPatientAssessmentsResponse
+	(*ResolveRiskRegionRequest)(nil),       // 37: assessment.v1.ResolveRiskRegionRequest
+	(*ResolveRiskRegionResponse)(nil),      // 38: assessment.v1.ResolveRiskRegionResponse
+	(*v1.Timestamps)(nil),                  // 39: common.v1.Timestamps
+	(*v1.IdempotencyKey)(nil),              // 40: common.v1.IdempotencyKey
+	(*v1.PageRequest)(nil),                 // 41: common.v1.PageRequest
+	(*v1.PageResponse)(nil),                // 42: common.v1.PageResponse
 }
 var file_assessment_v1_assessment_proto_depIdxs = []int32{
 	5,  // 0: assessment.v1.SbpProxy.sleep_pattern:type_name -> assessment.v1.SleepPattern
@@ -2527,30 +2640,35 @@ var file_assessment_v1_assessment_proto_depIdxs = []int32{
 	24, // 30: assessment.v1.RiskAssessment.input:type_name -> assessment.v1.AssessmentInput
 	25, // 31: assessment.v1.RiskAssessment.resolved_values:type_name -> assessment.v1.ResolvedClinicalValues
 	17, // 32: assessment.v1.RiskAssessment.personalization_status:type_name -> assessment.v1.PersonalizationStatus
-	37, // 33: assessment.v1.RiskAssessment.timestamps:type_name -> common.v1.Timestamps
+	39, // 33: assessment.v1.RiskAssessment.timestamps:type_name -> common.v1.Timestamps
 	24, // 34: assessment.v1.StartAssessmentRequest.input:type_name -> assessment.v1.AssessmentInput
 	26, // 35: assessment.v1.StartAssessmentResponse.assessment:type_name -> assessment.v1.RiskAssessment
-	38, // 36: assessment.v1.RequestPersonalizationRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	40, // 36: assessment.v1.RequestPersonalizationRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
 	17, // 37: assessment.v1.RequestPersonalizationResponse.status:type_name -> assessment.v1.PersonalizationStatus
 	26, // 38: assessment.v1.GetAssessmentResponse.assessment:type_name -> assessment.v1.RiskAssessment
-	39, // 39: assessment.v1.ListAssessmentsRequest.page:type_name -> common.v1.PageRequest
+	41, // 39: assessment.v1.ListAssessmentsRequest.page:type_name -> common.v1.PageRequest
 	26, // 40: assessment.v1.ListAssessmentsResponse.assessments:type_name -> assessment.v1.RiskAssessment
-	40, // 41: assessment.v1.ListAssessmentsResponse.page:type_name -> common.v1.PageResponse
-	27, // 42: assessment.v1.Assessment.StartAssessment:input_type -> assessment.v1.StartAssessmentRequest
-	29, // 43: assessment.v1.Assessment.RequestPersonalization:input_type -> assessment.v1.RequestPersonalizationRequest
-	31, // 44: assessment.v1.Assessment.GetAssessment:input_type -> assessment.v1.GetAssessmentRequest
-	33, // 45: assessment.v1.Assessment.ListAssessments:input_type -> assessment.v1.ListAssessmentsRequest
-	35, // 46: assessment.v1.Assessment.ResolveRiskRegion:input_type -> assessment.v1.ResolveRiskRegionRequest
-	28, // 47: assessment.v1.Assessment.StartAssessment:output_type -> assessment.v1.StartAssessmentResponse
-	30, // 48: assessment.v1.Assessment.RequestPersonalization:output_type -> assessment.v1.RequestPersonalizationResponse
-	32, // 49: assessment.v1.Assessment.GetAssessment:output_type -> assessment.v1.GetAssessmentResponse
-	34, // 50: assessment.v1.Assessment.ListAssessments:output_type -> assessment.v1.ListAssessmentsResponse
-	36, // 51: assessment.v1.Assessment.ResolveRiskRegion:output_type -> assessment.v1.ResolveRiskRegionResponse
-	47, // [47:52] is the sub-list for method output_type
-	42, // [42:47] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	42, // 41: assessment.v1.ListAssessmentsResponse.page:type_name -> common.v1.PageResponse
+	41, // 42: assessment.v1.ListPatientAssessmentsRequest.page:type_name -> common.v1.PageRequest
+	26, // 43: assessment.v1.ListPatientAssessmentsResponse.assessments:type_name -> assessment.v1.RiskAssessment
+	42, // 44: assessment.v1.ListPatientAssessmentsResponse.page:type_name -> common.v1.PageResponse
+	27, // 45: assessment.v1.Assessment.StartAssessment:input_type -> assessment.v1.StartAssessmentRequest
+	29, // 46: assessment.v1.Assessment.RequestPersonalization:input_type -> assessment.v1.RequestPersonalizationRequest
+	31, // 47: assessment.v1.Assessment.GetAssessment:input_type -> assessment.v1.GetAssessmentRequest
+	33, // 48: assessment.v1.Assessment.ListAssessments:input_type -> assessment.v1.ListAssessmentsRequest
+	35, // 49: assessment.v1.Assessment.ListPatientAssessments:input_type -> assessment.v1.ListPatientAssessmentsRequest
+	37, // 50: assessment.v1.Assessment.ResolveRiskRegion:input_type -> assessment.v1.ResolveRiskRegionRequest
+	28, // 51: assessment.v1.Assessment.StartAssessment:output_type -> assessment.v1.StartAssessmentResponse
+	30, // 52: assessment.v1.Assessment.RequestPersonalization:output_type -> assessment.v1.RequestPersonalizationResponse
+	32, // 53: assessment.v1.Assessment.GetAssessment:output_type -> assessment.v1.GetAssessmentResponse
+	34, // 54: assessment.v1.Assessment.ListAssessments:output_type -> assessment.v1.ListAssessmentsResponse
+	36, // 55: assessment.v1.Assessment.ListPatientAssessments:output_type -> assessment.v1.ListPatientAssessmentsResponse
+	38, // 56: assessment.v1.Assessment.ResolveRiskRegion:output_type -> assessment.v1.ResolveRiskRegionResponse
+	51, // [51:57] is the sub-list for method output_type
+	45, // [45:51] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_assessment_v1_assessment_proto_init() }
@@ -2568,7 +2686,7 @@ func file_assessment_v1_assessment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_assessment_v1_assessment_proto_rawDesc), len(file_assessment_v1_assessment_proto_rawDesc)),
 			NumEnums:      18,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
