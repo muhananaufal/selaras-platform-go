@@ -325,10 +325,7 @@ func (r *Repository) AccessAudit(
 }
 
 // PendingChange is a queued tuple change and its position in the queue.
-type PendingChange struct {
-	ID int64
-	domain.TupleChange
-}
+type PendingChange = domain.QueuedChange
 
 // PendingChanges returns up to limit changes not yet applied, oldest first.
 func (r *Repository) PendingChanges(ctx context.Context, limit int) ([]PendingChange, error) {
