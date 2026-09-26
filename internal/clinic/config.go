@@ -24,6 +24,11 @@ type Config struct {
 
 	// OpenFGAStore names the store the model and tuples live in.
 	OpenFGAStore string
+
+	// KafkaBrokers is where clinicians' reads arrive for the access audit.
+	// Empty runs without that consumer, and the log says the audit will not
+	// fill.
+	KafkaBrokers string
 }
 
 // LoadConfig reads the configuration and refuses an incomplete one. There is
@@ -35,6 +40,7 @@ func LoadConfig() (Config, error) {
 		DatabaseDSN:  os.Getenv("CLINIC_DATABASE_DSN"),
 		OpenFGAURL:   os.Getenv("OPENFGA_URL"),
 		OpenFGAStore: envOr("OPENFGA_STORE", "selaras"),
+		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
 	}
 	if cfg.DatabaseDSN == "" {
 		return Config{}, fmt.Errorf("missing required configuration: %v", []string{"CLINIC_DATABASE_DSN"})
