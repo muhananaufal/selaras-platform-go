@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -429,5 +430,40 @@ func TestTwoAssessmentsArrivingBackwardsStillGiveATrend(t *testing.T) {
 	}
 	if dash.Total != 2 {
 		t.Errorf("the total is %d, want 2", dash.Total)
+	}
+}
+
+// TestTheHistoryIsBoundedButTheTotalIsNot: the dashboard used to load a
+// user's whole history on every read. It now carries the latest
+// domain.HistoryLimit assessments, newest first, while the total still counts
+// every one of them.
+func TestTheHistoryIsBoundedButTheTotalIsNot(t *testing.T) {
+	pool, ctx := setup(t)
+	repo := dashboardpg.NewRepository(pool)
+	owner := userID(t)
+
+	n := domain.HistoryLimit + 1
+	for i := range n {
+		at := base.Add(time.Duration(i) * time.Minute)
+		if err := repo.ApplyAssessment(ctx, owner, assessment(fmt.Sprintf("a%04d", i), at, 10), at); err != nil {
+			t.Fatalf("ApplyAssessment %d: %v", i, err)
+		}
+	}
+
+	dash, err := repo.Find(ctx, owner)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(dash.History) != domain.HistoryLimit {
+		t.Fatalf("the history holds %d assessments, want the latest %d", len(dash.History), domain.HistoryLimit)
+	}
+	if dash.Total != n {
+		t.Fatalf("the total is %d, want %d: it counts every assessment, not the loaded ones", dash.Total, n)
+	}
+	if want := fmt.Sprintf("a%04d", n-1); dash.Latest == nil || dash.Latest.Slug != want {
+		t.Fatalf("the latest assessment is %v, want %s", dash.Latest, want)
+	}
+	if oldest := dash.History[len(dash.History)-1].Slug; oldest != "a0001" {
+		t.Fatalf("the oldest loaded assessment is %s, want a0001 (a0000 falls outside the limit)", oldest)
 	}
 }

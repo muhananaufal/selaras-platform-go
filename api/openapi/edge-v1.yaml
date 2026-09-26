@@ -995,6 +995,9 @@ components:
           items:
             $ref: '#/components/schemas/dashboard.v1.AssessmentSummary'
           title: assessment_history
+          description: |-
+            The latest assessments, newest first, at most 100. total_assessments
+             counts all of them; the full history is ListAssessments.
         riskTrend:
           type: array
           items:

@@ -21,6 +21,9 @@ message GetDashboardResponse {
 
   dashboard.v1.AssessmentSummary latest_assessment = 2;
   dashboard.v1.ProgramSummary program = 3;
+
+  // The latest assessments, newest first, at most 100. total_assessments
+  // counts all of them; the full history is ListAssessments.
   repeated dashboard.v1.AssessmentSummary assessment_history = 4;
   repeated dashboard.v1.RiskTrendPoint risk_trend = 5;
 
