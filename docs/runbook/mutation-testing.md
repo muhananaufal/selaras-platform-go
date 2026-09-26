@@ -91,6 +91,23 @@ perlu, membunuhnya. Semuanya diperiksa manual:
 | `chat/domain/repository.go:26` dan `nutrition/domain/repository.go:27` (`Size > 100` → `>= 100`) | Ukuran 100 dipetakan ke 100 oleh kedua versi |
 | `coaching/domain/program.go:318` (`MaxWeeks*7` di argumen `Errorf`) | Hanya mengubah teks pesan error, bukan keputusan |
 
+## Kondisi di dalam `case` tidak pernah diukur (2026-09-26)
+
+`internal/clinic/domain` masuk gerbang dengan 5 NOT COVERED, di Windows
+**dan** di runner CI Linux. Kelimanya ada di ekspresi `case` pada
+`switch { case r == RoleOwner && ...: }` di `MayManage`, padahal
+`TestWhoMayAddWhom` menjalankan setiap cabang.
+
+Dugaannya: blok cakupan Go dimulai sesudah ekspresi `case`, sehingga
+kondisinya sendiri tidak pernah tercatat tercakup dan gremlins tidak pernah
+menjalankan test terhadap mutannya. Pembuktiannya: `MayManage` yang sama
+ditulis dengan dua `if`. Tanpa mengubah test, hasilnya menjadi **10 killed,
+0 lived, 0 not covered**. Baseline diturunkan ke `0 0`.
+
+**Akibatnya bagi angka lain:** sebagian NOT COVERED di paket lain mungkin
+berasal dari kondisi di dalam `case`. Artinya mutan itu tidak pernah diuji,
+bukan test-nya yang lemah. Belum diperiksa per paket; ini terbuka.
+
 ## Yang ditemukan, dan belum diperbaiki
 
 - **Paritas mesin risiko hanya untuk perokok — DITUTUP 2026-09-26.** Semua
