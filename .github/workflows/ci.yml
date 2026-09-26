@@ -261,6 +261,42 @@ jobs:
   # round must carry all eight schemas and all eight unit roles, restoring
   # roles may ignore only "role ... already exists", and a restore to a
   # point in time must hold what was written before it and nothing after.
+  # Infrastructure as code: deploy/iac/k3d (OpenTofu) is applied to a fresh
+  # k3d cluster on the runner, and test/iac/drift.test.sh proves that a plan
+  # right after the apply is empty, that hand edits show up as drift, and
+  # that the next apply undoes them. The wrapper of setup-opentofu is off:
+  # the drift check reads plan's real exit code (0 no changes, 2 changes).
+  iac:
+    name: infrastructure as code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format and validate
+        working-directory: deploy/iac/k3d
+        run: |
+          tofu fmt -check -recursive -diff
+          tofu init -input=false
+          tofu validate
+      - name: Install k3d (checksum verified)
+        run: |
+          curl -fsSLO https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64
+          curl -fsSLO https://github.com/k3d-io/k3d/releases/download/v5.9.0/checksums.txt
+          # checksums.txt names the file _dist/k3d-linux-amd64; the hash is
+          # checked against the file downloaded here.
+          want=$(grep '  _dist/k3d-linux-amd64$' checksums.txt | cut -d' ' -f1)
+          [ -n "$want" ] || { echo "no checksum for k3d-linux-amd64"; exit 1; }
+          echo "$want  k3d-linux-amd64" | sha256sum -c -
+          sudo install -m 755 k3d-linux-amd64 /usr/local/bin/k3d
+          k3d version
+      - name: Create the cluster from deploy/k3d/cluster.yaml
+        run: bash deploy/k3d/up.sh
+      - name: Apply, no drift after apply, drift detected and undone
+        run: bash test/iac/drift.test.sh
+
   backup:
     name: backup and restore scripts
     runs-on: ubuntu-latest
