@@ -137,13 +137,17 @@ tasks:
     # The application units MUST be down (task down:apps) while this suite runs:
     # a live unit's outbox relay reads the same table as the relay test (FOR
     # UPDATE SKIP LOCKED) and steals its rows - a scheduling-dependent failure,
-    # seen at the F9 exit gate. The CI unit job does not start the units; the e2e
-    # and acceptance suites that need them have their own tasks.
+    # seen at the F9 exit gate. clinic-svc is on the list for a worse reason:
+    # its projector applies whatever the clinic tests queue to the stack's
+    # OpenFGA store, so a test - or a deliberate mutant of one - rewrites the
+    # live tuples (seen while proving the tuple rebuild). The CI unit job does
+    # not start the units; the e2e and acceptance suites that need them have
+    # their own tasks.
     dotenv: ['.env']
     cmds:
       - >-
-        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -qE '^selaras-(identity|profile|assessment|coaching|chat|nutrition|dashboard|llm-worker)$'; then
-          echo 'application units are running; stop them first (task down:apps) - their outbox relays steal rows from the relay tests' >&2; exit 1;
+        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -qE '^selaras-(identity|profile|assessment|coaching|chat|nutrition|dashboard|llm-worker|clinic)$'; then
+          echo 'application units are running; stop them first (task down:apps) - their outbox relays steal rows from the relay tests, and clinic-svc projects test tuples into OpenFGA' >&2; exit 1;
         fi
       - >-
         TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
