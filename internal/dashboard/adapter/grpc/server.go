@@ -4,7 +4,9 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -43,16 +45,34 @@ func (s *Server) GetDashboard(
 	if err != nil {
 		return nil, toStatus(ctx, "GetDashboard", err)
 	}
-	return &dashboardv1.GetDashboardResponse{
-		Dashboard: toProto(view, s.now()),
-	}, nil
+	dashboard, err := toProto(view, s.now())
+	if err != nil {
+		slog.ErrorContext(ctx, "GetDashboard could not be answered", "error", err)
+		return nil, status.Error(codes.Internal, "the dashboard could not be read")
+	}
+	return &dashboardv1.GetDashboardResponse{Dashboard: dashboard}, nil
 }
 
-func toProto(view *app.View, now time.Time) *dashboardv1.DashboardView {
+// totalOf narrows the assessment total to the contract's int32. The history
+// has no upper bound, so a total beyond int32 is an error rather than a
+// silently wrapped negative number.
+func totalOf(n int) (int32, error) {
+	if n < 0 || n > math.MaxInt32 {
+		return 0, fmt.Errorf("assessment total %d does not fit the contract's int32", n)
+	}
+	return int32(n), nil //nolint:gosec // G115: bounded to [0, MaxInt32] above
+}
+
+func toProto(view *app.View, now time.Time) (*dashboardv1.DashboardView, error) {
 	if view == nil || view.Dashboard == nil {
-		return nil
+		return nil, nil
 	}
 	dash := view.Dashboard
+
+	total, err := totalOf(dash.Total)
+	if err != nil {
+		return nil, err
+	}
 
 	// An empty slice, not nil: nil becomes `null` in JSON, and a client
 	// iterating the history fails instead of showing the welcome page.
@@ -75,7 +95,7 @@ func toProto(view *app.View, now time.Time) *dashboardv1.DashboardView {
 		AssessmentHistory: history,
 		RiskTrend:         trend,
 		HealthTrend:       trendToProto(dash.Trend()),
-		TotalAssessments:  int32(dash.Total),
+		TotalAssessments:  total,
 	}
 
 	// The projection time is only sent when the projection HAS moved at some
@@ -94,7 +114,7 @@ func toProto(view *app.View, now time.Time) *dashboardv1.DashboardView {
 	if dash.Program != nil {
 		out.Program = programToProto(dash.Program)
 	}
-	return out
+	return out, nil
 }
 
 func assessmentToProto(a *domain.Assessment) *dashboardv1.AssessmentSummary {
@@ -116,11 +136,13 @@ func programToProto(p *domain.Program) *dashboardv1.ProgramSummary {
 	}
 
 	out := &dashboardv1.ProgramSummary{
-		Slug:       p.Slug,
-		Title:      p.Title,
-		Status:     p.Status,
-		CurrentDay: int32(p.CurrentDay),
-		TotalDays:  int32(p.TotalDays),
+		Slug:   p.Slug,
+		Title:  p.Title,
+		Status: p.Status,
+		// Read from the INT (int4) columns program_current_day and
+		// program_total_days, so both fit in int32.
+		CurrentDay: int32(p.CurrentDay), //nolint:gosec // G115: read from an int4 column
+		TotalDays:  int32(p.TotalDays),  //nolint:gosec // G115: read from an int4 column
 	}
 	// An honest zero: this contract has no presence for the percentage, so
 	// "not computed yet" and "zero percent" come back the same. The

@@ -59,6 +59,12 @@ func TestTheTrendIgnoresChangesTooSmallToMean(t *testing.T) {
 		{"identical", 12.5, 12.5, domain.TrendStable, 0},
 		{"just inside the deadband, downwards", 12.4, 12.5, domain.TrendStable, 0},
 		{"just inside the deadband, upwards", 12.6, 12.5, domain.TrendStable, 0},
+		// The two above are a hair INSIDE in floating point (12.6 - 12.5 is
+		// 0.0999...96), so they never reach the boundary itself. 0.1 - 0 is
+		// exactly the deadband, and the boundary belongs to it: stable, no
+		// change. Found by mutation testing (<= to < survived).
+		{"exactly on the deadband, upwards", 0.1, 0, domain.TrendStable, 0},
+		{"exactly on the deadband, downwards", 0, 0.1, domain.TrendStable, 0},
 		{"just outside, downwards", 12.35, 12.5, domain.TrendImproving, -0.15},
 		{"just outside, upwards", 12.65, 12.5, domain.TrendWorsening, 0.15},
 		{"clearly better", 8, 20, domain.TrendImproving, -12},

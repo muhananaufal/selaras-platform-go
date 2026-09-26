@@ -178,27 +178,51 @@ tetap menjaga itu setelah bidang trace ditambahkan.
 
 ## Alert dari SLO, dan bukti bahwa ia menyala
 
-Aturannya di `deploy/compose/observability/alerts.yml` — satu berkas untuk
-compose (mount) dan k3d (ConfigMap `prometheus-rules`, dibuat `infra.sh` dari
-berkas yang sama). Ambangnya bukan karangan: rasio galat, p95 campuran, dan
-p95 pendaftaran diturunkan dari `test/k6/lib/slo.js`; unit mati, pekerjaan
-LLM mati, antrean diparkir (ADR-025), dan backlog yang tumbuh menyebut
-alasannya sendiri di komentar aturannya.
+Ada dua sumber aturan. **SLO** (ketersediaan dan latensi) didefinisikan
+sebagai kode di `deploy/slo/selaras.yml`; Sloth v0.16.0 menurunkannya menjadi
+`deploy/compose/observability/slo-rules.yml` (`task slo:generate`), dan job CI
+`generated code is current` gagal bila keduanya tidak sinkron. **Aturan tanpa
+error budget** — pendaftaran lambat, unit mati, pekerjaan LLM mati, antrean
+diparkir (ADR-025), backlog tumbuh — ditulis tangan di `alerts.yml` dan
+menyebut alasannya sendiri di komentar. Kedua berkas dipakai compose (mount)
+dan k3d (ConfigMap `prometheus-rules`, dibuat `infra.sh` dari berkas yang
+sama). Angka SLO-nya sama dengan yang ditegakkan k6 (`test/k6/lib/slo.js`).
+
+| SLO | Target (30 hari) | Yang dihitung |
+| :--- | :--- | :--- |
+| `requests-availability` | 99 % | request edge yang tidak berakhir 5xx |
+| `requests-latency` | 95 % | request unary edge (tanpa `Register` dan `Watch*`) yang selesai ≤ 50 ms — batas bucket histogram yang persis, jadi dihitung, bukan diinterpolasi |
 
 | Alert | Ambang | Keparahan |
 | :--- | :--- | :--- |
-| `SelarasErrorBudgetBurningFast` | 5xx > 14,4 × anggaran 1 % pada 5m **dan** 1h (anggaran sebulan habis dalam 2 hari) | page |
-| `SelarasErrorBudgetBurningSlowly` | 5xx > 6 × anggaran pada 30m **dan** 6h (habis dalam 5 hari) | ticket |
-| `SelarasLatencyAboveSLO` | p95 HTTP (selain pendaftaran) > 50 ms selama 10m | ticket |
+| `SelarasAvailabilitySLOBurn` / `SelarasLatencySLOBurn` | burn rate 14,4× (5m **dan** 1h) atau 6× (30m **dan** 6h) | page |
+| idem | burn rate 3× (2h **dan** 1d) atau 1× (6h **dan** 3d) | ticket |
 | `SelarasRegisterLatencyAboveSLO` | p95 pendaftaran > 1,5 s selama 10m | ticket |
 | `SelarasUnitDown` | `up == 0` selama 2m | page |
 | `SelarasLLMJobsDying` | ada pekerjaan `dead` dalam 15m | ticket |
 | `SelarasLLMQueueParked` | diparkir 30m tanpa satu pun selesai | ticket |
 | `SelarasLLMBacklogGrowing` | lag > 100 dan naik selama 15m | ticket |
 
+Dua keputusan di spesifikasinya, masing-masing lahir dari pengukuran:
+
+- **Stream `Watch*` dikeluarkan dari SLO latensi.** otelhttp mencatat umur
+  seluruh stream (sampai 5 menit by design); di `/metrics` terukur 0,05–2,5 s
+  untuk stream yang sehat. Alert p95 tulisan tangan sebelumnya ikut
+  menghitungnya — cacat laten yang belum pernah menyala hanya karena k6 tidak
+  membuka stream.
+- **Rasio 30 hari dihitung dari event mentah (`rate[30d]`), bukan rata-rata
+  rasio 5 menit** (bawaan Sloth). Satu jendela tanpa lalu lintas adalah 0/0 =
+  NaN, dan NaN itu meracuni rata-rata — dan error budget — selama 30 hari;
+  terukur di stack lokal setelah satu scrape yang sepi. Unit test aturan
+  membuktikannya: tanpa perbaikan hasilnya `NaN`, dengan perbaikan `1`.
+
+Sisa error budget dibaca `cmd/slo-budget` (`task slo:budget`), yang menjadi
+gerbang freeze di CD. Kebijakannya di
+[`docs/runbook/error-budget.md`](runbook/error-budget.md).
+
 Setiap aturan punya unit test di `alerts_test.yml` (`promtool test rules`):
-deret yang melanggar harus menyalakannya dengan anotasi yang persis, deret
-yang sehat harus diam. Dijalankan di CI (job `alert rules`) dan lokal
+deret yang melanggar harus menyalakannya dengan label dan anotasi yang persis,
+deret yang sehat harus diam. Dijalankan di CI (job `alert rules`) dan lokal
 (`task alerts:test`), dengan image Prometheus/Alertmanager yang sama dengan
 yang dijalankan. Penerimanya di lokal adalah **surel ke Mailpit** — alert yang
 menyala benar-benar terlihat, bukan diasumsikan.

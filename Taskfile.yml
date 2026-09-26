@@ -229,6 +229,23 @@ tasks:
     cmds:
       - docker run --rm -v selaras-core_backups:/backups alpine ls -la /backups
 
+  pitr:info:
+    desc: Show the pgBackRest backups and the archived WAL range (point-in-time recovery window)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "docker exec selaras-pitr sh -c 'PGBACKREST_PG1_USER=\$PGBACKREST_PG1_USER pgbackrest --stanza=selaras info'"
+
+  pitr:backup:
+    desc: 'Take a pgBackRest backup now. Usage: task pitr:backup -- full   (or diff, incr)'
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "docker exec selaras-pitr pgbackrest --stanza=selaras --type={{.CLI_ARGS}} backup"
+
+  pitr:test:
+    desc: Prove point-in-time recovery end to end against throwaway containers
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/test/drill/pitr.test.sh
+
   # ---------------------------------------------------------------- k3d
   k3d:up:
     desc: Create the local k3d cluster from deploy/k3d/cluster.yaml (F9-04)
@@ -245,8 +262,18 @@ tasks:
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/secrets.sh
 
+  k3d:iac:
+    desc: Apply what runs inside the cluster as code (OpenTofu, deploy/iac/k3d) - namespaces, config, dependencies, KEDA, observability
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/iac.sh
+
+  k3d:plan:
+    desc: Show what OpenTofu would change in the cluster (drift check; exit 2 means changes)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/plan.sh
+
   k3d:infra:
-    desc: Apply Postgres, Kafka, Redis, Mailpit, PgBouncer and the observability stack
+    desc: Grafana Secret, wait for the dependencies, then the migration and topics Jobs (after k3d:iac and k3d:import)
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/infra.sh
 
@@ -261,12 +288,15 @@ tasks:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/deploy.sh
 
   k3d:all:
-    desc: One command - cluster, secrets, infra, images, chart (F9-04)
+    desc: One command - cluster, infrastructure as code, secrets, images, Jobs, chart (F9-04)
+    # import comes BEFORE infra: the migration and topics Jobs use local
+    # images with imagePullPolicy Never.
     cmds:
       - task: k3d:up
+      - task: k3d:iac
       - task: k3d:secrets
-      - task: k3d:infra
       - task: k3d:import
+      - task: k3d:infra
       - task: k3d:deploy
 
   partitions:
@@ -303,6 +333,19 @@ tasks:
     cmds:
       - npx --yes newman run test/postman/selaras.postman_collection.json --timeout-request 30000
 
+  slo:generate:
+    desc: Regenerate the SLO burn-rate rules from deploy/slo/selaras.yml (Sloth v0.16.0, the version CI checks against)
+    cmds:
+      - go run github.com/slok/sloth/cmd/sloth@v0.16.0 generate -i deploy/slo/selaras.yml -o deploy/compose/observability/slo-rules.yml
+
+  slo:budget:
+    desc: 'Fail when an SLO has spent its 30-day error budget (the release freeze gate). Usage: task slo:budget -- -prometheus http://127.0.0.1:19090'
+    # Built, not `go run`: go run reports every non-zero exit as 1, and the
+    # gate's 1 (budget spent) and 2 (no verdict) mean different things.
+    cmds:
+      - go build -o bin/ ./cmd/slo-budget
+      - ./bin/slo-budget {{.CLI_ARGS}}
+
   alerts:test:
     desc: Check and unit-test the Prometheus alert rules, and validate the Alertmanager config
     cmds:
@@ -319,6 +362,11 @@ tasks:
       vars: [CLI_ARGS]
     cmds:
       - go run ./cmd/migrate -service {{.CLI_ARGS}} -direction up
+
+  migrate:lint:
+    desc: Lint migrations newer than the frozen baseline with squawk (and prove the gate refuses an unsafe fixture)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/migrations/lint.sh
 
   migrate:down:
     desc: 'Roll every migration back for one service. Usage: task migrate:down -- identity'

@@ -1,9 +1,12 @@
 # Automated dependency updates, grouped so they do not become dozens of PRs a
 # week. Every PR still goes through the full CI; actions are pinned to a SHA
 # in the workflows, and Dependabot updates the SHA along with its tag comment.
+# Every update targets develop, like any other change: main only receives
+# release PRs from develop, so a bump reaches it through the same gates.
 version: 2
 updates:
   - package-ecosystem: gomod
+    target-branch: develop
     directory: /
     schedule:
       interval: weekly
@@ -14,6 +17,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
+    target-branch: develop
     directory: /
     schedule:
       interval: weekly
@@ -23,12 +27,14 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: docker
+    target-branch: develop
     directory: /
     schedule:
       interval: weekly
       day: monday
 
   - package-ecosystem: docker
+    target-branch: develop
     directory: /deploy/compose
     schedule:
       interval: weekly

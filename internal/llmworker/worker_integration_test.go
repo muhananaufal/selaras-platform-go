@@ -13,6 +13,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -50,6 +53,11 @@ type harness struct {
 	group     string
 	brokers   string
 	ctx       context.Context
+
+	// metrics and reader let a test wait for what the worker DID (an outcome
+	// it recorded) instead of guessing with a sleep.
+	metrics *llmworker.Metrics
+	reader  *sdkmetric.ManualReader
 }
 
 // newHarness sets the worker up against a real Kafka and Postgres.
@@ -123,6 +131,12 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 	if err != nil {
 		t.Fatalf("NewConsumer: %v", err)
 	}
+	reader := sdkmetric.NewManualReader()
+	metrics, err := llmworker.NewMetrics(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("worker-test"))
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
+	consumer.WithMetrics(metrics)
 	// The quota cooldown is shortened: the default policy is one minute
 	// (ADR-025).
 	consumer.WithQuotaCooldown(func(int) time.Duration { return 300 * time.Millisecond })
@@ -130,6 +144,7 @@ func newHarnessInGroup(t *testing.T, group string) *harness {
 	h := &harness{
 		pool: pool, provider: provider, consumer: consumer, client: consumerClient,
 		producer: producer, topic: topic, group: group, brokers: addr, ctx: ctx,
+		metrics: metrics, reader: reader,
 	}
 	t.Cleanup(h.leaveGroup)
 	return h
@@ -266,6 +281,7 @@ func (h *harness) restart(t *testing.T) {
 		t.Fatalf("NewConsumer: %v", err)
 	}
 
+	consumer.WithMetrics(h.metrics)
 	h.client = client
 	h.consumer = consumer
 	h.closeOnce = sync.Once{}
@@ -342,23 +358,21 @@ func TestTheSameJobTwiceIsDoneOnce(t *testing.T) {
 	h.send(t, assessmentID, key)
 	h.send(t, assessmentID, key)
 
+	// The worker runs until the job is done AND the second delivery has
+	// visibly been handled - skipped as a duplicate (right) or sent to the
+	// provider again (wrong). Waiting on the worker's own record instead of
+	// on time means the verdict below never depends on both messages
+	// happening to arrive in one fetch.
 	if err := h.runUntil(t, 60*time.Second, func() bool {
-		// Waited until BOTH messages are read, not until one job is formed -
-		// stopping too early would make this test pass without ever seeing the
-		// second message.
-		var seen int
-		if err := h.pool.QueryRow(h.ctx,
-			`SELECT count(*) FROM processed_messages`).Scan(&seen); err != nil {
-			t.Fatalf("counting claims: %v", err)
-		}
-		return seen == 1 && h.statusOf(t, assessmentID) == llmworker.StatusCompleted
+		return h.statusOf(t, assessmentID) == llmworker.StatusCompleted &&
+			(h.outcomes(t, llmworker.OutcomeSkipped) >= 1 || h.provider.CallCount() >= 2)
 	}); err != nil {
 		t.Fatalf("Run returned %v", err)
 	}
 
-	// A short pause so the second message is processed before the check.
-	time.Sleep(2 * time.Second)
-
+	if got := h.outcomes(t, llmworker.OutcomeSkipped); got != 1 {
+		t.Fatalf("the second delivery was skipped %d times, want 1", got)
+	}
 	if got := h.countJobs(t, assessmentID); got != 1 {
 		t.Fatalf("two deliveries produced %d jobs, want 1", got)
 	}
@@ -570,20 +584,30 @@ func TestAFailingJobIsRetriedAndThenDeadLettered(t *testing.T) {
 func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	h := newHarness(t)
 	h.provider.Err = errProviderDown
+	// The first attempt fails at once; the second is held by the provider
+	// until the worker is stopped. The shutdown therefore always lands in the
+	// middle of the series - it no longer races the retry loop, which used to
+	// reach the limit first on a fast machine and make this test skip itself.
+	h.provider.SetHoldAfter(1)
 
 	assessmentID := uuid.NewString()
 	h.send(t, assessmentID, "key-"+assessmentID)
 
-	// Stopped as soon as the first failure is recorded.
+	// Stopped once the first failure is recorded AND the second attempt is
+	// in flight.
 	if err := h.runUntil(t, 60*time.Second, func() bool {
-		return h.attemptsOf(t, assessmentID) >= 1
+		return h.attemptsOf(t, assessmentID) >= 1 && h.provider.CallCount() >= 2
 	}); err != nil {
 		t.Fatalf("Run returned %v", err)
 	}
 
-	if got := h.attemptsOf(t, assessmentID); got >= llmworker.MaxAttempts {
-		t.Skipf("the worker reached %d attempts before it could be stopped; the race is too tight to test here", got)
+	if got := h.attemptsOf(t, assessmentID); got != 1 {
+		t.Fatalf("the job records %d attempts after one failure and one interrupted attempt, want 1", got)
 	}
+	if got := h.outcomes(t, llmworker.OutcomeAbandoned); got != 1 {
+		t.Fatalf("the interrupted attempt was recorded as abandoned %d times, want 1", got)
+	}
+	h.provider.SetHoldAfter(0)
 
 	// The claim must have been released, otherwise the next delivery is
 	// skipped as a duplicate and the job stops forever.
@@ -610,6 +634,34 @@ func TestAnAbandonedJobResumesAfterRestart(t *testing.T) {
 	if got := h.attemptsOf(t, assessmentID); got != llmworker.MaxAttempts {
 		t.Fatalf("the job records %d attempts, want %d", got, llmworker.MaxAttempts)
 	}
+}
+
+// outcomes reads how many times the worker has recorded the given outcome
+// (llm_jobs_total{outcome=...}) so far.
+func (h *harness) outcomes(t *testing.T, outcome string) int64 {
+	t.Helper()
+
+	var rm metricdata.ResourceMetrics
+	if err := h.reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("collecting metrics: %v", err)
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "llm_jobs_total" {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("llm_jobs_total is %T, want an int64 sum", m.Data)
+			}
+			for _, dp := range sum.DataPoints {
+				if v, _ := dp.Attributes.Value(attribute.Key("outcome")); v.AsString() == outcome {
+					return dp.Value
+				}
+			}
+		}
+	}
+	return 0
 }
 
 // attemptsOf reads the attempt counter, or -1 if the job does not exist yet.

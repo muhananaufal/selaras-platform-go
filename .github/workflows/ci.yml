@@ -181,11 +181,17 @@ jobs:
           for s in coaching chat nutrition dashboard; do
             export "TEST_DSN_$(echo $s | tr a-z A-Z)=postgres://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
-          # test/e2e and test/acceptance need a running stack; the e2e job below
-          # runs them. Here both are EXPLICITLY excluded, not left to skip
-          # themselves - with CI=true both would fail, and that is precisely the
+          # test/e2e, test/acceptance and test/drill need a running stack; the e2e job below
+          # runs them. Here all three are EXPLICITLY excluded, not left to skip
+          # themselves - with CI=true they would fail, and that is precisely the
           # intended behaviour.
-          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance") -race -count=1 -p 1
+          # -json so every skip is visible: a green run says nothing about a
+          # test that did not run (test/skips/check.sh).
+          rc=0
+          go test $(go list ./... | grep -v "/test/e2e" | grep -v "/test/acceptance" | grep -v "/test/drill") -race -count=1 -p 1 -json > unit-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' unit-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh unit-report.json test/skips/unit.allow || rc=1
+          exit "$rc"
 
   lint:
     name: lint
@@ -230,15 +236,100 @@ jobs:
       - name: Check and unit-test the rules
         working-directory: deploy/compose/observability
         run: |
-          docker run --rm -v "$PWD:/rules:ro" --entrypoint promtool prom/prometheus:v3.14.0 check rules /rules/alerts.yml
+          docker run --rm -v "$PWD:/rules:ro" --entrypoint promtool prom/prometheus:v3.14.0 check rules /rules/alerts.yml /rules/slo-rules.yml
           docker run --rm -v "$PWD:/rules:ro" -w /rules --entrypoint promtool prom/prometheus:v3.14.0 test rules alerts_test.yml
       - name: Validate the Alertmanager config
         working-directory: deploy/compose/observability
         run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
 
+  # Migrations are linted with squawk (the pinned image) against the rules in
+  # .squawk.toml; files older than the frozen baseline are not rewritten. The
+  # script first proves the gate refuses a known-unsafe fixture.
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint migrations newer than the frozen baseline
+        run: bash migrations/lint.sh
+
   # The Helm chart is treated like code: strict lint for both value profiles,
   # then the rendered manifests are validated against the Kubernetes schemas
   # (kubeconform). The KEDA CRD has no schema there and is skipped explicitly.
+  # Backup, restore and point-in-time recovery, against throwaway Postgres
+  # containers: a failed round must leave no file under a final name, a
+  # round must carry all eight schemas and all eight unit roles, restoring
+  # roles may ignore only "role ... already exists", and a restore to a
+  # point in time must hold what was written before it and nothing after.
+  # Infrastructure as code: deploy/iac/k3d (OpenTofu) is applied to a fresh
+  # k3d cluster on the runner, and test/iac/drift.test.sh proves that a plan
+  # right after the apply is empty, that hand edits show up as drift, and
+  # that the next apply undoes them. The wrapper of setup-opentofu is off:
+  # the drift check reads plan's real exit code (0 no changes, 2 changes).
+  # Mutation testing (gremlins v0.6.0) on the domain packages, whose tests
+  # are pure: a package may not gain a surviving (LIVED) or an untested (NOT
+  # COVERED) mutant compared with test/mutation/baseline.txt, and a run with
+  # a timed-out mutant fails as inconclusive. Integration packages are left
+  # out on purpose - without their database here, every test would fail and
+  # every mutant would count as killed.
+  mutation:
+    name: mutation testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+      - name: Domain packages may not gain surviving or untested mutants
+        run: bash test/mutation/run.sh 4
+
+  iac:
+    name: infrastructure as code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format and validate
+        working-directory: deploy/iac/k3d
+        run: |
+          tofu fmt -check -recursive -diff
+          tofu init -input=false
+          tofu validate
+      - name: Install k3d (checksum verified)
+        run: |
+          curl -fsSLO https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64
+          curl -fsSLO https://github.com/k3d-io/k3d/releases/download/v5.9.0/checksums.txt
+          # checksums.txt names the file _dist/k3d-linux-amd64; the hash is
+          # checked against the file downloaded here.
+          want=$(grep '  _dist/k3d-linux-amd64$' checksums.txt | cut -d' ' -f1)
+          [ -n "$want" ] || { echo "no checksum for k3d-linux-amd64"; exit 1; }
+          echo "$want  k3d-linux-amd64" | sha256sum -c -
+          sudo install -m 755 k3d-linux-amd64 /usr/local/bin/k3d
+          k3d version
+      - name: Create the cluster from deploy/k3d/cluster.yaml
+        run: bash deploy/k3d/up.sh
+      - name: Apply, no drift after apply, drift detected and undone
+        run: bash test/iac/drift.test.sh
+
+  backup:
+    name: backup and restore scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Backup rounds
+        run: bash test/drill/backup.test.sh
+      - name: Restoring roles
+        run: bash test/drill/restore-globals.test.sh
+      - name: Point-in-time recovery
+        run: bash test/drill/pitr.test.sh
+
   chart:
     name: helm chart
     runs-on: ubuntu-latest
@@ -281,10 +372,11 @@ jobs:
   generated:
     name: generated code is current
     runs-on: ubuntu-latest
-    # Three buf templates now generate from api/proto: grpc-go for the services,
+    # Three buf templates generate from api/proto: grpc-go for the services,
     # Connect for the edge, OpenAPI for third parties. A forgotten run leaves a
     # contract and its code disagreeing without any other job noticing - it
-    # happened once already (the translated proto comments). This job
+    # happened once already (the translated proto comments). Sloth generates
+    # the SLO alert rules from deploy/slo/selaras.yml the same way. This job
     # regenerates everything and fails on any difference.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -305,12 +397,14 @@ jobs:
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
           go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0
           go install github.com/sudorandom/protoc-gen-connect-openapi@v0.26.0
+          go install github.com/slok/sloth/cmd/sloth@v0.16.0
       - name: Regenerate and compare
         run: |
           buf generate
           buf generate --template buf.gen.edge.yaml
           buf generate --template buf.gen.openapi.yaml
-          git diff --exit-code -- gen api/openapi
+          sloth generate -i deploy/slo/selaras.yml -o deploy/compose/observability/slo-rules.yml
+          git diff --exit-code -- gen api/openapi deploy/compose/observability/slo-rules.yml
 
   openapi:
     name: public contract (OpenAPI)
@@ -344,6 +438,65 @@ jobs:
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Supply chain: the edge-gateway binary gets a CycloneDX SBOM and a SLSA
+  # build provenance, both signed keyless through Sigstore by actions/attest,
+  # and then both are VERIFIED the way the CD deploy job verifies images
+  # (deploy/supply-chain/verify.sh). CD only runs on a release tag, so this
+  # job is where the mechanism is proven on every change - including that a
+  # binary altered by one byte is refused. Skipped for forks, which get no
+  # OIDC token.
+  supply-chain:
+    name: supply chain (SBOM, provenance)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build the edge-gateway binary
+        run: CGO_ENABLED=0 go build -trimpath -o dist/edge-gateway ./cmd/edge-gateway
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          file: dist/edge-gateway
+          format: cyclonedx-json
+          output-file: dist/edge-gateway.cdx.json
+          syft-version: v1.51.1
+          upload-artifact: false
+          upload-release-assets: false
+      - name: The SBOM lists what the binary is built from
+        run: bash deploy/supply-chain/check-sbom.sh dist/edge-gateway.cdx.json connectrpc.com/connect google.golang.org/grpc go.opentelemetry.io/otel
+      - name: Attest the build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/edge-gateway
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/edge-gateway
+          sbom-path: dist/edge-gateway.cdx.json
+      - name: Verify both, and refuse a tampered binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash deploy/supply-chain/verify.sh dist/edge-gateway .github/workflows/ci.yml
+          # An attestation from a different workflow of the same repository
+          # must not count.
+          if bash deploy/supply-chain/verify.sh dist/edge-gateway .github/workflows/cd.yml 2>/dev/null; then
+            echo "::error::an attestation signed by ci.yml passed as cd.yml"; exit 1
+          fi
+          cp dist/edge-gateway dist/tampered
+          printf '\0' >> dist/tampered
+          if bash deploy/supply-chain/verify.sh dist/tampered .github/workflows/ci.yml 2>/dev/null; then
+            echo "::error::a tampered binary passed verification"; exit 1
+          fi
+          echo "refused: other workflow, tampered binary"
 
   # The whole system starts on the runner through compose - the same profile
   # as `task up:apps` - and then the e2e suite, the rule checklist (D1-D12,
@@ -411,12 +564,44 @@ jobs:
         run: |
           export TEST_DSN_LLM="postgres://svc_llm:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=llm"
           export TEST_DSN_CHAT="postgres://svc_chat:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=chat"
-          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m
+          rc=0
+          # The broker-outage test stops Kafka; it runs in its own step after k6.
+          go test ./test/e2e/ ./test/acceptance/ -count=1 -p 1 -timeout 20m -skip '^TestTheOutboxSurvivesABrokerOutage$' -json > e2e-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' e2e-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh e2e-report.json test/skips/e2e.allow || rc=1
+          exit "$rc"
 
       - name: k6 read scenario against the SLO
         run: |
           docker run --rm --network selaras-core_default -v "$PWD/test/k6:/k6:ro" \
             -e BASE_URL=http://edge-gateway:8080 grafana/k6:1.8.1 run /k6/scenarios/read.js
+
+      # The two tests that disturb the stack run last, each in its own step,
+      # so nothing else runs while the schema is altered or the broker is
+      # down. Both used to skip themselves in CI; now they are required.
+      - name: Expand/contract migration drill under live traffic
+        env:
+          TEST_DRILL: "1"
+          TEST_E2E_BASE_URL: http://127.0.0.1:18080
+        run: |
+          export TEST_DSN_ASSESSMENT="postgres://svc_assessment:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=assessment"
+          rc=0
+          go test ./test/drill/expand/ -count=1 -timeout 10m -json > drill-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' drill-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh drill-report.json test/skips/none.allow || rc=1
+          exit "$rc"
+
+      - name: The outbox survives a broker outage
+        env:
+          TEST_E2E_DISRUPTIVE: "1"
+          TEST_E2E_BASE_URL: http://127.0.0.1:18080
+        run: |
+          export TEST_DSN_LLM="postgres://svc_llm:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=llm"
+          rc=0
+          go test ./test/e2e/ -run '^TestTheOutboxSurvivesABrokerOutage$' -count=1 -timeout 10m -json > outage-report.json || rc=$?
+          jq -r 'select(.Action == "output") | .Output' outage-report.json | grep -vE '^(=== (RUN|PAUSE|CONT)|--- PASS)' || true
+          bash test/skips/check.sh outage-report.json test/skips/none.allow || rc=1
+          exit "$rc"
 
       - name: Logs on failure
         if: failure()

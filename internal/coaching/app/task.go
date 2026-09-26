@@ -138,8 +138,10 @@ func taskToggled(
 				CompletionPercentage: &percentage,
 				UserId:               p.UserID.String(),
 				Title:                p.Title,
-				CurrentDay:           int32(p.DayOn(now)),
-				TotalDays:            int32(p.DurationDays()),
+				// Both are at most domain.MaxWeeks*7: every write path bounds the
+				// program (NewProgram, Program.Validate, Curriculum.Validate).
+				CurrentDay: int32(p.DayOn(now)),     //nolint:gosec // G115: bounded by domain.MaxWeeks*7
+				TotalDays:  int32(p.DurationDays()), //nolint:gosec // G115: bounded by domain.MaxWeeks*7
 			},
 		},
 	}

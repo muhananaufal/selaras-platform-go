@@ -1,0 +1,57 @@
+# Migration linter (squawk) - Wave 1, "migrations without downtime".
+#
+# Run: task migrate:lint. CI runs the same in the `migrations` job.
+#
+# assume_in_transaction = true because golang-migrate's pgx/v5 driver (the
+# one cmd/migrate imports) executes a whole file in ONE ExecContext
+# (database/pgx/v5/pgx.go, Run), and pgx sends a statement without arguments
+# over the simple protocol (pgx conn.go), so a file with more than one
+# statement is one implicit transaction. That is also why a
+# CREATE INDEX CONCURRENTLY has to be the only statement in its file - see
+# docs/runbook/migrations.md.
+#
+# Every new migration must set its own timeouts with SET LOCAL (scoped to
+# that implicit transaction, so they do not leak into the next file of the
+# same run): a migration that waits forever for a lock queues every query
+# behind it, which is how a two-second ALTER becomes an outage.
+pg_version = "18.0"
+assume_in_transaction = true
+
+# FROZEN BASELINE: migrations applied before the linter existed. They are
+# not rewritten - editing a migration that already ran is itself unsafe -
+# and squawk reported 215 findings in them (2026-09-25), mostly
+# prefer-robust-stmts and missing timeouts on CREATE TABLE in empty schemas.
+# This list only ever shrinks. Every file NOT on it is linted.
+excluded_paths = [
+    "migrations/assessment/0001_init.up.sql",
+    "migrations/assessment/0002_outbox.up.sql",
+    "migrations/assessment/0003_idempotency.up.sql",
+    "migrations/assessment/0004_personalization_status.up.sql",
+    "migrations/assessment/0005_profile_cache.up.sql",
+    "migrations/chat/0001_init.up.sql",
+    "migrations/chat/0002_outbox.up.sql",
+    "migrations/chat/0003_idempotency.up.sql",
+    "migrations/chat/0004_partition_messages.up.sql",
+    "migrations/coaching/0001_init.up.sql",
+    "migrations/coaching/0002_outbox.up.sql",
+    "migrations/coaching/0003_idempotency.up.sql",
+    "migrations/coaching/0004_partition_messages.up.sql",
+    "migrations/coaching/0005_assessment_refs.up.sql",
+    "migrations/dashboard/0001_init.up.sql",
+    "migrations/dashboard/0002_idempotency.up.sql",
+    "migrations/dashboard/0003_outbox.up.sql",
+    "migrations/identity/0001_init.up.sql",
+    "migrations/identity/0002_outbox.up.sql",
+    "migrations/identity/0003_idempotency.up.sql",
+    "migrations/identity/0004_deletion_saga.up.sql",
+    "migrations/llm/0001_init.up.sql",
+    "migrations/llm/0002_outbox.up.sql",
+    "migrations/llm/0003_idempotency.up.sql",
+    "migrations/nutrition/0001_init.up.sql",
+    "migrations/nutrition/0002_outbox.up.sql",
+    "migrations/nutrition/0003_idempotency.up.sql",
+    "migrations/nutrition/0004_language_cache.up.sql",
+    "migrations/profile/0001_init.up.sql",
+    "migrations/profile/0002_outbox.up.sql",
+    "migrations/profile/0003_idempotency.up.sql",
+]

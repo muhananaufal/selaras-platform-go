@@ -1,41 +1,25 @@
 #!/usr/bin/env bash
-# Installs the dependencies, migrations, topics, and observability on the
-# k3d cluster (F9-04, F9-06, F9-20, F9-22).
+# Finishes the dependencies on the k3d cluster once OpenTofu has applied them
+# (F9-04, F9-06, F9-20, F9-22): the Grafana admin Secret, waiting for the
+# dependencies to be ready, and the migration Job per schema and the topics
+# Job.
 #
-# The order: namespace -> initdb ConfigMap (from the SAME compose script) ->
-# Postgres, Kafka, Redis, Mailpit, PgBouncer -> metrics-server -> KEDA ->
-# observability -> wait for ready -> the migration Job per schema and the
-# topics Job.
+# Namespaces, the initdb and rule ConfigMaps, Postgres, Kafka, Redis,
+# Mailpit, PgBouncer, KEDA and the observability stack are declared in
+# deploy/iac/k3d and applied by deploy/k3d/iac.sh. What stays here is what
+# does not belong in OpenTofu state: a Secret (state holds values in plain
+# text) and run-to-completion Jobs.
 #
-# metrics-server and KEDA are installed from the official release manifests
-# with pinned versions; the pins are stated here so a change shows up in a
-# diff, not in a "latest" that moves on its own.
-#
-# The migration and topics Jobs use the selaras/migrate and selaras/topics
-# images - run deploy/k3d/import.sh first.
+# The order in `task k3d:all`: up -> iac -> secrets -> import -> infra ->
+# deploy. The Jobs use the selaras/migrate and selaras/topics images with
+# imagePullPolicy Never, so they only run after deploy/k3d/import.sh.
 
 set -euo pipefail
 # k3d, kubectl, and helm are installed in the WSL user's ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-KEDA_VERSION="v2.20.2"
-
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
-
-kubectl get namespace selaras >/dev/null 2>&1 || kubectl create namespace selaras
-kubectl get namespace observability >/dev/null 2>&1 || kubectl create namespace observability
-
-log "initdb ConfigMap dari deploy/compose/initdb/01-schemas.sh (satu sumber untuk isolasi skema)"
-kubectl -n selaras create configmap postgres-initdb \
-  --from-file=01-schemas.sh="$ROOT/deploy/compose/initdb/01-schemas.sh" \
-  --dry-run=client -o yaml | kubectl apply -f -
-# The alert rules from the SAME file as compose; tested by promtool in CI.
-kubectl -n observability create configmap prometheus-rules \
-  --from-file=alerts.yml="$ROOT/deploy/compose/observability/alerts.yml" --dry-run=client -o yaml | kubectl apply -f -
-
-log "dependensi"
-kubectl apply -f "$ROOT/deploy/k8s/infra/"
 
 log "metrics-server (F9-20): bawaan k3s, tidak dipasang ulang"
 # k3s ships its own metrics-server in kube-system, already trusted by the
@@ -44,19 +28,11 @@ log "metrics-server (F9-20): bawaan k3s, tidak dipasang ulang"
 # follows k3s (rancher/k3s:v1.36.4-k3s1 in cluster.yaml).
 kubectl -n kube-system get deployment metrics-server >/dev/null
 
-log "KEDA $KEDA_VERSION (F9-22)"
-kubectl apply --server-side -f "https://github.com/kedacore/keda/releases/download/${KEDA_VERSION}/keda-${KEDA_VERSION#v}.yaml"
-
-log "observability (F9-06)"
-# The dashboards from the SAME files as compose; the Grafana admin password
-# from .env, not from the manifest.
+log "Grafana admin Secret (dari .env, bukan dari manifest atau state)"
 set -a; . "$ROOT/.env"; set +a
 [ -n "${GRAFANA_ADMIN_PASSWORD:-}" ] || { echo "FATAL: GRAFANA_ADMIN_PASSWORD is not set in .env" >&2; exit 1; }
-kubectl -n observability create configmap grafana-dashboards \
-  --from-file="$ROOT/deploy/grafana/dashboards/" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n observability create secret generic grafana-admin \
   --from-literal=password="$GRAFANA_ADMIN_PASSWORD" --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f "$ROOT/deploy/k8s/observability/"
 
 log "menunggu Postgres, Kafka, PgBouncer, metrics-server, KEDA"
 kubectl -n selaras rollout status statefulset/postgres --timeout=180s

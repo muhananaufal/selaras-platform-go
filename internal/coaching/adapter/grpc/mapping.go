@@ -80,7 +80,7 @@ func programToProto(view *app.ProgramView) *coachingv1.CoachingProgram {
 func weekToProto(w *domain.Week) *coachingv1.CoachingWeek {
 	out := &coachingv1.CoachingWeek{
 		Id:          w.ID.String(),
-		WeekNumber:  int32(w.WeekNumber),
+		WeekNumber:  int32(w.WeekNumber), //nolint:gosec // G115: 1..domain.MaxWeeks by Curriculum.Validate and SMALLINT
 		Title:       w.Title,
 		Description: w.Description,
 		Tasks:       make([]*coachingv1.CoachingTask, 0, len(w.Tasks)),

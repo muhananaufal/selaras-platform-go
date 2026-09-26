@@ -1,0 +1,9 @@
+# gremlins v0.6.0 configuration, read by test/mutation/run.sh (--config).
+#
+# Only the config file is used: in v0.6.0 the equivalent command-line flags
+# for thresholds were measured to be silently ignored.
+unleash:
+  # The default timeout was measured to time out 10 to 47 mutants per
+  # package on a loaded machine, and a timed-out mutant drops out of the
+  # count. With 10 the same packages ran with none, in about the same time.
+  timeout-coefficient: 10

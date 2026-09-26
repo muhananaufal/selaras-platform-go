@@ -167,11 +167,13 @@ data:
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
-    # The SAME rules as compose (deploy/compose/observability/alerts.yml),
-    # loaded from the prometheus-rules ConfigMap that infra.sh creates from that
-    # file - one source, two environments.
+    # The SAME rules as compose (deploy/compose/observability/alerts.yml and
+    # the Sloth-generated slo-rules.yml), loaded from the prometheus-rules
+    # ConfigMap that infra.sh creates from those files - one source, two
+    # environments.
     rule_files:
       - /etc/prometheus/rules/alerts.yml
+      - /etc/prometheus/rules/slo-rules.yml
     alerting:
       alertmanagers:
         - static_configs:

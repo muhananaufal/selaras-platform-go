@@ -1,82 +1,21 @@
 # Prometheus alert rules - derived from the SLOs, not made up.
 #
-# The source of the thresholds is test/k6/lib/slo.js (F9-11): failures < 1
-# %, mixed p95 < 50 ms, registration p95 < 1.5 s. The alerts here fire when
-# the LIVE system breaks the same numbers that make k6 fail in CI. Rules
-# with no SLO behind them - a unit down, dead jobs, a parked queue - state
-# their own reason.
+# The availability and latency SLOs (failures < 1 %, 95 % of requests within
+# 50 ms - the numbers k6 enforces in test/k6/lib/slo.js) are NOT written
+# here: they live in deploy/slo/selaras.yml and Sloth generates their
+# multi-window burn-rate alerts into slo-rules.yml. This file keeps the
+# rules no error budget describes - registration latency, a unit down, dead
+# jobs, a parked queue - each stating its own reason.
 #
 # Every rule has a unit test in alerts_test.yml (promtool test rules) run in
 # CI; a rule never proven to fire is a rule that does not exist. This file
 # is used as-is by compose (full.yml) and copied into the ConfigMap in
 # deploy/k8s/observability/stack.yaml.
 groups:
-  - name: selaras-availability
-    rules:
-      # Multi-window burn rate (Google SRE Workbook, chapter 5) for the 99 %
-      # availability SLO: the ratio of 5xx errors to all requests. The short
-      # window (5m) catches a burst, the long window (1h) confirms it is not
-      # one k6 batch that happened along; both have to fire. A burn rate of
-      # 14.4 means the whole month's error budget is spent in two days.
-      - record: selaras:http_error_ratio:5m
-        expr: |
-          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
-            /
-          clamp_min(sum(rate(http_server_request_duration_seconds_count[5m])), 1e-9)
-      - record: selaras:http_error_ratio:1h
-        expr: |
-          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1h]))
-            /
-          clamp_min(sum(rate(http_server_request_duration_seconds_count[1h])), 1e-9)
-      - alert: SelarasErrorBudgetBurningFast
-        expr: |
-          selaras:http_error_ratio:5m > (14.4 * 0.01)
-            and
-          selaras:http_error_ratio:1h > (14.4 * 0.01)
-        for: 2m
-        labels: { severity: page }
-        annotations:
-          summary: "5xx above 14.4 times the error budget (99 % SLO)"
-          description: "5xx ratio 5m={{ $value | humanizePercentage }}; the month's budget is spent in two days at this rate. See docs/runbook/edge-gateway.md."
-      # The long window for slow burn: 6 times the budget (spent in five
-      # days) over six hours with a 30-minute confirmation. This is what
-      # catches the "3 % errors continuously" that is not enough for a page.
-      - record: selaras:http_error_ratio:30m
-        expr: |
-          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[30m]))
-            /
-          clamp_min(sum(rate(http_server_request_duration_seconds_count[30m])), 1e-9)
-      - record: selaras:http_error_ratio:6h
-        expr: |
-          sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[6h]))
-            /
-          clamp_min(sum(rate(http_server_request_duration_seconds_count[6h])), 1e-9)
-      - alert: SelarasErrorBudgetBurningSlowly
-        expr: |
-          selaras:http_error_ratio:30m > (6 * 0.01)
-            and
-          selaras:http_error_ratio:6h > (6 * 0.01)
-        for: 15m
-        labels: { severity: ticket }
-        annotations:
-          summary: "5xx above 6 times the error budget for six hours"
-          description: "5xx ratio 30m={{ $value | humanizePercentage }}; the month's budget is spent in five days at this rate."
-
   - name: selaras-latency
     rules:
-      # The p95 of every route except registration, compared against the k6
-      # mixed SLO (50 ms). Registration is excluded because argon2id really
-      # takes 375 ms (slo.js), and has an alert of its own.
-      - alert: SelarasLatencyAboveSLO
-        expr: |
-          histogram_quantile(0.95,
-            sum by (le) (rate(http_server_request_duration_seconds_bucket{http_route!="/edge.v1.Auth/Register"}[5m]))
-          ) > 0.050
-        for: 10m
-        labels: { severity: ticket }
-        annotations:
-          summary: "HTTP p95 above the 50 ms SLO for 10 minutes"
-          description: "p95={{ $value | humanizeDuration }}. A one-order regression is usually a query without an index or a gRPC call that became two; compare with docs/performance-report.md."
+      # Registration is excluded from the latency SLO because argon2id
+      # really takes ~375 ms; its own ceiling is 1.5 s at p95.
       - alert: SelarasRegisterLatencyAboveSLO
         expr: |
           histogram_quantile(0.95,

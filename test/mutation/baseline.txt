@@ -1,0 +1,17 @@
+# Mutation testing baseline (gremlins v0.6.0, normal mode: each package is
+# mutated and judged by its OWN tests only). One line per directory tree:
+#   <package> <lived> <not-covered>
+# A path is a directory TREE: gremlins mutates every package under it, so
+# internal/assessment/domain includes its score subpackage and has one line.
+# Counts are the CI (Linux) ones; a Windows run was measured to lose the
+# coverage of nested packages and report all of them as NOT COVERED.
+# The counts may not grow: a change that adds a surviving or an untested
+# mutant fails the job. When a count falls, lower it here so the ratchet
+# holds the gain. docs/runbook/mutation-testing.md explains every number.
+internal/assessment/domain 21 29
+internal/coaching/domain 1 14
+internal/chat/domain 2 2
+internal/dashboard/domain 0 9
+internal/identity/domain 2 3
+internal/nutrition/domain 2 14
+internal/profile/domain 0 2
