@@ -18,7 +18,7 @@ import (
 )
 
 // ErrNotCached means that profile has never entered the cache.
-var ErrNotCached = app.ErrProfileNotCached
+var ErrNotCached = errors.New("no cached snapshot for this user")
 
 // Profiles reads and writes profile snapshots.
 type Profiles struct {

@@ -27,9 +27,6 @@ var (
 	// not be recorded. The answer is then no: a patient's data is never
 	// returned on a maybe (fail closed).
 	ErrAccessUnavailable = errors.New("access to patient data cannot be checked right now")
-
-	// ErrProfileNotCached: the profile cache holds no snapshot for the user.
-	ErrProfileNotCached = errors.New("no cached profile snapshot for this user")
 )
 
 // AccessChecker answers whether user has relation to object (authz.Client).
@@ -98,38 +95,19 @@ func (s *Service) PatientHistory(
 	return s.patientHistory(ctx, patientID, size, after)
 }
 
-// patientHistory reads the patient's history with the profile id from the
-// event-fed cache ONLY.
+// patientHistory reads the patient's history by the patient's user id, with
+// no profile lookup at all.
 //
-// The general profile source falls back to calling profile-svc, and that call
-// carries the caller's token: here the clinician's, for the patient's user
-// id, which profile-svc refuses (sub is not user_id). A patient the cache
-// does not know has no assessment this service could have computed -
-// computing one needs a complete profile, and completing it fills the cache -
-// so the answer is an empty history.
+// Resolving the profile id first is what went wrong before: the general
+// profile source calls profile-svc with the caller's token - the clinician's,
+// which profile-svc refuses for another user - and the event-fed cache alone
+// lags behind a profile just completed, so a patient with an assessment read
+// as having none. The assessment carries its owner's user id (migration
+// 0008), so the read needs nothing but the id the consent was checked for.
 func (s *Service) patientHistory(ctx context.Context, patientID string, size int, after *domain.HistoryCursor) (HistoryPage, error) {
-	if s.patientProfiles == nil {
-		return HistoryPage{}, fmt.Errorf("%w: no profile cache for patients is configured", ErrAccessUnavailable)
-	}
-	snapshot, err := s.patientProfiles.Snapshot(ctx, patientID)
-	if errors.Is(err, ErrProfileNotCached) {
-		return HistoryPage{}, nil
-	}
-	if err != nil {
-		return HistoryPage{}, err
-	}
-	profileID, err := domain.ParseProfileID(snapshot.UserProfileID)
-	if err != nil {
-		return HistoryPage{}, err
-	}
-	return s.history(ctx, profileID, size, after)
-}
-
-// WithPatientProfiles sets the profile cache clinicians' reads use. It must
-// not fall back to profile-svc (see patientHistory).
-func (s *Service) WithPatientProfiles(p ProfileSource) *Service {
-	s.patientProfiles = p
-	return s
+	return page(size, func(limit int) ([]*domain.Assessment, error) {
+		return s.assessments.ListForUser(ctx, patientID, limit, after)
+	})
 }
 
 func accessRecorded(clinicianID, patientID string, now time.Time) *eventsv1.Envelope {

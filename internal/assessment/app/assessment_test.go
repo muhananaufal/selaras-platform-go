@@ -62,6 +62,15 @@ func (r *fakeRepo) FindBySlug(_ context.Context, slug string) (*domain.Assessmen
 // ListForProfile orders and pages the way the database query does:
 // (created_at, id) descending, starting right after the cursor.
 func (r *fakeRepo) ListForProfile(_ context.Context, id domain.ProfileID, limit int, after *domain.HistoryCursor) ([]*domain.Assessment, error) {
+	return r.list(func(a *domain.Assessment) bool { return a.UserProfileID == id }, limit, after)
+}
+
+// ListForUser pages the same way, by the owner's user id.
+func (r *fakeRepo) ListForUser(_ context.Context, userID string, limit int, after *domain.HistoryCursor) ([]*domain.Assessment, error) {
+	return r.list(func(a *domain.Assessment) bool { return a.UserID == userID }, limit, after)
+}
+
+func (r *fakeRepo) list(match func(*domain.Assessment) bool, limit int, after *domain.HistoryCursor) ([]*domain.Assessment, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lastLimit = limit
@@ -75,7 +84,7 @@ func (r *fakeRepo) ListForProfile(_ context.Context, id domain.ProfileID, limit 
 
 	var out []*domain.Assessment
 	for _, a := range r.bySlug {
-		if a.UserProfileID != id {
+		if !match(a) {
 			continue
 		}
 		if after != nil && newestFirst(a, &domain.Assessment{CreatedAt: after.CreatedAt, ID: after.ID}) <= 0 {

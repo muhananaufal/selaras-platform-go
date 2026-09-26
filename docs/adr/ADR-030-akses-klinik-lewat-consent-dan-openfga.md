@@ -92,6 +92,14 @@ dijawab dengan melonggarkan aturan kepemilikan.
      menjawab dari cache sesudah consent dicabut.
    - **OpenFGA tidak terjangkau → tolak** (gagal-tertutup, seperti pencabutan
      token di ADR-020).
+   - Data pasien dibaca **per `user_id` pemilik yang tersimpan di barisnya**,
+     tanpa menerjemahkan ke `user_profile_id` lebih dulu. Dua cara
+     menerjemahkan sudah dicoba dan keduanya salah. Memanggil profile-svc
+     membawa token klinisi untuk pengguna lain, dan profile-svc menolaknya.
+     Membaca cache profil saja tertinggal dari profil yang baru dilengkapi,
+     sehingga pasien yang punya penilaian terbaca kosong (terlihat di e2e CI).
+     Assessment menyimpan `user_id` sejak migrasi 0008. Baris yang lebih tua
+     diisi `cmd/backfill-assessment-owners`.
 5. **Setiap akses klinisi diaudit sebelum datanya dikembalikan.** Service
    pemilik menulis event akses ke outbox-nya.
    - Penulisan gagal → permintaan ditolak. Akses yang tidak tercatat tidak
