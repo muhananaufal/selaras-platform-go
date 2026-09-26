@@ -9,15 +9,15 @@
 
 | | |
 | :--- | ---: |
-| Vektor diuji | **288** |
-| Lulus | **288** |
+| Vektor diuji | **1440** (sebelum 2026-09-26: 288) |
+| Lulus | **1440** |
 | Gagal | **0** |
 | Selisih terbesar | **0.000000** poin persentase |
 | Toleransi yang dipakai | 0.005 poin persentase |
 | Nilai eGFR antara yang diperiksa | **144** |
 | Toleransi eGFR | 1e-9 |
 
-Selisih terbesar **nol** berarti setiap satu dari 288 vektor menghasilkan angka
+Selisih terbesar **nol** berarti setiap satu dari 1440 vektor menghasilkan angka
 yang identik sampai dua desimal — bukan "cukup dekat", melainkan sama.
 
 ## Dari mana vektornya
@@ -25,10 +25,30 @@ yang identik sampai dua desimal — bukan "cukup dekat", melainkan sama.
 Dihasilkan branch `oracle/golden-vector-source` di repo Laravel, yang **tidak pernah
 digabung**. Ia bukan milik kode Go: satu-satunya perannya adalah membantah.
 
-Sapuannya: 2 jenis kelamin × 4 wilayah risiko × 9 usia (40–85) × diabetes ya/tidak ×
-2 mode masukan (manual dan proksi) = 288.
+Sapuannya sejak 2026-09-26: 2 jenis kelamin × 4 wilayah risiko × 9 usia (40–85) ×
+diabetes ya/tidak × 2 status merokok (perokok aktif, bukan perokok) × set jawaban
+(mode manual: 3 set nilai lab, yaitu awal, rendah, dan tinggi; mode proksi: 2 set
+jawaban, yaitu berisiko dan sehat) = **1440**. Tidak ada kombinasi yang dilewati.
 
-> **Koreksi 2026-09-26 — cakupannya lebih sempit daripada kesan angka 288.**
+Perluasan ini dibuat di branch oracle (commit `5599a91`, hanya lokal; repo lama
+milik organisasi, jadi tidak di-push). Buktinya:
+
+- **Lingkungan eksporter mereproduksi oracle lama byte demi byte.** Eksporter
+  lama dijalankan ulang di worktree terpisah dengan `vendor` sendiri, dan hasilnya
+  identik dengan berkas yang dipakai (hash isi sama). Ini penting: `vendor`
+  pinjaman dari `main` ternyata memuat kode `main` yang **belum** berisi dua
+  perbaikan oracle.
+- **288 vektor pertama berkas baru identik** dengan berkas lama.
+- **Mesin Go cocok untuk 1440 dari 1440**, dengan selisih terbesar nol,
+  termasuk 720 vektor bukan perokok.
+- **Mutan yang dulu lolos kini terbunuh.** `coef.Smoking/smoking` membuat
+  **200 vektor gagal**, dengan selisih hingga 99,58 poin persentase.
+
+Yang masih belum tersapu: perempuan dengan kreatinin ≤ 0,7, yang memakai cabang
+eksponen −0,241 di eGFR. Tidak ada set lab yang memuatnya, dan mutation testing
+masih menunjukkan mutan yang lolos di sana.
+
+> **Koreksi 2026-09-26 (sudah diselesaikan di atas) — cakupan lamanya lebih sempit daripada kesan angka 288.**
 > Eksporter (`ExportGoldenVectors.php` di branch oracle) menetapkan
 > `'smoking_status' => 'Perokok aktif'` untuk **setiap** vektor. Nilai lab juga
 > tetap: di mode manual SBP 140, kolesterol total 6,0, HDL 1,2, dan satu set

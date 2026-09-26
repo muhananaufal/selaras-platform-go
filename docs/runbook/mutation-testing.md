@@ -93,13 +93,23 @@ perlu, membunuhnya. Semuanya diperiksa manual:
 
 ## Yang ditemukan, dan belum diperbaiki
 
-- **Paritas mesin risiko hanya untuk perokok.** Semua 288 golden vector
-  adalah perokok aktif dengan satu set nilai lab per mode. Mutan
-  `coef.Smoking*smoking` → `coef.Smoking/smoking`, yaitu pembagian dengan
-  nol untuk bukan perokok, lolos seluruh test. Rinciannya ada di
-  [`docs/parity-report.md`](../parity-report.md). Memperbaikinya butuh vektor
-  baru dari sistem lama sebagai oracle, dan itu berarti mengubah repo
-  `selaras-backend-api`, yang merupakan keputusan pemilik.
+- **Paritas mesin risiko hanya untuk perokok — DITUTUP 2026-09-26.** Semua
+  288 golden vector lama adalah perokok aktif, sehingga mutan
+  `coef.Smoking/smoking` lolos seluruh test. Eksporter di sistem lama kini
+  menghasilkan 1440 vektor (dengan bukan perokok dan variasi nilai lab). Mesin
+  Go cocok untuk 1440/1440, dan mutan itu kini membuat 200 vektor gagal.
+  Mutan yang lolos di mesin risiko turun dari 21 menjadi 17. Rinciannya ada di
+  [`docs/parity-report.md`](../parity-report.md).
+- **Mesin risiko, 17 mutan yang masih lolos** (analisis per mutan):
+  - `engine.go:201` dan `:207`, batas `scr <= 0.7`/`0.9`: **ekuivalen**. Di
+    titik simpul `scr/a = 1`, dan `1^b = 1` untuk eksponen apa pun (CKD-EPI
+    kontinu di sana).
+  - `engine.go:219`, `egfr > 0`: **ekuivalen**. eGFR dari rumus ini selalu
+    positif.
+  - `engine.go:202`, eksponen `-0.241` (perempuan dengan kreatinin ≤ 0,7):
+    **celah nyata**. Belum ada vektor oracle untuk cabang itu.
+  - Sisanya (aritmetika SCORE2-OP dan SCORE2-Diabetes, penjaga kalibrasi di
+    329/332/341) **belum dianalisis per mutan**. Terbuka.
 - **Berkas domain assessment (di luar `score`) tidak punya test sendiri.** 9
   mutan tanpa cakupan. Logikanya diuji tidak langsung lewat `assessment/app`
   (cakupan pernyataan 78,9% dari sana), dan mode normal tidak menghitung itu.

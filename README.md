@@ -57,7 +57,7 @@ Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-re
 
 | Klaim | Angka | Bukti |
 | :--- | :--- | :--- |
-| Paritas mesin risiko SCORE2 / SCORE2-OP / SCORE2-Diabetes dengan sistem lama | 288 dari 288 golden vector, selisih terbesar nol — **hanya untuk perokok aktif dengan satu set nilai lab per mode**; jalur bukan-perokok belum dibandingkan (ditemukan lewat mutation testing, lihat laporan) | [`docs/parity-report.md`](docs/parity-report.md) |
+| Paritas mesin risiko SCORE2 / SCORE2-OP / SCORE2-Diabetes dengan sistem lama | 1440 dari 1440 golden vector, selisih terbesar nol — perokok dan bukan perokok, 3 set nilai lab manual dan 2 set jawaban proksi; sebelumnya hanya 288 vektor perokok aktif (celah ditemukan lewat mutation testing, ditutup dengan vektor baru dari sistem lama) | [`docs/parity-report.md`](docs/parity-report.md) |
 | Latensi di bawah beban k6 | REST: p95 baca 4,4 ms · tulis 14,5 ms · campuran 9,7 ms, nol gagal. Connect (ulang 2026-09-25): p50 baca 3,1 ms, p95 8,7–16,6 ms antar-larian, nol gagal; SLO lulus, kenaikan median belum dijelaskan | [`docs/performance-report.md`](docs/performance-report.md) |
 | Satu trace menembus gateway → service → worker | 6 span, 3 unit, utuh di Tempo | [`docs/observability.md`](docs/observability.md) |
 | Broker dimatikan paksa di tengah beban | 18 event tertahan di outbox, 0 hilang, 8/8 pekerjaan selesai setelah broker kembali | [`test/chaos/broker.md`](test/chaos/broker.md) |
