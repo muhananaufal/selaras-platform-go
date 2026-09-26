@@ -262,8 +262,18 @@ tasks:
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/secrets.sh
 
+  k3d:iac:
+    desc: Apply what runs inside the cluster as code (OpenTofu, deploy/iac/k3d) - namespaces, config, dependencies, KEDA, observability
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/iac.sh
+
+  k3d:plan:
+    desc: Show what OpenTofu would change in the cluster (drift check; exit 2 means changes)
+    cmds:
+      - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/plan.sh
+
   k3d:infra:
-    desc: Apply Postgres, Kafka, Redis, Mailpit, PgBouncer and the observability stack
+    desc: Grafana Secret, wait for the dependencies, then the migration and topics Jobs (after k3d:iac and k3d:import)
     cmds:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/infra.sh
 
@@ -278,12 +288,15 @@ tasks:
       - wsl -d {{.WSL_DISTRO}} -- bash {{.PROJECT_WSL}}/deploy/k3d/deploy.sh
 
   k3d:all:
-    desc: One command - cluster, secrets, infra, images, chart (F9-04)
+    desc: One command - cluster, infrastructure as code, secrets, images, Jobs, chart (F9-04)
+    # import comes BEFORE infra: the migration and topics Jobs use local
+    # images with imagePullPolicy Never.
     cmds:
       - task: k3d:up
+      - task: k3d:iac
       - task: k3d:secrets
-      - task: k3d:infra
       - task: k3d:import
+      - task: k3d:infra
       - task: k3d:deploy
 
   partitions:
