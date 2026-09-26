@@ -46,6 +46,26 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
 
+      # The same PgBouncer as compose, in transaction mode, so the clinic
+      # schema's row level security is proven where it will run (ADR-030):
+      # a SET LOCAL must not survive into the next transaction on the same
+      # server connection. It reaches Postgres by its service name.
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.25.2-p0
+        ports: ['6432:5432']
+        env:
+          DB_HOST: postgres
+          DB_PORT: 5432
+          DB_NAME: "*"
+          DB_USER: selaras_admin
+          DB_PASSWORD: ci-not-a-secret
+          AUTH_TYPE: scram-sha-256
+          AUTH_USER: selaras_admin
+          POOL_MODE: transaction
+          DEFAULT_POOL_SIZE: 8
+          IGNORE_STARTUP_PARAMETERS: search_path
+          MAX_PREPARED_STATEMENTS: 200
+
       # Mailpit captures outgoing email and serves it over HTTP, so a test
       # can prove the reset link was really sent with its token - not assume
       # it.
@@ -123,6 +143,8 @@ jobs:
           SVC_NUTRITION_PASSWORD: ci-not-a-secret
           SVC_DASHBOARD_PASSWORD: ci-not-a-secret
           SVC_LLM_PASSWORD: ci-not-a-secret
+          CLINIC_OWNER_PASSWORD: ci-not-a-secret
+          SVC_CLINIC_PASSWORD: ci-not-a-secret
           POSTGRES_USER: selaras_admin
           POSTGRES_DB: selaras
         run: |
@@ -151,6 +173,10 @@ jobs:
             go run ./cmd/migrate -service "$s" -direction up \
               -dsn "pgx5://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
+          # The clinic schema is migrated by its owner role, not by the
+          # runtime role svc_clinic (ADR-030).
+          go run ./cmd/migrate -service clinic -direction up \
+            -dsn "pgx5://clinic_owner:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=clinic"
 
       # The topics are created through the same tool used locally, not
       # through a separate script. Two copies would drift silently.
@@ -181,6 +207,10 @@ jobs:
           for s in coaching chat nutrition dashboard; do
             export "TEST_DSN_$(echo $s | tr a-z A-Z)=postgres://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
+          export TEST_DSN_CLINIC="postgres://svc_clinic:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=clinic"
+          export TEST_DSN_CLINIC_OWNER="postgres://clinic_owner:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=clinic"
+          export TEST_DSN_CLINIC_PGBOUNCER="postgres://svc_clinic:ci-not-a-secret@127.0.0.1:6432/selaras?sslmode=disable&search_path=clinic"
+          pg_isready -h 127.0.0.1 -p 6432 -t 60
           # test/e2e, test/acceptance and test/drill need a running stack; the e2e job below
           # runs them. Here all three are EXPLICITLY excluded, not left to skip
           # themselves - with CI=true they would fail, and that is precisely the
@@ -546,6 +576,8 @@ jobs:
             echo "POSTGRES_PORT=15432"
             echo "REPLICATION_PASSWORD=ci-not-a-secret"
             for s in IDENTITY PROFILE ASSESSMENT COACHING CHAT NUTRITION DASHBOARD LLM; do echo "SVC_${s}_PASSWORD=ci-not-a-secret"; done
+            echo "CLINIC_OWNER_PASSWORD=ci-not-a-secret"
+            echo "SVC_CLINIC_PASSWORD=ci-not-a-secret"
             echo "KAFKA_BROKERS=127.0.0.1:19092"
             echo "REDIS_ADDR=127.0.0.1:16379"
             echo "GRAFANA_ADMIN_PASSWORD=ci-not-a-secret"
@@ -572,6 +604,8 @@ jobs:
             go run ./cmd/migrate -service "$s" -direction up \
               -dsn "postgres://svc_$s:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=$s"
           done
+          go run ./cmd/migrate -service clinic -direction up \
+            -dsn "postgres://clinic_owner:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=clinic"
           go run ./cmd/topics -brokers 127.0.0.1:19092
           docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml restart \
             identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker
