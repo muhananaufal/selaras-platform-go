@@ -20,6 +20,7 @@ type fakeRepo struct {
 	members map[[3]string]bool // clinic, user, role
 	ledger  map[string][]domain.ConsentEvent
 	audit   []domain.Access
+	queued  []domain.TupleChange
 	now     time.Time
 }
 
@@ -64,11 +65,20 @@ func (f *fakeRepo) RemoveMember(_ context.Context, clinic, user string, role dom
 	return nil
 }
 
-func (f *fakeRepo) AppendConsent(_ context.Context, patient, clinic, clinician string, kind domain.ConsentKind) error {
-	f.now = f.now.Add(time.Minute)
-	f.ledger[patient] = append(f.ledger[patient], domain.ConsentEvent{
-		ClinicID: clinic, ClinicianUserID: clinician, Kind: kind, RecordedAt: f.now,
-	})
+func (f *fakeRepo) UpdateConsents(
+	_ context.Context, patient string, decide func([]domain.ConsentEvent) (domain.ConsentDecision, error),
+) error {
+	d, err := decide(f.ledger[patient])
+	if err != nil {
+		return err
+	}
+	if d.Append != nil {
+		f.now = f.now.Add(time.Minute)
+		e := *d.Append
+		e.RecordedAt = f.now
+		f.ledger[patient] = append(f.ledger[patient], e)
+	}
+	f.queued = append(f.queued, d.Changes...)
 	return nil
 }
 
@@ -236,5 +246,43 @@ func TestTheAuditPageSizeIsBounded(t *testing.T) {
 	got, next, err := f.svc.ListAccessAudit(context.Background(), patient, 0, "")
 	if err != nil || len(got) != 3 || next != "" {
 		t.Fatalf("ListAccessAudit = %d records, %q, %v", len(got), next, err)
+	}
+}
+
+// The use cases queue the tuple changes of domain.GrantChanges and
+// domain.RevokeChanges, the latter with the consents that remain in force -
+// not with the whole ledger, and not with nothing.
+func TestConsentChangesQueueTheirTuples(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	patient := uuid.NewString()
+	if err := f.svc.AddMember(ctx, f.owner, f.clinic, f.admin, domain.RoleClinician); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.svc.GrantConsent(ctx, patient, f.clinic, f.doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.GrantConsent(ctx, patient, f.clinic, f.admin); err != nil {
+		t.Fatal(err)
+	}
+	// A repeated grant queues nothing.
+	if _, err := f.svc.GrantConsent(ctx, patient, f.clinic, f.doc); err != nil {
+		t.Fatal(err)
+	}
+	want := append(domain.GrantChanges(patient, f.clinic, f.doc), domain.GrantChanges(patient, f.clinic, f.admin)...)
+	if !slices.Equal(f.repo.queued, want) {
+		t.Fatalf("after two grants and a repeat, queued %+v; want %+v", f.repo.queued, want)
+	}
+
+	// Revoking one clinician keeps the clinic's care tuple: the other
+	// clinician's consent in that clinic still needs it.
+	f.repo.queued = nil
+	if err := f.svc.RevokeConsent(ctx, patient, f.clinic, f.doc); err != nil {
+		t.Fatal(err)
+	}
+	remaining := []domain.Consent{{ClinicID: f.clinic, ClinicianUserID: f.admin}}
+	if want := domain.RevokeChanges(patient, f.clinic, f.doc, remaining); !slices.Equal(f.repo.queued, want) {
+		t.Fatalf("the revocation queued %+v; want %+v", f.repo.queued, want)
 	}
 }

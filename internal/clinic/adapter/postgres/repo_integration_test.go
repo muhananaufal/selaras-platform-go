@@ -95,9 +95,7 @@ func TestTheLedgerReturnsOnlyThePatientsOwnEvents(t *testing.T) {
 		patient string
 		kind    domain.ConsentKind
 	}{{ani, domain.ConsentGranted}, {budi, domain.ConsentGranted}, {ani, domain.ConsentRevoked}} {
-		if err := repo.AppendConsent(ctx, e.patient, clinicID, doc, e.kind); err != nil {
-			t.Fatalf("AppendConsent: %v", err)
-		}
+		appendEvent(t, repo, e.patient, clinicID, doc, e.kind)
 	}
 
 	events, err := repo.ConsentEvents(ctx, ani)
@@ -162,5 +160,154 @@ func TestTheAccessAuditIsPagedNewestFirst(t *testing.T) {
 	}
 	if len(all) != 6 {
 		t.Fatalf("%d records after a repeated event; want 6", len(all))
+	}
+}
+
+// appendEvent appends one ledger entry through UpdateConsents, with no tuple
+// changes.
+func appendEvent(t *testing.T, repo *clinicpg.Repository, patient, clinic, clinician string, kind domain.ConsentKind) {
+	t.Helper()
+	err := repo.UpdateConsents(testCtx(t), patient, func([]domain.ConsentEvent) (domain.ConsentDecision, error) {
+		return domain.ConsentDecision{Append: &domain.ConsentEvent{ClinicID: clinic, ClinicianUserID: clinician, Kind: kind}}, nil
+	})
+	if err != nil {
+		t.Fatalf("UpdateConsents: %v", err)
+	}
+}
+
+// pendingFor returns the queued changes naming object, oldest first.
+func pendingFor(t *testing.T, repo *clinicpg.Repository, object string) []domain.TupleChange {
+	t.Helper()
+	all, err := repo.PendingChanges(testCtx(t), 10000)
+	if err != nil {
+		t.Fatalf("PendingChanges: %v", err)
+	}
+	var out []domain.TupleChange
+	for _, p := range all {
+		if p.Object == object || p.User == object {
+			out = append(out, p.TupleChange)
+		}
+	}
+	return out
+}
+
+// A ledger entry and the tuple changes it implies are stored together, or
+// not at all: a decision that fails leaves neither.
+func TestTupleChangesCommitWithTheirLedgerEntry(t *testing.T) {
+	ctx := testCtx(t)
+	repo := newRepo(t)
+	clinicID, patient, doc := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if err := repo.CreateClinic(ctx, clinicID, mustName(t, "Klinik"), uuid.NewString(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	refused := errors.New("refused by the use case")
+	err := repo.UpdateConsents(ctx, patient, func([]domain.ConsentEvent) (domain.ConsentDecision, error) {
+		return domain.ConsentDecision{}, refused
+	})
+	if !errors.Is(err, refused) {
+		t.Fatalf("UpdateConsents returned %v; want the decision's error", err)
+	}
+
+	changes := domain.GrantChanges(patient, clinicID, doc)
+	err = repo.UpdateConsents(ctx, patient, func([]domain.ConsentEvent) (domain.ConsentDecision, error) {
+		return domain.ConsentDecision{
+			Append:  &domain.ConsentEvent{ClinicID: clinicID, ClinicianUserID: doc, Kind: domain.ConsentGranted},
+			Changes: changes,
+		}, nil
+	})
+	if err != nil {
+		t.Fatalf("UpdateConsents: %v", err)
+	}
+	if got := pendingFor(t, repo, "patient:"+patient); !slices.Equal(got, changes) {
+		t.Fatalf("queued %+v; want exactly the grant's changes %+v", got, changes)
+	}
+
+	// A decision whose append fails (a clinic that does not exist) takes its
+	// queued changes down with it.
+	err = repo.UpdateConsents(ctx, patient, func([]domain.ConsentEvent) (domain.ConsentDecision, error) {
+		return domain.ConsentDecision{
+			Append:  &domain.ConsentEvent{ClinicID: uuid.NewString(), ClinicianUserID: doc, Kind: domain.ConsentGranted},
+			Changes: domain.GrantChanges(patient, "gone", doc),
+		}, nil
+	})
+	if !errors.Is(err, clinicpg.ErrClinicNotFound) {
+		t.Fatalf("appending for a missing clinic returned %v", err)
+	}
+	if got := pendingFor(t, repo, "clinic:gone"); len(got) != 0 {
+		t.Fatalf("a failed append left queued changes: %+v", got)
+	}
+}
+
+// Consent changes to one patient are serialised: the second decision sees
+// the first one's entry, even when they start together.
+func TestConsentChangesToOnePatientAreSerialised(t *testing.T) {
+	ctx := testCtx(t)
+	repo := newRepo(t)
+	clinicID, patient := uuid.NewString(), uuid.NewString()
+	if err := repo.CreateClinic(ctx, clinicID, mustName(t, "Klinik"), uuid.NewString(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	firstHolds := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- repo.UpdateConsents(ctx, patient, func([]domain.ConsentEvent) (domain.ConsentDecision, error) {
+			close(firstHolds)
+			time.Sleep(300 * time.Millisecond) // the second decision must wait out this
+			return domain.ConsentDecision{Append: &domain.ConsentEvent{
+				ClinicID: clinicID, ClinicianUserID: uuid.NewString(), Kind: domain.ConsentGranted,
+			}}, nil
+		})
+	}()
+	<-firstHolds
+
+	var seen int
+	err := repo.UpdateConsents(ctx, patient, func(events []domain.ConsentEvent) (domain.ConsentDecision, error) {
+		seen = len(events)
+		return domain.ConsentDecision{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if seen != 1 {
+		t.Fatalf("the second decision saw %d ledger entries; want the first's 1 - it did not wait", seen)
+	}
+}
+
+func TestAppliedChangesLeaveTheQueue(t *testing.T) {
+	ctx := testCtx(t)
+	repo := newRepo(t)
+	clinicID, owner := uuid.NewString(), uuid.NewString()
+	if err := repo.CreateClinic(ctx, clinicID, mustName(t, "Klinik"), owner, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	all, err := repo.PendingChanges(ctx, 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mine clinicpg.PendingChange
+	for _, p := range all {
+		if p.Object == "clinic:"+clinicID {
+			mine = p
+		}
+	}
+	if mine.ID == 0 || mine.TupleChange != domain.MembershipChange(domain.OpWrite, clinicID, owner, domain.RoleOwner) {
+		t.Fatalf("creating a clinic queued %+v; want its owner tuple", mine)
+	}
+	if err := repo.MarkFailed(ctx, mine.ID, "openfga unreachable"); err != nil {
+		t.Fatal(err)
+	}
+	if len(pendingFor(t, repo, "clinic:"+clinicID)) != 1 {
+		t.Fatal("a failed attempt removed the change from the queue")
+	}
+	if err := repo.MarkApplied(ctx, mine.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := pendingFor(t, repo, "clinic:"+clinicID); len(got) != 0 {
+		t.Fatalf("an applied change is still queued: %+v", got)
 	}
 }
