@@ -81,10 +81,10 @@ func ParseRole(raw string) (Role, error) {
 // no patient's data unless also a clinician the patient consented to.
 func MayManage(actor []Role, target Role) bool {
 	for _, r := range actor {
-		switch {
-		case r == RoleOwner && (target == RoleAdmin || target == RoleClinician):
+		if r == RoleOwner && (target == RoleAdmin || target == RoleClinician) {
 			return true
-		case r == RoleAdmin && target == RoleClinician:
+		}
+		if r == RoleAdmin && target == RoleClinician {
 			return true
 		}
 	}
