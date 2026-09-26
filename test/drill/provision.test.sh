@@ -21,6 +21,7 @@ trap cleanup EXIT
 
 envs=()
 for u in $UNITS; do envs+=(-e "SVC_${u}_PASSWORD=first-${u}"); done
+envs+=(-e CLINIC_OWNER_PASSWORD=first-OWNER -e SVC_CLINIC_PASSWORD=first-CLINIC)
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=throwaway -e POSTGRES_DB=selaras "${envs[@]}" "$IMAGE" >/dev/null
 for _ in $(seq 1 60); do
   # Over TCP: the entrypoint's temporary init server listens on the socket
@@ -67,6 +68,21 @@ check "a wrong password is refused" refused as_role svc_chat not-the-password "S
 check "a rotated password is applied on the next run" run -e SVC_CHAT_PASSWORD=rotated-CHAT
 check "the role logs in with the rotated password" as_role svc_chat rotated-CHAT "SELECT 1"
 check "the old password no longer works" refused as_role svc_chat first-CHAT "SELECT 1"
+
+# ADR-030: the clinic schema belongs to its migration role, and the runtime
+# role can create nothing in it - a role that owns a table can switch its
+# triggers and row level security off.
+owner_of_clinic() {
+  as_role clinic_owner first-OWNER "SELECT nspowner::regrole::text FROM pg_namespace WHERE nspname = 'clinic'"
+}
+check "clinic_owner owns the clinic schema" test "$(owner_of_clinic)" = clinic_owner
+check "clinic_owner can create in the clinic schema" \
+  as_role clinic_owner first-OWNER "CREATE TABLE clinic.provision_probe (id int); DROP TABLE clinic.provision_probe;"
+check "svc_clinic cannot create in the clinic schema" \
+  refused as_role svc_clinic first-CLINIC "CREATE TABLE clinic.provision_probe (id int);"
+check "svc_clinic is refused another unit's schema" \
+  refused as_role svc_clinic first-CLINIC "CREATE TABLE chat.provision_probe (id int);"
+check "a missing clinic password is refused" refused run -e SVC_CLINIC_PASSWORD=
 
 # A missing password is still refused, on a rerun too.
 check "a missing password is refused" refused run -e SVC_LLM_PASSWORD=
