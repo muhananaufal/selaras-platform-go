@@ -13,6 +13,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/assessment/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // ResultGroup is fixed. Changing it means a new group that rereads the whole
@@ -54,11 +55,18 @@ func startEventing(
 		return nil, err
 	}
 
+	hints, closeHints, err := watchhint.PublisherFromEnv(ctx, log)
+	if err != nil {
+		producer.Close()
+		return nil, err
+	}
+
 	results, err := kafka.NewConsumer(
 		kafka.Config{Brokers: brokers, ClientID: "assessment-results"},
 		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter, outbox.TopicProfileUpdated)
 	if err != nil {
 		producer.Close()
+		closeHints()
 		return nil, err
 	}
 
@@ -67,13 +75,15 @@ func startEventing(
 	if err != nil {
 		producer.Close()
 		results.Close()
+		closeHints()
 		return nil, fmt.Errorf("building the outbox relay: %w", err)
 	}
 
-	resultConsumer, err := consumer.NewResults(results, pool, svc, statuses, log)
+	resultConsumer, err := consumer.NewResults(results, pool, svc, statuses, hints, log)
 	if err != nil {
 		producer.Close()
 		results.Close()
+		closeHints()
 		return nil, err
 	}
 
@@ -93,5 +103,6 @@ func startEventing(
 	return func() {
 		producer.Close()
 		results.Close()
+		closeHints()
 	}, nil
 }

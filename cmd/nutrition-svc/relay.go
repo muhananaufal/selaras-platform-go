@@ -11,6 +11,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // startRelay starts the nutrition-svc outbox relay.
@@ -69,16 +70,23 @@ func startResultConsumer(
 		return func() {}, nil
 	}
 
-	client, err := kafka.NewConsumer(
-		kafka.Config{Brokers: brokers, ClientID: "nutrition-results"},
-		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter, outbox.TopicProfileUpdated)
+	hints, closeHints, err := watchhint.PublisherFromEnv(ctx, log)
 	if err != nil {
 		return nil, err
 	}
 
-	results, err := consumer.NewResults(client, svc, pool, log)
+	client, err := kafka.NewConsumer(
+		kafka.Config{Brokers: brokers, ClientID: "nutrition-results"},
+		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter, outbox.TopicProfileUpdated)
+	if err != nil {
+		closeHints()
+		return nil, err
+	}
+
+	results, err := consumer.NewResults(client, svc, pool, hints, log)
 	if err != nil {
 		client.Close()
+		closeHints()
 		return nil, err
 	}
 
@@ -88,7 +96,10 @@ func startResultConsumer(
 		}
 	}()
 
-	return client.Close, nil
+	return func() {
+		client.Close()
+		closeHints()
+	}, nil
 }
 
 // ResultGroup is fixed. Changing it means a new group that rereads the whole

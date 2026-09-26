@@ -11,6 +11,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/chat/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // startRelay starts the chat-svc outbox relay.
@@ -68,16 +69,23 @@ func startResultConsumer(
 		return func() {}, nil
 	}
 
-	client, err := kafka.NewConsumer(
-		kafka.Config{Brokers: brokers, ClientID: "chat-results"},
-		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter)
+	hints, closeHints, err := watchhint.PublisherFromEnv(ctx, log)
 	if err != nil {
 		return nil, err
 	}
 
-	results, err := consumer.NewResults(client, svc, log)
+	client, err := kafka.NewConsumer(
+		kafka.Config{Brokers: brokers, ClientID: "chat-results"},
+		ResultGroup, outbox.TopicLLMResults, outbox.TopicLLMDeadLetter)
+	if err != nil {
+		closeHints()
+		return nil, err
+	}
+
+	results, err := consumer.NewResults(client, svc, hints, log)
 	if err != nil {
 		client.Close()
+		closeHints()
 		return nil, err
 	}
 
@@ -87,7 +95,10 @@ func startResultConsumer(
 		}
 	}()
 
-	return client.Close, nil
+	return func() {
+		client.Close()
+		closeHints()
+	}, nil
 }
 
 // ResultGroup is fixed. Changing it means a new group that rereads the whole

@@ -137,6 +137,8 @@ services:
       # Without this, personalisation requests are REFUSED instead of
       # accepted and then lost - see startEventing in cmd/assessment-svc.
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -174,6 +176,8 @@ services:
       CHAT_HEALTH_ADDR: ":9503"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -211,6 +215,8 @@ services:
       NUTRITION_HEALTH_ADDR: ":9603"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -289,6 +295,8 @@ services:
       COACHING_HEALTH_ADDR: ":9403"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.

@@ -18,11 +18,13 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint/watchhinttest"
 )
 
 // newResults assembles the consumer on top of the real service and the test
 // Postgres. Its Kafka client never connects; handle is called directly.
-func newResults(t *testing.T) (*Results, context.Context) {
+func newResults(t *testing.T) (*Results, *watchhinttest.Recorder, context.Context) {
 	t.Helper()
 
 	pool := pgtest.Open(t, "chat")
@@ -43,11 +45,12 @@ func newResults(t *testing.T) (*Results, context.Context) {
 	}
 	t.Cleanup(client.Close)
 
-	results, err := NewResults(client, svc, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	hints := &watchhinttest.Recorder{}
+	results, err := NewResults(client, svc, hints, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return results, ctx
+	return results, hints, ctx
 }
 
 func replyRecord(t *testing.T, conversationID string) *kgo.Record {
@@ -83,7 +86,7 @@ func replyRecord(t *testing.T, conversationID string) *kgo.Record {
 // violation on storing it was treated as a transient failure - the consumer
 // rewound the offset and repeated it every second, forever.
 func TestAReplyForADeletedConversationIsDroppedNotRetried(t *testing.T) {
-	results, ctx := newResults(t)
+	results, _, ctx := newResults(t)
 
 	if err := results.handle(ctx, replyRecord(t, uuid.NewString())); err != nil {
 		t.Fatalf("a reply for a conversation that no longer exists must be dropped, got: %v", err)
@@ -94,11 +97,46 @@ func TestAReplyForADeletedConversationIsDroppedNotRetried(t *testing.T) {
 // TRANSIENT error is still an error, so the offset is held and the reply
 // comes back.
 func TestATransientFailureIsStillAnError(t *testing.T) {
-	results, ctx := newResults(t)
+	results, _, ctx := newResults(t)
 	gone, cancel := context.WithCancel(ctx)
 	cancel()
 
 	if err := results.handle(gone, replyRecord(t, uuid.NewString())); err == nil {
 		t.Fatal("a failure that may heal must still surface as an error so the reply is redelivered")
+	}
+}
+
+// ADR-029: a stream waiting on this conversation is told once the reply is
+// handled - and only then. A reply that failed changed nothing yet, and a
+// record for another service is that service's to announce, after ITS
+// commit.
+func TestAHandledReplyIsAnnouncedAndOnlyThen(t *testing.T) {
+	results, hints, ctx := newResults(t)
+	conversationID := uuid.NewString()
+
+	gone, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := results.process(gone, replyRecord(t, conversationID)); err == nil {
+		t.Fatal("a reply stored under a cancelled context did not fail")
+	}
+	if keys := hints.Keys(); len(keys) != 0 {
+		t.Fatalf("a reply that failed was announced: %v", keys)
+	}
+
+	notMine := replyRecord(t, uuid.NewString())
+	notMine.Headers[0].Value = []byte(watchhint.TypeMealGuide)
+	if err := results.process(ctx, notMine); err != nil {
+		t.Fatalf("another service's record: %v", err)
+	}
+	if keys := hints.Keys(); len(keys) != 0 {
+		t.Fatalf("another service's record was announced by chat: %v", keys)
+	}
+
+	if err := results.process(ctx, replyRecord(t, conversationID)); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	want := watchhint.Key{Type: watchhint.TypeConversation, ID: conversationID}
+	if keys := hints.Keys(); len(keys) != 1 || keys[0] != want {
+		t.Fatalf("announced %v; want exactly [%v]", keys, want)
 	}
 }
