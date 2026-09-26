@@ -1,7 +1,7 @@
 // Command deletion-verify proves no data remains after an account is deleted.
 //
 // It is NOT part of the saga. The saga has already declared itself finished
-// through six confirmations, and this tool asks a different question: whether
+// through every participant's confirmation, and this tool asks a different question: whether
 // that declaration is true. The two have to be separate - a verification that
 // uses the same path as what it verifies only repeats the same belief.
 //
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
@@ -38,6 +39,11 @@ type probe struct {
 
 	// byProfile marks a probe that uses the profile id, not the user id.
 	byProfile bool
+
+	// subject marks a table under row level security (ADR-030): the query runs
+	// in a transaction acting for the deleted user. Without it the role sees
+	// no row at all, and the table would always read as clean.
+	subject bool
 }
 
 // Schema names as constants: the probe list mentions some of them several
@@ -51,6 +57,7 @@ const (
 	schemaChat       = "chat"
 	schemaNutrition  = "nutrition"
 	schemaDashboard  = "dashboard"
+	schemaClinic     = "clinic"
 )
 
 // probes names EVERY table that can hold user data.
@@ -102,6 +109,15 @@ var probes = []probe{
 		query: `SELECT count(*) FROM dashboards WHERE user_id = $1`},
 	{schema: schemaDashboard, table: "dashboard_assessments",
 		query: `SELECT count(*) FROM dashboard_assessments WHERE user_id = $1`},
+
+	// Rows where the deleted user was the CLINICIAN stay by design: they are
+	// other patients' history (clinicpg.Erase).
+	{schema: schemaClinic, table: "consent_events", subject: true,
+		query: `SELECT count(*) FROM consent_events WHERE patient_user_id = $1`},
+	{schema: schemaClinic, table: "access_audit", subject: true,
+		query: `SELECT count(*) FROM access_audit WHERE patient_user_id = $1`},
+	{schema: schemaClinic, table: "clinic_members",
+		query: `SELECT count(*) FROM clinic_members WHERE user_id = $1`},
 }
 
 func main() {
@@ -206,7 +222,18 @@ func checkSchema(
 		}
 
 		var n int
-		if err := pool.QueryRow(ctx, p.query, key).Scan(&n); err != nil {
+		count := func(q pg.Querier) error { return q.QueryRow(ctx, p.query, key).Scan(&n) }
+		if p.subject {
+			count = func(pg.Querier) error {
+				return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+					if _, err := tx.Exec(ctx, "SELECT set_config('app.user_id', $1, true)", key); err != nil {
+						return err
+					}
+					return tx.QueryRow(ctx, p.query, key).Scan(&n)
+				})
+			}
+		}
+		if err := count(pool); err != nil {
 			return found, fmt.Errorf("querying %s.%s: %w", schema, p.table, err)
 		}
 
