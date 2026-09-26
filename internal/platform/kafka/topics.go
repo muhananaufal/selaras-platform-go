@@ -77,6 +77,13 @@ func Topics() []Topic {
 			Why: "Account deletion has to be ordered with respect to itself and is rare. " +
 				"Parallelism here only adds ways to go wrong.",
 		},
+		{
+			Name:       "clinic.access",
+			Partitions: 3,
+			Why: "Clinician reads of patient data for the access audit (ADR-030). Keyed by " +
+				"patient, so one patient's audit arrives in order; its rate is set by people " +
+				"reading records, not by machines.",
+		},
 	}
 }
 

@@ -69,6 +69,7 @@ type Envelope struct {
 	//	*Envelope_UserDeletionRequested
 	//	*Envelope_UserDeletionConfirmed
 	//	*Envelope_LlmJobFailed
+	//	*Envelope_ClinicianAccessRecorded
 	Payload       isEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -286,6 +287,15 @@ func (x *Envelope) GetLlmJobFailed() *LlmJobFailed {
 	return nil
 }
 
+func (x *Envelope) GetClinicianAccessRecorded() *ClinicianAccessRecorded {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ClinicianAccessRecorded); ok {
+			return x.ClinicianAccessRecorded
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Payload interface {
 	isEnvelope_Payload()
 }
@@ -346,6 +356,10 @@ type Envelope_LlmJobFailed struct {
 	LlmJobFailed *LlmJobFailed `protobuf:"bytes,23,opt,name=llm_job_failed,json=llmJobFailed,proto3,oneof"`
 }
 
+type Envelope_ClinicianAccessRecorded struct {
+	ClinicianAccessRecorded *ClinicianAccessRecorded `protobuf:"bytes,24,opt,name=clinician_access_recorded,json=clinicianAccessRecorded,proto3,oneof"`
+}
+
 func (*Envelope_ProfileUpdated) isEnvelope_Payload() {}
 
 func (*Envelope_AssessmentCompleted) isEnvelope_Payload() {}
@@ -373,6 +387,8 @@ func (*Envelope_UserDeletionRequested) isEnvelope_Payload() {}
 func (*Envelope_UserDeletionConfirmed) isEnvelope_Payload() {}
 
 func (*Envelope_LlmJobFailed) isEnvelope_Payload() {}
+
+func (*Envelope_ClinicianAccessRecorded) isEnvelope_Payload() {}
 
 // Announced whenever the demographics change. Assessment keeps a copy so it
 // need not call profile on every computation.
@@ -1422,11 +1438,86 @@ func (x *LlmJobFailed) GetAttempts() int32 {
 	return 0
 }
 
+// A clinician read a patient's data under the patient's consent (ADR-030).
+//
+// Written by the service that served the read, to its outbox, BEFORE the
+// data is returned - a read whose record cannot be written is refused.
+// clinic-svc stores it in the patient's append-only access audit; the
+// envelope's event_id makes a redelivered event one access, not two.
+type ClinicianAccessRecorded struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ClinicianUserId string                 `protobuf:"bytes,1,opt,name=clinician_user_id,json=clinicianUserId,proto3" json:"clinician_user_id,omitempty"`
+	PatientUserId   string                 `protobuf:"bytes,2,opt,name=patient_user_id,json=patientUserId,proto3" json:"patient_user_id,omitempty"`
+	// "risk_assessments" or "coaching_progress"; there is no resource for chat.
+	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
+	AccessedAt    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=accessed_at,json=accessedAt,proto3" json:"accessed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClinicianAccessRecorded) Reset() {
+	*x = ClinicianAccessRecorded{}
+	mi := &file_events_v1_events_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClinicianAccessRecorded) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClinicianAccessRecorded) ProtoMessage() {}
+
+func (x *ClinicianAccessRecorded) ProtoReflect() protoreflect.Message {
+	mi := &file_events_v1_events_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClinicianAccessRecorded.ProtoReflect.Descriptor instead.
+func (*ClinicianAccessRecorded) Descriptor() ([]byte, []int) {
+	return file_events_v1_events_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ClinicianAccessRecorded) GetClinicianUserId() string {
+	if x != nil {
+		return x.ClinicianUserId
+	}
+	return ""
+}
+
+func (x *ClinicianAccessRecorded) GetPatientUserId() string {
+	if x != nil {
+		return x.PatientUserId
+	}
+	return ""
+}
+
+func (x *ClinicianAccessRecorded) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *ClinicianAccessRecorded) GetAccessedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AccessedAt
+	}
+	return nil
+}
+
 var File_events_v1_events_proto protoreflect.FileDescriptor
 
 const file_events_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x16common/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb9\f\n" +
+	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x16common/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9b\r\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12;\n" +
 	"\voccurred_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -1450,7 +1541,8 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x14meal_guide_completed\x18\x14 \x01(\v2\x1d.events.v1.MealGuideCompletedH\x00R\x12mealGuideCompleted\x12Z\n" +
 	"\x17user_deletion_requested\x18\x15 \x01(\v2 .events.v1.UserDeletionRequestedH\x00R\x15userDeletionRequested\x12Z\n" +
 	"\x17user_deletion_confirmed\x18\x16 \x01(\v2 .events.v1.UserDeletionConfirmedH\x00R\x15userDeletionConfirmed\x12?\n" +
-	"\x0ellm_job_failed\x18\x17 \x01(\v2\x17.events.v1.LlmJobFailedH\x00R\fllmJobFailedB\t\n" +
+	"\x0ellm_job_failed\x18\x17 \x01(\v2\x17.events.v1.LlmJobFailedH\x00R\fllmJobFailed\x12`\n" +
+	"\x19clinician_access_recorded\x18\x18 \x01(\v2\".events.v1.ClinicianAccessRecordedH\x00R\x17clinicianAccessRecordedB\t\n" +
 	"\apayloadB\x12\n" +
 	"\x10_idempotency_keyB\v\n" +
 	"\t_trace_idB\x0f\n" +
@@ -1545,7 +1637,13 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x1a\n" +
-	"\battempts\x18\x04 \x01(\x05R\battemptsB\xa5\x01\n" +
+	"\battempts\x18\x04 \x01(\x05R\battempts\"\xc6\x01\n" +
+	"\x17ClinicianAccessRecorded\x12*\n" +
+	"\x11clinician_user_id\x18\x01 \x01(\tR\x0fclinicianUserId\x12&\n" +
+	"\x0fpatient_user_id\x18\x02 \x01(\tR\rpatientUserId\x12\x1a\n" +
+	"\bresource\x18\x03 \x01(\tR\bresource\x12;\n" +
+	"\vaccessed_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"accessedAtB\xa5\x01\n" +
 	"\rcom.events.v1B\vEventsProtoP\x01ZBgithub.com/muhananaufal/selaras-platform-go/gen/events/v1;eventsv1\xa2\x02\x03EXX\xaa\x02\tEvents.V1\xca\x02\tEvents\\V1\xe2\x02\x15Events\\V1\\GPBMetadata\xea\x02\n" +
 	"Events::V1b\x06proto3"
 
@@ -1561,7 +1659,7 @@ func file_events_v1_events_proto_rawDescGZIP() []byte {
 	return file_events_v1_events_proto_rawDescData
 }
 
-var file_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_events_v1_events_proto_goTypes = []any{
 	(*Envelope)(nil),                 // 0: events.v1.Envelope
 	(*ProfileUpdated)(nil),           // 1: events.v1.ProfileUpdated
@@ -1578,14 +1676,15 @@ var file_events_v1_events_proto_goTypes = []any{
 	(*UserDeletionRequested)(nil),    // 12: events.v1.UserDeletionRequested
 	(*UserDeletionConfirmed)(nil),    // 13: events.v1.UserDeletionConfirmed
 	(*LlmJobFailed)(nil),             // 14: events.v1.LlmJobFailed
-	(*timestamppb.Timestamp)(nil),    // 15: google.protobuf.Timestamp
-	(*v1.Identity)(nil),              // 16: common.v1.Identity
-	(*v1.IdempotencyKey)(nil),        // 17: common.v1.IdempotencyKey
+	(*ClinicianAccessRecorded)(nil),  // 15: events.v1.ClinicianAccessRecorded
+	(*timestamppb.Timestamp)(nil),    // 16: google.protobuf.Timestamp
+	(*v1.Identity)(nil),              // 17: common.v1.Identity
+	(*v1.IdempotencyKey)(nil),        // 18: common.v1.IdempotencyKey
 }
 var file_events_v1_events_proto_depIdxs = []int32{
-	15, // 0: events.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
-	16, // 1: events.v1.Envelope.identity:type_name -> common.v1.Identity
-	17, // 2: events.v1.Envelope.idempotency_key:type_name -> common.v1.IdempotencyKey
+	16, // 0: events.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	17, // 1: events.v1.Envelope.identity:type_name -> common.v1.Identity
+	18, // 2: events.v1.Envelope.idempotency_key:type_name -> common.v1.IdempotencyKey
 	1,  // 3: events.v1.Envelope.profile_updated:type_name -> events.v1.ProfileUpdated
 	2,  // 4: events.v1.Envelope.assessment_completed:type_name -> events.v1.AssessmentCompleted
 	3,  // 5: events.v1.Envelope.personalization_requested:type_name -> events.v1.PersonalizationRequested
@@ -1600,11 +1699,13 @@ var file_events_v1_events_proto_depIdxs = []int32{
 	12, // 14: events.v1.Envelope.user_deletion_requested:type_name -> events.v1.UserDeletionRequested
 	13, // 15: events.v1.Envelope.user_deletion_confirmed:type_name -> events.v1.UserDeletionConfirmed
 	14, // 16: events.v1.Envelope.llm_job_failed:type_name -> events.v1.LlmJobFailed
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	15, // 17: events.v1.Envelope.clinician_access_recorded:type_name -> events.v1.ClinicianAccessRecorded
+	16, // 18: events.v1.ClinicianAccessRecorded.accessed_at:type_name -> google.protobuf.Timestamp
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_events_v1_events_proto_init() }
@@ -1627,6 +1728,7 @@ func file_events_v1_events_proto_init() {
 		(*Envelope_UserDeletionRequested)(nil),
 		(*Envelope_UserDeletionConfirmed)(nil),
 		(*Envelope_LlmJobFailed)(nil),
+		(*Envelope_ClinicianAccessRecorded)(nil),
 	}
 	file_events_v1_events_proto_msgTypes[1].OneofWrappers = []any{}
 	file_events_v1_events_proto_msgTypes[5].OneofWrappers = []any{}
@@ -1638,7 +1740,7 @@ func file_events_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_events_v1_events_proto_rawDesc), len(file_events_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

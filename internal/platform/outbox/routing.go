@@ -41,6 +41,11 @@ func TopicFor(eventType string) (string, error) {
 		EventUserDeletionConfirmed:
 		return TopicUserDeletion, nil
 
+	// Clinician reads of patient data, for the patient's access audit
+	// (ADR-030).
+	case EventClinicianAccess:
+		return TopicClinicAccess, nil
+
 	default:
 		return "", fmt.Errorf("no topic is defined for event type %q", eventType)
 	}
