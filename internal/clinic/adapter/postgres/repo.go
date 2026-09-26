@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/clinic/domain"
+	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 )
 
 // The storage outcomes, defined by the domain so the application does not
@@ -74,7 +75,7 @@ func sqlState(err error) string {
 // enqueue writes tuple changes to the projection's outbox, in the caller's
 // transaction: they reach OpenFGA exactly when the change that implies them
 // commits.
-func enqueue(ctx context.Context, tx pgx.Tx, changes []domain.TupleChange) error {
+func enqueue(ctx context.Context, tx pg.Querier, changes []domain.TupleChange) error {
 	for _, c := range changes {
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO authz_changes (op, tuple_user, relation, object) VALUES ($1, $2, $3, $4)",
