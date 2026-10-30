@@ -110,8 +110,10 @@ func TestOTPAuthURI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The secret is RFC 6238's published test key, base32-encoded; it is not
+	// a credential, so the secret scanner is told to let it through.
 	got := OTPAuthURI([]byte("12345678901234567890"), email)
-	want := "otpauth://totp/Selaras:ani%40example.com?algorithm=SHA1&digits=6&issuer=Selaras&period=30&secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	want := "otpauth://totp/Selaras:ani%40example.com?algorithm=SHA1&digits=6&issuer=Selaras&period=30&secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" // gitleaks:allow
 	if got != want {
 		t.Fatalf("OTPAuthURI =\n %s\nwant\n %s", got, want)
 	}
