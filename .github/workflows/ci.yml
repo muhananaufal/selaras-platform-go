@@ -593,6 +593,7 @@ jobs:
             echo "SVC_CLINIC_PASSWORD=ci-not-a-secret"
             echo "OPENFGA_DB_PASSWORD=ci-not-a-secret"
             echo "OPENFGA_API_TOKEN=ci-not-a-secret"
+            echo "MFA_ENCRYPTION_KEYS=1:$(openssl rand -base64 32)"
             echo "KAFKA_BROKERS=127.0.0.1:19092"
             echo "REDIS_ADDR=127.0.0.1:16379"
             echo "GRAFANA_ADMIN_PASSWORD=ci-not-a-secret"

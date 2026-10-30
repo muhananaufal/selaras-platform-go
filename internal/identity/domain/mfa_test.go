@@ -94,6 +94,17 @@ func TestNewTOTPSecretIsLongEnough(t *testing.T) {
 	}
 }
 
+// A pending secret was shown but never proven; it is not a factor.
+func TestATOTPFactorCountsOnlyOnceConfirmed(t *testing.T) {
+	if (TOTPFactor{}).Confirmed() {
+		t.Fatal("a pending secret counts as a factor")
+	}
+	now := time.Now()
+	if !(TOTPFactor{ConfirmedAt: &now}).Confirmed() {
+		t.Fatal("a confirmed secret does not count as a factor")
+	}
+}
+
 func TestOTPAuthURI(t *testing.T) {
 	email, err := NewEmail("ani@example.com")
 	if err != nil {

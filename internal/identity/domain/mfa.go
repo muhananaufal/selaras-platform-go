@@ -35,9 +35,6 @@ const (
 	TOTPPeriod = 30 * time.Second
 	TOTPDigits = 6
 
-	// totpSkew steps either side of now are accepted for clock drift.
-	totpSkew = 1
-
 	// totpSecretBytes is 160 bits, the HMAC-SHA1 key size of the RFC 4226
 	// reference and above NIST's 112-bit floor.
 	totpSecretBytes = 20
@@ -93,7 +90,9 @@ func VerifyTOTP(secret []byte, code string, now time.Time, lastUsedStep int64) (
 	}
 	current := TOTPStep(now)
 	matched, ok := int64(0), false
-	for s := current - totpSkew; s <= current+totpSkew; s++ {
+	// One step either side of now for clock drift (RFC 6238 6), listed
+	// rather than counted, so no off-by-one can widen the window.
+	for _, s := range [...]int64{current - 1, current, current + 1} {
 		same := subtle.ConstantTimeCompare([]byte(totpCode(secret, s, TOTPDigits)), []byte(code)) == 1
 		if same && s > lastUsedStep && !ok {
 			matched, ok = s, true

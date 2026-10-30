@@ -210,6 +210,7 @@ func serviceFor(prefix string) (protoreflect.ServiceDescriptor, bool) {
 		edgev1.File_edge_v1_nutrition_proto,
 		edgev1.File_edge_v1_dashboard_proto,
 		edgev1.File_edge_v1_clinic_proto,
+		edgev1.File_edge_v1_security_proto,
 	}
 	for _, f := range files {
 		services := f.Services()
