@@ -21,6 +21,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type MfaMethod int32
+
+const (
+	MfaMethod_MFA_METHOD_UNSPECIFIED   MfaMethod = 0
+	MfaMethod_MFA_METHOD_TOTP          MfaMethod = 1
+	MfaMethod_MFA_METHOD_RECOVERY_CODE MfaMethod = 2
+	MfaMethod_MFA_METHOD_PASSKEY       MfaMethod = 3
+)
+
+// Enum value maps for MfaMethod.
+var (
+	MfaMethod_name = map[int32]string{
+		0: "MFA_METHOD_UNSPECIFIED",
+		1: "MFA_METHOD_TOTP",
+		2: "MFA_METHOD_RECOVERY_CODE",
+		3: "MFA_METHOD_PASSKEY",
+	}
+	MfaMethod_value = map[string]int32{
+		"MFA_METHOD_UNSPECIFIED":   0,
+		"MFA_METHOD_TOTP":          1,
+		"MFA_METHOD_RECOVERY_CODE": 2,
+		"MFA_METHOD_PASSKEY":       3,
+	}
+)
+
+func (x MfaMethod) Enum() *MfaMethod {
+	p := new(MfaMethod)
+	*p = x
+	return p
+}
+
+func (x MfaMethod) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MfaMethod) Descriptor() protoreflect.EnumDescriptor {
+	return file_edge_v1_auth_proto_enumTypes[0].Descriptor()
+}
+
+func (MfaMethod) Type() protoreflect.EnumType {
+	return &file_edge_v1_auth_proto_enumTypes[0]
+}
+
+func (x MfaMethod) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MfaMethod.Descriptor instead.
+func (MfaMethod) EnumDescriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{0}
+}
+
 type Role int32
 
 const (
@@ -54,11 +106,11 @@ func (x Role) String() string {
 }
 
 func (Role) Descriptor() protoreflect.EnumDescriptor {
-	return file_edge_v1_auth_proto_enumTypes[0].Descriptor()
+	return file_edge_v1_auth_proto_enumTypes[1].Descriptor()
 }
 
 func (Role) Type() protoreflect.EnumType {
-	return &file_edge_v1_auth_proto_enumTypes[0]
+	return &file_edge_v1_auth_proto_enumTypes[1]
 }
 
 func (x Role) Number() protoreflect.EnumNumber {
@@ -67,7 +119,7 @@ func (x Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Role.Descriptor instead.
 func (Role) EnumDescriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{0}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{1}
 }
 
 type DeletionStatus int32
@@ -102,11 +154,11 @@ func (x DeletionStatus) String() string {
 }
 
 func (DeletionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_edge_v1_auth_proto_enumTypes[1].Descriptor()
+	return file_edge_v1_auth_proto_enumTypes[2].Descriptor()
 }
 
 func (DeletionStatus) Type() protoreflect.EnumType {
-	return &file_edge_v1_auth_proto_enumTypes[1]
+	return &file_edge_v1_auth_proto_enumTypes[2]
 }
 
 func (x DeletionStatus) Number() protoreflect.EnumNumber {
@@ -115,7 +167,589 @@ func (x DeletionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DeletionStatus.Descriptor instead.
 func (DeletionStatus) EnumDescriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{2}
+}
+
+// The second step of a sign-in for an account with a second factor
+// (ADR-032). No token exists yet: the password step proved only the
+// password, and it did not end the account's current session either.
+type MfaChallenge struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque, single-use, valid for expires_in_seconds and a few attempts.
+	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	// What this account can answer with. RECOVERY_CODE is listed only while
+	// unused codes remain.
+	Methods          []MfaMethod `protobuf:"varint,2,rep,packed,name=methods,proto3,enum=edge.v1.MfaMethod" json:"methods,omitempty"`
+	ExpiresInSeconds int64       `protobuf:"varint,3,opt,name=expires_in_seconds,json=expiresInSeconds,proto3" json:"expires_in_seconds,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MfaChallenge) Reset() {
+	*x = MfaChallenge{}
+	mi := &file_edge_v1_auth_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MfaChallenge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MfaChallenge) ProtoMessage() {}
+
+func (x *MfaChallenge) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MfaChallenge.ProtoReflect.Descriptor instead.
+func (*MfaChallenge) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *MfaChallenge) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *MfaChallenge) GetMethods() []MfaMethod {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+func (x *MfaChallenge) GetExpiresInSeconds() int64 {
+	if x != nil {
+		return x.ExpiresInSeconds
+	}
+	return 0
+}
+
+// A WebAuthn ceremony the client runs with navigator.credentials. The
+// options are the PublicKeyCredential{Creation,Request}Options JSON the
+// browser API takes; the server keeps the ceremony state, the client only
+// the id.
+type PasskeyCeremony struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CeremonyId    string                 `protobuf:"bytes,1,opt,name=ceremony_id,json=ceremonyId,proto3" json:"ceremony_id,omitempty"`
+	OptionsJson   string                 `protobuf:"bytes,2,opt,name=options_json,json=optionsJson,proto3" json:"options_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PasskeyCeremony) Reset() {
+	*x = PasskeyCeremony{}
+	mi := &file_edge_v1_auth_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PasskeyCeremony) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PasskeyCeremony) ProtoMessage() {}
+
+func (x *PasskeyCeremony) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PasskeyCeremony.ProtoReflect.Descriptor instead.
+func (*PasskeyCeremony) Descriptor() ([]byte, []int) {
 	return file_edge_v1_auth_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PasskeyCeremony) GetCeremonyId() string {
+	if x != nil {
+		return x.CeremonyId
+	}
+	return ""
+}
+
+func (x *PasskeyCeremony) GetOptionsJson() string {
+	if x != nil {
+		return x.OptionsJson
+	}
+	return ""
+}
+
+// The browser's answer to a ceremony: PublicKeyCredential serialised with
+// toJSON(), passed through unchanged.
+type PasskeyCredential struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CeremonyId     string                 `protobuf:"bytes,1,opt,name=ceremony_id,json=ceremonyId,proto3" json:"ceremony_id,omitempty"`
+	CredentialJson string                 `protobuf:"bytes,2,opt,name=credential_json,json=credentialJson,proto3" json:"credential_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PasskeyCredential) Reset() {
+	*x = PasskeyCredential{}
+	mi := &file_edge_v1_auth_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PasskeyCredential) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PasskeyCredential) ProtoMessage() {}
+
+func (x *PasskeyCredential) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PasskeyCredential.ProtoReflect.Descriptor instead.
+func (*PasskeyCredential) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PasskeyCredential) GetCeremonyId() string {
+	if x != nil {
+		return x.CeremonyId
+	}
+	return ""
+}
+
+func (x *PasskeyCredential) GetCredentialJson() string {
+	if x != nil {
+		return x.CredentialJson
+	}
+	return ""
+}
+
+type VerifyMfaRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Ticket string                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	// Types that are valid to be assigned to Proof:
+	//
+	//	*VerifyMfaRequest_TotpCode
+	//	*VerifyMfaRequest_RecoveryCode
+	//	*VerifyMfaRequest_Passkey
+	Proof         isVerifyMfaRequest_Proof `protobuf_oneof:"proof"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyMfaRequest) Reset() {
+	*x = VerifyMfaRequest{}
+	mi := &file_edge_v1_auth_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyMfaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyMfaRequest) ProtoMessage() {}
+
+func (x *VerifyMfaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyMfaRequest.ProtoReflect.Descriptor instead.
+func (*VerifyMfaRequest) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *VerifyMfaRequest) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *VerifyMfaRequest) GetProof() isVerifyMfaRequest_Proof {
+	if x != nil {
+		return x.Proof
+	}
+	return nil
+}
+
+func (x *VerifyMfaRequest) GetTotpCode() string {
+	if x != nil {
+		if x, ok := x.Proof.(*VerifyMfaRequest_TotpCode); ok {
+			return x.TotpCode
+		}
+	}
+	return ""
+}
+
+func (x *VerifyMfaRequest) GetRecoveryCode() string {
+	if x != nil {
+		if x, ok := x.Proof.(*VerifyMfaRequest_RecoveryCode); ok {
+			return x.RecoveryCode
+		}
+	}
+	return ""
+}
+
+func (x *VerifyMfaRequest) GetPasskey() *PasskeyCredential {
+	if x != nil {
+		if x, ok := x.Proof.(*VerifyMfaRequest_Passkey); ok {
+			return x.Passkey
+		}
+	}
+	return nil
+}
+
+type isVerifyMfaRequest_Proof interface {
+	isVerifyMfaRequest_Proof()
+}
+
+type VerifyMfaRequest_TotpCode struct {
+	TotpCode string `protobuf:"bytes,2,opt,name=totp_code,json=totpCode,proto3,oneof"`
+}
+
+type VerifyMfaRequest_RecoveryCode struct {
+	RecoveryCode string `protobuf:"bytes,3,opt,name=recovery_code,json=recoveryCode,proto3,oneof"`
+}
+
+type VerifyMfaRequest_Passkey struct {
+	Passkey *PasskeyCredential `protobuf:"bytes,4,opt,name=passkey,proto3,oneof"`
+}
+
+func (*VerifyMfaRequest_TotpCode) isVerifyMfaRequest_Proof() {}
+
+func (*VerifyMfaRequest_RecoveryCode) isVerifyMfaRequest_Proof() {}
+
+func (*VerifyMfaRequest_Passkey) isVerifyMfaRequest_Proof() {}
+
+type VerifyMfaResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyMfaResponse) Reset() {
+	*x = VerifyMfaResponse{}
+	mi := &file_edge_v1_auth_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyMfaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyMfaResponse) ProtoMessage() {}
+
+func (x *VerifyMfaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyMfaResponse.ProtoReflect.Descriptor instead.
+func (*VerifyMfaResponse) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *VerifyMfaResponse) GetSession() *Session {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+type BeginMfaPasskeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ticket        string                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginMfaPasskeyRequest) Reset() {
+	*x = BeginMfaPasskeyRequest{}
+	mi := &file_edge_v1_auth_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginMfaPasskeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginMfaPasskeyRequest) ProtoMessage() {}
+
+func (x *BeginMfaPasskeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginMfaPasskeyRequest.ProtoReflect.Descriptor instead.
+func (*BeginMfaPasskeyRequest) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *BeginMfaPasskeyRequest) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+type BeginMfaPasskeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ceremony      *PasskeyCeremony       `protobuf:"bytes,1,opt,name=ceremony,proto3" json:"ceremony,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginMfaPasskeyResponse) Reset() {
+	*x = BeginMfaPasskeyResponse{}
+	mi := &file_edge_v1_auth_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginMfaPasskeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginMfaPasskeyResponse) ProtoMessage() {}
+
+func (x *BeginMfaPasskeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginMfaPasskeyResponse.ProtoReflect.Descriptor instead.
+func (*BeginMfaPasskeyResponse) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *BeginMfaPasskeyResponse) GetCeremony() *PasskeyCeremony {
+	if x != nil {
+		return x.Ceremony
+	}
+	return nil
+}
+
+type BeginPasskeyLoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginPasskeyLoginRequest) Reset() {
+	*x = BeginPasskeyLoginRequest{}
+	mi := &file_edge_v1_auth_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginPasskeyLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginPasskeyLoginRequest) ProtoMessage() {}
+
+func (x *BeginPasskeyLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginPasskeyLoginRequest.ProtoReflect.Descriptor instead.
+func (*BeginPasskeyLoginRequest) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{7}
+}
+
+type BeginPasskeyLoginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ceremony      *PasskeyCeremony       `protobuf:"bytes,1,opt,name=ceremony,proto3" json:"ceremony,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginPasskeyLoginResponse) Reset() {
+	*x = BeginPasskeyLoginResponse{}
+	mi := &file_edge_v1_auth_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginPasskeyLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginPasskeyLoginResponse) ProtoMessage() {}
+
+func (x *BeginPasskeyLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginPasskeyLoginResponse.ProtoReflect.Descriptor instead.
+func (*BeginPasskeyLoginResponse) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *BeginPasskeyLoginResponse) GetCeremony() *PasskeyCeremony {
+	if x != nil {
+		return x.Ceremony
+	}
+	return nil
+}
+
+type FinishPasskeyLoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credential    *PasskeyCredential     `protobuf:"bytes,1,opt,name=credential,proto3" json:"credential,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FinishPasskeyLoginRequest) Reset() {
+	*x = FinishPasskeyLoginRequest{}
+	mi := &file_edge_v1_auth_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FinishPasskeyLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FinishPasskeyLoginRequest) ProtoMessage() {}
+
+func (x *FinishPasskeyLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FinishPasskeyLoginRequest.ProtoReflect.Descriptor instead.
+func (*FinishPasskeyLoginRequest) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *FinishPasskeyLoginRequest) GetCredential() *PasskeyCredential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
+}
+
+type FinishPasskeyLoginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FinishPasskeyLoginResponse) Reset() {
+	*x = FinishPasskeyLoginResponse{}
+	mi := &file_edge_v1_auth_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FinishPasskeyLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FinishPasskeyLoginResponse) ProtoMessage() {}
+
+func (x *FinishPasskeyLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_edge_v1_auth_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FinishPasskeyLoginResponse.ProtoReflect.Descriptor instead.
+func (*FinishPasskeyLoginResponse) Descriptor() ([]byte, []int) {
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *FinishPasskeyLoginResponse) GetSession() *Session {
+	if x != nil {
+		return x.Session
+	}
+	return nil
 }
 
 type User struct {
@@ -129,7 +763,7 @@ type User struct {
 
 func (x *User) Reset() {
 	*x = User{}
-	mi := &file_edge_v1_auth_proto_msgTypes[0]
+	mi := &file_edge_v1_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -141,7 +775,7 @@ func (x *User) String() string {
 func (*User) ProtoMessage() {}
 
 func (x *User) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[0]
+	mi := &file_edge_v1_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -154,7 +788,7 @@ func (x *User) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use User.ProtoReflect.Descriptor instead.
 func (*User) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{0}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *User) GetId() string {
@@ -194,7 +828,7 @@ type Session struct {
 
 func (x *Session) Reset() {
 	*x = Session{}
-	mi := &file_edge_v1_auth_proto_msgTypes[1]
+	mi := &file_edge_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -206,7 +840,7 @@ func (x *Session) String() string {
 func (*Session) ProtoMessage() {}
 
 func (x *Session) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[1]
+	mi := &file_edge_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -219,7 +853,7 @@ func (x *Session) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Session.ProtoReflect.Descriptor instead.
 func (*Session) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{1}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Session) GetAccessToken() string {
@@ -263,7 +897,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[2]
+	mi := &file_edge_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -275,7 +909,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[2]
+	mi := &file_edge_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -288,7 +922,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RegisterRequest) GetEmail() string {
@@ -321,7 +955,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[3]
+	mi := &file_edge_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -333,7 +967,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[3]
+	mi := &file_edge_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -346,7 +980,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RegisterResponse) GetSession() *Session {
@@ -366,7 +1000,7 @@ type LoginRequest struct {
 
 func (x *LoginRequest) Reset() {
 	*x = LoginRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[4]
+	mi := &file_edge_v1_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -378,7 +1012,7 @@ func (x *LoginRequest) String() string {
 func (*LoginRequest) ProtoMessage() {}
 
 func (x *LoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[4]
+	mi := &file_edge_v1_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +1025,7 @@ func (x *LoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
 func (*LoginRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{4}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LoginRequest) GetEmail() string {
@@ -408,16 +1042,19 @@ func (x *LoginRequest) GetPassword() string {
 	return ""
 }
 
+// Exactly one of the two is set. An account with a second factor gets the
+// challenge and no session (ADR-032).
 type LoginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	MfaChallenge  *MfaChallenge          `protobuf:"bytes,2,opt,name=mfa_challenge,json=mfaChallenge,proto3" json:"mfa_challenge,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[5]
+	mi := &file_edge_v1_auth_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -429,7 +1066,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[5]
+	mi := &file_edge_v1_auth_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -442,12 +1079,19 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{5}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *LoginResponse) GetSession() *Session {
 	if x != nil {
 		return x.Session
+	}
+	return nil
+}
+
+func (x *LoginResponse) GetMfaChallenge() *MfaChallenge {
+	if x != nil {
+		return x.MfaChallenge
 	}
 	return nil
 }
@@ -460,7 +1104,7 @@ type LogoutRequest struct {
 
 func (x *LogoutRequest) Reset() {
 	*x = LogoutRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[6]
+	mi := &file_edge_v1_auth_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -472,7 +1116,7 @@ func (x *LogoutRequest) String() string {
 func (*LogoutRequest) ProtoMessage() {}
 
 func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[6]
+	mi := &file_edge_v1_auth_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -485,7 +1129,7 @@ func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
 func (*LogoutRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{6}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{17}
 }
 
 type LogoutResponse struct {
@@ -496,7 +1140,7 @@ type LogoutResponse struct {
 
 func (x *LogoutResponse) Reset() {
 	*x = LogoutResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[7]
+	mi := &file_edge_v1_auth_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +1152,7 @@ func (x *LogoutResponse) String() string {
 func (*LogoutResponse) ProtoMessage() {}
 
 func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[7]
+	mi := &file_edge_v1_auth_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +1165,7 @@ func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
 func (*LogoutResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{7}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{18}
 }
 
 type RequestPasswordResetRequest struct {
@@ -533,7 +1177,7 @@ type RequestPasswordResetRequest struct {
 
 func (x *RequestPasswordResetRequest) Reset() {
 	*x = RequestPasswordResetRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[8]
+	mi := &file_edge_v1_auth_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +1189,7 @@ func (x *RequestPasswordResetRequest) String() string {
 func (*RequestPasswordResetRequest) ProtoMessage() {}
 
 func (x *RequestPasswordResetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[8]
+	mi := &file_edge_v1_auth_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +1202,7 @@ func (x *RequestPasswordResetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestPasswordResetRequest.ProtoReflect.Descriptor instead.
 func (*RequestPasswordResetRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RequestPasswordResetRequest) GetEmail() string {
@@ -576,7 +1220,7 @@ type RequestPasswordResetResponse struct {
 
 func (x *RequestPasswordResetResponse) Reset() {
 	*x = RequestPasswordResetResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[9]
+	mi := &file_edge_v1_auth_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -588,7 +1232,7 @@ func (x *RequestPasswordResetResponse) String() string {
 func (*RequestPasswordResetResponse) ProtoMessage() {}
 
 func (x *RequestPasswordResetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[9]
+	mi := &file_edge_v1_auth_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -601,7 +1245,7 @@ func (x *RequestPasswordResetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestPasswordResetResponse.ProtoReflect.Descriptor instead.
 func (*RequestPasswordResetResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{20}
 }
 
 type ConfirmPasswordResetRequest struct {
@@ -615,7 +1259,7 @@ type ConfirmPasswordResetRequest struct {
 
 func (x *ConfirmPasswordResetRequest) Reset() {
 	*x = ConfirmPasswordResetRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[10]
+	mi := &file_edge_v1_auth_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -627,7 +1271,7 @@ func (x *ConfirmPasswordResetRequest) String() string {
 func (*ConfirmPasswordResetRequest) ProtoMessage() {}
 
 func (x *ConfirmPasswordResetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[10]
+	mi := &file_edge_v1_auth_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -640,7 +1284,7 @@ func (x *ConfirmPasswordResetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmPasswordResetRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmPasswordResetRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ConfirmPasswordResetRequest) GetToken() string {
@@ -672,7 +1316,7 @@ type ConfirmPasswordResetResponse struct {
 
 func (x *ConfirmPasswordResetResponse) Reset() {
 	*x = ConfirmPasswordResetResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[11]
+	mi := &file_edge_v1_auth_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -684,7 +1328,7 @@ func (x *ConfirmPasswordResetResponse) String() string {
 func (*ConfirmPasswordResetResponse) ProtoMessage() {}
 
 func (x *ConfirmPasswordResetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[11]
+	mi := &file_edge_v1_auth_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -697,7 +1341,7 @@ func (x *ConfirmPasswordResetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmPasswordResetResponse.ProtoReflect.Descriptor instead.
 func (*ConfirmPasswordResetResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{22}
 }
 
 type ExchangeSocialSessionRequest struct {
@@ -709,7 +1353,7 @@ type ExchangeSocialSessionRequest struct {
 
 func (x *ExchangeSocialSessionRequest) Reset() {
 	*x = ExchangeSocialSessionRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[12]
+	mi := &file_edge_v1_auth_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -721,7 +1365,7 @@ func (x *ExchangeSocialSessionRequest) String() string {
 func (*ExchangeSocialSessionRequest) ProtoMessage() {}
 
 func (x *ExchangeSocialSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[12]
+	mi := &file_edge_v1_auth_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -734,7 +1378,7 @@ func (x *ExchangeSocialSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeSocialSessionRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeSocialSessionRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ExchangeSocialSessionRequest) GetCode() string {
@@ -744,16 +1388,19 @@ func (x *ExchangeSocialSessionRequest) GetCode() string {
 	return ""
 }
 
+// Exactly one of the two is set: social sign-in requires the second factor
+// like any other way in (ADR-032).
 type ExchangeSocialSessionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	MfaChallenge  *MfaChallenge          `protobuf:"bytes,2,opt,name=mfa_challenge,json=mfaChallenge,proto3" json:"mfa_challenge,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExchangeSocialSessionResponse) Reset() {
 	*x = ExchangeSocialSessionResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[13]
+	mi := &file_edge_v1_auth_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +1412,7 @@ func (x *ExchangeSocialSessionResponse) String() string {
 func (*ExchangeSocialSessionResponse) ProtoMessage() {}
 
 func (x *ExchangeSocialSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[13]
+	mi := &file_edge_v1_auth_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,12 +1425,19 @@ func (x *ExchangeSocialSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeSocialSessionResponse.ProtoReflect.Descriptor instead.
 func (*ExchangeSocialSessionResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ExchangeSocialSessionResponse) GetSession() *Session {
 	if x != nil {
 		return x.Session
+	}
+	return nil
+}
+
+func (x *ExchangeSocialSessionResponse) GetMfaChallenge() *MfaChallenge {
+	if x != nil {
+		return x.MfaChallenge
 	}
 	return nil
 }
@@ -799,7 +1453,7 @@ type DeleteAccountRequest struct {
 
 func (x *DeleteAccountRequest) Reset() {
 	*x = DeleteAccountRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[14]
+	mi := &file_edge_v1_auth_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +1465,7 @@ func (x *DeleteAccountRequest) String() string {
 func (*DeleteAccountRequest) ProtoMessage() {}
 
 func (x *DeleteAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[14]
+	mi := &file_edge_v1_auth_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +1478,7 @@ func (x *DeleteAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAccountRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAccountRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{14}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *DeleteAccountRequest) GetPassword() string {
@@ -844,7 +1498,7 @@ type DeleteAccountResponse struct {
 
 func (x *DeleteAccountResponse) Reset() {
 	*x = DeleteAccountResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[15]
+	mi := &file_edge_v1_auth_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -856,7 +1510,7 @@ func (x *DeleteAccountResponse) String() string {
 func (*DeleteAccountResponse) ProtoMessage() {}
 
 func (x *DeleteAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[15]
+	mi := &file_edge_v1_auth_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -869,7 +1523,7 @@ func (x *DeleteAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAccountResponse.ProtoReflect.Descriptor instead.
 func (*DeleteAccountResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{15}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DeleteAccountResponse) GetSagaId() string {
@@ -894,7 +1548,7 @@ type GetMeRequest struct {
 
 func (x *GetMeRequest) Reset() {
 	*x = GetMeRequest{}
-	mi := &file_edge_v1_auth_proto_msgTypes[16]
+	mi := &file_edge_v1_auth_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -906,7 +1560,7 @@ func (x *GetMeRequest) String() string {
 func (*GetMeRequest) ProtoMessage() {}
 
 func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[16]
+	mi := &file_edge_v1_auth_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -919,7 +1573,7 @@ func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMeRequest.ProtoReflect.Descriptor instead.
 func (*GetMeRequest) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{16}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{27}
 }
 
 type GetMeResponse struct {
@@ -937,7 +1591,7 @@ type GetMeResponse struct {
 
 func (x *GetMeResponse) Reset() {
 	*x = GetMeResponse{}
-	mi := &file_edge_v1_auth_proto_msgTypes[17]
+	mi := &file_edge_v1_auth_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -949,7 +1603,7 @@ func (x *GetMeResponse) String() string {
 func (*GetMeResponse) ProtoMessage() {}
 
 func (x *GetMeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_edge_v1_auth_proto_msgTypes[17]
+	mi := &file_edge_v1_auth_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -962,7 +1616,7 @@ func (x *GetMeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMeResponse.ProtoReflect.Descriptor instead.
 func (*GetMeResponse) Descriptor() ([]byte, []int) {
-	return file_edge_v1_auth_proto_rawDescGZIP(), []int{17}
+	return file_edge_v1_auth_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetMeResponse) GetUserId() string {
@@ -997,7 +1651,40 @@ var File_edge_v1_auth_proto protoreflect.FileDescriptor
 
 const file_edge_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x12edge/v1/auth.proto\x12\aedge.v1\"O\n" +
+	"\x12edge/v1/auth.proto\x12\aedge.v1\"\x82\x01\n" +
+	"\fMfaChallenge\x12\x16\n" +
+	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12,\n" +
+	"\amethods\x18\x02 \x03(\x0e2\x12.edge.v1.MfaMethodR\amethods\x12,\n" +
+	"\x12expires_in_seconds\x18\x03 \x01(\x03R\x10expiresInSeconds\"U\n" +
+	"\x0fPasskeyCeremony\x12\x1f\n" +
+	"\vceremony_id\x18\x01 \x01(\tR\n" +
+	"ceremonyId\x12!\n" +
+	"\foptions_json\x18\x02 \x01(\tR\voptionsJson\"]\n" +
+	"\x11PasskeyCredential\x12\x1f\n" +
+	"\vceremony_id\x18\x01 \x01(\tR\n" +
+	"ceremonyId\x12'\n" +
+	"\x0fcredential_json\x18\x02 \x01(\tR\x0ecredentialJson\"\xb1\x01\n" +
+	"\x10VerifyMfaRequest\x12\x16\n" +
+	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
+	"\ttotp_code\x18\x02 \x01(\tH\x00R\btotpCode\x12%\n" +
+	"\rrecovery_code\x18\x03 \x01(\tH\x00R\frecoveryCode\x126\n" +
+	"\apasskey\x18\x04 \x01(\v2\x1a.edge.v1.PasskeyCredentialH\x00R\apasskeyB\a\n" +
+	"\x05proof\"?\n" +
+	"\x11VerifyMfaResponse\x12*\n" +
+	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\"0\n" +
+	"\x16BeginMfaPasskeyRequest\x12\x16\n" +
+	"\x06ticket\x18\x01 \x01(\tR\x06ticket\"O\n" +
+	"\x17BeginMfaPasskeyResponse\x124\n" +
+	"\bceremony\x18\x01 \x01(\v2\x18.edge.v1.PasskeyCeremonyR\bceremony\"\x1a\n" +
+	"\x18BeginPasskeyLoginRequest\"Q\n" +
+	"\x19BeginPasskeyLoginResponse\x124\n" +
+	"\bceremony\x18\x01 \x01(\v2\x18.edge.v1.PasskeyCeremonyR\bceremony\"W\n" +
+	"\x19FinishPasskeyLoginRequest\x12:\n" +
+	"\n" +
+	"credential\x18\x01 \x01(\v2\x1a.edge.v1.PasskeyCredentialR\n" +
+	"credential\"H\n" +
+	"\x1aFinishPasskeyLoginResponse\x12*\n" +
+	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\"O\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
@@ -1016,9 +1703,10 @@ const file_edge_v1_auth_proto_rawDesc = "" +
 	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\"@\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\";\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"w\n" +
 	"\rLoginResponse\x12*\n" +
-	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\"\x0f\n" +
+	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\x12:\n" +
+	"\rmfa_challenge\x18\x02 \x01(\v2\x15.edge.v1.MfaChallengeR\fmfaChallenge\"\x0f\n" +
 	"\rLogoutRequest\"\x10\n" +
 	"\x0eLogoutResponse\"3\n" +
 	"\x1bRequestPasswordResetRequest\x12\x14\n" +
@@ -1030,9 +1718,10 @@ const file_edge_v1_auth_proto_rawDesc = "" +
 	"\x15password_confirmation\x18\x03 \x01(\tR\x14passwordConfirmation\"\x1e\n" +
 	"\x1cConfirmPasswordResetResponse\"2\n" +
 	"\x1cExchangeSocialSessionRequest\x12\x12\n" +
-	"\x04code\x18\x01 \x01(\tR\x04code\"K\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\"\x87\x01\n" +
 	"\x1dExchangeSocialSessionResponse\x12*\n" +
-	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\"2\n" +
+	"\asession\x18\x01 \x01(\v2\x10.edge.v1.SessionR\asession\x12:\n" +
+	"\rmfa_challenge\x18\x02 \x01(\v2\x15.edge.v1.MfaChallengeR\fmfaChallenge\"2\n" +
 	"\x14DeleteAccountRequest\x12\x1a\n" +
 	"\bpassword\x18\x01 \x01(\tR\bpassword\"a\n" +
 	"\x15DeleteAccountResponse\x12\x17\n" +
@@ -1045,7 +1734,12 @@ const file_edge_v1_auth_proto_rawDesc = "" +
 	"\x0fuser_profile_id\x18\x03 \x01(\tH\x01R\ruserProfileId\x88\x01\x01\x12!\n" +
 	"\x04role\x18\x04 \x01(\x0e2\r.edge.v1.RoleR\x04roleB\b\n" +
 	"\x06_emailB\x12\n" +
-	"\x10_user_profile_id*;\n" +
+	"\x10_user_profile_id*r\n" +
+	"\tMfaMethod\x12\x1a\n" +
+	"\x16MFA_METHOD_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fMFA_METHOD_TOTP\x10\x01\x12\x1c\n" +
+	"\x18MFA_METHOD_RECOVERY_CODE\x10\x02\x12\x16\n" +
+	"\x12MFA_METHOD_PASSKEY\x10\x03*;\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tROLE_USER\x10\x01\x12\x0e\n" +
@@ -1053,7 +1747,7 @@ const file_edge_v1_auth_proto_rawDesc = "" +
 	"ROLE_ADMIN\x10\x02*R\n" +
 	"\x0eDeletionStatus\x12\x1f\n" +
 	"\x1bDELETION_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
-	"\x1bDELETION_STATUS_IN_PROGRESS\x10\x012\xf9\x04\n" +
+	"\x1bDELETION_STATUS_IN_PROGRESS\x10\x012\xce\a\n" +
 	"\x04Auth\x12?\n" +
 	"\bRegister\x12\x18.edge.v1.RegisterRequest\x1a\x19.edge.v1.RegisterResponse\x126\n" +
 	"\x05Login\x12\x15.edge.v1.LoginRequest\x1a\x16.edge.v1.LoginResponse\x129\n" +
@@ -1062,7 +1756,11 @@ const file_edge_v1_auth_proto_rawDesc = "" +
 	"\x14ConfirmPasswordReset\x12$.edge.v1.ConfirmPasswordResetRequest\x1a%.edge.v1.ConfirmPasswordResetResponse\x12f\n" +
 	"\x15ExchangeSocialSession\x12%.edge.v1.ExchangeSocialSessionRequest\x1a&.edge.v1.ExchangeSocialSessionResponse\x12N\n" +
 	"\rDeleteAccount\x12\x1d.edge.v1.DeleteAccountRequest\x1a\x1e.edge.v1.DeleteAccountResponse\x12;\n" +
-	"\x05GetMe\x12\x15.edge.v1.GetMeRequest\x1a\x16.edge.v1.GetMeResponse\"\x03\x90\x02\x01B\x95\x01\n" +
+	"\x05GetMe\x12\x15.edge.v1.GetMeRequest\x1a\x16.edge.v1.GetMeResponse\"\x03\x90\x02\x01\x12B\n" +
+	"\tVerifyMfa\x12\x19.edge.v1.VerifyMfaRequest\x1a\x1a.edge.v1.VerifyMfaResponse\x12T\n" +
+	"\x0fBeginMfaPasskey\x12\x1f.edge.v1.BeginMfaPasskeyRequest\x1a .edge.v1.BeginMfaPasskeyResponse\x12Z\n" +
+	"\x11BeginPasskeyLogin\x12!.edge.v1.BeginPasskeyLoginRequest\x1a\".edge.v1.BeginPasskeyLoginResponse\x12]\n" +
+	"\x12FinishPasskeyLogin\x12\".edge.v1.FinishPasskeyLoginRequest\x1a#.edge.v1.FinishPasskeyLoginResponseB\x95\x01\n" +
 	"\vcom.edge.v1B\tAuthProtoP\x01Z>github.com/muhananaufal/selaras-platform-go/gen/edge/v1;edgev1\xa2\x02\x03EXX\xaa\x02\aEdge.V1\xca\x02\aEdge\\V1\xe2\x02\x13Edge\\V1\\GPBMetadata\xea\x02\bEdge::V1b\x06proto3"
 
 var (
@@ -1077,59 +1775,88 @@ func file_edge_v1_auth_proto_rawDescGZIP() []byte {
 	return file_edge_v1_auth_proto_rawDescData
 }
 
-var file_edge_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_edge_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_edge_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_edge_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_edge_v1_auth_proto_goTypes = []any{
-	(Role)(0),                             // 0: edge.v1.Role
-	(DeletionStatus)(0),                   // 1: edge.v1.DeletionStatus
-	(*User)(nil),                          // 2: edge.v1.User
-	(*Session)(nil),                       // 3: edge.v1.Session
-	(*RegisterRequest)(nil),               // 4: edge.v1.RegisterRequest
-	(*RegisterResponse)(nil),              // 5: edge.v1.RegisterResponse
-	(*LoginRequest)(nil),                  // 6: edge.v1.LoginRequest
-	(*LoginResponse)(nil),                 // 7: edge.v1.LoginResponse
-	(*LogoutRequest)(nil),                 // 8: edge.v1.LogoutRequest
-	(*LogoutResponse)(nil),                // 9: edge.v1.LogoutResponse
-	(*RequestPasswordResetRequest)(nil),   // 10: edge.v1.RequestPasswordResetRequest
-	(*RequestPasswordResetResponse)(nil),  // 11: edge.v1.RequestPasswordResetResponse
-	(*ConfirmPasswordResetRequest)(nil),   // 12: edge.v1.ConfirmPasswordResetRequest
-	(*ConfirmPasswordResetResponse)(nil),  // 13: edge.v1.ConfirmPasswordResetResponse
-	(*ExchangeSocialSessionRequest)(nil),  // 14: edge.v1.ExchangeSocialSessionRequest
-	(*ExchangeSocialSessionResponse)(nil), // 15: edge.v1.ExchangeSocialSessionResponse
-	(*DeleteAccountRequest)(nil),          // 16: edge.v1.DeleteAccountRequest
-	(*DeleteAccountResponse)(nil),         // 17: edge.v1.DeleteAccountResponse
-	(*GetMeRequest)(nil),                  // 18: edge.v1.GetMeRequest
-	(*GetMeResponse)(nil),                 // 19: edge.v1.GetMeResponse
+	(MfaMethod)(0),                        // 0: edge.v1.MfaMethod
+	(Role)(0),                             // 1: edge.v1.Role
+	(DeletionStatus)(0),                   // 2: edge.v1.DeletionStatus
+	(*MfaChallenge)(nil),                  // 3: edge.v1.MfaChallenge
+	(*PasskeyCeremony)(nil),               // 4: edge.v1.PasskeyCeremony
+	(*PasskeyCredential)(nil),             // 5: edge.v1.PasskeyCredential
+	(*VerifyMfaRequest)(nil),              // 6: edge.v1.VerifyMfaRequest
+	(*VerifyMfaResponse)(nil),             // 7: edge.v1.VerifyMfaResponse
+	(*BeginMfaPasskeyRequest)(nil),        // 8: edge.v1.BeginMfaPasskeyRequest
+	(*BeginMfaPasskeyResponse)(nil),       // 9: edge.v1.BeginMfaPasskeyResponse
+	(*BeginPasskeyLoginRequest)(nil),      // 10: edge.v1.BeginPasskeyLoginRequest
+	(*BeginPasskeyLoginResponse)(nil),     // 11: edge.v1.BeginPasskeyLoginResponse
+	(*FinishPasskeyLoginRequest)(nil),     // 12: edge.v1.FinishPasskeyLoginRequest
+	(*FinishPasskeyLoginResponse)(nil),    // 13: edge.v1.FinishPasskeyLoginResponse
+	(*User)(nil),                          // 14: edge.v1.User
+	(*Session)(nil),                       // 15: edge.v1.Session
+	(*RegisterRequest)(nil),               // 16: edge.v1.RegisterRequest
+	(*RegisterResponse)(nil),              // 17: edge.v1.RegisterResponse
+	(*LoginRequest)(nil),                  // 18: edge.v1.LoginRequest
+	(*LoginResponse)(nil),                 // 19: edge.v1.LoginResponse
+	(*LogoutRequest)(nil),                 // 20: edge.v1.LogoutRequest
+	(*LogoutResponse)(nil),                // 21: edge.v1.LogoutResponse
+	(*RequestPasswordResetRequest)(nil),   // 22: edge.v1.RequestPasswordResetRequest
+	(*RequestPasswordResetResponse)(nil),  // 23: edge.v1.RequestPasswordResetResponse
+	(*ConfirmPasswordResetRequest)(nil),   // 24: edge.v1.ConfirmPasswordResetRequest
+	(*ConfirmPasswordResetResponse)(nil),  // 25: edge.v1.ConfirmPasswordResetResponse
+	(*ExchangeSocialSessionRequest)(nil),  // 26: edge.v1.ExchangeSocialSessionRequest
+	(*ExchangeSocialSessionResponse)(nil), // 27: edge.v1.ExchangeSocialSessionResponse
+	(*DeleteAccountRequest)(nil),          // 28: edge.v1.DeleteAccountRequest
+	(*DeleteAccountResponse)(nil),         // 29: edge.v1.DeleteAccountResponse
+	(*GetMeRequest)(nil),                  // 30: edge.v1.GetMeRequest
+	(*GetMeResponse)(nil),                 // 31: edge.v1.GetMeResponse
 }
 var file_edge_v1_auth_proto_depIdxs = []int32{
-	0,  // 0: edge.v1.User.role:type_name -> edge.v1.Role
-	2,  // 1: edge.v1.Session.user:type_name -> edge.v1.User
-	3,  // 2: edge.v1.RegisterResponse.session:type_name -> edge.v1.Session
-	3,  // 3: edge.v1.LoginResponse.session:type_name -> edge.v1.Session
-	3,  // 4: edge.v1.ExchangeSocialSessionResponse.session:type_name -> edge.v1.Session
-	1,  // 5: edge.v1.DeleteAccountResponse.status:type_name -> edge.v1.DeletionStatus
-	0,  // 6: edge.v1.GetMeResponse.role:type_name -> edge.v1.Role
-	4,  // 7: edge.v1.Auth.Register:input_type -> edge.v1.RegisterRequest
-	6,  // 8: edge.v1.Auth.Login:input_type -> edge.v1.LoginRequest
-	8,  // 9: edge.v1.Auth.Logout:input_type -> edge.v1.LogoutRequest
-	10, // 10: edge.v1.Auth.RequestPasswordReset:input_type -> edge.v1.RequestPasswordResetRequest
-	12, // 11: edge.v1.Auth.ConfirmPasswordReset:input_type -> edge.v1.ConfirmPasswordResetRequest
-	14, // 12: edge.v1.Auth.ExchangeSocialSession:input_type -> edge.v1.ExchangeSocialSessionRequest
-	16, // 13: edge.v1.Auth.DeleteAccount:input_type -> edge.v1.DeleteAccountRequest
-	18, // 14: edge.v1.Auth.GetMe:input_type -> edge.v1.GetMeRequest
-	5,  // 15: edge.v1.Auth.Register:output_type -> edge.v1.RegisterResponse
-	7,  // 16: edge.v1.Auth.Login:output_type -> edge.v1.LoginResponse
-	9,  // 17: edge.v1.Auth.Logout:output_type -> edge.v1.LogoutResponse
-	11, // 18: edge.v1.Auth.RequestPasswordReset:output_type -> edge.v1.RequestPasswordResetResponse
-	13, // 19: edge.v1.Auth.ConfirmPasswordReset:output_type -> edge.v1.ConfirmPasswordResetResponse
-	15, // 20: edge.v1.Auth.ExchangeSocialSession:output_type -> edge.v1.ExchangeSocialSessionResponse
-	17, // 21: edge.v1.Auth.DeleteAccount:output_type -> edge.v1.DeleteAccountResponse
-	19, // 22: edge.v1.Auth.GetMe:output_type -> edge.v1.GetMeResponse
-	15, // [15:23] is the sub-list for method output_type
-	7,  // [7:15] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	0,  // 0: edge.v1.MfaChallenge.methods:type_name -> edge.v1.MfaMethod
+	5,  // 1: edge.v1.VerifyMfaRequest.passkey:type_name -> edge.v1.PasskeyCredential
+	15, // 2: edge.v1.VerifyMfaResponse.session:type_name -> edge.v1.Session
+	4,  // 3: edge.v1.BeginMfaPasskeyResponse.ceremony:type_name -> edge.v1.PasskeyCeremony
+	4,  // 4: edge.v1.BeginPasskeyLoginResponse.ceremony:type_name -> edge.v1.PasskeyCeremony
+	5,  // 5: edge.v1.FinishPasskeyLoginRequest.credential:type_name -> edge.v1.PasskeyCredential
+	15, // 6: edge.v1.FinishPasskeyLoginResponse.session:type_name -> edge.v1.Session
+	1,  // 7: edge.v1.User.role:type_name -> edge.v1.Role
+	14, // 8: edge.v1.Session.user:type_name -> edge.v1.User
+	15, // 9: edge.v1.RegisterResponse.session:type_name -> edge.v1.Session
+	15, // 10: edge.v1.LoginResponse.session:type_name -> edge.v1.Session
+	3,  // 11: edge.v1.LoginResponse.mfa_challenge:type_name -> edge.v1.MfaChallenge
+	15, // 12: edge.v1.ExchangeSocialSessionResponse.session:type_name -> edge.v1.Session
+	3,  // 13: edge.v1.ExchangeSocialSessionResponse.mfa_challenge:type_name -> edge.v1.MfaChallenge
+	2,  // 14: edge.v1.DeleteAccountResponse.status:type_name -> edge.v1.DeletionStatus
+	1,  // 15: edge.v1.GetMeResponse.role:type_name -> edge.v1.Role
+	16, // 16: edge.v1.Auth.Register:input_type -> edge.v1.RegisterRequest
+	18, // 17: edge.v1.Auth.Login:input_type -> edge.v1.LoginRequest
+	20, // 18: edge.v1.Auth.Logout:input_type -> edge.v1.LogoutRequest
+	22, // 19: edge.v1.Auth.RequestPasswordReset:input_type -> edge.v1.RequestPasswordResetRequest
+	24, // 20: edge.v1.Auth.ConfirmPasswordReset:input_type -> edge.v1.ConfirmPasswordResetRequest
+	26, // 21: edge.v1.Auth.ExchangeSocialSession:input_type -> edge.v1.ExchangeSocialSessionRequest
+	28, // 22: edge.v1.Auth.DeleteAccount:input_type -> edge.v1.DeleteAccountRequest
+	30, // 23: edge.v1.Auth.GetMe:input_type -> edge.v1.GetMeRequest
+	6,  // 24: edge.v1.Auth.VerifyMfa:input_type -> edge.v1.VerifyMfaRequest
+	8,  // 25: edge.v1.Auth.BeginMfaPasskey:input_type -> edge.v1.BeginMfaPasskeyRequest
+	10, // 26: edge.v1.Auth.BeginPasskeyLogin:input_type -> edge.v1.BeginPasskeyLoginRequest
+	12, // 27: edge.v1.Auth.FinishPasskeyLogin:input_type -> edge.v1.FinishPasskeyLoginRequest
+	17, // 28: edge.v1.Auth.Register:output_type -> edge.v1.RegisterResponse
+	19, // 29: edge.v1.Auth.Login:output_type -> edge.v1.LoginResponse
+	21, // 30: edge.v1.Auth.Logout:output_type -> edge.v1.LogoutResponse
+	23, // 31: edge.v1.Auth.RequestPasswordReset:output_type -> edge.v1.RequestPasswordResetResponse
+	25, // 32: edge.v1.Auth.ConfirmPasswordReset:output_type -> edge.v1.ConfirmPasswordResetResponse
+	27, // 33: edge.v1.Auth.ExchangeSocialSession:output_type -> edge.v1.ExchangeSocialSessionResponse
+	29, // 34: edge.v1.Auth.DeleteAccount:output_type -> edge.v1.DeleteAccountResponse
+	31, // 35: edge.v1.Auth.GetMe:output_type -> edge.v1.GetMeResponse
+	7,  // 36: edge.v1.Auth.VerifyMfa:output_type -> edge.v1.VerifyMfaResponse
+	9,  // 37: edge.v1.Auth.BeginMfaPasskey:output_type -> edge.v1.BeginMfaPasskeyResponse
+	11, // 38: edge.v1.Auth.BeginPasskeyLogin:output_type -> edge.v1.BeginPasskeyLoginResponse
+	13, // 39: edge.v1.Auth.FinishPasskeyLogin:output_type -> edge.v1.FinishPasskeyLoginResponse
+	28, // [28:40] is the sub-list for method output_type
+	16, // [16:28] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_edge_v1_auth_proto_init() }
@@ -1137,14 +1864,19 @@ func file_edge_v1_auth_proto_init() {
 	if File_edge_v1_auth_proto != nil {
 		return
 	}
-	file_edge_v1_auth_proto_msgTypes[17].OneofWrappers = []any{}
+	file_edge_v1_auth_proto_msgTypes[3].OneofWrappers = []any{
+		(*VerifyMfaRequest_TotpCode)(nil),
+		(*VerifyMfaRequest_RecoveryCode)(nil),
+		(*VerifyMfaRequest_Passkey)(nil),
+	}
+	file_edge_v1_auth_proto_msgTypes[28].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_edge_v1_auth_proto_rawDesc), len(file_edge_v1_auth_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   18,
+			NumEnums:      3,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

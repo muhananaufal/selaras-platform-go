@@ -45,6 +45,94 @@ service Auth {
   rpc GetMe(GetMeRequest) returns (GetMeResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+
+  // Completes a sign-in that answered with an MfaChallenge instead of a
+  // session (ADR-032). Public: the ticket is the credential here, and it
+  // exists only after a correct password or social sign-in.
+  rpc VerifyMfa(VerifyMfaRequest) returns (VerifyMfaResponse);
+
+  // Starts the passkey ceremony that answers an MfaChallenge with a passkey
+  // as the second factor. Public, for the same reason as VerifyMfa.
+  rpc BeginMfaPasskey(BeginMfaPasskeyRequest) returns (BeginMfaPasskeyResponse);
+
+  // Passwordless sign-in with a passkey. A passkey with user verification is
+  // two factors in one ceremony, so it is answered with a session and never
+  // with an MfaChallenge (ADR-032).
+  rpc BeginPasskeyLogin(BeginPasskeyLoginRequest) returns (BeginPasskeyLoginResponse);
+  rpc FinishPasskeyLogin(FinishPasskeyLoginRequest) returns (FinishPasskeyLoginResponse);
+}
+
+// The second step of a sign-in for an account with a second factor
+// (ADR-032). No token exists yet: the password step proved only the
+// password, and it did not end the account's current session either.
+message MfaChallenge {
+  // Opaque, single-use, valid for expires_in_seconds and a few attempts.
+  string ticket = 1;
+
+  // What this account can answer with. RECOVERY_CODE is listed only while
+  // unused codes remain.
+  repeated MfaMethod methods = 2;
+
+  int64 expires_in_seconds = 3;
+}
+
+enum MfaMethod {
+  MFA_METHOD_UNSPECIFIED = 0;
+  MFA_METHOD_TOTP = 1;
+  MFA_METHOD_RECOVERY_CODE = 2;
+  MFA_METHOD_PASSKEY = 3;
+}
+
+// A WebAuthn ceremony the client runs with navigator.credentials. The
+// options are the PublicKeyCredential{Creation,Request}Options JSON the
+// browser API takes; the server keeps the ceremony state, the client only
+// the id.
+message PasskeyCeremony {
+  string ceremony_id = 1;
+  string options_json = 2;
+}
+
+// The browser's answer to a ceremony: PublicKeyCredential serialised with
+// toJSON(), passed through unchanged.
+message PasskeyCredential {
+  string ceremony_id = 1;
+  string credential_json = 2;
+}
+
+message VerifyMfaRequest {
+  string ticket = 1;
+
+  oneof proof {
+    string totp_code = 2;
+    string recovery_code = 3;
+    PasskeyCredential passkey = 4;
+  }
+}
+
+message VerifyMfaResponse {
+  Session session = 1;
+}
+
+message BeginMfaPasskeyRequest {
+  string ticket = 1;
+}
+
+message BeginMfaPasskeyResponse {
+  PasskeyCeremony ceremony = 1;
+}
+
+message BeginPasskeyLoginRequest {}
+
+message BeginPasskeyLoginResponse {
+  PasskeyCeremony ceremony = 1;
+}
+
+message FinishPasskeyLoginRequest {
+  PasskeyCredential credential = 1;
+}
+
+message FinishPasskeyLoginResponse {
+  Session session = 1;
 }
 
 enum Role {
@@ -91,8 +179,11 @@ message LoginRequest {
   string password = 2;
 }
 
+// Exactly one of the two is set. An account with a second factor gets the
+// challenge and no session (ADR-032).
 message LoginResponse {
   Session session = 1;
+  MfaChallenge mfa_challenge = 2;
 }
 
 message LogoutRequest {}
@@ -117,8 +208,11 @@ message ExchangeSocialSessionRequest {
   string code = 1;
 }
 
+// Exactly one of the two is set: social sign-in requires the second factor
+// like any other way in (ADR-032).
 message ExchangeSocialSessionResponse {
   Session session = 1;
+  MfaChallenge mfa_challenge = 2;
 }
 
 message DeleteAccountRequest {

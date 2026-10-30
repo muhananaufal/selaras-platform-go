@@ -3,6 +3,7 @@ syntax = "proto3";
 package identity.v1;
 
 import "common/v1/common.proto";
+import "google/protobuf/timestamp.proto";
 
 // Authentication and credentials. Demographic data lives in profile.v1: the
 // two answer different questions, and user_profiles is the hub every domain
@@ -29,6 +30,26 @@ service Identity {
   // Replaces VerifyToken, which put identity-svc on the hottest path -
   // exactly the mandatory network call ADR-007 removed.
   rpc GetTokenGeneration(GetTokenGenerationRequest) returns (GetTokenGenerationResponse);
+
+  // Second factors (ADR-032). The four sign-in steps below are public: the
+  // ticket or the passkey assertion is the credential, and the user is
+  // resolved from it, never from the request.
+  rpc VerifyMfa(VerifyMfaRequest) returns (VerifyMfaResponse);
+  rpc BeginMfaPasskey(BeginMfaPasskeyRequest) returns (BeginMfaPasskeyResponse);
+  rpc BeginPasskeyLogin(BeginPasskeyLoginRequest) returns (BeginPasskeyLoginResponse);
+  rpc FinishPasskeyLogin(FinishPasskeyLoginRequest) returns (FinishPasskeyLoginResponse);
+
+  // Managing the caller's factors. Every request names user_id, so the
+  // caller's token must match it (ADR-026).
+  rpc GetSecurityStatus(GetSecurityStatusRequest) returns (GetSecurityStatusResponse);
+  rpc StartTotpEnrollment(StartTotpEnrollmentRequest) returns (StartTotpEnrollmentResponse);
+  rpc ConfirmTotpEnrollment(ConfirmTotpEnrollmentRequest) returns (ConfirmTotpEnrollmentResponse);
+  rpc DisableTotp(DisableTotpRequest) returns (DisableTotpResponse);
+  rpc RegenerateRecoveryCodes(RegenerateRecoveryCodesRequest) returns (RegenerateRecoveryCodesResponse);
+  rpc BeginPasskeyRegistration(BeginPasskeyRegistrationRequest) returns (BeginPasskeyRegistrationResponse);
+  rpc FinishPasskeyRegistration(FinishPasskeyRegistrationRequest) returns (FinishPasskeyRegistrationResponse);
+  rpc ListPasskeys(ListPasskeysRequest) returns (ListPasskeysResponse);
+  rpc DeletePasskey(DeletePasskeyRequest) returns (DeletePasskeyResponse);
 }
 
 enum Role {
@@ -71,10 +92,15 @@ message LoginRequest {
 
 // Login revokes all of the user's old tokens: one session per user,
 // matching the legacy behaviour that had to be kept (D1).
+//
+// For an account with a second factor, only mfa_challenge is set: no token is
+// issued and the generation is NOT bumped, so knowing the password alone can
+// neither sign in nor end the owner's session (ADR-032).
 message LoginResponse {
   User user = 1;
   TokenPair token = 2;
   common.v1.Identity identity = 3;
+  MfaChallenge mfa_challenge = 4;
 }
 
 message LogoutRequest {
@@ -126,6 +152,9 @@ message ExchangeSocialTokenResponse {
   TokenPair token = 2;
   common.v1.Identity identity = 3;
   bool account_was_linked = 4;
+
+  // As with LoginResponse: set alone for an account with a second factor.
+  MfaChallenge mfa_challenge = 5;
 }
 
 message GetTokenGenerationRequest {
@@ -135,3 +164,167 @@ message GetTokenGenerationRequest {
 message GetTokenGenerationResponse {
   int64 generation = 1;
 }
+
+message MfaChallenge {
+  string ticket = 1;
+  repeated MfaMethod methods = 2;
+  int64 expires_in_seconds = 3;
+}
+
+enum MfaMethod {
+  MFA_METHOD_UNSPECIFIED = 0;
+  MFA_METHOD_TOTP = 1;
+  MFA_METHOD_RECOVERY_CODE = 2;
+  MFA_METHOD_PASSKEY = 3;
+}
+
+// A WebAuthn ceremony: the options JSON for navigator.credentials and the id
+// under which identity-svc keeps the ceremony state.
+message PasskeyCeremony {
+  string ceremony_id = 1;
+  string options_json = 2;
+}
+
+message PasskeyCredential {
+  string ceremony_id = 1;
+  string credential_json = 2;
+}
+
+// A completed sign-in, the same shape as LoginResponse without a challenge.
+message SignedIn {
+  User user = 1;
+  TokenPair token = 2;
+  common.v1.Identity identity = 3;
+}
+
+message VerifyMfaRequest {
+  string ticket = 1;
+  oneof proof {
+    string totp_code = 2;
+    string recovery_code = 3;
+    PasskeyCredential passkey = 4;
+  }
+}
+
+message VerifyMfaResponse {
+  SignedIn signed_in = 1;
+}
+
+message BeginMfaPasskeyRequest {
+  string ticket = 1;
+}
+
+message BeginMfaPasskeyResponse {
+  PasskeyCeremony ceremony = 1;
+}
+
+message BeginPasskeyLoginRequest {}
+
+message BeginPasskeyLoginResponse {
+  PasskeyCeremony ceremony = 1;
+}
+
+message FinishPasskeyLoginRequest {
+  PasskeyCredential credential = 1;
+}
+
+message FinishPasskeyLoginResponse {
+  SignedIn signed_in = 1;
+}
+
+message Reauthentication {
+  oneof proof {
+    string password = 1;
+    string totp_code = 2;
+    string recovery_code = 3;
+  }
+}
+
+message GetSecurityStatusRequest {
+  string user_id = 1;
+}
+
+message GetSecurityStatusResponse {
+  bool totp_enabled = 1;
+  int32 passkey_count = 2;
+  int32 recovery_codes_remaining = 3;
+  bool mfa_required = 4;
+}
+
+message StartTotpEnrollmentRequest {
+  string user_id = 1;
+  Reauthentication reauthentication = 2;
+}
+
+message StartTotpEnrollmentResponse {
+  string secret = 1;
+  string otpauth_uri = 2;
+}
+
+message ConfirmTotpEnrollmentRequest {
+  string user_id = 1;
+  string code = 2;
+}
+
+message ConfirmTotpEnrollmentResponse {
+  repeated string recovery_codes = 1;
+}
+
+message DisableTotpRequest {
+  string user_id = 1;
+  Reauthentication reauthentication = 2;
+}
+
+message DisableTotpResponse {}
+
+message RegenerateRecoveryCodesRequest {
+  string user_id = 1;
+  Reauthentication reauthentication = 2;
+}
+
+message RegenerateRecoveryCodesResponse {
+  repeated string recovery_codes = 1;
+}
+
+message BeginPasskeyRegistrationRequest {
+  string user_id = 1;
+  Reauthentication reauthentication = 2;
+}
+
+message BeginPasskeyRegistrationResponse {
+  PasskeyCeremony ceremony = 1;
+}
+
+message FinishPasskeyRegistrationRequest {
+  string user_id = 1;
+  PasskeyCredential credential = 2;
+  string name = 3;
+}
+
+message FinishPasskeyRegistrationResponse {
+  Passkey passkey = 1;
+  repeated string recovery_codes = 2;
+}
+
+message Passkey {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp last_used_at = 4;
+}
+
+message ListPasskeysRequest {
+  string user_id = 1;
+}
+
+message ListPasskeysResponse {
+  repeated Passkey passkeys = 1;
+}
+
+message DeletePasskeyRequest {
+  string user_id = 1;
+  string passkey_id = 2;
+  Reauthentication reauthentication = 3;
+}
+
+message DeletePasskeyResponse {}

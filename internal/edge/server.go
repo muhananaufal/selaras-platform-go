@@ -114,6 +114,7 @@ func NewHandler(deps Deps) (http.Handler, error) {
 	m := mounter{mux: mux, streamDeadline: deps.Watch.MaxDuration + streamGrace}
 
 	m.mount(edgev1connect.NewAuthHandler(service.NewAuth(deps.Identity, deps.Handoff), opts...))
+	m.mount(edgev1connect.NewSecurityHandler(service.NewSecurity(deps.Identity), opts...))
 	m.mount(edgev1connect.NewProfileHandler(service.NewProfile(deps.Profiles, deps.Regions, deps.Now), opts...))
 	if deps.Assessments != nil {
 		m.mount(edgev1connect.NewAssessmentHandler(service.NewAssessment(deps.Assessments, deps.Watch), opts...))
@@ -276,6 +277,20 @@ func RateLimitPolicies(auth, llm interceptor.Limit) map[string]interceptor.Polic
 		// Deletion compares a password, so it is limited like every other
 		// credential check - otherwise it becomes an unlimited guessing place.
 		edgev1connect.AuthDeleteAccountProcedure: byIP("auth"),
+
+		// The second factor and every change to one compare a credential
+		// (ADR-032). identity-svc also counts failures per account; this limit
+		// is per client address, so neither can be spent on the other's behalf.
+		edgev1connect.AuthVerifyMfaProcedure:                    byIP("auth"),
+		edgev1connect.AuthBeginMfaPasskeyProcedure:              byIP("auth"),
+		edgev1connect.AuthBeginPasskeyLoginProcedure:            byIP("auth"),
+		edgev1connect.AuthFinishPasskeyLoginProcedure:           byIP("auth"),
+		edgev1connect.SecurityStartTotpEnrollmentProcedure:      byIP("auth"),
+		edgev1connect.SecurityConfirmTotpEnrollmentProcedure:    byIP("auth"),
+		edgev1connect.SecurityDisableTotpProcedure:              byIP("auth"),
+		edgev1connect.SecurityRegenerateRecoveryCodesProcedure:  byIP("auth"),
+		edgev1connect.SecurityBeginPasskeyRegistrationProcedure: byIP("auth"),
+		edgev1connect.SecurityDeletePasskeyProcedure:            byIP("auth"),
 
 		edgev1connect.AssessmentRequestPersonalizationProcedure: byUser("llm"),
 		edgev1connect.CoachingStartProgramProcedure:             byUser("llm"),

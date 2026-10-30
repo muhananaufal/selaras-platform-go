@@ -19,14 +19,27 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Identity_Register_FullMethodName             = "/identity.v1.Identity/Register"
-	Identity_Login_FullMethodName                = "/identity.v1.Identity/Login"
-	Identity_Logout_FullMethodName               = "/identity.v1.Identity/Logout"
-	Identity_RequestPasswordReset_FullMethodName = "/identity.v1.Identity/RequestPasswordReset"
-	Identity_ConfirmPasswordReset_FullMethodName = "/identity.v1.Identity/ConfirmPasswordReset"
-	Identity_DeleteAccount_FullMethodName        = "/identity.v1.Identity/DeleteAccount"
-	Identity_ExchangeSocialToken_FullMethodName  = "/identity.v1.Identity/ExchangeSocialToken"
-	Identity_GetTokenGeneration_FullMethodName   = "/identity.v1.Identity/GetTokenGeneration"
+	Identity_Register_FullMethodName                  = "/identity.v1.Identity/Register"
+	Identity_Login_FullMethodName                     = "/identity.v1.Identity/Login"
+	Identity_Logout_FullMethodName                    = "/identity.v1.Identity/Logout"
+	Identity_RequestPasswordReset_FullMethodName      = "/identity.v1.Identity/RequestPasswordReset"
+	Identity_ConfirmPasswordReset_FullMethodName      = "/identity.v1.Identity/ConfirmPasswordReset"
+	Identity_DeleteAccount_FullMethodName             = "/identity.v1.Identity/DeleteAccount"
+	Identity_ExchangeSocialToken_FullMethodName       = "/identity.v1.Identity/ExchangeSocialToken"
+	Identity_GetTokenGeneration_FullMethodName        = "/identity.v1.Identity/GetTokenGeneration"
+	Identity_VerifyMfa_FullMethodName                 = "/identity.v1.Identity/VerifyMfa"
+	Identity_BeginMfaPasskey_FullMethodName           = "/identity.v1.Identity/BeginMfaPasskey"
+	Identity_BeginPasskeyLogin_FullMethodName         = "/identity.v1.Identity/BeginPasskeyLogin"
+	Identity_FinishPasskeyLogin_FullMethodName        = "/identity.v1.Identity/FinishPasskeyLogin"
+	Identity_GetSecurityStatus_FullMethodName         = "/identity.v1.Identity/GetSecurityStatus"
+	Identity_StartTotpEnrollment_FullMethodName       = "/identity.v1.Identity/StartTotpEnrollment"
+	Identity_ConfirmTotpEnrollment_FullMethodName     = "/identity.v1.Identity/ConfirmTotpEnrollment"
+	Identity_DisableTotp_FullMethodName               = "/identity.v1.Identity/DisableTotp"
+	Identity_RegenerateRecoveryCodes_FullMethodName   = "/identity.v1.Identity/RegenerateRecoveryCodes"
+	Identity_BeginPasskeyRegistration_FullMethodName  = "/identity.v1.Identity/BeginPasskeyRegistration"
+	Identity_FinishPasskeyRegistration_FullMethodName = "/identity.v1.Identity/FinishPasskeyRegistration"
+	Identity_ListPasskeys_FullMethodName              = "/identity.v1.Identity/ListPasskeys"
+	Identity_DeletePasskey_FullMethodName             = "/identity.v1.Identity/DeletePasskey"
 )
 
 // IdentityClient is the client API for Identity service.
@@ -55,6 +68,24 @@ type IdentityClient interface {
 	// Replaces VerifyToken, which put identity-svc on the hottest path -
 	// exactly the mandatory network call ADR-007 removed.
 	GetTokenGeneration(ctx context.Context, in *GetTokenGenerationRequest, opts ...grpc.CallOption) (*GetTokenGenerationResponse, error)
+	// Second factors (ADR-032). The four sign-in steps below are public: the
+	// ticket or the passkey assertion is the credential, and the user is
+	// resolved from it, never from the request.
+	VerifyMfa(ctx context.Context, in *VerifyMfaRequest, opts ...grpc.CallOption) (*VerifyMfaResponse, error)
+	BeginMfaPasskey(ctx context.Context, in *BeginMfaPasskeyRequest, opts ...grpc.CallOption) (*BeginMfaPasskeyResponse, error)
+	BeginPasskeyLogin(ctx context.Context, in *BeginPasskeyLoginRequest, opts ...grpc.CallOption) (*BeginPasskeyLoginResponse, error)
+	FinishPasskeyLogin(ctx context.Context, in *FinishPasskeyLoginRequest, opts ...grpc.CallOption) (*FinishPasskeyLoginResponse, error)
+	// Managing the caller's factors. Every request names user_id, so the
+	// caller's token must match it (ADR-026).
+	GetSecurityStatus(ctx context.Context, in *GetSecurityStatusRequest, opts ...grpc.CallOption) (*GetSecurityStatusResponse, error)
+	StartTotpEnrollment(ctx context.Context, in *StartTotpEnrollmentRequest, opts ...grpc.CallOption) (*StartTotpEnrollmentResponse, error)
+	ConfirmTotpEnrollment(ctx context.Context, in *ConfirmTotpEnrollmentRequest, opts ...grpc.CallOption) (*ConfirmTotpEnrollmentResponse, error)
+	DisableTotp(ctx context.Context, in *DisableTotpRequest, opts ...grpc.CallOption) (*DisableTotpResponse, error)
+	RegenerateRecoveryCodes(ctx context.Context, in *RegenerateRecoveryCodesRequest, opts ...grpc.CallOption) (*RegenerateRecoveryCodesResponse, error)
+	BeginPasskeyRegistration(ctx context.Context, in *BeginPasskeyRegistrationRequest, opts ...grpc.CallOption) (*BeginPasskeyRegistrationResponse, error)
+	FinishPasskeyRegistration(ctx context.Context, in *FinishPasskeyRegistrationRequest, opts ...grpc.CallOption) (*FinishPasskeyRegistrationResponse, error)
+	ListPasskeys(ctx context.Context, in *ListPasskeysRequest, opts ...grpc.CallOption) (*ListPasskeysResponse, error)
+	DeletePasskey(ctx context.Context, in *DeletePasskeyRequest, opts ...grpc.CallOption) (*DeletePasskeyResponse, error)
 }
 
 type identityClient struct {
@@ -145,6 +176,136 @@ func (c *identityClient) GetTokenGeneration(ctx context.Context, in *GetTokenGen
 	return out, nil
 }
 
+func (c *identityClient) VerifyMfa(ctx context.Context, in *VerifyMfaRequest, opts ...grpc.CallOption) (*VerifyMfaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyMfaResponse)
+	err := c.cc.Invoke(ctx, Identity_VerifyMfa_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) BeginMfaPasskey(ctx context.Context, in *BeginMfaPasskeyRequest, opts ...grpc.CallOption) (*BeginMfaPasskeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginMfaPasskeyResponse)
+	err := c.cc.Invoke(ctx, Identity_BeginMfaPasskey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) BeginPasskeyLogin(ctx context.Context, in *BeginPasskeyLoginRequest, opts ...grpc.CallOption) (*BeginPasskeyLoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginPasskeyLoginResponse)
+	err := c.cc.Invoke(ctx, Identity_BeginPasskeyLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) FinishPasskeyLogin(ctx context.Context, in *FinishPasskeyLoginRequest, opts ...grpc.CallOption) (*FinishPasskeyLoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FinishPasskeyLoginResponse)
+	err := c.cc.Invoke(ctx, Identity_FinishPasskeyLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) GetSecurityStatus(ctx context.Context, in *GetSecurityStatusRequest, opts ...grpc.CallOption) (*GetSecurityStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSecurityStatusResponse)
+	err := c.cc.Invoke(ctx, Identity_GetSecurityStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) StartTotpEnrollment(ctx context.Context, in *StartTotpEnrollmentRequest, opts ...grpc.CallOption) (*StartTotpEnrollmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartTotpEnrollmentResponse)
+	err := c.cc.Invoke(ctx, Identity_StartTotpEnrollment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) ConfirmTotpEnrollment(ctx context.Context, in *ConfirmTotpEnrollmentRequest, opts ...grpc.CallOption) (*ConfirmTotpEnrollmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmTotpEnrollmentResponse)
+	err := c.cc.Invoke(ctx, Identity_ConfirmTotpEnrollment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) DisableTotp(ctx context.Context, in *DisableTotpRequest, opts ...grpc.CallOption) (*DisableTotpResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DisableTotpResponse)
+	err := c.cc.Invoke(ctx, Identity_DisableTotp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) RegenerateRecoveryCodes(ctx context.Context, in *RegenerateRecoveryCodesRequest, opts ...grpc.CallOption) (*RegenerateRecoveryCodesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegenerateRecoveryCodesResponse)
+	err := c.cc.Invoke(ctx, Identity_RegenerateRecoveryCodes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) BeginPasskeyRegistration(ctx context.Context, in *BeginPasskeyRegistrationRequest, opts ...grpc.CallOption) (*BeginPasskeyRegistrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginPasskeyRegistrationResponse)
+	err := c.cc.Invoke(ctx, Identity_BeginPasskeyRegistration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) FinishPasskeyRegistration(ctx context.Context, in *FinishPasskeyRegistrationRequest, opts ...grpc.CallOption) (*FinishPasskeyRegistrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FinishPasskeyRegistrationResponse)
+	err := c.cc.Invoke(ctx, Identity_FinishPasskeyRegistration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) ListPasskeys(ctx context.Context, in *ListPasskeysRequest, opts ...grpc.CallOption) (*ListPasskeysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPasskeysResponse)
+	err := c.cc.Invoke(ctx, Identity_ListPasskeys_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityClient) DeletePasskey(ctx context.Context, in *DeletePasskeyRequest, opts ...grpc.CallOption) (*DeletePasskeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletePasskeyResponse)
+	err := c.cc.Invoke(ctx, Identity_DeletePasskey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityServer is the server API for Identity service.
 // All implementations must embed UnimplementedIdentityServer
 // for forward compatibility.
@@ -171,6 +332,24 @@ type IdentityServer interface {
 	// Replaces VerifyToken, which put identity-svc on the hottest path -
 	// exactly the mandatory network call ADR-007 removed.
 	GetTokenGeneration(context.Context, *GetTokenGenerationRequest) (*GetTokenGenerationResponse, error)
+	// Second factors (ADR-032). The four sign-in steps below are public: the
+	// ticket or the passkey assertion is the credential, and the user is
+	// resolved from it, never from the request.
+	VerifyMfa(context.Context, *VerifyMfaRequest) (*VerifyMfaResponse, error)
+	BeginMfaPasskey(context.Context, *BeginMfaPasskeyRequest) (*BeginMfaPasskeyResponse, error)
+	BeginPasskeyLogin(context.Context, *BeginPasskeyLoginRequest) (*BeginPasskeyLoginResponse, error)
+	FinishPasskeyLogin(context.Context, *FinishPasskeyLoginRequest) (*FinishPasskeyLoginResponse, error)
+	// Managing the caller's factors. Every request names user_id, so the
+	// caller's token must match it (ADR-026).
+	GetSecurityStatus(context.Context, *GetSecurityStatusRequest) (*GetSecurityStatusResponse, error)
+	StartTotpEnrollment(context.Context, *StartTotpEnrollmentRequest) (*StartTotpEnrollmentResponse, error)
+	ConfirmTotpEnrollment(context.Context, *ConfirmTotpEnrollmentRequest) (*ConfirmTotpEnrollmentResponse, error)
+	DisableTotp(context.Context, *DisableTotpRequest) (*DisableTotpResponse, error)
+	RegenerateRecoveryCodes(context.Context, *RegenerateRecoveryCodesRequest) (*RegenerateRecoveryCodesResponse, error)
+	BeginPasskeyRegistration(context.Context, *BeginPasskeyRegistrationRequest) (*BeginPasskeyRegistrationResponse, error)
+	FinishPasskeyRegistration(context.Context, *FinishPasskeyRegistrationRequest) (*FinishPasskeyRegistrationResponse, error)
+	ListPasskeys(context.Context, *ListPasskeysRequest) (*ListPasskeysResponse, error)
+	DeletePasskey(context.Context, *DeletePasskeyRequest) (*DeletePasskeyResponse, error)
 	mustEmbedUnimplementedIdentityServer()
 }
 
@@ -204,6 +383,45 @@ func (UnimplementedIdentityServer) ExchangeSocialToken(context.Context, *Exchang
 }
 func (UnimplementedIdentityServer) GetTokenGeneration(context.Context, *GetTokenGenerationRequest) (*GetTokenGenerationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTokenGeneration not implemented")
+}
+func (UnimplementedIdentityServer) VerifyMfa(context.Context, *VerifyMfaRequest) (*VerifyMfaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyMfa not implemented")
+}
+func (UnimplementedIdentityServer) BeginMfaPasskey(context.Context, *BeginMfaPasskeyRequest) (*BeginMfaPasskeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginMfaPasskey not implemented")
+}
+func (UnimplementedIdentityServer) BeginPasskeyLogin(context.Context, *BeginPasskeyLoginRequest) (*BeginPasskeyLoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginPasskeyLogin not implemented")
+}
+func (UnimplementedIdentityServer) FinishPasskeyLogin(context.Context, *FinishPasskeyLoginRequest) (*FinishPasskeyLoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FinishPasskeyLogin not implemented")
+}
+func (UnimplementedIdentityServer) GetSecurityStatus(context.Context, *GetSecurityStatusRequest) (*GetSecurityStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSecurityStatus not implemented")
+}
+func (UnimplementedIdentityServer) StartTotpEnrollment(context.Context, *StartTotpEnrollmentRequest) (*StartTotpEnrollmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartTotpEnrollment not implemented")
+}
+func (UnimplementedIdentityServer) ConfirmTotpEnrollment(context.Context, *ConfirmTotpEnrollmentRequest) (*ConfirmTotpEnrollmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmTotpEnrollment not implemented")
+}
+func (UnimplementedIdentityServer) DisableTotp(context.Context, *DisableTotpRequest) (*DisableTotpResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DisableTotp not implemented")
+}
+func (UnimplementedIdentityServer) RegenerateRecoveryCodes(context.Context, *RegenerateRecoveryCodesRequest) (*RegenerateRecoveryCodesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegenerateRecoveryCodes not implemented")
+}
+func (UnimplementedIdentityServer) BeginPasskeyRegistration(context.Context, *BeginPasskeyRegistrationRequest) (*BeginPasskeyRegistrationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginPasskeyRegistration not implemented")
+}
+func (UnimplementedIdentityServer) FinishPasskeyRegistration(context.Context, *FinishPasskeyRegistrationRequest) (*FinishPasskeyRegistrationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FinishPasskeyRegistration not implemented")
+}
+func (UnimplementedIdentityServer) ListPasskeys(context.Context, *ListPasskeysRequest) (*ListPasskeysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPasskeys not implemented")
+}
+func (UnimplementedIdentityServer) DeletePasskey(context.Context, *DeletePasskeyRequest) (*DeletePasskeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeletePasskey not implemented")
 }
 func (UnimplementedIdentityServer) mustEmbedUnimplementedIdentityServer() {}
 func (UnimplementedIdentityServer) testEmbeddedByValue()                  {}
@@ -370,6 +588,240 @@ func _Identity_GetTokenGeneration_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Identity_VerifyMfa_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyMfaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).VerifyMfa(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_VerifyMfa_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).VerifyMfa(ctx, req.(*VerifyMfaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_BeginMfaPasskey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginMfaPasskeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).BeginMfaPasskey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_BeginMfaPasskey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).BeginMfaPasskey(ctx, req.(*BeginMfaPasskeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_BeginPasskeyLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginPasskeyLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).BeginPasskeyLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_BeginPasskeyLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).BeginPasskeyLogin(ctx, req.(*BeginPasskeyLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_FinishPasskeyLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FinishPasskeyLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).FinishPasskeyLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_FinishPasskeyLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).FinishPasskeyLogin(ctx, req.(*FinishPasskeyLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_GetSecurityStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSecurityStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).GetSecurityStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_GetSecurityStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).GetSecurityStatus(ctx, req.(*GetSecurityStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_StartTotpEnrollment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartTotpEnrollmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).StartTotpEnrollment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_StartTotpEnrollment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).StartTotpEnrollment(ctx, req.(*StartTotpEnrollmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_ConfirmTotpEnrollment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmTotpEnrollmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).ConfirmTotpEnrollment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_ConfirmTotpEnrollment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).ConfirmTotpEnrollment(ctx, req.(*ConfirmTotpEnrollmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_DisableTotp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisableTotpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).DisableTotp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_DisableTotp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).DisableTotp(ctx, req.(*DisableTotpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_RegenerateRecoveryCodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegenerateRecoveryCodesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).RegenerateRecoveryCodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_RegenerateRecoveryCodes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).RegenerateRecoveryCodes(ctx, req.(*RegenerateRecoveryCodesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_BeginPasskeyRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginPasskeyRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).BeginPasskeyRegistration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_BeginPasskeyRegistration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).BeginPasskeyRegistration(ctx, req.(*BeginPasskeyRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_FinishPasskeyRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FinishPasskeyRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).FinishPasskeyRegistration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_FinishPasskeyRegistration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).FinishPasskeyRegistration(ctx, req.(*FinishPasskeyRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_ListPasskeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPasskeysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).ListPasskeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_ListPasskeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).ListPasskeys(ctx, req.(*ListPasskeysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Identity_DeletePasskey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePasskeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServer).DeletePasskey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Identity_DeletePasskey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServer).DeletePasskey(ctx, req.(*DeletePasskeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Identity_ServiceDesc is the grpc.ServiceDesc for Identity service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -408,6 +860,58 @@ var Identity_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTokenGeneration",
 			Handler:    _Identity_GetTokenGeneration_Handler,
+		},
+		{
+			MethodName: "VerifyMfa",
+			Handler:    _Identity_VerifyMfa_Handler,
+		},
+		{
+			MethodName: "BeginMfaPasskey",
+			Handler:    _Identity_BeginMfaPasskey_Handler,
+		},
+		{
+			MethodName: "BeginPasskeyLogin",
+			Handler:    _Identity_BeginPasskeyLogin_Handler,
+		},
+		{
+			MethodName: "FinishPasskeyLogin",
+			Handler:    _Identity_FinishPasskeyLogin_Handler,
+		},
+		{
+			MethodName: "GetSecurityStatus",
+			Handler:    _Identity_GetSecurityStatus_Handler,
+		},
+		{
+			MethodName: "StartTotpEnrollment",
+			Handler:    _Identity_StartTotpEnrollment_Handler,
+		},
+		{
+			MethodName: "ConfirmTotpEnrollment",
+			Handler:    _Identity_ConfirmTotpEnrollment_Handler,
+		},
+		{
+			MethodName: "DisableTotp",
+			Handler:    _Identity_DisableTotp_Handler,
+		},
+		{
+			MethodName: "RegenerateRecoveryCodes",
+			Handler:    _Identity_RegenerateRecoveryCodes_Handler,
+		},
+		{
+			MethodName: "BeginPasskeyRegistration",
+			Handler:    _Identity_BeginPasskeyRegistration_Handler,
+		},
+		{
+			MethodName: "FinishPasskeyRegistration",
+			Handler:    _Identity_FinishPasskeyRegistration_Handler,
+		},
+		{
+			MethodName: "ListPasskeys",
+			Handler:    _Identity_ListPasskeys_Handler,
+		},
+		{
+			MethodName: "DeletePasskey",
+			Handler:    _Identity_DeletePasskey_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

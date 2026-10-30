@@ -654,6 +654,50 @@ components:
       type: object
       title: AddMemberResponse
       additionalProperties: false
+    edge.v1.BeginMfaPasskeyRequest:
+      type: object
+      properties:
+        ticket:
+          type: string
+          title: ticket
+      title: BeginMfaPasskeyRequest
+      additionalProperties: false
+    edge.v1.BeginMfaPasskeyResponse:
+      type: object
+      properties:
+        ceremony:
+          title: ceremony
+          $ref: '#/components/schemas/edge.v1.PasskeyCeremony'
+      title: BeginMfaPasskeyResponse
+      additionalProperties: false
+    edge.v1.BeginPasskeyLoginRequest:
+      type: object
+      title: BeginPasskeyLoginRequest
+      additionalProperties: false
+    edge.v1.BeginPasskeyLoginResponse:
+      type: object
+      properties:
+        ceremony:
+          title: ceremony
+          $ref: '#/components/schemas/edge.v1.PasskeyCeremony'
+      title: BeginPasskeyLoginResponse
+      additionalProperties: false
+    edge.v1.BeginPasskeyRegistrationRequest:
+      type: object
+      properties:
+        reauthentication:
+          title: reauthentication
+          $ref: '#/components/schemas/edge.v1.Reauthentication'
+      title: BeginPasskeyRegistrationRequest
+      additionalProperties: false
+    edge.v1.BeginPasskeyRegistrationResponse:
+      type: object
+      properties:
+        ceremony:
+          title: ceremony
+          $ref: '#/components/schemas/edge.v1.PasskeyCeremony'
+      title: BeginPasskeyRegistrationResponse
+      additionalProperties: false
     edge.v1.ChatMessage:
       type: object
       properties:
@@ -807,6 +851,27 @@ components:
       type: object
       title: ConfirmPasswordResetResponse
       additionalProperties: false
+    edge.v1.ConfirmTotpEnrollmentRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          title: code
+      title: ConfirmTotpEnrollmentRequest
+      additionalProperties: false
+    edge.v1.ConfirmTotpEnrollmentResponse:
+      type: object
+      properties:
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+          title: recovery_codes
+          description: |-
+            Set only when this is the account's first factor: the recovery codes are
+             shown once, here, and never again.
+      title: ConfirmTotpEnrollmentResponse
+      additionalProperties: false
     edge.v1.Conversation:
       type: object
       properties:
@@ -949,6 +1014,21 @@ components:
       type: object
       title: DeleteConversationResponse
       additionalProperties: false
+    edge.v1.DeletePasskeyRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        reauthentication:
+          title: reauthentication
+          $ref: '#/components/schemas/edge.v1.Reauthentication'
+      title: DeletePasskeyRequest
+      additionalProperties: false
+    edge.v1.DeletePasskeyResponse:
+      type: object
+      title: DeletePasskeyResponse
+      additionalProperties: false
     edge.v1.DeleteProgramRequest:
       type: object
       properties:
@@ -979,6 +1059,18 @@ components:
       enum:
         - DELETION_STATUS_UNSPECIFIED
         - DELETION_STATUS_IN_PROGRESS
+    edge.v1.DisableTotpRequest:
+      type: object
+      properties:
+        reauthentication:
+          title: reauthentication
+          $ref: '#/components/schemas/edge.v1.Reauthentication'
+      title: DisableTotpRequest
+      additionalProperties: false
+    edge.v1.DisableTotpResponse:
+      type: object
+      title: DisableTotpResponse
+      additionalProperties: false
     edge.v1.ExchangeSocialSessionRequest:
       type: object
       properties:
@@ -993,7 +1085,55 @@ components:
         session:
           title: session
           $ref: '#/components/schemas/edge.v1.Session'
+        mfaChallenge:
+          title: mfa_challenge
+          $ref: '#/components/schemas/edge.v1.MfaChallenge'
       title: ExchangeSocialSessionResponse
+      additionalProperties: false
+      description: |-
+        Exactly one of the two is set: social sign-in requires the second factor
+         like any other way in (ADR-032).
+    edge.v1.FinishPasskeyLoginRequest:
+      type: object
+      properties:
+        credential:
+          title: credential
+          $ref: '#/components/schemas/edge.v1.PasskeyCredential'
+      title: FinishPasskeyLoginRequest
+      additionalProperties: false
+    edge.v1.FinishPasskeyLoginResponse:
+      type: object
+      properties:
+        session:
+          title: session
+          $ref: '#/components/schemas/edge.v1.Session'
+      title: FinishPasskeyLoginResponse
+      additionalProperties: false
+    edge.v1.FinishPasskeyRegistrationRequest:
+      type: object
+      properties:
+        credential:
+          title: credential
+          $ref: '#/components/schemas/edge.v1.PasskeyCredential'
+        name:
+          type: string
+          title: name
+          description: Chosen by the owner to tell passkeys apart ("work laptop").
+      title: FinishPasskeyRegistrationRequest
+      additionalProperties: false
+    edge.v1.FinishPasskeyRegistrationResponse:
+      type: object
+      properties:
+        passkey:
+          title: passkey
+          $ref: '#/components/schemas/edge.v1.Passkey'
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+          title: recovery_codes
+          description: Set only when this is the account's first factor, as with TOTP.
+      title: FinishPasskeyRegistrationResponse
       additionalProperties: false
     edge.v1.GenerateDailyGuideRequest:
       type: object
@@ -1217,6 +1357,32 @@ components:
           $ref: '#/components/schemas/edge.v1.CoachingProgram'
       title: GetProgramResponse
       additionalProperties: false
+    edge.v1.GetSecurityStatusRequest:
+      type: object
+      title: GetSecurityStatusRequest
+      additionalProperties: false
+    edge.v1.GetSecurityStatusResponse:
+      type: object
+      properties:
+        totpEnabled:
+          type: boolean
+          title: totp_enabled
+        passkeyCount:
+          type: integer
+          title: passkey_count
+          format: int32
+        recoveryCodesRemaining:
+          type: integer
+          title: recovery_codes_remaining
+          format: int32
+        mfaRequired:
+          type: boolean
+          title: mfa_required
+          description: |-
+            Whether signing in asks for a second factor: true as soon as TOTP or a
+             passkey is enrolled.
+      title: GetSecurityStatusResponse
+      additionalProperties: false
     edge.v1.GetThreadRequest:
       type: object
       properties:
@@ -1337,6 +1503,20 @@ components:
           $ref: '#/components/schemas/edge.v1.PageResponse'
       title: ListConversationsResponse
       additionalProperties: false
+    edge.v1.ListPasskeysRequest:
+      type: object
+      title: ListPasskeysRequest
+      additionalProperties: false
+    edge.v1.ListPasskeysResponse:
+      type: object
+      properties:
+        passkeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.Passkey'
+          title: passkeys
+      title: ListPasskeysResponse
+      additionalProperties: false
     edge.v1.ListPatientAssessmentsRequest:
       type: object
       properties:
@@ -1403,8 +1583,14 @@ components:
         session:
           title: session
           $ref: '#/components/schemas/edge.v1.Session'
+        mfaChallenge:
+          title: mfa_challenge
+          $ref: '#/components/schemas/edge.v1.MfaChallenge'
       title: LoginResponse
       additionalProperties: false
+      description: |-
+        Exactly one of the two is set. An account with a second factor gets the
+         challenge and no session (ADR-032).
     edge.v1.LogoutRequest:
       type: object
       title: LogoutRequest
@@ -1413,6 +1599,41 @@ components:
       type: object
       title: LogoutResponse
       additionalProperties: false
+    edge.v1.MfaChallenge:
+      type: object
+      properties:
+        ticket:
+          type: string
+          title: ticket
+          description: Opaque, single-use, valid for expires_in_seconds and a few attempts.
+        methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/edge.v1.MfaMethod'
+          title: methods
+          description: |-
+            What this account can answer with. RECOVERY_CODE is listed only while
+             unused codes remain.
+        expiresInSeconds:
+          type:
+            - integer
+            - string
+          title: expires_in_seconds
+          format: int64
+      title: MfaChallenge
+      additionalProperties: false
+      description: |-
+        The second step of a sign-in for an account with a second factor
+         (ADR-032). No token exists yet: the password step proved only the
+         password, and it did not end the account's current session either.
+    edge.v1.MfaMethod:
+      type: string
+      title: MfaMethod
+      enum:
+        - MFA_METHOD_UNSPECIFIED
+        - MFA_METHOD_TOTP
+        - MFA_METHOD_RECOVERY_CODE
+        - MFA_METHOD_PASSKEY
     edge.v1.PageRequest:
       type: object
       properties:
@@ -1440,6 +1661,54 @@ components:
           description: Absent on the last page.
       title: PageResponse
       additionalProperties: false
+    edge.v1.Passkey:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        name:
+          type: string
+          title: name
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+        lastUsedAt:
+          title: last_used_at
+          description: Absent until the passkey is first used to sign in.
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: Passkey
+      additionalProperties: false
+    edge.v1.PasskeyCeremony:
+      type: object
+      properties:
+        ceremonyId:
+          type: string
+          title: ceremony_id
+        optionsJson:
+          type: string
+          title: options_json
+      title: PasskeyCeremony
+      additionalProperties: false
+      description: |-
+        A WebAuthn ceremony the client runs with navigator.credentials. The
+         options are the PublicKeyCredential{Creation,Request}Options JSON the
+         browser API takes; the server keeps the ceremony state, the client only
+         the id.
+    edge.v1.PasskeyCredential:
+      type: object
+      properties:
+        ceremonyId:
+          type: string
+          title: ceremony_id
+        credentialJson:
+          type: string
+          title: credential_json
+      title: PasskeyCredential
+      additionalProperties: false
+      description: |-
+        The browser's answer to a ceremony: PublicKeyCredential serialised with
+         toJSON(), passed through unchanged.
     edge.v1.ProgramProgress:
       type: object
       properties:
@@ -1480,6 +1749,64 @@ components:
           title: tasks_completed
           format: int32
       title: ProgramProgress
+      additionalProperties: false
+    edge.v1.Reauthentication:
+      type: object
+      oneOf:
+        - type: object
+          properties:
+            password:
+              type: string
+              title: password
+          title: password
+          required:
+            - password
+        - type: object
+          properties:
+            recoveryCode:
+              type: string
+              title: recovery_code
+          title: recovery_code
+          required:
+            - recoveryCode
+        - type: object
+          properties:
+            totpCode:
+              type: string
+              title: totp_code
+          title: totp_code
+          required:
+            - totpCode
+        - not:
+            anyOf:
+              - required:
+                  - password
+              - required:
+                  - recoveryCode
+              - required:
+                  - totpCode
+      unevaluatedProperties: false
+      title: Reauthentication
+      description: |-
+        Proof, at the moment of a change, that the caller is the owner and not
+         merely holding the owner's session.
+    edge.v1.RegenerateRecoveryCodesRequest:
+      type: object
+      properties:
+        reauthentication:
+          title: reauthentication
+          $ref: '#/components/schemas/edge.v1.Reauthentication'
+      title: RegenerateRecoveryCodesRequest
+      additionalProperties: false
+    edge.v1.RegenerateRecoveryCodesResponse:
+      type: object
+      properties:
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+          title: recovery_codes
+      title: RegenerateRecoveryCodesResponse
       additionalProperties: false
     edge.v1.RegisterRequest:
       type: object
@@ -1756,6 +2083,27 @@ components:
           $ref: '#/components/schemas/edge.v1.CoachingThread'
       title: StartThreadResponse
       additionalProperties: false
+    edge.v1.StartTotpEnrollmentRequest:
+      type: object
+      properties:
+        reauthentication:
+          title: reauthentication
+          $ref: '#/components/schemas/edge.v1.Reauthentication'
+      title: StartTotpEnrollmentRequest
+      additionalProperties: false
+    edge.v1.StartTotpEnrollmentResponse:
+      type: object
+      properties:
+        secret:
+          type: string
+          title: secret
+          description: Base32, for typing into an authenticator app.
+        otpauthUri:
+          type: string
+          title: otpauth_uri
+          description: otpauth://totp/... for a QR code.
+      title: StartTotpEnrollmentResponse
+      additionalProperties: false
     edge.v1.StringList:
       type: object
       properties:
@@ -1997,6 +2345,56 @@ components:
          Every field that may be empty is optional and is simply absent when empty -
          not an empty string, and never today's date. This is the layer where B6 was
          born in the legacy system.
+    edge.v1.VerifyMfaRequest:
+      type: object
+      allOf:
+        - properties:
+            ticket:
+              type: string
+              title: ticket
+        - oneOf:
+            - type: object
+              properties:
+                passkey:
+                  title: passkey
+                  $ref: '#/components/schemas/edge.v1.PasskeyCredential'
+              title: passkey
+              required:
+                - passkey
+            - type: object
+              properties:
+                recoveryCode:
+                  type: string
+                  title: recovery_code
+              title: recovery_code
+              required:
+                - recoveryCode
+            - type: object
+              properties:
+                totpCode:
+                  type: string
+                  title: totp_code
+              title: totp_code
+              required:
+                - totpCode
+            - not:
+                anyOf:
+                  - required:
+                      - passkey
+                  - required:
+                      - recoveryCode
+                  - required:
+                      - totpCode
+      unevaluatedProperties: false
+      title: VerifyMfaRequest
+    edge.v1.VerifyMfaResponse:
+      type: object
+      properties:
+        session:
+          title: session
+          $ref: '#/components/schemas/edge.v1.Session'
+      title: VerifyMfaResponse
+      additionalProperties: false
     edge.v1.WatchAssessmentRequest:
       type: object
       properties:
@@ -2559,6 +2957,83 @@ paths:
               schema:
                 $ref: '#/components/schemas/edge.v1.StartAssessmentResponse'
   /edge.v1.Assessment/WatchAssessment: {}
+  /edge.v1.Auth/BeginMfaPasskey:
+    post:
+      tags:
+        - Auth
+      summary: BeginMfaPasskey
+      description: |-
+        Starts the passkey ceremony that answers an MfaChallenge with a passkey
+         as the second factor. Public, for the same reason as VerifyMfa.
+      operationId: edge.v1.Auth.BeginMfaPasskey
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.BeginMfaPasskeyRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.BeginMfaPasskeyResponse'
+  /edge.v1.Auth/BeginPasskeyLogin:
+    post:
+      tags:
+        - Auth
+      summary: BeginPasskeyLogin
+      description: |-
+        Passwordless sign-in with a passkey. A passkey with user verification is
+         two factors in one ceremony, so it is answered with a session and never
+         with an MfaChallenge (ADR-032).
+      operationId: edge.v1.Auth.BeginPasskeyLogin
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.BeginPasskeyLoginRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.BeginPasskeyLoginResponse'
   /edge.v1.Auth/ConfirmPasswordReset:
     post:
       tags:
@@ -2671,6 +3146,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/edge.v1.ExchangeSocialSessionResponse'
+  /edge.v1.Auth/FinishPasskeyLogin:
+    post:
+      tags:
+        - Auth
+      summary: FinishPasskeyLogin
+      operationId: edge.v1.Auth.FinishPasskeyLogin
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.FinishPasskeyLoginRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.FinishPasskeyLoginResponse'
   /edge.v1.Auth/GetMe:
     post:
       tags:
@@ -2850,6 +3360,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/edge.v1.RequestPasswordResetResponse'
+  /edge.v1.Auth/VerifyMfa:
+    post:
+      tags:
+        - Auth
+      summary: VerifyMfa
+      description: |-
+        Completes a sign-in that answered with an MfaChallenge instead of a
+         session (ADR-032). Public: the ticket is the credential here, and it
+         exists only after a correct password or social sign-in.
+      operationId: edge.v1.Auth.VerifyMfa
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.VerifyMfaRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.VerifyMfaResponse'
   /edge.v1.Chat/CreateConversation:
     post:
       tags:
@@ -3988,6 +4537,326 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/edge.v1.UpdateProfileResponse'
+  /edge.v1.Security/BeginPasskeyRegistration:
+    post:
+      tags:
+        - Security
+      summary: BeginPasskeyRegistration
+      operationId: edge.v1.Security.BeginPasskeyRegistration
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.BeginPasskeyRegistrationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.BeginPasskeyRegistrationResponse'
+  /edge.v1.Security/ConfirmTotpEnrollment:
+    post:
+      tags:
+        - Security
+      summary: ConfirmTotpEnrollment
+      operationId: edge.v1.Security.ConfirmTotpEnrollment
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ConfirmTotpEnrollmentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ConfirmTotpEnrollmentResponse'
+  /edge.v1.Security/DeletePasskey:
+    post:
+      tags:
+        - Security
+      summary: DeletePasskey
+      operationId: edge.v1.Security.DeletePasskey
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.DeletePasskeyRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.DeletePasskeyResponse'
+  /edge.v1.Security/DisableTotp:
+    post:
+      tags:
+        - Security
+      summary: DisableTotp
+      operationId: edge.v1.Security.DisableTotp
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.DisableTotpRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.DisableTotpResponse'
+  /edge.v1.Security/FinishPasskeyRegistration:
+    post:
+      tags:
+        - Security
+      summary: FinishPasskeyRegistration
+      operationId: edge.v1.Security.FinishPasskeyRegistration
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.FinishPasskeyRegistrationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.FinishPasskeyRegistrationResponse'
+  /edge.v1.Security/GetSecurityStatus:
+    post:
+      tags:
+        - Security
+      summary: GetSecurityStatus
+      operationId: edge.v1.Security.GetSecurityStatus
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.GetSecurityStatusRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.GetSecurityStatusResponse'
+  /edge.v1.Security/ListPasskeys:
+    post:
+      tags:
+        - Security
+      summary: ListPasskeys
+      operationId: edge.v1.Security.ListPasskeys
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.ListPasskeysRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.ListPasskeysResponse'
+  /edge.v1.Security/RegenerateRecoveryCodes:
+    post:
+      tags:
+        - Security
+      summary: RegenerateRecoveryCodes
+      description: Replaces every recovery code; the old ones stop working at once.
+      operationId: edge.v1.Security.RegenerateRecoveryCodes
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.RegenerateRecoveryCodesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.RegenerateRecoveryCodesResponse'
+  /edge.v1.Security/StartTotpEnrollment:
+    post:
+      tags:
+        - Security
+      summary: StartTotpEnrollment
+      description: |-
+        Two steps: the secret is shown, then proven with a code from the
+         authenticator app. TOTP is active only after the second step, so a
+         mistyped or never-scanned secret cannot lock the owner out.
+      operationId: edge.v1.Security.StartTotpEnrollment
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/edge.v1.StartTotpEnrollmentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/edge.v1.StartTotpEnrollmentResponse'
 tags:
   - name: Assessment
     description: Assessment serves the caller's cardiovascular risk assessments.
@@ -4016,3 +4885,13 @@ tags:
     description: Nutrition serves the caller's culinary preferences and daily meal guides.
   - name: Profile
     description: Profile serves the caller's own demographic profile.
+  - name: Security
+    description: |-
+      Security: the caller's second factors (ADR-032). The acting user is always
+       the caller of the token.
+
+       Every change to a factor asks for a fresh Reauthentication: a stolen
+       session alone must not be able to add an attacker's authenticator, remove
+       the owner's, or mint new recovery codes. The one exception is the first
+       factor of an account with neither a password nor a factor (a social-only
+       account), which has nothing to prove with.
