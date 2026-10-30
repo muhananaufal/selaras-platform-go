@@ -6,3 +6,6 @@
 # gitleaks:allow comment since the next commit; this entry covers the commit
 # that introduced it, which every scan of the PR range still reads.
 b4ad4946645fb79b1af3b640f7c17049ccb4b692:internal/identity/domain/mfa_test.go:generic-api-key:103
+# The same line after PR #64 was rebase-merged into develop: the commit got a
+# new SHA, and the release PR scans that one.
+faaa2e973c817446197a55c952809baef0a89e53:internal/identity/domain/mfa_test.go:generic-api-key:103
