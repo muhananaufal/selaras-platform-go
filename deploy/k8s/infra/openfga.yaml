@@ -1,0 +1,118 @@
+# OpenFGA for the local cluster (ADR-030, ADR-031): who may read a patient's
+# data. The same image and datastore as compose (deploy/compose/core.yml):
+# its tuples live in the openfga database, owned by svc_openfga, created by
+# the shared initdb. They are a projection of the clinic's consent ledger
+# and can be rebuilt from it (cmd/clinic-rebuild-tuples).
+#
+# Straight to Postgres, not through PgBouncer: the migrations hold a
+# session-level lock, which transaction pooling would silently lose. That
+# lock is also why the migration can run as an init container in every
+# replica: a second replica waits for the first instead of racing it.
+#
+# The password comes from the selaras-infra Secret (task k3d:secrets, from
+# .env). No defaults (ADR-016).
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga
+  namespace: selaras
+spec:
+  selector: { app: openfga }
+  ports:
+    - { name: http, port: 8080 }
+    - { name: grpc, port: 8081 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfga
+  namespace: selaras
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: openfga }
+  template:
+    metadata:
+      labels: { app: openfga }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        - name: migrate
+          image: openfga/openfga:v1.21.0
+          args: ["migrate"]
+          env:
+            - name: OPENFGA_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: OPENFGA_DB_PASSWORD } }
+            - { name: OPENFGA_DATASTORE_ENGINE, value: postgres }
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://svc_openfga:$(OPENFGA_DB_PASSWORD)@postgres:5432/openfga?sslmode=disable
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 128Mi }
+      containers:
+        - name: openfga
+          image: openfga/openfga:v1.21.0
+          args: ["run"]
+          env:
+            - name: OPENFGA_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: OPENFGA_DB_PASSWORD } }
+            - { name: OPENFGA_DATASTORE_ENGINE, value: postgres }
+            - name: OPENFGA_DATASTORE_URI
+              value: postgres://svc_openfga:$(OPENFGA_DB_PASSWORD)@postgres:5432/openfga?sslmode=disable
+            # A small pool: Postgres has 100 connections for everything.
+            - { name: OPENFGA_DATASTORE_MAX_OPEN_CONNS, value: "10" }
+            - { name: OPENFGA_PLAYGROUND_ENABLED, value: "false" }
+            # Every call needs the preshared key (ADR-031); the gRPC health
+            # check the probes use does not.
+            - { name: OPENFGA_AUTHN_METHOD, value: preshared }
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom: { secretKeyRef: { name: selaras-infra, key: OPENFGA_API_TOKEN } }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: grpc, containerPort: 8081 }
+          readinessProbe:
+            grpc: { port: 8081 }
+            periodSeconds: 5
+          livenessProbe:
+            grpc: { port: 8081 }
+            periodSeconds: 10
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+---
+# Whoever can call OpenFGA can write a tuple and grant itself any patient.
+# The preshared key is the first wall (ADR-031); this is the second, for the
+# day the key leaks: only the three units that check or project consent may
+# connect at all, nothing else in the namespace. The kubelet's probes come
+# from the node and are not blocked by NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openfga-ingress
+  namespace: selaras
+spec:
+  podSelector:
+    matchLabels: { app: openfga }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [clinic-svc, assessment-svc, coaching-svc]
+      ports:
+        - { port: 8080, protocol: TCP }

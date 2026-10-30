@@ -34,10 +34,13 @@ set -a; . "$ROOT/.env"; set +a
 kubectl -n observability create secret generic grafana-admin \
   --from-literal=password="$GRAFANA_ADMIN_PASSWORD" --dry-run=client -o yaml | kubectl apply -f -
 
-log "menunggu Postgres, Kafka, PgBouncer, metrics-server, KEDA"
+log "menunggu Postgres, Kafka, PgBouncer, OpenFGA, metrics-server, KEDA"
 kubectl -n selaras rollout status statefulset/postgres --timeout=180s
 kubectl -n selaras rollout status statefulset/kafka --timeout=240s
 kubectl -n selaras rollout status deployment/pgbouncer --timeout=120s
+# OpenFGA migrates in its init container, so it is ready only once Postgres
+# is and its migrations ran (ADR-031).
+kubectl -n selaras rollout status deployment/openfga --timeout=180s
 kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
 kubectl -n keda rollout status deployment/keda-operator --timeout=180s
 

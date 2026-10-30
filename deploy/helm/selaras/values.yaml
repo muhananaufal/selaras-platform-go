@@ -98,7 +98,9 @@ units:
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       PROFILE_GRPC_TARGET: profile-svc:9201
-    secretEnv: [ASSESSMENT_DATABASE_DSN, JWT_VERIFY_KEY]
+      # Clinicians' reads of patients are checked here (ADR-030, ADR-031).
+      OPENFGA_URL: http://openfga:8080
+    secretEnv: [ASSESSMENT_DATABASE_DSN, JWT_VERIFY_KEY, OPENFGA_API_TOKEN]
     resources:
       requests: { cpu: 50m, memory: 48Mi }
       limits: { memory: 160Mi }
@@ -110,7 +112,9 @@ units:
     env:
       COACHING_GRPC_ADDR: ":9401"
       COACHING_HEALTH_ADDR: ":9403"
-    secretEnv: [COACHING_DATABASE_DSN, JWT_VERIFY_KEY]
+      # Clinicians' reads of patients are checked here (ADR-030, ADR-031).
+      OPENFGA_URL: http://openfga:8080
+    secretEnv: [COACHING_DATABASE_DSN, JWT_VERIFY_KEY, OPENFGA_API_TOKEN]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
@@ -161,7 +165,9 @@ units:
     env:
       CLINIC_GRPC_ADDR: ":9901"
       CLINIC_HEALTH_ADDR: ":9902"
-    secretEnv: [CLINIC_DATABASE_DSN, JWT_VERIFY_KEY]
+      # The consent projection writes tuples here (ADR-030, ADR-031).
+      OPENFGA_URL: http://openfga:8080
+    secretEnv: [CLINIC_DATABASE_DSN, JWT_VERIFY_KEY, OPENFGA_API_TOKEN]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 128Mi }
