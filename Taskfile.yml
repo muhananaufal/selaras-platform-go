@@ -166,6 +166,8 @@ tasks:
         TEST_SMTP_HOST="127.0.0.1"
         TEST_SMTP_PORT="11025"
         TEST_MAILPIT_URL="http://127.0.0.1:18025"
+        TEST_OPENFGA_URL="http://127.0.0.1:18180"
+        TEST_OPENFGA_TOKEN="$OPENFGA_API_TOKEN"
         go test ./... -count=1 -p 1
 
   up:apps:

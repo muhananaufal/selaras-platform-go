@@ -16,7 +16,32 @@ import (
 
 	fga "github.com/openfga/go-sdk"
 	fgaclient "github.com/openfga/go-sdk/client"
+	"github.com/openfga/go-sdk/credentials"
 )
+
+// Server is an OpenFGA endpoint and the preshared key it demands (ADR-031).
+// Without the key a pod that reaches OpenFGA could write a tuple granting
+// itself any patient, so every caller sends one. An empty Token sends none,
+// which a server configured with keys refuses.
+type Server struct {
+	URL   string
+	Token string
+}
+
+func (s Server) client() (*fgaclient.OpenFgaClient, error) {
+	cfg := &fgaclient.ClientConfiguration{ApiUrl: s.URL}
+	if s.Token != "" {
+		cfg.Credentials = &credentials.Credentials{
+			Method: credentials.CredentialsMethodApiToken,
+			Config: &credentials.Config{ApiToken: s.Token},
+		}
+	}
+	c, err := fgaclient.NewSdkClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building the OpenFGA client: %w", err)
+	}
+	return c, nil
+}
 
 // Tuple is one relationship: User has Relation to Object.
 type Tuple struct {
@@ -42,15 +67,15 @@ func (c *Client) ModelID() string { return c.modelID }
 // A model is written only when it differs from the latest one: OpenFGA keeps
 // every version, and writing one on every start would bury the real changes
 // under identical copies.
-func Bootstrap(ctx context.Context, apiURL, storeName string, model []byte) (*Client, error) {
+func Bootstrap(ctx context.Context, srv Server, storeName string, model []byte) (*Client, error) {
 	var want fga.WriteAuthorizationModelRequest
 	if err := json.Unmarshal(model, &want); err != nil {
 		return nil, fmt.Errorf("reading the authorization model: %w", err)
 	}
 
-	c, err := fgaclient.NewSdkClient(&fgaclient.ClientConfiguration{ApiUrl: apiURL})
+	c, err := srv.client()
 	if err != nil {
-		return nil, fmt.Errorf("building the OpenFGA client: %w", err)
+		return nil, err
 	}
 
 	storeID, err := findOrCreateStore(ctx, c, storeName)
@@ -75,10 +100,10 @@ func Bootstrap(ctx context.Context, apiURL, storeName string, model []byte) (*Cl
 // writes nothing: the store and the model belong to clinic-svc, which
 // bootstraps them. A store that does not exist is an error, not something to
 // create - a reader that created it would answer every check with no.
-func Open(ctx context.Context, apiURL, storeName string) (*Client, error) {
-	c, err := fgaclient.NewSdkClient(&fgaclient.ClientConfiguration{ApiUrl: apiURL})
+func Open(ctx context.Context, srv Server, storeName string) (*Client, error) {
+	c, err := srv.client()
 	if err != nil {
-		return nil, fmt.Errorf("building the OpenFGA client: %w", err)
+		return nil, err
 	}
 	listed, err := c.ListStores(ctx).Options(fgaclient.ClientListStoresOptions{Name: &storeName}).Execute()
 	if err != nil {
@@ -198,14 +223,15 @@ func (c *Client) Write(ctx context.Context, writes, deletes []Tuple) error {
 // clinic-svc having bootstrapped the store before it started; until then
 // every check is an error, which callers answer with a refusal.
 type Lazy struct {
-	url, store string
+	srv   Server
+	store string
 
 	mu     sync.Mutex
 	client *Client
 }
 
-// NewLazy returns a checker for the store named store at url.
-func NewLazy(url, store string) *Lazy { return &Lazy{url: url, store: store} }
+// NewLazy returns a checker for the store named store on srv.
+func NewLazy(srv Server, store string) *Lazy { return &Lazy{srv: srv, store: store} }
 
 // Check opens the store if needed, then checks with higher consistency.
 func (l *Lazy) Check(ctx context.Context, user, relation, object string) (bool, error) {
@@ -222,7 +248,7 @@ func (l *Lazy) open(ctx context.Context) (*Client, error) {
 	if l.client != nil {
 		return l.client, nil
 	}
-	c, err := Open(ctx, l.url, l.store)
+	c, err := Open(ctx, l.srv, l.store)
 	if err != nil {
 		return nil, err
 	}

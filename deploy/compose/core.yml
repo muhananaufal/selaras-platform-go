@@ -288,6 +288,9 @@ services:
       # A small pool: Postgres has 100 connections for everything.
       OPENFGA_DATASTORE_MAX_OPEN_CONNS: 10
       OPENFGA_PLAYGROUND_ENABLED: "false"
+      # Every call needs the preshared key (ADR-031); health checks do not.
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
     ports:
       - "127.0.0.1:18180:8080"
     depends_on:

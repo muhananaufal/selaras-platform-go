@@ -10,41 +10,73 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/authz"
 )
 
-// openStore bootstraps a fresh store on the OpenFGA at TEST_OPENFGA_URL,
-// skipped on a developer machine without one and FAILED in CI.
-func openStore(t *testing.T) (*authz.Client, string, context.Context) {
+// server is the OpenFGA at TEST_OPENFGA_URL with the preshared key in
+// TEST_OPENFGA_TOKEN (ADR-031), skipped on a developer machine without one
+// and FAILED in CI.
+func server(t *testing.T) authz.Server {
 	t.Helper()
-	url := os.Getenv("TEST_OPENFGA_URL")
-	if url == "" {
+	srv := authz.Server{URL: os.Getenv("TEST_OPENFGA_URL"), Token: os.Getenv("TEST_OPENFGA_TOKEN")}
+	if srv.URL == "" || srv.Token == "" {
 		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_OPENFGA_URL is not set; integration tests must not be skipped in CI")
+			t.Fatal("TEST_OPENFGA_URL or TEST_OPENFGA_TOKEN is not set; integration tests must not be skipped in CI")
 		}
-		t.Skip("TEST_OPENFGA_URL is not set")
+		t.Skip("TEST_OPENFGA_URL or TEST_OPENFGA_TOKEN is not set")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
+	return srv
+}
 
+func readModel(t *testing.T) []byte {
+	t.Helper()
 	model, err := os.ReadFile("../../../deploy/openfga/model.json")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return model
+}
+
+// openStore bootstraps a fresh store on the test server.
+func openStore(t *testing.T) (*authz.Client, string, context.Context) {
+	t.Helper()
+	srv := server(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
 	store := "test-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	c, err := authz.Bootstrap(ctx, url, store, model)
+	c, err := authz.Bootstrap(ctx, srv, store, readModel(t))
 	if err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	return c, store, ctx
 }
 
+// Whoever reaches OpenFGA without the key gets nothing (ADR-031): not the
+// store list, not a model write, not a check. The key is what stands between
+// a pod in the namespace and a tuple that grants it any patient.
+func TestTheServerRefusesCallersWithoutTheKey(t *testing.T) {
+	srv := server(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := "key-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	for name, token := range map[string]string{"no key": "", "a wrong key": srv.Token + "x"} {
+		other := authz.Server{URL: srv.URL, Token: token}
+		if _, err := authz.Bootstrap(ctx, other, store, readModel(t)); err == nil {
+			t.Errorf("Bootstrap with %s succeeded", name)
+		}
+		if ok, err := authz.NewLazy(other, store).Check(ctx, "user:rina", "can_view_assessments", "patient:ani"); err == nil || ok {
+			t.Errorf("Check with %s = %v, %v; want an error", name, ok, err)
+		}
+	}
+	if _, err := authz.Bootstrap(ctx, srv, store, readModel(t)); err != nil {
+		t.Fatalf("Bootstrap with the key: %v", err)
+	}
+}
+
 // Bootstrapping again with the same model finds the store and its model
 // instead of writing a new version on every start.
 func TestBootstrapIsIdempotent(t *testing.T) {
 	first, store, ctx := openStore(t)
-	model, err := os.ReadFile("../../../deploy/openfga/model.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	again, err := authz.Bootstrap(ctx, os.Getenv("TEST_OPENFGA_URL"), store, model)
+	again, err := authz.Bootstrap(ctx, server(t), store, readModel(t))
 	if err != nil {
 		t.Fatalf("second Bootstrap: %v", err)
 	}
@@ -113,7 +145,7 @@ func TestThereIsNoRelationForChat(t *testing.T) {
 }
 
 func TestAnUnreachableServerIsAnError(t *testing.T) {
-	if _, err := authz.Bootstrap(context.Background(), "http://127.0.0.1:1", "x", []byte(`{}`)); err == nil {
+	if _, err := authz.Bootstrap(context.Background(), authz.Server{URL: "http://127.0.0.1:1", Token: "t"}, "x", []byte(`{}`)); err == nil {
 		t.Fatal("Bootstrap against nothing succeeded")
 	}
 }
@@ -123,14 +155,14 @@ func TestAnUnreachableServerIsAnError(t *testing.T) {
 // race clinic-svc over which version is current.
 func TestOpenReadsWhatBootstrapWrote(t *testing.T) {
 	boot, store, ctx := openStore(t)
-	reader, err := authz.Open(ctx, os.Getenv("TEST_OPENFGA_URL"), store)
+	reader, err := authz.Open(ctx, server(t), store)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	if reader.StoreID() != boot.StoreID() || reader.ModelID() != boot.ModelID() {
 		t.Fatalf("Open found store %s model %s; want %s %s", reader.StoreID(), reader.ModelID(), boot.StoreID(), boot.ModelID())
 	}
-	if _, err := authz.Open(ctx, os.Getenv("TEST_OPENFGA_URL"), store+"-missing"); err == nil {
+	if _, err := authz.Open(ctx, server(t), store+"-missing"); err == nil {
 		t.Fatal("Open created or found a store that was never bootstrapped")
 	}
 }
@@ -139,26 +171,16 @@ func TestOpenReadsWhatBootstrapWrote(t *testing.T) {
 // checker then answers with an error - the caller refuses, fail closed -
 // and opens the store on a later check once it exists.
 func TestALazyCheckerOpensTheStoreOnceItExists(t *testing.T) {
-	url := os.Getenv("TEST_OPENFGA_URL")
-	if url == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_OPENFGA_URL is not set; integration tests must not be skipped in CI")
-		}
-		t.Skip("TEST_OPENFGA_URL is not set")
-	}
+	srv := server(t)
 	ctx := context.Background()
 	store := "lazy-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	lazy := authz.NewLazy(url, store)
+	lazy := authz.NewLazy(srv, store)
 
 	if ok, err := lazy.Check(ctx, "user:rina", "can_view_assessments", "patient:ani"); err == nil || ok {
 		t.Fatalf("a check before the store exists = %v, %v; want an error", ok, err)
 	}
 
-	model, err := os.ReadFile("../../../deploy/openfga/model.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	boot, err := authz.Bootstrap(ctx, url, store, model)
+	boot, err := authz.Bootstrap(ctx, srv, store, readModel(t))
 	if err != nil {
 		t.Fatal(err)
 	}

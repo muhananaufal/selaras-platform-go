@@ -4,6 +4,8 @@ package clinic
 import (
 	"fmt"
 	"os"
+
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authz"
 )
 
 // Config is everything clinic-svc needs to start.
@@ -16,11 +18,12 @@ type Config struct {
 	// row level security off (ADR-030).
 	DatabaseDSN string
 
-	// OpenFGAURL is where the consent projection writes tuples (ADR-030). Empty
-	// runs clinic-svc without the projection: consents are still recorded and
-	// queued, and no clinician can read anything until it runs - the safe
-	// direction, and one the start-up log says out loud.
-	OpenFGAURL string
+	// OpenFGA is where the consent projection writes tuples (ADR-030), with
+	// its preshared key (ADR-031). An empty URL runs clinic-svc without the
+	// projection: consents are still recorded and queued, and no clinician
+	// can read anything until it runs - the safe direction, and one the
+	// start-up log says out loud.
+	OpenFGA authz.Server
 
 	// OpenFGAStore names the store the model and tuples live in.
 	OpenFGAStore string
@@ -38,13 +41,17 @@ func LoadConfig() (Config, error) {
 		GRPCAddr:     envOr("CLINIC_GRPC_ADDR", ":9901"),
 		HealthAddr:   envOr("CLINIC_HEALTH_ADDR", ":9902"),
 		DatabaseDSN:  os.Getenv("CLINIC_DATABASE_DSN"),
-		OpenFGAURL:   os.Getenv("OPENFGA_URL"),
 		OpenFGAStore: envOr("OPENFGA_STORE", "selaras"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
 	}
 	if cfg.DatabaseDSN == "" {
 		return Config{}, fmt.Errorf("missing required configuration: %v", []string{"CLINIC_DATABASE_DSN"})
 	}
+	fga, err := authz.ServerFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.OpenFGA = fga
 	return cfg, nil
 }
 

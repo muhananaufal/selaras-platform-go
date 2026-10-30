@@ -155,8 +155,8 @@ func run(log *slog.Logger) error {
 	// OPENFGA_URL every such read is refused, and the log says so; the store
 	// is opened on the first check, since clinic-svc bootstraps it and may
 	// start later.
-	if cfg.OpenFGAURL != "" {
-		svc = svc.WithAccessChecker(authz.NewLazy(cfg.OpenFGAURL, cfg.OpenFGAStore))
+	if cfg.OpenFGA.URL != "" {
+		svc = svc.WithAccessChecker(authz.NewLazy(cfg.OpenFGA, cfg.OpenFGAStore))
 	} else {
 		log.Warn("OPENFGA_URL is not set; every clinician's read of a patient is refused")
 	}

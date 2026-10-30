@@ -133,6 +133,7 @@ services:
       PROFILE_GRPC_TARGET: profile-svc:9201
       # Clinicians' reads of patients are checked here (ADR-030).
       OPENFGA_URL: http://openfga:8080
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -300,6 +301,7 @@ services:
       CLINIC_HEALTH_ADDR: ":9902"
       # The consent projection (ADR-030).
       OPENFGA_URL: http://openfga:8080
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
       # Clinicians' reads arrive here for the access audit.
       KAFKA_BROKERS: kafka:9092
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
@@ -341,6 +343,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       # Clinicians' reads of patients are checked here (ADR-030).
       OPENFGA_URL: http://openfga:8080
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
       # Watch hints (ADR-029): results are announced to the gateway's streams.
       REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
