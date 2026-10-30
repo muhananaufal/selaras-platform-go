@@ -2,7 +2,8 @@
 # Creates two Secrets in the cluster from .env (F9-01, ADR-016).
 #
 #   selaras-infra   : the Postgres credentials and per-service roles, read by
-#                     Postgres (initdb) and PgBouncer.
+#                     Postgres (initdb) and PgBouncer, and OpenFGA's preshared
+#                     key, read by OpenFGA (ADR-031).
 #   selaras-secrets : what the units need - one DSN per unit, the token keys,
 #                     the Gemini key. The key names match the units' environment
 #                     variables, and the chart references them through secretEnv.
@@ -21,7 +22,7 @@ need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "FATAL: $v is not set in .
 need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY LLM_PROVIDER \
   SVC_IDENTITY_PASSWORD SVC_PROFILE_PASSWORD SVC_ASSESSMENT_PASSWORD SVC_COACHING_PASSWORD \
   SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD \
-  CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD OPENFGA_DB_PASSWORD
+  CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD OPENFGA_DB_PASSWORD OPENFGA_API_TOKEN
 # The Gemini key and model name are required only when the provider is
 # Gemini; with the fake provider both are empty and never read (llm-worker
 # checks them itself at start, F3-16).
@@ -57,6 +58,7 @@ kubectl -n selaras create secret generic selaras-infra \
   --from-literal=CLINIC_OWNER_PASSWORD="$CLINIC_OWNER_PASSWORD" \
   --from-literal=SVC_CLINIC_PASSWORD="$SVC_CLINIC_PASSWORD" \
   --from-literal=OPENFGA_DB_PASSWORD="$OPENFGA_DB_PASSWORD" \
+  --from-literal=OPENFGA_API_TOKEN="$OPENFGA_API_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n selaras create secret generic selaras-secrets \
@@ -82,6 +84,7 @@ kubectl -n selaras create secret generic selaras-secrets \
   --from-literal=JWT_VERIFY_KEY="$JWT_VERIFY_KEY" \
   --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
   --from-literal=GEMINI_MODEL="${GEMINI_MODEL:-}" \
+  --from-literal=OPENFGA_API_TOKEN="$OPENFGA_API_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "secrets applied to namespace selaras (values not shown)"

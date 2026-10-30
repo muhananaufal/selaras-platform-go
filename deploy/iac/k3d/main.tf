@@ -20,6 +20,7 @@ locals {
     "deploy/k8s/infra/postgres.yaml",
     "deploy/k8s/infra/kafka.yaml",
     "deploy/k8s/infra/support.yaml",
+    "deploy/k8s/infra/openfga.yaml",
     "deploy/k8s/observability/stack.yaml",
   ]
 
