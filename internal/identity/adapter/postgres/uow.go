@@ -49,6 +49,10 @@ func (t *transactional) PasswordResets() domain.PasswordResetRepository {
 	return NewPasswordResetRepository(t.q)
 }
 
+func (t *transactional) MFA() domain.MFARepository {
+	return NewMFARepository(t.q)
+}
+
 func (t *transactional) Sagas() app.SagaRepository {
 	return NewSagaRepository(t.q)
 }

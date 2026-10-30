@@ -46,6 +46,11 @@ type Login struct {
 	revocations domain.RevocationPublisher
 	now         func() time.Time
 
+	// mfa issues the challenge for an account with a second factor; set
+	// through WithMFA. Without it such an account cannot sign in at all
+	// (fail closed), never without its second factor.
+	mfa *MFA
+
 	// The decoy candidate is built once at construction, not on every failed
 	// request. The constant is valid today, and if it is ever changed into an
 	// invalid one the failure surfaces at start-up - not as an error silently
@@ -91,6 +96,9 @@ func NewLogin(
 	}, nil
 }
 
+// WithMFA lets accounts with a second factor sign in through a challenge.
+func (l *Login) WithMFA(m *MFA) *Login { l.mfa = m; return l }
+
 func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, error) {
 	var user *domain.User
 
@@ -99,11 +107,23 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 	// ends the previous session (D1). Reading and then writing outside a
 	// transaction would let two concurrent logins both read the old generation
 	// and one of them would be lost.
+	var factors SecurityStatus
 	err := l.uow.Do(ctx, func(repos Repositories) error {
 		users := repos.Users()
 		found, err := l.authenticate(ctx, users, cmd)
 		if err != nil {
 			return err
+		}
+
+		// ADR-032: with a second factor the password proved only the
+		// password. Nothing is bumped - otherwise knowing the password alone
+		// would end the owner's session - and no token is issued below.
+		if factors, err = factorsOf(ctx, repos.MFA(), found.ID()); err != nil {
+			return err
+		}
+		if factors.MFARequired() {
+			user = found
+			return nil
 		}
 
 		// D1: one session per user. A successful login revokes every previous
@@ -119,6 +139,9 @@ func (l *Login) Execute(ctx context.Context, cmd LoginCommand) (AuthResult, erro
 	})
 	if err != nil {
 		return AuthResult{}, err
+	}
+	if factors.MFARequired() {
+		return secondStep(ctx, l.mfa, user.ID(), factors)
 	}
 
 	profileID := l.findProfileBestEffort(ctx, user.ID())

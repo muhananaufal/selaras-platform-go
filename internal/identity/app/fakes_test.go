@@ -103,10 +103,20 @@ type fakeUnitOfWork struct {
 	resets domain.PasswordResetRepository
 	sagas  app.SagaRepository
 	events *fakeEvents
+	mfa    *fakeMFA
 	calls  int
 }
 
 func (f *fakeUnitOfWork) Users() domain.UserRepository { return f.users }
+
+// MFA returns the fake store, created lazily: an account with nothing in it
+// has no second factor, which is what every older test assumes.
+func (f *fakeUnitOfWork) MFA() domain.MFARepository {
+	if f.mfa == nil {
+		f.mfa = newFakeMFA()
+	}
+	return f.mfa
+}
 
 func (f *fakeUnitOfWork) PasswordResets() domain.PasswordResetRepository { return f.resets }
 

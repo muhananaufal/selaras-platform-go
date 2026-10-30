@@ -69,6 +69,12 @@ func totpCode(secret []byte, step int64, digits int) string {
 	return fmt.Sprintf("%0*d", digits, bin%mod)
 }
 
+// TOTPCode is the code an authenticator app shows at t: what a client (and
+// a test standing in for one) computes from the enrolled secret.
+func TOTPCode(secret []byte, t time.Time) string {
+	return totpCode(secret, TOTPStep(t), TOTPDigits)
+}
+
 // VerifyTOTP checks code against the steps around now and returns the step
 // it matched. A step at or before lastUsedStep is never accepted: an OTP is
 // accepted only once (NIST SP 800-63B 3.1.4.2), so the caller stores the
