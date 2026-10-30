@@ -118,6 +118,10 @@ func (f *fakeUnitOfWork) MFA() domain.MFARepository {
 	return f.mfa
 }
 
+// Passkeys is covered end to end with a virtual authenticator (test/e2e);
+// the app tests use none.
+func (f *fakeUnitOfWork) Passkeys() app.PasskeyRepository { return nil }
+
 func (f *fakeUnitOfWork) PasswordResets() domain.PasswordResetRepository { return f.resets }
 
 func (f *fakeUnitOfWork) Sagas() app.SagaRepository { return f.sagas }

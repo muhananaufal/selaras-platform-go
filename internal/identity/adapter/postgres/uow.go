@@ -53,6 +53,10 @@ func (t *transactional) MFA() domain.MFARepository {
 	return NewMFARepository(t.q)
 }
 
+func (t *transactional) Passkeys() app.PasskeyRepository {
+	return NewPasskeyRepository(t.q)
+}
+
 func (t *transactional) Sagas() app.SagaRepository {
 	return NewSagaRepository(t.q)
 }

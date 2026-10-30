@@ -32,6 +32,10 @@ type Repositories interface {
 	// not) must read one consistent state (ADR-032).
 	MFA() domain.MFARepository
 
+	// Passkeys: WebAuthn credentials and user handles. Its records are the
+	// library's (go-webauthn), so the port lives here and not in domain.
+	Passkeys() PasskeyRepository
+
 	// Sagas and Events are used by account deletion.
 	//
 	// Both sit in the SAME unit of work as the saga write: a saga recorded
