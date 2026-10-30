@@ -7,6 +7,7 @@ import (
 	"net/mail"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
@@ -24,6 +25,9 @@ const (
 )
 
 // HandoffCodes consumes the one-time codes of the social sign-in redirect.
+// Behind a code is the finished ExchangeSocialSessionResponse, encoded by
+// the callback: a session, or an MFA challenge for an account with a second
+// factor (ADR-032).
 type HandoffCodes interface {
 	ConsumeHandoffCode(ctx context.Context, code string) (string, error)
 }
@@ -52,6 +56,13 @@ func PublicProcedures() []string {
 		edgev1connect.AuthRequestPasswordResetProcedure,
 		edgev1connect.AuthConfirmPasswordResetProcedure,
 		edgev1connect.AuthExchangeSocialSessionProcedure,
+
+		// The second step of a sign-in (ADR-032): the ticket or the passkey
+		// assertion is the credential.
+		edgev1connect.AuthVerifyMfaProcedure,
+		edgev1connect.AuthBeginMfaPasskeyProcedure,
+		edgev1connect.AuthBeginPasskeyLoginProcedure,
+		edgev1connect.AuthFinishPasskeyLoginProcedure,
 	}
 }
 
@@ -85,6 +96,9 @@ func (a *Auth) Login(ctx context.Context, req *edgev1.LoginRequest) (*edgev1.Log
 	})
 	if err != nil {
 		return nil, rpcerr.FromUpstream(ctx, edgev1connect.AuthLoginProcedure, err)
+	}
+	if c := mfaChallenge(resp.GetMfaChallenge()); c != nil {
+		return &edgev1.LoginResponse{MfaChallenge: c}, nil
 	}
 	return &edgev1.LoginResponse{Session: session(resp.GetToken(), resp.GetUser())}, nil
 }
@@ -151,7 +165,7 @@ func (a *Auth) ExchangeSocialSession(
 		return nil, err
 	}
 
-	token, err := a.handoff.ConsumeHandoffCode(ctx, req.GetCode())
+	payload, err := a.handoff.ConsumeHandoffCode(ctx, req.GetCode())
 	if err != nil {
 		if errors.Is(err, oauth.ErrUnknownCode) {
 			// Unknown, used, and expired answer the same: telling them apart
@@ -161,9 +175,12 @@ func (a *Auth) ExchangeSocialSession(
 		slog.ErrorContext(ctx, "could not read the handoff code", "error", err)
 		return nil, rpcerr.Unavailable("cannot complete sign-in right now")
 	}
-	return &edgev1.ExchangeSocialSessionResponse{
-		Session: &edgev1.Session{AccessToken: token, TokenType: tokenTypeBearer},
-	}, nil
+	out := &edgev1.ExchangeSocialSessionResponse{}
+	if err := proto.Unmarshal([]byte(payload), out); err != nil {
+		slog.ErrorContext(ctx, "could not decode the handoff payload", "error", err)
+		return nil, rpcerr.Unavailable("cannot complete sign-in right now")
+	}
+	return out, nil
 }
 
 // DeleteAccount starts the deletion saga. The password is REQUIRED and really

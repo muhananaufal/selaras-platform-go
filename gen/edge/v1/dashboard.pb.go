@@ -63,9 +63,11 @@ type GetDashboardResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// False means the user has never run an analysis, and the client shows a
 	// welcome message. Stated explicitly, not inferred from an empty history.
-	HasAssessments    bool                    `protobuf:"varint,1,opt,name=has_assessments,json=hasAssessments,proto3" json:"has_assessments,omitempty"`
-	LatestAssessment  *v1.AssessmentSummary   `protobuf:"bytes,2,opt,name=latest_assessment,json=latestAssessment,proto3" json:"latest_assessment,omitempty"`
-	Program           *v1.ProgramSummary      `protobuf:"bytes,3,opt,name=program,proto3" json:"program,omitempty"`
+	HasAssessments   bool                  `protobuf:"varint,1,opt,name=has_assessments,json=hasAssessments,proto3" json:"has_assessments,omitempty"`
+	LatestAssessment *v1.AssessmentSummary `protobuf:"bytes,2,opt,name=latest_assessment,json=latestAssessment,proto3" json:"latest_assessment,omitempty"`
+	Program          *v1.ProgramSummary    `protobuf:"bytes,3,opt,name=program,proto3" json:"program,omitempty"`
+	// The latest assessments, newest first, at most 100. total_assessments
+	// counts all of them; the full history is ListAssessments.
 	AssessmentHistory []*v1.AssessmentSummary `protobuf:"bytes,4,rep,name=assessment_history,json=assessmentHistory,proto3" json:"assessment_history,omitempty"`
 	RiskTrend         []*v1.RiskTrendPoint    `protobuf:"bytes,5,rep,name=risk_trend,json=riskTrend,proto3" json:"risk_trend,omitempty"`
 	// HEALTH_TREND_INSUFFICIENT_DATA is distinct from STABLE: someone with

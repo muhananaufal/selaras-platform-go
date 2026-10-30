@@ -333,6 +333,14 @@ func (c *Consumer) work(
 ) error {
 	for attempt := job.Attempts; attempt < MaxAttempts; attempt++ {
 		answer, genErr := c.generate(ctx, req)
+		// A complete answer that breaks its prompt's contract is a failed attempt,
+		// retried like a provider error. A truncated one is judged in
+		// recordSuccess instead: retrying it cannot help.
+		if genErr == nil && !answer.Truncated() {
+			if err := req.checkAnswer(answer.Text); err != nil {
+				genErr = err
+			}
+		}
 		if genErr == nil {
 			c.quotaHits = 0
 			err := c.recordSuccess(ctx, job, req, answer)

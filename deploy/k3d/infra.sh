@@ -34,10 +34,13 @@ set -a; . "$ROOT/.env"; set +a
 kubectl -n observability create secret generic grafana-admin \
   --from-literal=password="$GRAFANA_ADMIN_PASSWORD" --dry-run=client -o yaml | kubectl apply -f -
 
-log "menunggu Postgres, Kafka, PgBouncer, metrics-server, KEDA"
+log "menunggu Postgres, Kafka, PgBouncer, OpenFGA, metrics-server, KEDA"
 kubectl -n selaras rollout status statefulset/postgres --timeout=180s
 kubectl -n selaras rollout status statefulset/kafka --timeout=240s
 kubectl -n selaras rollout status deployment/pgbouncer --timeout=120s
+# OpenFGA migrates in its init container, so it is ready only once Postgres
+# is and its migrations ran (ADR-031).
+kubectl -n selaras rollout status deployment/openfga --timeout=180s
 kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
 kubectl -n keda rollout status deployment/keda-operator --timeout=180s
 
@@ -47,7 +50,7 @@ log "migrasi per skema dan topic Kafka (Job)"
 kubectl -n selaras delete job -l selaras/job=migrate --ignore-not-found >/dev/null
 kubectl -n selaras delete job topics --ignore-not-found >/dev/null
 kubectl apply -f "$ROOT/deploy/k8s/jobs/migrate.yaml"
-for s in identity profile assessment coaching chat nutrition dashboard llm; do
+for s in identity profile assessment coaching chat nutrition dashboard llm clinic; do
   kubectl -n selaras label job "migrate-$s" selaras/job=migrate --overwrite >/dev/null
   kubectl -n selaras wait --for=condition=complete "job/migrate-$s" --timeout=180s
 done

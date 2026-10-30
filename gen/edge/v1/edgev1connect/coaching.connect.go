@@ -37,6 +37,9 @@ const (
 	CoachingStartProgramProcedure = "/edge.v1.Coaching/StartProgram"
 	// CoachingGetProgramProcedure is the fully-qualified name of the Coaching's GetProgram RPC.
 	CoachingGetProgramProcedure = "/edge.v1.Coaching/GetProgram"
+	// CoachingListPatientProgressProcedure is the fully-qualified name of the Coaching's
+	// ListPatientProgress RPC.
+	CoachingListPatientProgressProcedure = "/edge.v1.Coaching/ListPatientProgress"
 	// CoachingToggleProgramStatusProcedure is the fully-qualified name of the Coaching's
 	// ToggleProgramStatus RPC.
 	CoachingToggleProgramStatusProcedure = "/edge.v1.Coaching/ToggleProgramStatus"
@@ -73,6 +76,12 @@ type CoachingClient interface {
 	// Idempotency-Key header.
 	StartProgram(context.Context, *v1.StartProgramRequest) (*v1.StartProgramResponse, error)
 	GetProgram(context.Context, *v1.GetProgramRequest) (*v1.GetProgramResponse, error)
+	// A clinician reads a patient's coaching progress, only under the
+	// patient's consent to that clinician (ADR-030). Progress only: status,
+	// dates and how many tasks of each week are done - never discussions,
+	// task wording or the graduation report. Every read that returns data is
+	// recorded in the patient's access audit first.
+	ListPatientProgress(context.Context, *v1.ListPatientProgressRequest) (*v1.ListPatientProgressResponse, error)
 	// Moves a program between active and paused.
 	ToggleProgramStatus(context.Context, *v1.ToggleProgramStatusRequest) (*v1.ToggleProgramStatusResponse, error)
 	// Deletes a program with everything in it.
@@ -121,6 +130,13 @@ func NewCoachingClient(httpClient connect.HTTPClient, baseURL string, opts ...co
 			httpClient,
 			baseURL+CoachingGetProgramProcedure,
 			connect.WithSchema(coachingMethods.ByName("GetProgram")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		listPatientProgress: connect.NewClient[v1.ListPatientProgressRequest, v1.ListPatientProgressResponse](
+			httpClient,
+			baseURL+CoachingListPatientProgressProcedure,
+			connect.WithSchema(coachingMethods.ByName("ListPatientProgress")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
@@ -200,6 +216,7 @@ func NewCoachingClient(httpClient connect.HTTPClient, baseURL string, opts ...co
 type coachingClient struct {
 	startProgram        *connect.Client[v1.StartProgramRequest, v1.StartProgramResponse]
 	getProgram          *connect.Client[v1.GetProgramRequest, v1.GetProgramResponse]
+	listPatientProgress *connect.Client[v1.ListPatientProgressRequest, v1.ListPatientProgressResponse]
 	toggleProgramStatus *connect.Client[v1.ToggleProgramStatusRequest, v1.ToggleProgramStatusResponse]
 	deleteProgram       *connect.Client[v1.DeleteProgramRequest, v1.DeleteProgramResponse]
 	getGraduationReport *connect.Client[v1.GetGraduationReportRequest, v1.GetGraduationReportResponse]
@@ -225,6 +242,15 @@ func (c *coachingClient) StartProgram(ctx context.Context, req *v1.StartProgramR
 // GetProgram calls edge.v1.Coaching.GetProgram.
 func (c *coachingClient) GetProgram(ctx context.Context, req *v1.GetProgramRequest) (*v1.GetProgramResponse, error) {
 	response, err := c.getProgram.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// ListPatientProgress calls edge.v1.Coaching.ListPatientProgress.
+func (c *coachingClient) ListPatientProgress(ctx context.Context, req *v1.ListPatientProgressRequest) (*v1.ListPatientProgressResponse, error) {
+	response, err := c.listPatientProgress.CallUnary(ctx, connect.NewRequest(req))
 	if response != nil {
 		return response.Msg, err
 	}
@@ -329,6 +355,12 @@ type CoachingHandler interface {
 	// Idempotency-Key header.
 	StartProgram(context.Context, *v1.StartProgramRequest) (*v1.StartProgramResponse, error)
 	GetProgram(context.Context, *v1.GetProgramRequest) (*v1.GetProgramResponse, error)
+	// A clinician reads a patient's coaching progress, only under the
+	// patient's consent to that clinician (ADR-030). Progress only: status,
+	// dates and how many tasks of each week are done - never discussions,
+	// task wording or the graduation report. Every read that returns data is
+	// recorded in the patient's access audit first.
+	ListPatientProgress(context.Context, *v1.ListPatientProgressRequest) (*v1.ListPatientProgressResponse, error)
 	// Moves a program between active and paused.
 	ToggleProgramStatus(context.Context, *v1.ToggleProgramStatusRequest) (*v1.ToggleProgramStatusResponse, error)
 	// Deletes a program with everything in it.
@@ -373,6 +405,13 @@ func NewCoachingHandler(svc CoachingHandler, opts ...connect.HandlerOption) (str
 		CoachingGetProgramProcedure,
 		svc.GetProgram,
 		connect.WithSchema(coachingMethods.ByName("GetProgram")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	coachingListPatientProgressHandler := connect.NewUnaryHandlerSimple(
+		CoachingListPatientProgressProcedure,
+		svc.ListPatientProgress,
+		connect.WithSchema(coachingMethods.ByName("ListPatientProgress")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -451,6 +490,8 @@ func NewCoachingHandler(svc CoachingHandler, opts ...connect.HandlerOption) (str
 			coachingStartProgramHandler.ServeHTTP(w, r)
 		case CoachingGetProgramProcedure:
 			coachingGetProgramHandler.ServeHTTP(w, r)
+		case CoachingListPatientProgressProcedure:
+			coachingListPatientProgressHandler.ServeHTTP(w, r)
 		case CoachingToggleProgramStatusProcedure:
 			coachingToggleProgramStatusHandler.ServeHTTP(w, r)
 		case CoachingDeleteProgramProcedure:
@@ -488,6 +529,10 @@ func (UnimplementedCoachingHandler) StartProgram(context.Context, *v1.StartProgr
 
 func (UnimplementedCoachingHandler) GetProgram(context.Context, *v1.GetProgramRequest) (*v1.GetProgramResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Coaching.GetProgram is not implemented"))
+}
+
+func (UnimplementedCoachingHandler) ListPatientProgress(context.Context, *v1.ListPatientProgressRequest) (*v1.ListPatientProgressResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Coaching.ListPatientProgress is not implemented"))
 }
 
 func (UnimplementedCoachingHandler) ToggleProgramStatus(context.Context, *v1.ToggleProgramStatusRequest) (*v1.ToggleProgramStatusResponse, error) {

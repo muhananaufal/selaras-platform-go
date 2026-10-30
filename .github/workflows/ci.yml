@@ -46,6 +46,26 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
 
+      # The same PgBouncer as compose, in transaction mode, so the clinic
+      # schema's row level security is proven where it will run (ADR-030):
+      # a SET LOCAL must not survive into the next transaction on the same
+      # server connection. It reaches Postgres by its service name.
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.25.2-p0
+        ports: ['6432:5432']
+        env:
+          DB_HOST: postgres
+          DB_PORT: 5432
+          DB_NAME: "*"
+          DB_USER: selaras_admin
+          DB_PASSWORD: ci-not-a-secret
+          AUTH_TYPE: scram-sha-256
+          AUTH_USER: selaras_admin
+          POOL_MODE: transaction
+          DEFAULT_POOL_SIZE: 8
+          IGNORE_STARTUP_PARAMETERS: search_path
+          MAX_PREPARED_STATEMENTS: 200
+
       # Mailpit captures outgoing email and serves it over HTTP, so a test
       # can prove the reset link was really sent with its token - not assume
       # it.
@@ -123,6 +143,9 @@ jobs:
           SVC_NUTRITION_PASSWORD: ci-not-a-secret
           SVC_DASHBOARD_PASSWORD: ci-not-a-secret
           SVC_LLM_PASSWORD: ci-not-a-secret
+          CLINIC_OWNER_PASSWORD: ci-not-a-secret
+          SVC_CLINIC_PASSWORD: ci-not-a-secret
+          OPENFGA_DB_PASSWORD: ci-not-a-secret
           POSTGRES_USER: selaras_admin
           POSTGRES_DB: selaras
         run: |
@@ -151,9 +174,23 @@ jobs:
             go run ./cmd/migrate -service "$s" -direction up \
               -dsn "pgx5://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
+          # The clinic schema is migrated by its owner role, not by the
+          # runtime role svc_clinic (ADR-030).
+          go run ./cmd/migrate -service clinic -direction up \
+            -dsn "pgx5://clinic_owner:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=clinic"
 
       # The topics are created through the same tool used locally, not
       # through a separate script. Two copies would drift silently.
+      # OpenFGA for internal/platform/authz (ADR-030), in memory. Started
+      # here rather than as a service container: the image has no default
+      # command, and a service container cannot be given `run`.
+      - name: Start OpenFGA
+        run: |
+          # With the preshared key, as everywhere else (ADR-031).
+          docker run -d --name openfga -p 127.0.0.1:8090:8080 -e OPENFGA_AUTHN_METHOD=preshared -e OPENFGA_AUTHN_PRESHARED_KEYS=ci-not-a-secret openfga/openfga:v1.21.0 run
+          for _ in $(seq 1 30); do curl -sf http://127.0.0.1:8090/healthz >/dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:8090/healthz
+
       - name: Create Kafka topics
         run: go run ./cmd/topics -brokers 127.0.0.1:9092
       # -p 1: several test packages share one Postgres schema and truncate the
@@ -173,6 +210,8 @@ jobs:
           TEST_SMTP_HOST: 127.0.0.1
           TEST_SMTP_PORT: "1025"
           TEST_MAILPIT_URL: http://127.0.0.1:8025
+          TEST_OPENFGA_URL: http://127.0.0.1:8090
+          TEST_OPENFGA_TOKEN: ci-not-a-secret
         run: |
           export TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=identity"
           export TEST_DSN_PROFILE="postgres://svc_profile:$SVC_PROFILE_PASSWORD@127.0.0.1:5432/selaras?sslmode=disable&search_path=profile"
@@ -181,6 +220,10 @@ jobs:
           for s in coaching chat nutrition dashboard; do
             export "TEST_DSN_$(echo $s | tr a-z A-Z)=postgres://svc_$s:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=$s"
           done
+          export TEST_DSN_CLINIC="postgres://svc_clinic:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=clinic"
+          export TEST_DSN_CLINIC_OWNER="postgres://clinic_owner:ci-not-a-secret@127.0.0.1:5432/selaras?sslmode=disable&search_path=clinic"
+          export TEST_DSN_CLINIC_PGBOUNCER="postgres://svc_clinic:ci-not-a-secret@127.0.0.1:6432/selaras?sslmode=disable&search_path=clinic"
+          pg_isready -h 127.0.0.1 -p 6432 -t 60
           # test/e2e, test/acceptance and test/drill need a running stack; the e2e job below
           # runs them. Here all three are EXPLICITLY excluded, not left to skip
           # themselves - with CI=true they would fail, and that is precisely the
@@ -241,6 +284,24 @@ jobs:
       - name: Validate the Alertmanager config
         working-directory: deploy/compose/observability
         run: docker run --rm -v "$PWD:/am:ro" --entrypoint amtool prom/alertmanager:v0.34.0 check-config /am/alertmanager.yml
+
+  # The clinic access model (ADR-030) is tested with the official OpenFGA
+  # CLI: every rule the owner set has a check, and the script first proves a
+  # wrong assertion fails the test - for the assertion, not for another
+  # reason.
+  authz-model:
+    name: authorization model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install the fga CLI
+        run: go install github.com/openfga/cli/cmd/fga@v0.8.1
+      - name: Test the model
+        run: bash deploy/openfga/test.sh
 
   # Migrations are linted with squawk (the pinned image) against the rules in
   # .squawk.toml; files older than the frozen baseline are not rewritten. The
@@ -329,6 +390,8 @@ jobs:
         run: bash test/drill/restore-globals.test.sh
       - name: Point-in-time recovery
         run: bash test/drill/pitr.test.sh
+      - name: Provisioning is idempotent
+        run: bash test/drill/provision.test.sh
 
   chart:
     name: helm chart
@@ -352,7 +415,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+      - uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
         with:
           version: 1.72.0
           # The contracts were locked in B1: a change that breaks consumers has to
@@ -384,7 +447,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+      - uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
         with:
           version: 1.72.0
           setup_only: true
@@ -462,7 +525,7 @@ jobs:
           cache: true
       - name: Build the edge-gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o dist/edge-gateway ./cmd/edge-gateway
-      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           file: dist/edge-gateway
           format: cyclonedx-json
@@ -526,6 +589,11 @@ jobs:
             echo "POSTGRES_PORT=15432"
             echo "REPLICATION_PASSWORD=ci-not-a-secret"
             for s in IDENTITY PROFILE ASSESSMENT COACHING CHAT NUTRITION DASHBOARD LLM; do echo "SVC_${s}_PASSWORD=ci-not-a-secret"; done
+            echo "CLINIC_OWNER_PASSWORD=ci-not-a-secret"
+            echo "SVC_CLINIC_PASSWORD=ci-not-a-secret"
+            echo "OPENFGA_DB_PASSWORD=ci-not-a-secret"
+            echo "OPENFGA_API_TOKEN=ci-not-a-secret"
+            echo "MFA_ENCRYPTION_KEYS=1:$(openssl rand -base64 32)"
             echo "KAFKA_BROKERS=127.0.0.1:19092"
             echo "REDIS_ADDR=127.0.0.1:16379"
             echo "GRAFANA_ADMIN_PASSWORD=ci-not-a-secret"
@@ -552,9 +620,11 @@ jobs:
             go run ./cmd/migrate -service "$s" -direction up \
               -dsn "postgres://svc_$s:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=$s"
           done
+          go run ./cmd/migrate -service clinic -direction up \
+            -dsn "postgres://clinic_owner:ci-not-a-secret@127.0.0.1:15432/selaras?sslmode=disable&search_path=clinic"
           go run ./cmd/topics -brokers 127.0.0.1:19092
           docker compose --env-file .env -f deploy/compose/core.yml -f deploy/compose/apps.yml restart \
-            identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker
+            identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc clinic-svc llm-worker
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:18080/readyz && break; sleep 2; done
 
       - name: e2e and acceptance

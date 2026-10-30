@@ -5,6 +5,8 @@ package assessment
 import (
 	"fmt"
 	"os"
+
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authz"
 )
 
 // Config is everything assessment-svc needs to start.
@@ -17,14 +19,21 @@ type Config struct {
 	// nothing without a profile: without age, sex, and country there is
 	// nothing to compute.
 	ProfileAddr string
+
+	// OpenFGA decides clinicians' reads of patients (ADR-030), with its
+	// preshared key (ADR-031). An empty URL refuses every such read, and the
+	// start-up log says so.
+	OpenFGA      authz.Server
+	OpenFGAStore string
 }
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		GRPCAddr:    envOr("ASSESSMENT_GRPC_ADDR", ":9301"),
-		HealthAddr:  envOr("ASSESSMENT_HEALTH_ADDR", ":9302"),
-		DatabaseDSN: os.Getenv("ASSESSMENT_DATABASE_DSN"),
-		ProfileAddr: os.Getenv("PROFILE_GRPC_TARGET"),
+		GRPCAddr:     envOr("ASSESSMENT_GRPC_ADDR", ":9301"),
+		HealthAddr:   envOr("ASSESSMENT_HEALTH_ADDR", ":9302"),
+		DatabaseDSN:  os.Getenv("ASSESSMENT_DATABASE_DSN"),
+		ProfileAddr:  os.Getenv("PROFILE_GRPC_TARGET"),
+		OpenFGAStore: envOr("OPENFGA_STORE", "selaras"),
 	}
 
 	var missing []string
@@ -37,6 +46,11 @@ func LoadConfig() (Config, error) {
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required configuration: %v", missing)
 	}
+	fga, err := authz.ServerFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.OpenFGA = fga
 	return cfg, nil
 }
 

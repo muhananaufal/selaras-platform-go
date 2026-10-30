@@ -59,7 +59,7 @@ func startRelay(
 	return producer.Close, nil
 }
 
-// startConfirmationConsumer listens for the answers of all six units.
+// startConfirmationConsumer listens for the answers of every participant unit.
 //
 // Without it, every saga hangs forever: the units delete their data and
 // answer, but nobody counts the answers, and the account is never deleted.

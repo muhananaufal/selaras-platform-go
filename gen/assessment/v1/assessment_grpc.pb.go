@@ -23,6 +23,7 @@ const (
 	Assessment_RequestPersonalization_FullMethodName = "/assessment.v1.Assessment/RequestPersonalization"
 	Assessment_GetAssessment_FullMethodName          = "/assessment.v1.Assessment/GetAssessment"
 	Assessment_ListAssessments_FullMethodName        = "/assessment.v1.Assessment/ListAssessments"
+	Assessment_ListPatientAssessments_FullMethodName = "/assessment.v1.Assessment/ListPatientAssessments"
 	Assessment_ResolveRiskRegion_FullMethodName      = "/assessment.v1.Assessment/ResolveRiskRegion"
 )
 
@@ -47,6 +48,13 @@ type AssessmentClient interface {
 	RequestPersonalization(ctx context.Context, in *RequestPersonalizationRequest, opts ...grpc.CallOption) (*RequestPersonalizationResponse, error)
 	GetAssessment(ctx context.Context, in *GetAssessmentRequest, opts ...grpc.CallOption) (*GetAssessmentResponse, error)
 	ListAssessments(ctx context.Context, in *ListAssessmentsRequest, opts ...grpc.CallOption) (*ListAssessmentsResponse, error)
+	// A clinician reads a patient's assessment history, only under the
+	// patient's consent to that clinician (ADR-030). The caller is the
+	// authenticated principal; the request names the patient, and there is
+	// deliberately no user_id field - the owner's rule (user_id matches the
+	// token) does not apply to a read of someone else's data. Every read that
+	// returns data is recorded in the patient's access audit first.
+	ListPatientAssessments(ctx context.Context, in *ListPatientAssessmentsRequest, opts ...grpc.CallOption) (*ListPatientAssessmentsResponse, error)
 	// Maps the country of residence to its SCORE2 calibration region.
 	//
 	// It lives here, not in profile-svc, because risk_region is a CLINICAL
@@ -104,6 +112,16 @@ func (c *assessmentClient) ListAssessments(ctx context.Context, in *ListAssessme
 	return out, nil
 }
 
+func (c *assessmentClient) ListPatientAssessments(ctx context.Context, in *ListPatientAssessmentsRequest, opts ...grpc.CallOption) (*ListPatientAssessmentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPatientAssessmentsResponse)
+	err := c.cc.Invoke(ctx, Assessment_ListPatientAssessments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *assessmentClient) ResolveRiskRegion(ctx context.Context, in *ResolveRiskRegionRequest, opts ...grpc.CallOption) (*ResolveRiskRegionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResolveRiskRegionResponse)
@@ -135,6 +153,13 @@ type AssessmentServer interface {
 	RequestPersonalization(context.Context, *RequestPersonalizationRequest) (*RequestPersonalizationResponse, error)
 	GetAssessment(context.Context, *GetAssessmentRequest) (*GetAssessmentResponse, error)
 	ListAssessments(context.Context, *ListAssessmentsRequest) (*ListAssessmentsResponse, error)
+	// A clinician reads a patient's assessment history, only under the
+	// patient's consent to that clinician (ADR-030). The caller is the
+	// authenticated principal; the request names the patient, and there is
+	// deliberately no user_id field - the owner's rule (user_id matches the
+	// token) does not apply to a read of someone else's data. Every read that
+	// returns data is recorded in the patient's access audit first.
+	ListPatientAssessments(context.Context, *ListPatientAssessmentsRequest) (*ListPatientAssessmentsResponse, error)
 	// Maps the country of residence to its SCORE2 calibration region.
 	//
 	// It lives here, not in profile-svc, because risk_region is a CLINICAL
@@ -163,6 +188,9 @@ func (UnimplementedAssessmentServer) GetAssessment(context.Context, *GetAssessme
 }
 func (UnimplementedAssessmentServer) ListAssessments(context.Context, *ListAssessmentsRequest) (*ListAssessmentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAssessments not implemented")
+}
+func (UnimplementedAssessmentServer) ListPatientAssessments(context.Context, *ListPatientAssessmentsRequest) (*ListPatientAssessmentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPatientAssessments not implemented")
 }
 func (UnimplementedAssessmentServer) ResolveRiskRegion(context.Context, *ResolveRiskRegionRequest) (*ResolveRiskRegionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveRiskRegion not implemented")
@@ -260,6 +288,24 @@ func _Assessment_ListAssessments_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Assessment_ListPatientAssessments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPatientAssessmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssessmentServer).ListPatientAssessments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Assessment_ListPatientAssessments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssessmentServer).ListPatientAssessments(ctx, req.(*ListPatientAssessmentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Assessment_ResolveRiskRegion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResolveRiskRegionRequest)
 	if err := dec(in); err != nil {
@@ -300,6 +346,10 @@ var Assessment_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAssessments",
 			Handler:    _Assessment_ListAssessments_Handler,
+		},
+		{
+			MethodName: "ListPatientAssessments",
+			Handler:    _Assessment_ListPatientAssessments_Handler,
 		},
 		{
 			MethodName: "ResolveRiskRegion",

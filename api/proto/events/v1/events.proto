@@ -55,6 +55,7 @@ message Envelope {
     UserDeletionRequested user_deletion_requested = 21;
     UserDeletionConfirmed user_deletion_confirmed = 22;
     LlmJobFailed llm_job_failed = 23;
+    ClinicianAccessRecorded clinician_access_recorded = 24;
   }
 }
 
@@ -229,4 +230,18 @@ message LlmJobFailed {
   string kind = 2;
   string reason = 3;
   int32 attempts = 4;
+}
+
+// A clinician read a patient's data under the patient's consent (ADR-030).
+//
+// Written by the service that served the read, to its outbox, BEFORE the
+// data is returned - a read whose record cannot be written is refused.
+// clinic-svc stores it in the patient's append-only access audit; the
+// envelope's event_id makes a redelivered event one access, not two.
+message ClinicianAccessRecorded {
+  string clinician_user_id = 1;
+  string patient_user_id = 2;
+  // "risk_assessments" or "coaching_progress"; there is no resource for chat.
+  string resource = 3;
+  google.protobuf.Timestamp accessed_at = 4;
 }

@@ -64,6 +64,10 @@ type Service struct {
 	engine      *score.Engine
 	now         func() time.Time
 
+	// access decides clinicians' reads (ADR-030); installed through
+	// WithAccessChecker. Nil refuses every such read.
+	access AccessChecker
+
 	// statusWriter is installed later through WithStatusWriter. Nil means this
 	// service only serves reads and computations - no reason to fail, but no
 	// reason to pretend to accept work that will never be recorded either.
@@ -144,6 +148,9 @@ func (s *Service) Start(
 	if err != nil {
 		return nil, err
 	}
+	// The owner's user id lets a consented clinician read the history by the
+	// id the consent names, without resolving a profile (ADR-030).
+	assessment.UserID = cmd.UserID
 
 	// Without an outbox, the assessment is still computed and stored. It just
 	// is not announced - and that is stated in the log at start-up, not
@@ -265,19 +272,87 @@ func (s *Service) Get(ctx context.Context, slug, userID string) (*domain.Assessm
 	return assessment, nil
 }
 
-// History returns the most recent assessments of one profile.
-func (s *Service) History(ctx context.Context, userID string, limit int) ([]*domain.Assessment, error) {
+// Page sizes of the history (AIP-158).
+const (
+	defaultHistoryPageSize = 20
+
+	// maxHistoryPageSize is fixed, not left to the caller. An unbounded
+	// request is the cheapest way to make the database send someone's entire
+	// history in one answer.
+	maxHistoryPageSize = 100
+)
+
+// HistoryPage is one page of a history.
+type HistoryPage struct {
+	Assessments []*domain.Assessment
+
+	// NextPageToken is empty on the last page, and only there.
+	NextPageToken string
+}
+
+// History returns one page of a profile's assessments, newest first.
+//
+// An empty pageToken asks for the first page; any other value must be a
+// NextPageToken this service returned.
+func (s *Service) History(ctx context.Context, userID string, pageSize int, pageToken string) (HistoryPage, error) {
+	size, after, err := pageOf(pageSize, pageToken)
+	if err != nil {
+		return HistoryPage{}, err
+	}
 	profileID, err := s.resolveProfileID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return HistoryPage{}, err
 	}
-	if limit <= 0 || limit > 100 {
-		// The upper bound is fixed, not left to the caller. An unbounded request
-		// is the cheapest way to make the database send someone's entire history
-		// in one answer.
-		limit = 20
+	return s.history(ctx, profileID, size, after)
+}
+
+// pageOf validates a page request: the size bounded by AIP-158, the token
+// decoded. Kept apart from reading so a caller can refuse bad input before
+// doing anything else.
+func pageOf(pageSize int, pageToken string) (int, *domain.HistoryCursor, error) {
+	switch {
+	case pageSize < 0:
+		return 0, nil, ErrInvalidPageSize
+	case pageSize == 0:
+		pageSize = defaultHistoryPageSize
+	case pageSize > maxHistoryPageSize:
+		pageSize = maxHistoryPageSize
 	}
-	return s.assessments.ListForProfile(ctx, profileID, limit)
+	if pageToken == "" {
+		return pageSize, nil, nil
+	}
+	cursor, err := decodePageToken(pageToken)
+	if err != nil {
+		return 0, nil, err
+	}
+	return pageSize, cursor, nil
+}
+
+func (s *Service) history(ctx context.Context, profileID domain.ProfileID, pageSize int, after *domain.HistoryCursor) (HistoryPage, error) {
+	return page(pageSize, func(limit int) ([]*domain.Assessment, error) {
+		return s.assessments.ListForProfile(ctx, profileID, limit, after)
+	})
+}
+
+// page reads one page through list and encodes the token to the next.
+func page(pageSize int, list func(limit int) ([]*domain.Assessment, error)) (HistoryPage, error) {
+	// One row more than the page says whether another page exists, without a
+	// count and without handing out a token to a page that turns out empty.
+	found, err := list(pageSize + 1)
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	if len(found) <= pageSize {
+		return HistoryPage{Assessments: found}, nil
+	}
+
+	found = found[:pageSize]
+	last := found[len(found)-1]
+	next, err := encodePageToken(domain.HistoryCursor{CreatedAt: last.CreatedAt, ID: last.ID})
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	return HistoryPage{Assessments: found, NextPageToken: next}, nil
 }
 
 // validate checks the profile snapshot before anything is computed.

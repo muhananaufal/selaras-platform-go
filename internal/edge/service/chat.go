@@ -9,6 +9,7 @@ import (
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // Chat implements edge.v1.Chat.
@@ -70,12 +71,12 @@ func (h *Chat) CreateConversation(
 func (h *Chat) GetConversation(
 	ctx context.Context, req *edgev1.GetConversationRequest,
 ) (*edgev1.GetConversationResponse, error) {
-	conv, messages, page, err := h.conversation(ctx, req.GetSlug(), req.GetPage(),
+	p, err := h.conversation(ctx, req.GetSlug(), req.GetPage(),
 		edgev1connect.ChatGetConversationProcedure)
 	if err != nil {
 		return nil, err
 	}
-	return &edgev1.GetConversationResponse{Conversation: conv, Messages: messages, Page: page}, nil
+	return &edgev1.GetConversationResponse{Conversation: p.Conversation, Messages: p.Messages, Page: p.Page}, nil
 }
 
 func (h *Chat) UpdateConversationTitle(
@@ -152,14 +153,18 @@ func (h *Chat) WatchConversation(
 	}
 
 	tail := ""
-	return watch(ctx, h.watch, stream, func(ctx context.Context) (*edgev1.WatchConversationResponse, bool, error) {
-		conv, messages, token, err := h.lastPage(ctx, req.GetSlug(), tail)
+	type result = watchResult[*edgev1.WatchConversationResponse]
+	return watch(ctx, h.watch, stream, func(ctx context.Context) (result, error) {
+		last, token, err := h.lastPage(ctx, req.GetSlug(), tail)
 		if err != nil {
-			return nil, false, err
+			return result{}, err
 		}
 		tail = token
-		return &edgev1.WatchConversationResponse{Conversation: conv, Messages: messages},
-			latestIsModel(messages), nil
+		return result{
+			Msg:  &edgev1.WatchConversationResponse{Conversation: last.Conversation, Messages: last.Messages},
+			Done: latestIsModel(last.Messages),
+			Key:  watchhint.Key{Type: watchhint.TypeConversation, ID: last.ID},
+		}, nil
 	})
 }
 
@@ -171,53 +176,64 @@ const watchPageSize = 100
 const maxPagesPerTick = 100
 
 // lastPage walks from the token start to the last non-empty page and returns
-// its messages together with the token that produced it.
-func (h *Chat) lastPage(
-	ctx context.Context, slug, start string,
-) (*edgev1.Conversation, []*edgev1.ChatMessage, string, error) {
+// it together with the token that produced it.
+func (h *Chat) lastPage(ctx context.Context, slug, start string) (conversationPage, string, error) {
 	var (
-		conv     *edgev1.Conversation
-		messages []*edgev1.ChatMessage
-		kept     = start
+		last conversationPage
+		kept = start
 	)
 	token := start
 	for range maxPagesPerTick {
-		c, page, next, err := h.conversation(ctx, slug,
+		p, err := h.conversation(ctx, slug,
 			&edgev1.PageRequest{PageSize: watchPageSize, PageToken: token},
 			edgev1connect.ChatWatchConversationProcedure)
 		if err != nil {
-			return nil, nil, "", err
+			return conversationPage{}, "", err
 		}
-		conv = c
-		if len(page) > 0 {
-			messages, kept = page, token
+		last.Conversation, last.ID = p.Conversation, p.ID
+		if len(p.Messages) > 0 {
+			last.Messages, kept = p.Messages, token
 		}
-		if next.GetNextPageToken() == "" {
+		if p.Page.GetNextPageToken() == "" {
 			break
 		}
-		token = next.GetNextPageToken()
+		token = p.Page.GetNextPageToken()
 	}
-	return conv, messages, kept, nil
+	return last, kept, nil
+}
+
+// conversationPage is one page of a conversation as the gateway shows it,
+// plus the conversation id - the aggregate its watch hints name.
+type conversationPage struct {
+	Conversation *edgev1.Conversation
+	Messages     []*edgev1.ChatMessage
+	Page         *edgev1.PageResponse
+	ID           string
 }
 
 func (h *Chat) conversation(
 	ctx context.Context, slug string, page *edgev1.PageRequest, procedure string,
-) (*edgev1.Conversation, []*edgev1.ChatMessage, *edgev1.PageResponse, error) {
+) (conversationPage, error) {
 	user, err := slugCall(ctx, slug)
 	if err != nil {
-		return nil, nil, nil, err
+		return conversationPage{}, err
 	}
 	resp, err := h.chat.GetConversation(ctx, &chatv1.GetConversationRequest{
 		Slug: slug, UserId: user, Page: pageFrom(page),
 	})
 	if err != nil {
-		return nil, nil, nil, rpcerr.FromUpstream(ctx, procedure, err)
+		return conversationPage{}, rpcerr.FromUpstream(ctx, procedure, err)
 	}
 	messages := make([]*edgev1.ChatMessage, 0, len(resp.GetMessages()))
 	for _, m := range resp.GetMessages() {
 		messages = append(messages, chatMessageView(m))
 	}
-	return conversationView(resp.GetConversation()), messages, pageOut(resp.GetPage()), nil
+	return conversationPage{
+		Conversation: conversationView(resp.GetConversation()),
+		Messages:     messages,
+		Page:         pageOut(resp.GetPage()),
+		ID:           resp.GetConversation().GetId(),
+	}, nil
 }
 
 // latestIsModel reports whether the newest message is the model's.

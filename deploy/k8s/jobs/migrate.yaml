@@ -157,3 +157,22 @@ spec:
           image: selaras/topics:dev
           imagePullPolicy: Never
           args: ["-brokers", "kafka:9092"]
+---
+# The clinic schema is migrated by its owner role, clinic_owner - not by the
+# runtime role svc_clinic, which owns nothing there (ADR-030).
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-clinic, namespace: selaras }
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: selaras/migrate:dev
+          imagePullPolicy: Never
+          args: ["-service", "clinic", "-direction", "up"]
+          env:
+            - name: MIGRATE_DSN
+              valueFrom: { secretKeyRef: { name: selaras-secrets, key: MIGRATE_DSN_CLINIC } }

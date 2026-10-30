@@ -16,6 +16,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/coaching/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // Scope is the idempotency scope of this consumer.
@@ -28,24 +29,27 @@ const Scope = "coaching-results"
 type Results struct {
 	client *kgo.Client
 	svc    *app.Service
+	hints  watchhint.Announcer
 	log    *slog.Logger
 }
 
-func NewResults(client *kgo.Client, svc *app.Service, log *slog.Logger) (*Results, error) {
+func NewResults(client *kgo.Client, svc *app.Service, hints watchhint.Announcer, log *slog.Logger) (*Results, error) {
 	switch {
 	case client == nil:
 		return nil, errors.New("nil kafka client")
 	case svc == nil:
 		return nil, errors.New("nil coaching service")
+	case hints == nil:
+		return nil, errors.New("nil watch hint announcer")
 	case log == nil:
 		return nil, errors.New("nil logger")
 	}
-	return &Results{client: client, svc: svc, log: log}, nil
+	return &Results{client: client, svc: svc, hints: hints, log: log}, nil
 }
 
 // Run reads until ctx is done.
 func (r *Results) Run(ctx context.Context) error {
-	return loop(ctx, r.client, r.log, "coaching result", r.handle)
+	return loop(ctx, r.client, r.log, "coaching result", r.process)
 }
 
 // aggregateTypeOf reads the aggregate kind from the message header.
@@ -75,6 +79,23 @@ func isMine(rec *kgo.Record) bool {
 	default:
 		return false
 	}
+}
+
+// process handles one record and, once its change is committed, tells the
+// Watch streams waiting on it (ADR-029). A record that failed announces
+// nothing: its change did not happen, and it comes back. Another service's
+// record is that service's to announce, after its own commit.
+func (r *Results) process(ctx context.Context, rec *kgo.Record) error {
+	if err := r.handle(ctx, rec); err != nil {
+		return err
+	}
+	if !isMine(rec) {
+		return nil
+	}
+	if key, ok := watchhint.KeyOf(rec); ok {
+		r.hints.Announce(ctx, key)
+	}
+	return nil
 }
 
 // handle processes one result.

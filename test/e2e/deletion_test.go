@@ -6,14 +6,15 @@ import (
 
 	"connectrpc.com/connect"
 
+	clinicv1 "github.com/muhananaufal/selaras-platform-go/gen/clinic/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	nutritionv1 "github.com/muhananaufal/selaras-platform-go/gen/nutrition/v1"
 )
 
-// deletionBudget is how long to wait for all six units to answer: six
-// round trips through Kafka and each unit's outbox, plus the one-second relay
-// sweep. Loose for a machine running every container at once, still tight
+// deletionBudget is how long to wait for every participant unit to answer: a
+// round trip each through Kafka and each unit's outbox, plus the one-second
+// relay sweep. Loose for a machine running every container at once, still tight
 // enough to catch a saga that is really stuck.
 const deletionBudget = 40 * time.Second
 
@@ -52,7 +53,7 @@ func TestAMissingPasswordIsRefusedBeforeAnythingHappens(t *testing.T) {
 
 // TestDeletingAnAccountLeavesNothingBehind is the F8 exit gate.
 //
-// Every feature is used first so the deletion really touches all six units;
+// Every feature is used first so the deletion really touches every participant unit;
 // deleting an unused account only proves that deleting from empty tables works.
 func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 	c := newClient(t)
@@ -75,6 +76,26 @@ func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 	// The dashboard catches up, proving the projection has its row too.
 	c.waitForDashboard(1, dashboardLagBudget)
 
+	// Clinic data of both kinds (ADR-030): a clinic this user owns, and a
+	// consent they gave to a clinician of it - erased by clinic-svc, whose
+	// confirmation the saga waits for.
+	doc := newClient(t)
+	doc.register()
+	created, err := c.clinic.CreateClinic(c.ctx(), &edgev1.CreateClinicRequest{Name: "Klinik Hapus"})
+	if err != nil {
+		t.Fatalf("creating a clinic: %v", err)
+	}
+	if _, err := c.clinic.AddMember(c.ctx(), &edgev1.AddMemberRequest{
+		ClinicId: created.GetClinic().GetId(), MemberUserId: doc.userID(), Role: clinicv1.MemberRole_MEMBER_ROLE_CLINICIAN,
+	}); err != nil {
+		t.Fatalf("adding a clinician: %v", err)
+	}
+	if _, err := c.clinic.GrantConsent(c.ctx(), &edgev1.GrantConsentRequest{
+		ClinicId: created.GetClinic().GetId(), ClinicianUserId: doc.userID(),
+	}); err != nil {
+		t.Fatalf("granting consent: %v", err)
+	}
+
 	accepted, err := c.auth.DeleteAccount(c.ctx(), &edgev1.DeleteAccountRequest{Password: defaultPassword})
 	if err != nil {
 		t.Fatalf("deleting the account: %v", err)
@@ -87,7 +108,7 @@ func TestDeletingAnAccountLeavesNothingBehind(t *testing.T) {
 		t.Errorf("the status is %v, want IN_PROGRESS", got)
 	}
 
-	// Gone once all six units have answered: its token stops working.
+	// Gone once every participant unit has answered: its token stops working.
 	c.waitUntilGone(deletionBudget)
 
 	// Signing in again does NOT work - the account is gone, not merely its

@@ -55,7 +55,14 @@ type ExchangeSocialToken struct {
 	profiles    ProfileCreator
 	revocations domain.RevocationPublisher
 	now         func() time.Time
+
+	// mfa: as on Login, a social sign-in requires the second factor like any
+	// other way in (ADR-032; OWASP: "these should all require MFA").
+	mfa *MFA
 }
+
+// WithMFA lets accounts with a second factor sign in through a challenge.
+func (e *ExchangeSocialToken) WithMFA(m *MFA) *ExchangeSocialToken { e.mfa = m; return e }
 
 func NewExchangeSocialToken(
 	uow UnitOfWork,
@@ -109,6 +116,7 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 	var (
 		user    *domain.User
 		isNewly bool
+		factors SecurityStatus
 	)
 
 	if err := e.uow.Do(ctx, func(repos Repositories) error {
@@ -119,9 +127,19 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 			return err
 		}
 
+		// An existing account with a second factor: the link is still saved,
+		// but nothing is bumped and no token issued (ADR-032).
+		if !created {
+			if factors, err = factorsOf(ctx, repos.MFA(), found.ID()); err != nil {
+				return err
+			}
+		}
+
 		// D1, as in ordinary login: the legacy system called tokens()->delete()
 		// on every successful social login.
-		found.RevokeAllTokens(e.now())
+		if !factors.MFARequired() {
+			found.RevokeAllTokens(e.now())
+		}
 
 		if created {
 			if err := users.Create(ctx, found); err != nil {
@@ -135,6 +153,9 @@ func (e *ExchangeSocialToken) Execute(ctx context.Context, identity SocialIdenti
 		return nil
 	}); err != nil {
 		return AuthResult{}, err
+	}
+	if factors.MFARequired() {
+		return secondStep(ctx, e.mfa, user.ID(), factors)
 	}
 
 	// A profile is only requested for a newly created account. Closes B7: the

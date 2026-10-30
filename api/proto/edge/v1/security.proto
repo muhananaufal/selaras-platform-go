@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "edge/v1/auth.proto";
+import "google/protobuf/timestamp.proto";
+
+// Security: the caller's second factors (ADR-032). The acting user is always
+// the caller of the token.
+//
+// Every change to a factor asks for a fresh Reauthentication: a stolen
+// session alone must not be able to add an attacker's authenticator, remove
+// the owner's, or mint new recovery codes. The one exception is the first
+// factor of an account with neither a password nor a factor (a social-only
+// account), which has nothing to prove with.
+service Security {
+  rpc GetSecurityStatus(GetSecurityStatusRequest) returns (GetSecurityStatusResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Two steps: the secret is shown, then proven with a code from the
+  // authenticator app. TOTP is active only after the second step, so a
+  // mistyped or never-scanned secret cannot lock the owner out.
+  rpc StartTotpEnrollment(StartTotpEnrollmentRequest) returns (StartTotpEnrollmentResponse);
+  rpc ConfirmTotpEnrollment(ConfirmTotpEnrollmentRequest) returns (ConfirmTotpEnrollmentResponse);
+  rpc DisableTotp(DisableTotpRequest) returns (DisableTotpResponse);
+
+  // Replaces every recovery code; the old ones stop working at once.
+  rpc RegenerateRecoveryCodes(RegenerateRecoveryCodesRequest) returns (RegenerateRecoveryCodesResponse);
+
+  rpc BeginPasskeyRegistration(BeginPasskeyRegistrationRequest) returns (BeginPasskeyRegistrationResponse);
+  rpc FinishPasskeyRegistration(FinishPasskeyRegistrationRequest) returns (FinishPasskeyRegistrationResponse);
+  rpc ListPasskeys(ListPasskeysRequest) returns (ListPasskeysResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc DeletePasskey(DeletePasskeyRequest) returns (DeletePasskeyResponse);
+}
+
+// Proof, at the moment of a change, that the caller is the owner and not
+// merely holding the owner's session.
+message Reauthentication {
+  oneof proof {
+    string password = 1;
+    string totp_code = 2;
+    string recovery_code = 3;
+  }
+}
+
+message GetSecurityStatusRequest {}
+
+message GetSecurityStatusResponse {
+  bool totp_enabled = 1;
+  int32 passkey_count = 2;
+  int32 recovery_codes_remaining = 3;
+
+  // Whether signing in asks for a second factor: true as soon as TOTP or a
+  // passkey is enrolled.
+  bool mfa_required = 4;
+}
+
+message StartTotpEnrollmentRequest {
+  Reauthentication reauthentication = 1;
+}
+
+message StartTotpEnrollmentResponse {
+  // Base32, for typing into an authenticator app.
+  string secret = 1;
+
+  // otpauth://totp/... for a QR code.
+  string otpauth_uri = 2;
+}
+
+message ConfirmTotpEnrollmentRequest {
+  string code = 1;
+}
+
+message ConfirmTotpEnrollmentResponse {
+  // Set only when this is the account's first factor: the recovery codes are
+  // shown once, here, and never again.
+  repeated string recovery_codes = 1;
+}
+
+message DisableTotpRequest {
+  Reauthentication reauthentication = 1;
+}
+
+message DisableTotpResponse {}
+
+message RegenerateRecoveryCodesRequest {
+  Reauthentication reauthentication = 1;
+}
+
+message RegenerateRecoveryCodesResponse {
+  repeated string recovery_codes = 1;
+}
+
+message BeginPasskeyRegistrationRequest {
+  Reauthentication reauthentication = 1;
+}
+
+message BeginPasskeyRegistrationResponse {
+  PasskeyCeremony ceremony = 1;
+}
+
+message FinishPasskeyRegistrationRequest {
+  PasskeyCredential credential = 1;
+
+  // Chosen by the owner to tell passkeys apart ("work laptop").
+  string name = 2;
+}
+
+message FinishPasskeyRegistrationResponse {
+  Passkey passkey = 1;
+
+  // Set only when this is the account's first factor, as with TOTP.
+  repeated string recovery_codes = 2;
+}
+
+message Passkey {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+
+  // Absent until the passkey is first used to sign in.
+  google.protobuf.Timestamp last_used_at = 4;
+}
+
+message ListPasskeysRequest {}
+
+message ListPasskeysResponse {
+  repeated Passkey passkeys = 1;
+}
+
+message DeletePasskeyRequest {
+  string id = 1;
+  Reauthentication reauthentication = 2;
+}
+
+message DeletePasskeyResponse {}

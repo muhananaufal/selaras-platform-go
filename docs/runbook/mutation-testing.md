@@ -91,15 +91,42 @@ perlu, membunuhnya. Semuanya diperiksa manual:
 | `chat/domain/repository.go:26` dan `nutrition/domain/repository.go:27` (`Size > 100` → `>= 100`) | Ukuran 100 dipetakan ke 100 oleh kedua versi |
 | `coaching/domain/program.go:318` (`MaxWeeks*7` di argumen `Errorf`) | Hanya mengubah teks pesan error, bukan keputusan |
 
+## Kondisi di dalam `case` tidak pernah diukur (2026-09-26)
+
+`internal/clinic/domain` masuk gerbang dengan 5 NOT COVERED, di Windows
+**dan** di runner CI Linux. Kelimanya ada di ekspresi `case` pada
+`switch { case r == RoleOwner && ...: }` di `MayManage`, padahal
+`TestWhoMayAddWhom` menjalankan setiap cabang.
+
+Dugaannya: blok cakupan Go dimulai sesudah ekspresi `case`, sehingga
+kondisinya sendiri tidak pernah tercatat tercakup dan gremlins tidak pernah
+menjalankan test terhadap mutannya. Pembuktiannya: `MayManage` yang sama
+ditulis dengan dua `if`. Tanpa mengubah test, hasilnya menjadi **10 killed,
+0 lived, 0 not covered**. Baseline diturunkan ke `0 0`.
+
+**Akibatnya bagi angka lain:** sebagian NOT COVERED di paket lain mungkin
+berasal dari kondisi di dalam `case`. Artinya mutan itu tidak pernah diuji,
+bukan test-nya yang lemah. Belum diperiksa per paket; ini terbuka.
+
 ## Yang ditemukan, dan belum diperbaiki
 
-- **Paritas mesin risiko hanya untuk perokok.** Semua 288 golden vector
-  adalah perokok aktif dengan satu set nilai lab per mode. Mutan
-  `coef.Smoking*smoking` → `coef.Smoking/smoking`, yaitu pembagian dengan
-  nol untuk bukan perokok, lolos seluruh test. Rinciannya ada di
-  [`docs/parity-report.md`](../parity-report.md). Memperbaikinya butuh vektor
-  baru dari sistem lama sebagai oracle, dan itu berarti mengubah repo
-  `selaras-backend-api`, yang merupakan keputusan pemilik.
+- **Paritas mesin risiko hanya untuk perokok — DITUTUP 2026-09-26.** Semua
+  288 golden vector lama adalah perokok aktif, sehingga mutan
+  `coef.Smoking/smoking` lolos seluruh test. Eksporter di sistem lama kini
+  menghasilkan 1440 vektor (dengan bukan perokok dan variasi nilai lab). Mesin
+  Go cocok untuk 1440/1440, dan mutan itu kini membuat 200 vektor gagal.
+  Mutan yang lolos di mesin risiko turun dari 21 menjadi 17. Rinciannya ada di
+  [`docs/parity-report.md`](../parity-report.md).
+- **Mesin risiko, 17 mutan yang masih lolos** (analisis per mutan):
+  - `engine.go:201` dan `:207`, batas `scr <= 0.7`/`0.9`: **ekuivalen**. Di
+    titik simpul `scr/a = 1`, dan `1^b = 1` untuk eksponen apa pun (CKD-EPI
+    kontinu di sana).
+  - `engine.go:219`, `egfr > 0`: **ekuivalen**. eGFR dari rumus ini selalu
+    positif.
+  - `engine.go:202`, eksponen `-0.241` (perempuan dengan kreatinin ≤ 0,7):
+    **celah nyata**. Belum ada vektor oracle untuk cabang itu.
+  - Sisanya (aritmetika SCORE2-OP dan SCORE2-Diabetes, penjaga kalibrasi di
+    329/332/341) **belum dianalisis per mutan**. Terbuka.
 - **Berkas domain assessment (di luar `score`) tidak punya test sendiri.** 9
   mutan tanpa cakupan. Logikanya diuji tidak langsung lewat `assessment/app`
   (cakupan pernyataan 78,9% dari sana), dan mode normal tidak menghitung itu.
@@ -123,3 +150,25 @@ bash test/mutation/run.sh 4          # 4 worker; butuh jq
 Di Windows, gremlins kadang gagal menghapus folder sementaranya karena
 berkas masih dikunci proses lain. Itu tidak memengaruhi hasil. Runner CI
 berbasis Linux.
+
+## Faktor kedua di `identity/domain` (2026-10-30)
+
+ADR-032 menambah `mfa.go` (TOTP RFC 6238, batas percobaan, recovery code).
+Baseline `identity/domain` naik dari `2 3` menjadi `2 5`. Dua NOT COVERED
+baru adalah ekspresi konstanta, bukan cabang yang tidak diuji:
+
+| Mutan | Kenapa tidak bisa tertutup |
+| :--- | :--- |
+| `identity/domain/mfa.go:35` (`TOTPPeriod = 30 * time.Second`) | Konstanta dihitung saat kompilasi; tidak ada blok coverage yang bisa dijalankan test. Nilainya dibuktikan oleh vektor RFC 6238 (`TestTOTPMatchesTheRFC6238Vectors`) |
+| `identity/domain/mfa.go:136` (`MFALockFor = 15 * time.Minute`) | Idem; panjang lock dibuktikan `TestMFAAttempts` (terkunci sampai detik terakhir, terbuka tepat setelahnya) |
+
+Dua temuan saat menutup paket ini:
+
+- **Loop jendela TOTP berbentuk `for s := now-1; s <= now+1; s++`
+  menghasilkan mutan `s--` yang tidak pernah berhenti.** gremlins mencatatnya
+  TIMED OUT, dan gerbang menolak larian yang tidak tuntas. Loop diganti dengan
+  daftar `[...]int64{now - 1, now, now + 1}` di dalam fungsi: perilakunya
+  sama, dan setiap mutan tanda di sana mematahkan test "one step behind/ahead".
+- **Versi antara dengan offset `{-1, 0, 1}` di level paket lebih buruk.**
+  Inisialisasinya tidak tercakup coverage, dan `now + drift` → `now - drift`
+  menjadi mutan ekuivalen karena jendelanya simetris.

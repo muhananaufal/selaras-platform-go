@@ -1,0 +1,17 @@
+model
+  schema 1.1
+
+type user
+
+type clinic
+  relations
+    define owner: [user]
+    define admin: [user] or owner
+    define clinician: [user]
+
+type patient
+  relations
+    define care_clinic: [clinic]
+    define consented_clinician: [user]
+    define can_view_assessments: consented_clinician and clinician from care_clinic
+    define can_view_coaching_progress: consented_clinician and clinician from care_clinic

@@ -2,7 +2,8 @@
 # Creates two Secrets in the cluster from .env (F9-01, ADR-016).
 #
 #   selaras-infra   : the Postgres credentials and per-service roles, read by
-#                     Postgres (initdb) and PgBouncer.
+#                     Postgres (initdb) and PgBouncer, and OpenFGA's preshared
+#                     key, read by OpenFGA (ADR-031).
 #   selaras-secrets : what the units need - one DSN per unit, the token keys,
 #                     the Gemini key. The key names match the units' environment
 #                     variables, and the chart references them through secretEnv.
@@ -20,7 +21,8 @@ set -a; . "$ROOT/.env"; set +a
 need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "FATAL: $v is not set in .env" >&2; exit 1; }; done; }
 need POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SIGNING_KEY JWT_VERIFY_KEY LLM_PROVIDER \
   SVC_IDENTITY_PASSWORD SVC_PROFILE_PASSWORD SVC_ASSESSMENT_PASSWORD SVC_COACHING_PASSWORD \
-  SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD
+  SVC_CHAT_PASSWORD SVC_NUTRITION_PASSWORD SVC_DASHBOARD_PASSWORD SVC_LLM_PASSWORD \
+  CLINIC_OWNER_PASSWORD SVC_CLINIC_PASSWORD OPENFGA_DB_PASSWORD OPENFGA_API_TOKEN MFA_ENCRYPTION_KEYS
 # The Gemini key and model name are required only when the provider is
 # Gemini; with the fake provider both are empty and never read (llm-worker
 # checks them itself at start, F3-16).
@@ -53,6 +55,10 @@ kubectl -n selaras create secret generic selaras-infra \
   --from-literal=SVC_NUTRITION_PASSWORD="$SVC_NUTRITION_PASSWORD" \
   --from-literal=SVC_DASHBOARD_PASSWORD="$SVC_DASHBOARD_PASSWORD" \
   --from-literal=SVC_LLM_PASSWORD="$SVC_LLM_PASSWORD" \
+  --from-literal=CLINIC_OWNER_PASSWORD="$CLINIC_OWNER_PASSWORD" \
+  --from-literal=SVC_CLINIC_PASSWORD="$SVC_CLINIC_PASSWORD" \
+  --from-literal=OPENFGA_DB_PASSWORD="$OPENFGA_DB_PASSWORD" \
+  --from-literal=OPENFGA_API_TOKEN="$OPENFGA_API_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n selaras create secret generic selaras-secrets \
@@ -64,6 +70,7 @@ kubectl -n selaras create secret generic selaras-secrets \
   --from-literal=NUTRITION_DATABASE_DSN="$(dsn nutrition "$SVC_NUTRITION_PASSWORD")" \
   --from-literal=DASHBOARD_DATABASE_DSN="$(dsn dashboard "$SVC_DASHBOARD_PASSWORD")" \
   --from-literal=LLM_POSTGRES_DSN="$(dsn llm "$SVC_LLM_PASSWORD")" \
+  --from-literal=CLINIC_DATABASE_DSN="$(dsn clinic "$SVC_CLINIC_PASSWORD")" \
   --from-literal=MIGRATE_DSN_IDENTITY="$(direct identity "$SVC_IDENTITY_PASSWORD")" \
   --from-literal=MIGRATE_DSN_PROFILE="$(direct profile "$SVC_PROFILE_PASSWORD")" \
   --from-literal=MIGRATE_DSN_ASSESSMENT="$(direct assessment "$SVC_ASSESSMENT_PASSWORD")" \
@@ -72,10 +79,13 @@ kubectl -n selaras create secret generic selaras-secrets \
   --from-literal=MIGRATE_DSN_NUTRITION="$(direct nutrition "$SVC_NUTRITION_PASSWORD")" \
   --from-literal=MIGRATE_DSN_DASHBOARD="$(direct dashboard "$SVC_DASHBOARD_PASSWORD")" \
   --from-literal=MIGRATE_DSN_LLM="$(direct llm "$SVC_LLM_PASSWORD")" \
+  --from-literal=MIGRATE_DSN_CLINIC="postgres://clinic_owner:${CLINIC_OWNER_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&search_path=clinic" \
   --from-literal=JWT_SIGNING_KEY="$JWT_SIGNING_KEY" \
   --from-literal=JWT_VERIFY_KEY="$JWT_VERIFY_KEY" \
   --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
   --from-literal=GEMINI_MODEL="${GEMINI_MODEL:-}" \
+  --from-literal=OPENFGA_API_TOKEN="$OPENFGA_API_TOKEN" \
+  --from-literal=MFA_ENCRYPTION_KEYS="$MFA_ENCRYPTION_KEYS" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "secrets applied to namespace selaras (values not shown)"

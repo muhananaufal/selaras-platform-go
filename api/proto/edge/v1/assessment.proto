@@ -3,6 +3,7 @@ syntax = "proto3";
 package edge.v1;
 
 import "assessment/v1/assessment.proto";
+import "edge/v1/page.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -14,6 +15,13 @@ service Assessment {
 
   // The caller's assessment history, newest first.
   rpc ListAssessments(ListAssessmentsRequest) returns (ListAssessmentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // A clinician reads a patient's assessment history, only under the
+  // patient's consent to that clinician (ADR-030). Every read that returns
+  // data is recorded in the patient's access audit first.
+  rpc ListPatientAssessments(ListPatientAssessmentsRequest) returns (ListPatientAssessmentsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
@@ -67,10 +75,25 @@ message StartAssessmentResponse {
   RiskAssessment assessment = 1;
 }
 
-message ListAssessmentsRequest {}
+message ListAssessmentsRequest {
+  // Unset means the first page of the service default size (20); the
+  // largest page is 100.
+  PageRequest page = 1;
+}
 
 message ListAssessmentsResponse {
   repeated RiskAssessment assessments = 1;
+  PageResponse page = 2;
+}
+
+message ListPatientAssessmentsRequest {
+  string patient_user_id = 1;
+  PageRequest page = 2;
+}
+
+message ListPatientAssessmentsResponse {
+  repeated RiskAssessment assessments = 1;
+  PageResponse page = 2;
 }
 
 message GetAssessmentRequest {

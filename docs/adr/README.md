@@ -36,3 +36,8 @@ Bukti yang menopangnya ada di Evidence Ledger pada dokumen rencana di repo Larav
 | 025 | Kuota penyedia LLM memarkir pekerjaan, bukan mematikannya |
 | 026 | Setiap service memverifikasi token pengguna sendiri |
 | 027 | Kontrak publik lewat Connect, bukan REST |
+| 028 | Test integrasi memakai service nyata dari CI/compose, bukan testcontainers |
+| 029 | Stream `Watch*` dibangunkan sinyal Redis dari pemilik data, dengan poll cadangan |
+| 030 | Akses klinik: pemilik tetap pengguna, klinisi membaca lewat consent yang diperiksa OpenFGA |
+| 031 | OpenFGA dijaga preshared key di semua lingkungan, plus NetworkPolicy di klaster |
+| 032 | MFA: TOTP, recovery code, dan passkey; tantangan setelah kata sandi, sesi setelah faktor kedua |

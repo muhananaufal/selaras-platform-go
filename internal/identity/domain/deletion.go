@@ -19,8 +19,8 @@ var (
 // DeletionParticipants are the units that MUST confirm before an account is
 // declared deleted.
 //
-// This list is a contract, not a record. The saga only completes once all six
-// names have answered, so adding a seventh unit to the platform without adding
+// This list is a contract, not a record. The saga only completes once all
+// names have answered, so adding a unit to the platform without adding
 // it here would declare the account deleted while its data is still intact
 // there - and nobody would know, because nobody is waiting for it.
 //
@@ -35,6 +35,7 @@ var DeletionParticipants = []string{
 	"chat",
 	"nutrition",
 	"dashboard",
+	"clinic",
 }
 
 // SagaID is the id of one deletion saga.

@@ -27,6 +27,7 @@ dan hasilnya menunggu; yang hilang hanya kemampuan bertanya.
 | `resource_exhausted` / 413 untuk permintaan yang sah | badan > 1 MiB (`edge.MaxBodyBytes`) | tidak ada prosedur yang butuh lebih; bila ada, itu perubahan kontrak |
 | 400 `invalid_argument` untuk nilai yang "terlihat benar" | nama enum salah ketik atau field tak dikenal: codec JSON ketat menolaknya, bukan membacanya sebagai nol (ADR-027) | `details` berisi `google.rpc.BadRequest` yang menyebut field-nya |
 | Stream `Watch*` berakhir tanpa status akhir | batas 5 menit per stream (`service.DefaultWatch`) - normal; klien membuka ulang dan pesan pertama adalah keadaan terkini | bila berakhir jauh lebih cepat: `WriteTimeout` proxy di depan gateway |
+| Hasil LLM sampai ke stream `Watch*` terlambat sampai sekitar 10 detik, bukan seketika | hint tidak sampai (ADR-029): Redis mati, atau service pemilik gagal menerbitkannya; stream jatuh ke poll cadangan 10 detik | `edge_watch_fetches_total{reason="fallback"}` naik sementara `reason="hint"` diam; log `watch hints cannot be published` di service pemilik, atau `watch hints resubscribed` di gateway |
 
 Prosedur → service yang dipanggil:
 

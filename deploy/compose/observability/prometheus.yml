@@ -27,6 +27,8 @@ scrape_configs:
         labels: { unit: nutrition-svc }
       - targets: ["dashboard-svc:9703"]
         labels: { unit: dashboard-svc }
+      - targets: ["clinic-svc:9902"]
+        labels: { unit: clinic-svc }
       - targets: ["llm-worker:9402"]
         labels: { unit: llm-worker }
 

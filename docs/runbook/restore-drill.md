@@ -65,6 +65,43 @@ ok  	github.com/muhananaufal/selaras-platform-go/test/e2e	28.498s
 | Isi sebelum = sesudah | 40 pengguna, 1.671 penilaian ✅ |
 | Test e2e sesudahnya | hijau, 28,5 s ✅ |
 
+## Hasil 2026-09-26 (setelah perbaikan backup dan pemilihan arsip)
+
+Larian ulang pertama sejak `backup.sh` berhenti menulis berkas kosong dan
+drill memilih pasangan arsip dari putaran yang sama. Backup diambil segar
+tepat sebelumnya (`task backup:now`). Retensinya ikut membuang berkas 0 byte
+lama, jadi volume kini hanya memuat pasangan ini.
+
+```
+18:19:36  restoring from /backups/selaras-20260926T111908Z.dump (+ /backups/globals-20260926T111908Z.sql)
+18:19:36  before: 30 users, 0 assessments
+18:19:42  stopped at +7s
+18:19:42  database dropped at +7s
+roles restored from /backups/globals-20260926T111908Z.sql (10 already existed)
+18:19:49  restored at +14s
+18:19:50  ownership restored at +15s
+18:19:51  after: 30 users, 0 assessments
+18:19:59  edge ready at +24s
+18:19:59  total: 24s from stop to ready
+```
+
+```
+ok  	github.com/muhananaufal/selaras-platform-go/test/e2e	32.348s
+```
+
+| Ukuran | Nilai |
+| :--- | ---: |
+| Waktu pemulihan (stop → gateway siap) | **24 detik** |
+| pg_restore, 1,1 MB | 7 s |
+| Pengguna sebelum = sesudah | 30 ✅ |
+| Test e2e sesudahnya | hijau, 32,3 s ✅ |
+
+**Batas larian ini:** jumlah penilaian 0 = 0 tidak membuktikan apa-apa soal
+tabel itu. Test integrasi yang dijalankan sebelumnya mengosongkan
+`risk_assessments`, jadi perbandingan isi kali ini hanya bermakna untuk
+pengguna. Isi tabel lain tetap diuji tidak langsung oleh suite e2e yang
+berjalan di atas basis data hasil pemulihan.
+
 ## Yang ditemukan karena mencobanya
 
 Larian pertama **gagal** — dan itu alasan latihan ini ada:

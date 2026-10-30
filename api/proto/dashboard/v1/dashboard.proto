@@ -56,8 +56,10 @@ message RiskTrendPoint {
 message DashboardView {
   string user_id = 1;
 
-  // Empty when the user has never run an analysis. The gateway translates
-  // it into a welcome message, as the legacy behaviour did.
+  // The latest assessments, newest first, at most 100
+  // (domain.HistoryLimit); total_assessments counts all of them. Empty when
+  // the user has never run an analysis. The gateway translates that into a
+  // welcome message, as the legacy behaviour did.
   repeated AssessmentSummary assessment_history = 2;
   optional AssessmentSummary latest_assessment = 3;
 

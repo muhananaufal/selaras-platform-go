@@ -30,6 +30,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint/watchhinttest"
 )
 
 // Rules that need one dependency (Postgres or Redis) but not the whole
@@ -220,7 +221,7 @@ func TestD09_AnAIFailureNeverBecomesAModelMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(client.Close)
-	consumer, err := chatconsumer.NewResults(client, svc, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	consumer, err := chatconsumer.NewResults(client, svc, &watchhinttest.Recorder{}, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

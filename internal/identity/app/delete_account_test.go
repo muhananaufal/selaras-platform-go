@@ -220,7 +220,7 @@ func TestTheRightPasswordStartsTheSagaButDeletesNothingYet(t *testing.T) {
 		t.Errorf("the saga waits on %d units, want %d", got, len(domain.DeletionParticipants))
 	}
 
-	// The account is still there - the six units have not answered.
+	// The account is still there - the participant units have not answered.
 	if h.users.count() != 1 {
 		t.Error("the account was deleted before any unit confirmed")
 	}

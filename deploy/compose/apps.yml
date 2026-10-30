@@ -28,6 +28,11 @@ services:
       PROFILE_GRPC_TARGET: profile-svc:9201
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       KAFKA_BROKERS: kafka:9092
+      # Second factors (ADR-032). The sealing key is a secret with no default;
+      # the WebAuthn relying party follows the local frontend.
+      MFA_ENCRYPTION_KEYS: ${MFA_ENCRYPTION_KEYS:?set MFA_ENCRYPTION_KEYS}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-http://localhost:3000}
 
       # Mailpit inside the compose network. The reset flow can therefore be
       # REALLY run on one's own machine, and the email is read at
@@ -131,12 +136,17 @@ services:
       ASSESSMENT_DATABASE_DSN: >-
         postgres://svc_assessment:${SVC_ASSESSMENT_PASSWORD:?set SVC_ASSESSMENT_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=assessment
       PROFILE_GRPC_TARGET: profile-svc:9201
+      # Clinicians' reads of patients are checked here (ADR-030).
+      OPENFGA_URL: http://openfga:8080
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       # Without this, personalisation requests are REFUSED instead of
       # accepted and then lost - see startEventing in cmd/assessment-svc.
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -174,6 +184,8 @@ services:
       CHAT_HEALTH_ADDR: ":9503"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -211,6 +223,8 @@ services:
       NUTRITION_HEALTH_ADDR: ":9603"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -275,6 +289,49 @@ services:
         limits:
           memory: 160M
 
+  # Clinics, members, consent and the access audit (ADR-030). It connects as
+  # svc_clinic, the runtime role; the schema belongs to clinic_owner, which
+  # only migrations use.
+  clinic-svc:
+    build:
+      context: ../..
+      args:
+        UNIT: clinic-svc
+    restart: unless-stopped
+    container_name: selaras-clinic
+    environment:
+      CLINIC_DATABASE_DSN: >-
+        postgres://svc_clinic:${SVC_CLINIC_PASSWORD:?set SVC_CLINIC_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:?set POSTGRES_DB}?sslmode=disable&search_path=clinic
+      CLINIC_GRPC_ADDR: ":9901"
+      CLINIC_HEALTH_ADDR: ":9902"
+      # The consent projection (ADR-030).
+      OPENFGA_URL: http://openfga:8080
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
+      # Clinicians' reads arrive here for the access audit.
+      KAFKA_BROKERS: kafka:9092
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
+      JWT_VERIFY_KEY: ${JWT_VERIFY_KEY:?set JWT_VERIFY_KEY}
+    ports:
+      - "127.0.0.1:19901:9901"
+      - "127.0.0.1:19902:9902"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      openfga:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      topics:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   coaching-svc:
     build:
       context: ../..
@@ -289,6 +346,11 @@ services:
       COACHING_HEALTH_ADDR: ":9403"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_COLLECTOR_ENDPOINT:-}
       KAFKA_BROKERS: kafka:9092
+      # Clinicians' reads of patients are checked here (ADR-030).
+      OPENFGA_URL: http://openfga:8080
+      OPENFGA_API_TOKEN: ${OPENFGA_API_TOKEN:?set OPENFGA_API_TOKEN}
+      # Watch hints (ADR-029): results are announced to the gateway's streams.
+      REDIS_URL: redis://redis:6379/0
       # The token public key: every service verifies for itself who is
       # asking (ADR-026), rather than trusting the user_id the gateway
       # sends.
@@ -371,6 +433,7 @@ services:
       CHAT_GRPC_TARGET: chat-svc:9501
       NUTRITION_GRPC_TARGET: nutrition-svc:9601
       DASHBOARD_GRPC_TARGET: dashboard-svc:9701
+      CLINIC_GRPC_TARGET: clinic-svc:9901
       # Empty means sign-in through a social provider is not mounted, and
       # the routes do not exist. Partially filled fails start-up.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

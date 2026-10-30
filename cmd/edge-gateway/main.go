@@ -17,9 +17,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	goredis "github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/metric"
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
+	clinicv1 "github.com/muhananaufal/selaras-platform-go/gen/clinic/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	dashboardv1 "github.com/muhananaufal/selaras-platform-go/gen/dashboard/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
@@ -37,6 +39,7 @@ import (
 	rd "github.com/muhananaufal/selaras-platform-go/internal/platform/redis"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/rpc"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 const shutdownGrace = 15 * time.Second
@@ -91,6 +94,11 @@ func run(log *slog.Logger) error {
 			log.Error("closing redis", "error", err)
 		}
 	}()
+
+	watch, err := watchConfig(ctx, redisClient, tel, log)
+	if err != nil {
+		return err
+	}
 
 	identityConn, err := dial(cfg.IdentityAddr)
 	if err != nil {
@@ -194,6 +202,20 @@ func run(log *slog.Logger) error {
 			"variable", "DASHBOARD_GRPC_TARGET")
 	}
 
+	var clinics clinicv1.ClinicClient
+	if cfg.ClinicAddr != "" {
+		conn, err := dial(cfg.ClinicAddr)
+		if err != nil {
+			return fmt.Errorf("clinic-svc: %w", err)
+		}
+		defer closeConn(conn, "clinic-svc", log)
+
+		clinics = clinicv1.NewClinicClient(conn)
+	} else {
+		log.Warn("clinic-svc is not configured; its procedures are not mounted",
+			"variable", "CLINIC_GRPC_TARGET")
+	}
+
 	social, handoff, err := buildSocial(cfg, identityClient, redisClient, log)
 	if err != nil {
 		return err
@@ -227,6 +249,7 @@ func run(log *slog.Logger) error {
 		Chat:        chat,
 		Nutrition:   nutrition,
 		Dashboards:  dashboards,
+		Clinics:     clinics,
 		Tokens:      verifier,
 		Revocations: revocations,
 		Limiter:     limiter,
@@ -234,7 +257,7 @@ func run(log *slog.Logger) error {
 		Handoff:     handoff,
 		Probes:      probes,
 		Now:         time.Now,
-		Watch:       service.DefaultWatch,
+		Watch:       watch,
 	})
 	if err != nil {
 		return err
@@ -402,4 +425,35 @@ func buildSocial(
 		store,
 		social.FrontendURL,
 	), store, nil
+}
+
+// watchConfig gives the Watch streams this replica's hint hub (ADR-029) and
+// the counter that shows how often they read.
+//
+// The hub runs for the life of the process. The gateway does not wait for
+// its first subscription: until then, and whenever Redis is away, the
+// streams fall back to polling.
+func watchConfig(
+	ctx context.Context, client *goredis.Client, tel *telemetry.Telemetry, log *slog.Logger,
+) (service.WatchConfig, error) {
+	hub, err := watchhint.NewHub(client, log)
+	if err != nil {
+		return service.WatchConfig{}, err
+	}
+	fetches, err := tel.Meter().Int64Counter("edge_watch_fetches_total",
+		metric.WithDescription("Reads made by Watch streams, by reason: open, hint, resubscribe, fallback"))
+	if err != nil {
+		return service.WatchConfig{}, fmt.Errorf("building the watch fetch counter: %w", err)
+	}
+
+	go func() {
+		if err := hub.Run(ctx); err != nil {
+			log.Error("the watch hint hub stopped; streams poll only", "error", err)
+		}
+	}()
+
+	cfg := service.DefaultWatch
+	cfg.Hints = service.HintsFrom(hub)
+	cfg.Fetches = fetches
+	return cfg, nil
 }

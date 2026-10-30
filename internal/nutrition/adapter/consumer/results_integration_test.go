@@ -19,6 +19,8 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/outbox"
 	pg "github.com/muhananaufal/selaras-platform-go/internal/platform/postgres"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/postgres/pgtest"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint/watchhinttest"
 )
 
 // newResults assembles the consumer on top of the real service and the test
@@ -27,7 +29,7 @@ import (
 // Its Kafka client never connects: handle is called directly with records
 // composed here, because what is tested is the consumer's decision about a
 // result - not fetching it from the broker.
-func newResults(t *testing.T) (*Results, context.Context) {
+func newResults(t *testing.T) (*Results, *watchhinttest.Recorder, context.Context) {
 	t.Helper()
 
 	pool := pgtest.Open(t, "nutrition")
@@ -56,11 +58,12 @@ func newResults(t *testing.T) (*Results, context.Context) {
 	}
 	t.Cleanup(client.Close)
 
-	results, err := NewResults(client, svc, pool, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	hints := &watchhinttest.Recorder{}
+	results, err := NewResults(client, svc, pool, hints, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return results, ctx
+	return results, hints, ctx
 }
 
 func completedRecord(t *testing.T, guideID string) *kgo.Record {
@@ -97,7 +100,7 @@ func completedRecord(t *testing.T, guideID string) *kgo.Record {
 // transient failure - the consumer rewound the offset, reread, failed again,
 // every second, forever.
 func TestAResultForADeletedGuideIsDroppedNotRetried(t *testing.T) {
-	results, ctx := newResults(t)
+	results, _, ctx := newResults(t)
 
 	err := results.handle(ctx, completedRecord(t, uuid.NewString()))
 	if err != nil {
@@ -111,11 +114,40 @@ func TestAResultForADeletedGuideIsDroppedNotRetried(t *testing.T) {
 // context makes every database call fail, exactly like a Postgres that is
 // unreachable.
 func TestATransientFailureIsStillAnError(t *testing.T) {
-	results, ctx := newResults(t)
+	results, _, ctx := newResults(t)
 	gone, cancel := context.WithCancel(ctx)
 	cancel()
 
 	if err := results.handle(gone, completedRecord(t, uuid.NewString())); err == nil {
 		t.Fatal("a failure that may heal must still surface as an error so the result is redelivered")
+	}
+}
+
+// ADR-029: a stream waiting on this guide is told once the result is
+// handled, and only then.
+func TestAHandledGuideIsAnnouncedAndOnlyThen(t *testing.T) {
+	results, hints, ctx := newResults(t)
+	guideID := uuid.NewString()
+
+	gone, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := results.process(gone, completedRecord(t, guideID)); err == nil {
+		t.Fatal("a guide stored under a cancelled context did not fail")
+	}
+	notMine := completedRecord(t, uuid.NewString())
+	notMine.Headers[0].Value = []byte(watchhint.TypeCoachingProgram)
+	if err := results.process(ctx, notMine); err != nil {
+		t.Fatalf("another service's record: %v", err)
+	}
+	if keys := hints.Keys(); len(keys) != 0 {
+		t.Fatalf("announced %v before anything nutrition owns was handled", keys)
+	}
+
+	if err := results.process(ctx, completedRecord(t, guideID)); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	want := watchhint.Key{Type: watchhint.TypeMealGuide, ID: guideID}
+	if keys := hints.Keys(); len(keys) != 1 || keys[0] != want {
+		t.Fatalf("announced %v; want exactly [%v]", keys, want)
 	}
 }

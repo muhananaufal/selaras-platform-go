@@ -14,6 +14,7 @@ import (
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
 	chatv1 "github.com/muhananaufal/selaras-platform-go/gen/chat/v1"
+	clinicv1 "github.com/muhananaufal/selaras-platform-go/gen/clinic/v1"
 	coachingv1 "github.com/muhananaufal/selaras-platform-go/gen/coaching/v1"
 	dashboardv1 "github.com/muhananaufal/selaras-platform-go/gen/dashboard/v1"
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
@@ -54,6 +55,7 @@ type Deps struct {
 	Chat        chatv1.ChatClient
 	Nutrition   nutritionv1.NutritionClient
 	Dashboards  dashboardv1.DashboardClient
+	Clinics     clinicv1.ClinicClient
 
 	Tokens      interceptor.TokenVerifier
 	Revocations domain.RevocationChecker
@@ -112,6 +114,7 @@ func NewHandler(deps Deps) (http.Handler, error) {
 	m := mounter{mux: mux, streamDeadline: deps.Watch.MaxDuration + streamGrace}
 
 	m.mount(edgev1connect.NewAuthHandler(service.NewAuth(deps.Identity, deps.Handoff), opts...))
+	m.mount(edgev1connect.NewSecurityHandler(service.NewSecurity(deps.Identity), opts...))
 	m.mount(edgev1connect.NewProfileHandler(service.NewProfile(deps.Profiles, deps.Regions, deps.Now), opts...))
 	if deps.Assessments != nil {
 		m.mount(edgev1connect.NewAssessmentHandler(service.NewAssessment(deps.Assessments, deps.Watch), opts...))
@@ -127,6 +130,9 @@ func NewHandler(deps Deps) (http.Handler, error) {
 	}
 	if deps.Dashboards != nil {
 		m.mount(edgev1connect.NewDashboardHandler(service.NewDashboard(deps.Dashboards), opts...))
+	}
+	if deps.Clinics != nil {
+		m.mount(edgev1connect.NewClinicHandler(service.NewClinic(deps.Clinics), opts...))
 	}
 	if m.err != nil {
 		return nil, m.err
@@ -203,6 +209,8 @@ func serviceFor(prefix string) (protoreflect.ServiceDescriptor, bool) {
 		edgev1.File_edge_v1_chat_proto,
 		edgev1.File_edge_v1_nutrition_proto,
 		edgev1.File_edge_v1_dashboard_proto,
+		edgev1.File_edge_v1_clinic_proto,
+		edgev1.File_edge_v1_security_proto,
 	}
 	for _, f := range files {
 		services := f.Services()
@@ -270,6 +278,20 @@ func RateLimitPolicies(auth, llm interceptor.Limit) map[string]interceptor.Polic
 		// Deletion compares a password, so it is limited like every other
 		// credential check - otherwise it becomes an unlimited guessing place.
 		edgev1connect.AuthDeleteAccountProcedure: byIP("auth"),
+
+		// The second factor and every change to one compare a credential
+		// (ADR-032). identity-svc also counts failures per account; this limit
+		// is per client address, so neither can be spent on the other's behalf.
+		edgev1connect.AuthVerifyMfaProcedure:                    byIP("auth"),
+		edgev1connect.AuthBeginMfaPasskeyProcedure:              byIP("auth"),
+		edgev1connect.AuthBeginPasskeyLoginProcedure:            byIP("auth"),
+		edgev1connect.AuthFinishPasskeyLoginProcedure:           byIP("auth"),
+		edgev1connect.SecurityStartTotpEnrollmentProcedure:      byIP("auth"),
+		edgev1connect.SecurityConfirmTotpEnrollmentProcedure:    byIP("auth"),
+		edgev1connect.SecurityDisableTotpProcedure:              byIP("auth"),
+		edgev1connect.SecurityRegenerateRecoveryCodesProcedure:  byIP("auth"),
+		edgev1connect.SecurityBeginPasskeyRegistrationProcedure: byIP("auth"),
+		edgev1connect.SecurityDeletePasskeyProcedure:            byIP("auth"),
 
 		edgev1connect.AssessmentRequestPersonalizationProcedure: byUser("llm"),
 		edgev1connect.CoachingStartProgramProcedure:             byUser("llm"),

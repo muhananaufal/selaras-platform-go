@@ -18,6 +18,7 @@ import (
 	"github.com/muhananaufal/selaras-platform-go/internal/nutrition/domain"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/kafka"
 	"github.com/muhananaufal/selaras-platform-go/internal/platform/telemetry"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
 
 // Scope is the idempotency scope of this consumer.
@@ -28,11 +29,12 @@ type Results struct {
 	client *kgo.Client
 	svc    *app.Service
 	pool   *pgxpool.Pool
+	hints  watchhint.Announcer
 	log    *slog.Logger
 }
 
 func NewResults(
-	client *kgo.Client, svc *app.Service, pool *pgxpool.Pool, log *slog.Logger,
+	client *kgo.Client, svc *app.Service, pool *pgxpool.Pool, hints watchhint.Announcer, log *slog.Logger,
 ) (*Results, error) {
 	switch {
 	case client == nil:
@@ -41,10 +43,12 @@ func NewResults(
 		return nil, errors.New("nil nutrition service")
 	case pool == nil:
 		return nil, errors.New("nil connection pool")
+	case hints == nil:
+		return nil, errors.New("nil watch hint announcer")
 	case log == nil:
 		return nil, errors.New("nil logger")
 	}
-	return &Results{client: client, svc: svc, pool: pool, log: log}, nil
+	return &Results{client: client, svc: svc, pool: pool, hints: hints, log: log}, nil
 }
 
 // isMine says this message is nutrition's business.
@@ -125,7 +129,7 @@ func (r *Results) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return
 			}
-			if err := r.handle(ctx, rec); err != nil {
+			if err := r.process(ctx, rec); err != nil {
 				r.log.ErrorContext(ctx, "handling a nutrition result failed",
 					"offset", rec.Offset, "partition", rec.Partition, "error", err)
 				rewinder.Failed(rec)
@@ -159,6 +163,23 @@ func (r *Results) Run(ctx context.Context) error {
 			r.log.ErrorContext(ctx, "committing offsets failed", "error", err)
 		}
 	}
+}
+
+// process handles one record and, once its change is committed, tells the
+// Watch streams waiting on it (ADR-029). A record that failed announces
+// nothing: its change did not happen, and it comes back. Another service's
+// record is that service's to announce, after its own commit.
+func (r *Results) process(ctx context.Context, rec *kgo.Record) error {
+	if err := r.handle(ctx, rec); err != nil {
+		return err
+	}
+	if !isMine(rec) {
+		return nil
+	}
+	if key, ok := watchhint.KeyOf(rec); ok {
+		r.hints.Announce(ctx, key)
+	}
+	return nil
 }
 
 // handle processes one message.

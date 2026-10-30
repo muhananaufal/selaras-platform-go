@@ -299,8 +299,10 @@ func (x *RiskTrendPoint) GetRiskPercentage() float64 {
 type DashboardView struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	// Empty when the user has never run an analysis. The gateway translates
-	// it into a welcome message, as the legacy behaviour did.
+	// The latest assessments, newest first, at most 100
+	// (domain.HistoryLimit); total_assessments counts all of them. Empty when
+	// the user has never run an analysis. The gateway translates that into a
+	// welcome message, as the legacy behaviour did.
 	AssessmentHistory []*AssessmentSummary `protobuf:"bytes,2,rep,name=assessment_history,json=assessmentHistory,proto3" json:"assessment_history,omitempty"`
 	LatestAssessment  *AssessmentSummary   `protobuf:"bytes,3,opt,name=latest_assessment,json=latestAssessment,proto3,oneof" json:"latest_assessment,omitempty"`
 	// Empty when no program is running. That is a valid state.

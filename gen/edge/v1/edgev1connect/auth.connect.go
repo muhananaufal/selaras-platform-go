@@ -52,6 +52,14 @@ const (
 	AuthDeleteAccountProcedure = "/edge.v1.Auth/DeleteAccount"
 	// AuthGetMeProcedure is the fully-qualified name of the Auth's GetMe RPC.
 	AuthGetMeProcedure = "/edge.v1.Auth/GetMe"
+	// AuthVerifyMfaProcedure is the fully-qualified name of the Auth's VerifyMfa RPC.
+	AuthVerifyMfaProcedure = "/edge.v1.Auth/VerifyMfa"
+	// AuthBeginMfaPasskeyProcedure is the fully-qualified name of the Auth's BeginMfaPasskey RPC.
+	AuthBeginMfaPasskeyProcedure = "/edge.v1.Auth/BeginMfaPasskey"
+	// AuthBeginPasskeyLoginProcedure is the fully-qualified name of the Auth's BeginPasskeyLogin RPC.
+	AuthBeginPasskeyLoginProcedure = "/edge.v1.Auth/BeginPasskeyLogin"
+	// AuthFinishPasskeyLoginProcedure is the fully-qualified name of the Auth's FinishPasskeyLogin RPC.
+	AuthFinishPasskeyLoginProcedure = "/edge.v1.Auth/FinishPasskeyLogin"
 )
 
 // AuthClient is a client for the edge.v1.Auth service.
@@ -68,10 +76,22 @@ type AuthClient interface {
 	// page, never in a query string (finding S6).
 	ExchangeSocialSession(context.Context, *v1.ExchangeSocialSessionRequest) (*v1.ExchangeSocialSessionResponse, error)
 	// Starts the permanent deletion of the caller's account. The deletion
-	// crosses six units and is NOT finished when this returns.
+	// crosses every participant unit and is NOT finished when this returns.
 	DeleteAccount(context.Context, *v1.DeleteAccountRequest) (*v1.DeleteAccountResponse, error)
 	// Returns the identity carried by the token, without a network call.
 	GetMe(context.Context, *v1.GetMeRequest) (*v1.GetMeResponse, error)
+	// Completes a sign-in that answered with an MfaChallenge instead of a
+	// session (ADR-032). Public: the ticket is the credential here, and it
+	// exists only after a correct password or social sign-in.
+	VerifyMfa(context.Context, *v1.VerifyMfaRequest) (*v1.VerifyMfaResponse, error)
+	// Starts the passkey ceremony that answers an MfaChallenge with a passkey
+	// as the second factor. Public, for the same reason as VerifyMfa.
+	BeginMfaPasskey(context.Context, *v1.BeginMfaPasskeyRequest) (*v1.BeginMfaPasskeyResponse, error)
+	// Passwordless sign-in with a passkey. A passkey with user verification is
+	// two factors in one ceremony, so it is answered with a session and never
+	// with an MfaChallenge (ADR-032).
+	BeginPasskeyLogin(context.Context, *v1.BeginPasskeyLoginRequest) (*v1.BeginPasskeyLoginResponse, error)
+	FinishPasskeyLogin(context.Context, *v1.FinishPasskeyLoginRequest) (*v1.FinishPasskeyLoginResponse, error)
 }
 
 // NewAuthClient constructs a client for the edge.v1.Auth service. By default, it uses the Connect
@@ -134,6 +154,30 @@ func NewAuthClient(httpClient connect.HTTPClient, baseURL string, opts ...connec
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		verifyMfa: connect.NewClient[v1.VerifyMfaRequest, v1.VerifyMfaResponse](
+			httpClient,
+			baseURL+AuthVerifyMfaProcedure,
+			connect.WithSchema(authMethods.ByName("VerifyMfa")),
+			connect.WithClientOptions(opts...),
+		),
+		beginMfaPasskey: connect.NewClient[v1.BeginMfaPasskeyRequest, v1.BeginMfaPasskeyResponse](
+			httpClient,
+			baseURL+AuthBeginMfaPasskeyProcedure,
+			connect.WithSchema(authMethods.ByName("BeginMfaPasskey")),
+			connect.WithClientOptions(opts...),
+		),
+		beginPasskeyLogin: connect.NewClient[v1.BeginPasskeyLoginRequest, v1.BeginPasskeyLoginResponse](
+			httpClient,
+			baseURL+AuthBeginPasskeyLoginProcedure,
+			connect.WithSchema(authMethods.ByName("BeginPasskeyLogin")),
+			connect.WithClientOptions(opts...),
+		),
+		finishPasskeyLogin: connect.NewClient[v1.FinishPasskeyLoginRequest, v1.FinishPasskeyLoginResponse](
+			httpClient,
+			baseURL+AuthFinishPasskeyLoginProcedure,
+			connect.WithSchema(authMethods.ByName("FinishPasskeyLogin")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -147,6 +191,10 @@ type authClient struct {
 	exchangeSocialSession *connect.Client[v1.ExchangeSocialSessionRequest, v1.ExchangeSocialSessionResponse]
 	deleteAccount         *connect.Client[v1.DeleteAccountRequest, v1.DeleteAccountResponse]
 	getMe                 *connect.Client[v1.GetMeRequest, v1.GetMeResponse]
+	verifyMfa             *connect.Client[v1.VerifyMfaRequest, v1.VerifyMfaResponse]
+	beginMfaPasskey       *connect.Client[v1.BeginMfaPasskeyRequest, v1.BeginMfaPasskeyResponse]
+	beginPasskeyLogin     *connect.Client[v1.BeginPasskeyLoginRequest, v1.BeginPasskeyLoginResponse]
+	finishPasskeyLogin    *connect.Client[v1.FinishPasskeyLoginRequest, v1.FinishPasskeyLoginResponse]
 }
 
 // Register calls edge.v1.Auth.Register.
@@ -221,6 +269,42 @@ func (c *authClient) GetMe(ctx context.Context, req *v1.GetMeRequest) (*v1.GetMe
 	return nil, err
 }
 
+// VerifyMfa calls edge.v1.Auth.VerifyMfa.
+func (c *authClient) VerifyMfa(ctx context.Context, req *v1.VerifyMfaRequest) (*v1.VerifyMfaResponse, error) {
+	response, err := c.verifyMfa.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// BeginMfaPasskey calls edge.v1.Auth.BeginMfaPasskey.
+func (c *authClient) BeginMfaPasskey(ctx context.Context, req *v1.BeginMfaPasskeyRequest) (*v1.BeginMfaPasskeyResponse, error) {
+	response, err := c.beginMfaPasskey.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// BeginPasskeyLogin calls edge.v1.Auth.BeginPasskeyLogin.
+func (c *authClient) BeginPasskeyLogin(ctx context.Context, req *v1.BeginPasskeyLoginRequest) (*v1.BeginPasskeyLoginResponse, error) {
+	response, err := c.beginPasskeyLogin.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// FinishPasskeyLogin calls edge.v1.Auth.FinishPasskeyLogin.
+func (c *authClient) FinishPasskeyLogin(ctx context.Context, req *v1.FinishPasskeyLoginRequest) (*v1.FinishPasskeyLoginResponse, error) {
+	response, err := c.finishPasskeyLogin.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
 // AuthHandler is an implementation of the edge.v1.Auth service.
 type AuthHandler interface {
 	Register(context.Context, *v1.RegisterRequest) (*v1.RegisterResponse, error)
@@ -235,10 +319,22 @@ type AuthHandler interface {
 	// page, never in a query string (finding S6).
 	ExchangeSocialSession(context.Context, *v1.ExchangeSocialSessionRequest) (*v1.ExchangeSocialSessionResponse, error)
 	// Starts the permanent deletion of the caller's account. The deletion
-	// crosses six units and is NOT finished when this returns.
+	// crosses every participant unit and is NOT finished when this returns.
 	DeleteAccount(context.Context, *v1.DeleteAccountRequest) (*v1.DeleteAccountResponse, error)
 	// Returns the identity carried by the token, without a network call.
 	GetMe(context.Context, *v1.GetMeRequest) (*v1.GetMeResponse, error)
+	// Completes a sign-in that answered with an MfaChallenge instead of a
+	// session (ADR-032). Public: the ticket is the credential here, and it
+	// exists only after a correct password or social sign-in.
+	VerifyMfa(context.Context, *v1.VerifyMfaRequest) (*v1.VerifyMfaResponse, error)
+	// Starts the passkey ceremony that answers an MfaChallenge with a passkey
+	// as the second factor. Public, for the same reason as VerifyMfa.
+	BeginMfaPasskey(context.Context, *v1.BeginMfaPasskeyRequest) (*v1.BeginMfaPasskeyResponse, error)
+	// Passwordless sign-in with a passkey. A passkey with user verification is
+	// two factors in one ceremony, so it is answered with a session and never
+	// with an MfaChallenge (ADR-032).
+	BeginPasskeyLogin(context.Context, *v1.BeginPasskeyLoginRequest) (*v1.BeginPasskeyLoginResponse, error)
+	FinishPasskeyLogin(context.Context, *v1.FinishPasskeyLoginRequest) (*v1.FinishPasskeyLoginResponse, error)
 }
 
 // NewAuthHandler builds an HTTP handler from the service implementation. It returns the path on
@@ -297,6 +393,30 @@ func NewAuthHandler(svc AuthHandler, opts ...connect.HandlerOption) (string, htt
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	authVerifyMfaHandler := connect.NewUnaryHandlerSimple(
+		AuthVerifyMfaProcedure,
+		svc.VerifyMfa,
+		connect.WithSchema(authMethods.ByName("VerifyMfa")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authBeginMfaPasskeyHandler := connect.NewUnaryHandlerSimple(
+		AuthBeginMfaPasskeyProcedure,
+		svc.BeginMfaPasskey,
+		connect.WithSchema(authMethods.ByName("BeginMfaPasskey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authBeginPasskeyLoginHandler := connect.NewUnaryHandlerSimple(
+		AuthBeginPasskeyLoginProcedure,
+		svc.BeginPasskeyLogin,
+		connect.WithSchema(authMethods.ByName("BeginPasskeyLogin")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authFinishPasskeyLoginHandler := connect.NewUnaryHandlerSimple(
+		AuthFinishPasskeyLoginProcedure,
+		svc.FinishPasskeyLogin,
+		connect.WithSchema(authMethods.ByName("FinishPasskeyLogin")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/edge.v1.Auth/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthRegisterProcedure:
@@ -315,6 +435,14 @@ func NewAuthHandler(svc AuthHandler, opts ...connect.HandlerOption) (string, htt
 			authDeleteAccountHandler.ServeHTTP(w, r)
 		case AuthGetMeProcedure:
 			authGetMeHandler.ServeHTTP(w, r)
+		case AuthVerifyMfaProcedure:
+			authVerifyMfaHandler.ServeHTTP(w, r)
+		case AuthBeginMfaPasskeyProcedure:
+			authBeginMfaPasskeyHandler.ServeHTTP(w, r)
+		case AuthBeginPasskeyLoginProcedure:
+			authBeginPasskeyLoginHandler.ServeHTTP(w, r)
+		case AuthFinishPasskeyLoginProcedure:
+			authFinishPasskeyLoginHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -354,4 +482,20 @@ func (UnimplementedAuthHandler) DeleteAccount(context.Context, *v1.DeleteAccount
 
 func (UnimplementedAuthHandler) GetMe(context.Context, *v1.GetMeRequest) (*v1.GetMeResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Auth.GetMe is not implemented"))
+}
+
+func (UnimplementedAuthHandler) VerifyMfa(context.Context, *v1.VerifyMfaRequest) (*v1.VerifyMfaResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Auth.VerifyMfa is not implemented"))
+}
+
+func (UnimplementedAuthHandler) BeginMfaPasskey(context.Context, *v1.BeginMfaPasskeyRequest) (*v1.BeginMfaPasskeyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Auth.BeginMfaPasskey is not implemented"))
+}
+
+func (UnimplementedAuthHandler) BeginPasskeyLogin(context.Context, *v1.BeginPasskeyLoginRequest) (*v1.BeginPasskeyLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Auth.BeginPasskeyLogin is not implemented"))
+}
+
+func (UnimplementedAuthHandler) FinishPasskeyLogin(context.Context, *v1.FinishPasskeyLoginRequest) (*v1.FinishPasskeyLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Auth.FinishPasskeyLogin is not implemented"))
 }

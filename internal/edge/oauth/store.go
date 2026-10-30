@@ -104,22 +104,24 @@ func (s *Store) ConsumeState(ctx context.Context, value, provider string) error 
 	return nil
 }
 
-// NewHandoffCode stores the access token behind a one-time code.
+// NewHandoffCode stores the sign-in result behind a one-time code: the
+// encoded session, or the MFA challenge of an account with a second factor
+// (ADR-032). The store does not look inside it.
 //
 // Closes S6. The legacy system redirected to the frontend with the
 // access_token in the query string, and query strings end up in server logs,
 // browser history, and the Referer header. What is handed over here is only
 // a code living for seconds, through the fragment - which is never even sent
 // to any server.
-func (s *Store) NewHandoffCode(ctx context.Context, accessToken string) (string, error) {
-	if accessToken == "" {
-		return "", errors.New("refusing to hand off an empty token")
+func (s *Store) NewHandoffCode(ctx context.Context, payload string) (string, error) {
+	if payload == "" {
+		return "", errors.New("refusing to hand off an empty sign-in result")
 	}
 	code, err := secret()
 	if err != nil {
 		return "", err
 	}
-	if err := s.client.Set(ctx, codePrefix+code, accessToken, s.codeTTL).Err(); err != nil {
+	if err := s.client.Set(ctx, codePrefix+code, payload, s.codeTTL).Err(); err != nil {
 		return "", fmt.Errorf("storing the handoff code: %w", err)
 	}
 	return code, nil

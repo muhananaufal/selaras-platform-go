@@ -1,11 +1,11 @@
 // Package deletion runs a unit's side of the account-deletion saga.
 //
-// The protocol is the same in all six units: read the request, delete that
+// The protocol is the same in all participant units: read the request, delete that
 // user's data, announce the confirmation. Only the deletion itself differs,
 // and that is the one thing the caller supplies.
 //
-// Written once here rather than copied six times, and the reason is not
-// brevity: six copies mean six chances that one of them stops confirming after
+// Written once here rather than copied into every unit, and the reason is not
+// brevity: each copy is one more chance that one of them stops confirming after
 // a failure, or confirms success when it failed. The first leaves every saga
 // hanging; the second declares an account deleted while its data is still
 // there.

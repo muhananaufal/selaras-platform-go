@@ -5,6 +5,8 @@ package coaching
 import (
 	"fmt"
 	"os"
+
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/authz"
 )
 
 // Config is everything coaching-svc needs to start.
@@ -19,6 +21,12 @@ type Config struct {
 	// that publishes an event is refused with a message naming the reason,
 	// rather than succeeding while losing its event.
 	KafkaBrokers string
+
+	// OpenFGA decides clinicians' reads of patients (ADR-030), with its
+	// preshared key (ADR-031). An empty URL refuses every such read, and the
+	// start-up log says so.
+	OpenFGA      authz.Server
+	OpenFGAStore string
 }
 
 // LoadConfig reads the configuration and refuses an incomplete one.
@@ -32,10 +40,16 @@ func LoadConfig() (Config, error) {
 		HealthAddr:   envOr("COACHING_HEALTH_ADDR", ":9402"),
 		DatabaseDSN:  os.Getenv("COACHING_DATABASE_DSN"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
+		OpenFGAStore: envOr("OPENFGA_STORE", "selaras"),
 	}
 	if cfg.DatabaseDSN == "" {
 		return Config{}, fmt.Errorf("missing required configuration: %v", []string{"COACHING_DATABASE_DSN"})
 	}
+	fga, err := authz.ServerFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.OpenFGA = fga
 	return cfg, nil
 }
 

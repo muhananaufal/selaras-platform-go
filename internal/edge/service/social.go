@@ -7,6 +7,9 @@ import (
 	"net/url"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
+	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 )
 
@@ -20,7 +23,9 @@ type ProviderClient interface {
 type SocialStates interface {
 	NewState(ctx context.Context, provider string) (string, error)
 	ConsumeState(ctx context.Context, state, provider string) error
-	NewHandoffCode(ctx context.Context, accessToken string) (string, error)
+	// NewHandoffCode stores payload - the encoded ExchangeSocialSessionResponse
+	// - behind a one-time code.
+	NewHandoffCode(ctx context.Context, payload string) (string, error)
 }
 
 // Social serves the two browser redirects of social sign-in.
@@ -115,7 +120,19 @@ func (h *Social) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := h.states.NewHandoffCode(ctx, resp.GetToken().GetAccessToken())
+	// An account with a second factor gets its challenge through the code,
+	// never a token (ADR-032).
+	handoff := &edgev1.ExchangeSocialSessionResponse{MfaChallenge: mfaChallenge(resp.GetMfaChallenge())}
+	if handoff.MfaChallenge == nil {
+		handoff.Session = &edgev1.Session{AccessToken: resp.GetToken().GetAccessToken(), TokenType: tokenTypeBearer}
+	}
+	payload, err := proto.Marshal(handoff)
+	if err != nil {
+		slog.ErrorContext(ctx, "could not encode the handoff", "error", err)
+		h.fail(w, r, "handoff_failed")
+		return
+	}
+	code, err := h.states.NewHandoffCode(ctx, string(payload))
 	if err != nil {
 		slog.ErrorContext(ctx, "could not create a handoff code", "error", err)
 		h.fail(w, r, "handoff_failed")

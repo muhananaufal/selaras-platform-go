@@ -137,13 +137,17 @@ tasks:
     # The application units MUST be down (task down:apps) while this suite runs:
     # a live unit's outbox relay reads the same table as the relay test (FOR
     # UPDATE SKIP LOCKED) and steals its rows - a scheduling-dependent failure,
-    # seen at the F9 exit gate. The CI unit job does not start the units; the e2e
-    # and acceptance suites that need them have their own tasks.
+    # seen at the F9 exit gate. clinic-svc is on the list for a worse reason:
+    # its projector applies whatever the clinic tests queue to the stack's
+    # OpenFGA store, so a test - or a deliberate mutant of one - rewrites the
+    # live tuples (seen while proving the tuple rebuild). The CI unit job does
+    # not start the units; the e2e and acceptance suites that need them have
+    # their own tasks.
     dotenv: ['.env']
     cmds:
       - >-
-        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -qE '^selaras-(identity|profile|assessment|coaching|chat|nutrition|dashboard|llm-worker)$'; then
-          echo 'application units are running; stop them first (task down:apps) - their outbox relays steal rows from the relay tests' >&2; exit 1;
+        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -qE '^selaras-(identity|profile|assessment|coaching|chat|nutrition|dashboard|llm-worker|clinic)$'; then
+          echo 'application units are running; stop them first (task down:apps) - their outbox relays steal rows from the relay tests, and clinic-svc projects test tuples into OpenFGA' >&2; exit 1;
         fi
       - >-
         TEST_DSN_IDENTITY="postgres://svc_identity:$SVC_IDENTITY_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=identity"
@@ -154,11 +158,16 @@ tasks:
         TEST_DSN_NUTRITION="postgres://svc_nutrition:$SVC_NUTRITION_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=nutrition"
         TEST_DSN_DASHBOARD="postgres://svc_dashboard:$SVC_DASHBOARD_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=dashboard"
         TEST_DSN_LLM="postgres://svc_llm:$SVC_LLM_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=llm"
+        TEST_DSN_CLINIC="postgres://svc_clinic:$SVC_CLINIC_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=clinic"
+        TEST_DSN_CLINIC_OWNER="postgres://clinic_owner:$CLINIC_OWNER_PASSWORD@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable&search_path=clinic"
+        TEST_DSN_CLINIC_PGBOUNCER="postgres://svc_clinic:$SVC_CLINIC_PASSWORD@127.0.0.1:16432/$POSTGRES_DB?sslmode=disable&search_path=clinic"
         TEST_KAFKA_BROKERS="127.0.0.1:19092"
         TEST_REDIS_URL="redis://127.0.0.1:16379/0"
         TEST_SMTP_HOST="127.0.0.1"
         TEST_SMTP_PORT="11025"
         TEST_MAILPIT_URL="http://127.0.0.1:18025"
+        TEST_OPENFGA_URL="http://127.0.0.1:18180"
+        TEST_OPENFGA_TOKEN="$OPENFGA_API_TOKEN"
         go test ./... -count=1 -p 1
 
   up:apps:
@@ -169,7 +178,7 @@ tasks:
   down:apps:
     desc: Stop the application units, leaving the dependencies running
     cmds:
-      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc llm-worker edge-gateway topics"
+      - wsl -d {{.WSL_DISTRO}} -- bash -lc "cd {{.PROJECT_WSL}} && docker compose --env-file .env -f {{.COMPOSE_CORE}} -f {{.COMPOSE_APPS}} rm -sf identity-svc profile-svc assessment-svc coaching-svc chat-svc nutrition-svc dashboard-svc clinic-svc llm-worker edge-gateway topics"
 
   keygen:
     desc: Print a matching pair of token signing and verification keys
@@ -355,6 +364,40 @@ tasks:
     desc: Create the platform's Kafka topics, then read them back from the broker
     cmds:
       - go run ./cmd/topics -brokers 127.0.0.1:19092
+
+  db:rotate-passwords:
+    desc: Set every role's password from .env on the running Postgres, then restart PgBouncer
+    # Separate from db:provision on purpose. Setting a password re-hashes it
+    # with a new SCRAM salt, and PgBouncer keeps the old secret: until it
+    # restarts, every unit behind it fails to log in. A rotation therefore
+    # always ends with that restart.
+    dotenv: ['.env']
+    cmds:
+      - >-
+        docker exec -e ROTATE_PASSWORDS=yes
+        -e SVC_IDENTITY_PASSWORD -e SVC_PROFILE_PASSWORD -e SVC_ASSESSMENT_PASSWORD
+        -e SVC_COACHING_PASSWORD -e SVC_CHAT_PASSWORD -e SVC_NUTRITION_PASSWORD
+        -e SVC_DASHBOARD_PASSWORD -e SVC_LLM_PASSWORD
+        -e CLINIC_OWNER_PASSWORD -e SVC_CLINIC_PASSWORD -e OPENFGA_DB_PASSWORD
+        selaras-postgres bash /docker-entrypoint-initdb.d/01-schemas.sh
+      - docker restart selaras-pgbouncer
+
+  db:provision:
+    desc: Create missing unit schemas, roles and databases on the running Postgres; passwords of existing roles are left alone
+    # initdb runs 01-schemas.sh only on a fresh volume; this runs the same
+    # script again, so a unit added later or a rotated password reaches an
+    # existing database. It is idempotent (test/drill/provision.test.sh).
+    # The passwords come from .env now, not from the container's environment,
+    # which holds the values from when the container was created.
+    dotenv: ['.env']
+    cmds:
+      - >-
+        docker exec
+        -e SVC_IDENTITY_PASSWORD -e SVC_PROFILE_PASSWORD -e SVC_ASSESSMENT_PASSWORD
+        -e SVC_COACHING_PASSWORD -e SVC_CHAT_PASSWORD -e SVC_NUTRITION_PASSWORD
+        -e SVC_DASHBOARD_PASSWORD -e SVC_LLM_PASSWORD
+        -e CLINIC_OWNER_PASSWORD -e SVC_CLINIC_PASSWORD -e OPENFGA_DB_PASSWORD
+        selaras-postgres bash /docker-entrypoint-initdb.d/01-schemas.sh
 
   migrate:
     desc: 'Apply migrations for one service. Usage: task migrate -- identity'

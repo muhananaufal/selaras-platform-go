@@ -2047,6 +2047,288 @@ func (x *SendThreadMessageResponse) GetJobId() string {
 	return ""
 }
 
+type ListPatientProgressRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PatientUserId string                 `protobuf:"bytes,1,opt,name=patient_user_id,json=patientUserId,proto3" json:"patient_user_id,omitempty"`
+	Page          *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientProgressRequest) Reset() {
+	*x = ListPatientProgressRequest{}
+	mi := &file_coaching_v1_coaching_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientProgressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientProgressRequest) ProtoMessage() {}
+
+func (x *ListPatientProgressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coaching_v1_coaching_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientProgressRequest.ProtoReflect.Descriptor instead.
+func (*ListPatientProgressRequest) Descriptor() ([]byte, []int) {
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ListPatientProgressRequest) GetPatientUserId() string {
+	if x != nil {
+		return x.PatientUserId
+	}
+	return ""
+}
+
+func (x *ListPatientProgressRequest) GetPage() *v1.PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+// Programs newest first (AIP-158 paging).
+type ListPatientProgressResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Programs      []*ProgramProgress     `protobuf:"bytes,1,rep,name=programs,proto3" json:"programs,omitempty"`
+	Page          *v1.PageResponse       `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPatientProgressResponse) Reset() {
+	*x = ListPatientProgressResponse{}
+	mi := &file_coaching_v1_coaching_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPatientProgressResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPatientProgressResponse) ProtoMessage() {}
+
+func (x *ListPatientProgressResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coaching_v1_coaching_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPatientProgressResponse.ProtoReflect.Descriptor instead.
+func (*ListPatientProgressResponse) Descriptor() ([]byte, []int) {
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ListPatientProgressResponse) GetPrograms() []*ProgramProgress {
+	if x != nil {
+		return x.Programs
+	}
+	return nil
+}
+
+func (x *ListPatientProgressResponse) GetPage() *v1.PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ProgramProgress struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Slug             string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
+	Title            string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Status           ProgramStatus          `protobuf:"varint,3,opt,name=status,proto3,enum=coaching.v1.ProgramStatus" json:"status,omitempty"`
+	Difficulty       Difficulty             `protobuf:"varint,4,opt,name=difficulty,proto3,enum=coaching.v1.Difficulty" json:"difficulty,omitempty"`
+	StartDate        string                 `protobuf:"bytes,5,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
+	EndDate          string                 `protobuf:"bytes,6,opt,name=end_date,json=endDate,proto3" json:"end_date,omitempty"`
+	CurriculumStatus CurriculumStatus       `protobuf:"varint,7,opt,name=curriculum_status,json=curriculumStatus,proto3,enum=coaching.v1.CurriculumStatus" json:"curriculum_status,omitempty"`
+	// Empty while the curriculum is not stored yet.
+	Weeks          []*WeekProgress `protobuf:"bytes,8,rep,name=weeks,proto3" json:"weeks,omitempty"`
+	TasksTotal     int32           `protobuf:"varint,9,opt,name=tasks_total,json=tasksTotal,proto3" json:"tasks_total,omitempty"`
+	TasksCompleted int32           `protobuf:"varint,10,opt,name=tasks_completed,json=tasksCompleted,proto3" json:"tasks_completed,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProgramProgress) Reset() {
+	*x = ProgramProgress{}
+	mi := &file_coaching_v1_coaching_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramProgress) ProtoMessage() {}
+
+func (x *ProgramProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_coaching_v1_coaching_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramProgress.ProtoReflect.Descriptor instead.
+func (*ProgramProgress) Descriptor() ([]byte, []int) {
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ProgramProgress) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetStatus() ProgramStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ProgramStatus_PROGRAM_STATUS_UNSPECIFIED
+}
+
+func (x *ProgramProgress) GetDifficulty() Difficulty {
+	if x != nil {
+		return x.Difficulty
+	}
+	return Difficulty_DIFFICULTY_UNSPECIFIED
+}
+
+func (x *ProgramProgress) GetStartDate() string {
+	if x != nil {
+		return x.StartDate
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetEndDate() string {
+	if x != nil {
+		return x.EndDate
+	}
+	return ""
+}
+
+func (x *ProgramProgress) GetCurriculumStatus() CurriculumStatus {
+	if x != nil {
+		return x.CurriculumStatus
+	}
+	return CurriculumStatus_CURRICULUM_STATUS_UNSPECIFIED
+}
+
+func (x *ProgramProgress) GetWeeks() []*WeekProgress {
+	if x != nil {
+		return x.Weeks
+	}
+	return nil
+}
+
+func (x *ProgramProgress) GetTasksTotal() int32 {
+	if x != nil {
+		return x.TasksTotal
+	}
+	return 0
+}
+
+func (x *ProgramProgress) GetTasksCompleted() int32 {
+	if x != nil {
+		return x.TasksCompleted
+	}
+	return 0
+}
+
+type WeekProgress struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	WeekNumber     int32                  `protobuf:"varint,1,opt,name=week_number,json=weekNumber,proto3" json:"week_number,omitempty"`
+	TasksTotal     int32                  `protobuf:"varint,2,opt,name=tasks_total,json=tasksTotal,proto3" json:"tasks_total,omitempty"`
+	TasksCompleted int32                  `protobuf:"varint,3,opt,name=tasks_completed,json=tasksCompleted,proto3" json:"tasks_completed,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *WeekProgress) Reset() {
+	*x = WeekProgress{}
+	mi := &file_coaching_v1_coaching_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WeekProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WeekProgress) ProtoMessage() {}
+
+func (x *WeekProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_coaching_v1_coaching_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WeekProgress.ProtoReflect.Descriptor instead.
+func (*WeekProgress) Descriptor() ([]byte, []int) {
+	return file_coaching_v1_coaching_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *WeekProgress) GetWeekNumber() int32 {
+	if x != nil {
+		return x.WeekNumber
+	}
+	return 0
+}
+
+func (x *WeekProgress) GetTasksTotal() int32 {
+	if x != nil {
+		return x.TasksTotal
+	}
+	return 0
+}
+
+func (x *WeekProgress) GetTasksCompleted() int32 {
+	if x != nil {
+		return x.TasksCompleted
+	}
+	return 0
+}
+
 var File_coaching_v1_coaching_proto protoreflect.FileDescriptor
 
 const file_coaching_v1_coaching_proto_rawDesc = "" +
@@ -2181,7 +2463,35 @@ const file_coaching_v1_coaching_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x04 \x01(\v2\x19.common.v1.IdempotencyKeyR\x0eidempotencyKey\"j\n" +
 	"\x19SendThreadMessageResponse\x126\n" +
 	"\amessage\x18\x01 \x01(\v2\x1c.coaching.v1.CoachingMessageR\amessage\x12\x15\n" +
-	"\x06job_id\x18\x02 \x01(\tR\x05jobId*\xa1\x01\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\"p\n" +
+	"\x1aListPatientProgressRequest\x12&\n" +
+	"\x0fpatient_user_id\x18\x01 \x01(\tR\rpatientUserId\x12*\n" +
+	"\x04page\x18\x02 \x01(\v2\x16.common.v1.PageRequestR\x04page\"\x84\x01\n" +
+	"\x1bListPatientProgressResponse\x128\n" +
+	"\bprograms\x18\x01 \x03(\v2\x1c.coaching.v1.ProgramProgressR\bprograms\x12+\n" +
+	"\x04page\x18\x02 \x01(\v2\x17.common.v1.PageResponseR\x04page\"\xa9\x03\n" +
+	"\x0fProgramProgress\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x122\n" +
+	"\x06status\x18\x03 \x01(\x0e2\x1a.coaching.v1.ProgramStatusR\x06status\x127\n" +
+	"\n" +
+	"difficulty\x18\x04 \x01(\x0e2\x17.coaching.v1.DifficultyR\n" +
+	"difficulty\x12\x1d\n" +
+	"\n" +
+	"start_date\x18\x05 \x01(\tR\tstartDate\x12\x19\n" +
+	"\bend_date\x18\x06 \x01(\tR\aendDate\x12J\n" +
+	"\x11curriculum_status\x18\a \x01(\x0e2\x1d.coaching.v1.CurriculumStatusR\x10curriculumStatus\x12/\n" +
+	"\x05weeks\x18\b \x03(\v2\x19.coaching.v1.WeekProgressR\x05weeks\x12\x1f\n" +
+	"\vtasks_total\x18\t \x01(\x05R\n" +
+	"tasksTotal\x12'\n" +
+	"\x0ftasks_completed\x18\n" +
+	" \x01(\x05R\x0etasksCompleted\"y\n" +
+	"\fWeekProgress\x12\x1f\n" +
+	"\vweek_number\x18\x01 \x01(\x05R\n" +
+	"weekNumber\x12\x1f\n" +
+	"\vtasks_total\x18\x02 \x01(\x05R\n" +
+	"tasksTotal\x12'\n" +
+	"\x0ftasks_completed\x18\x03 \x01(\x05R\x0etasksCompleted*\xa1\x01\n" +
 	"\rProgramStatus\x12\x1e\n" +
 	"\x1aPROGRAM_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15PROGRAM_STATUS_ACTIVE\x10\x01\x12\x19\n" +
@@ -2212,7 +2522,7 @@ const file_coaching_v1_coaching_proto_rawDesc = "" +
 	"\vMessageRole\x12\x1c\n" +
 	"\x18MESSAGE_ROLE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11MESSAGE_ROLE_USER\x10\x01\x12\x16\n" +
-	"\x12MESSAGE_ROLE_MODEL\x10\x022\xf6\a\n" +
+	"\x12MESSAGE_ROLE_MODEL\x10\x022\xe0\b\n" +
 	"\bCoaching\x12S\n" +
 	"\fStartProgram\x12 .coaching.v1.StartProgramRequest\x1a!.coaching.v1.StartProgramResponse\x12M\n" +
 	"\n" +
@@ -2225,7 +2535,8 @@ const file_coaching_v1_coaching_proto_rawDesc = "" +
 	"\tGetThread\x12\x1d.coaching.v1.GetThreadRequest\x1a\x1e.coaching.v1.GetThreadResponse\x12b\n" +
 	"\x11UpdateThreadTitle\x12%.coaching.v1.UpdateThreadTitleRequest\x1a&.coaching.v1.UpdateThreadTitleResponse\x12S\n" +
 	"\fDeleteThread\x12 .coaching.v1.DeleteThreadRequest\x1a!.coaching.v1.DeleteThreadResponse\x12b\n" +
-	"\x11SendThreadMessage\x12%.coaching.v1.SendThreadMessageRequest\x1a&.coaching.v1.SendThreadMessageResponseB\xb5\x01\n" +
+	"\x11SendThreadMessage\x12%.coaching.v1.SendThreadMessageRequest\x1a&.coaching.v1.SendThreadMessageResponse\x12h\n" +
+	"\x13ListPatientProgress\x12'.coaching.v1.ListPatientProgressRequest\x1a(.coaching.v1.ListPatientProgressResponseB\xb5\x01\n" +
 	"\x0fcom.coaching.v1B\rCoachingProtoP\x01ZFgithub.com/muhananaufal/selaras-platform-go/gen/coaching/v1;coachingv1\xa2\x02\x03CXX\xaa\x02\vCoaching.V1\xca\x02\vCoaching\\V1\xe2\x02\x17Coaching\\V1\\GPBMetadata\xea\x02\fCoaching::V1b\x06proto3"
 
 var (
@@ -2241,7 +2552,7 @@ func file_coaching_v1_coaching_proto_rawDescGZIP() []byte {
 }
 
 var file_coaching_v1_coaching_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_coaching_v1_coaching_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_coaching_v1_coaching_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_coaching_v1_coaching_proto_goTypes = []any{
 	(ProgramStatus)(0),                  // 0: coaching.v1.ProgramStatus
 	(Difficulty)(0),                     // 1: coaching.v1.Difficulty
@@ -2277,67 +2588,80 @@ var file_coaching_v1_coaching_proto_goTypes = []any{
 	(*DeleteThreadResponse)(nil),        // 31: coaching.v1.DeleteThreadResponse
 	(*SendThreadMessageRequest)(nil),    // 32: coaching.v1.SendThreadMessageRequest
 	(*SendThreadMessageResponse)(nil),   // 33: coaching.v1.SendThreadMessageResponse
-	(*v1.Timestamps)(nil),               // 34: common.v1.Timestamps
-	(*v1.IdempotencyKey)(nil),           // 35: common.v1.IdempotencyKey
-	(*v1.PageRequest)(nil),              // 36: common.v1.PageRequest
-	(*v1.PageResponse)(nil),             // 37: common.v1.PageResponse
+	(*ListPatientProgressRequest)(nil),  // 34: coaching.v1.ListPatientProgressRequest
+	(*ListPatientProgressResponse)(nil), // 35: coaching.v1.ListPatientProgressResponse
+	(*ProgramProgress)(nil),             // 36: coaching.v1.ProgramProgress
+	(*WeekProgress)(nil),                // 37: coaching.v1.WeekProgress
+	(*v1.Timestamps)(nil),               // 38: common.v1.Timestamps
+	(*v1.IdempotencyKey)(nil),           // 39: common.v1.IdempotencyKey
+	(*v1.PageRequest)(nil),              // 40: common.v1.PageRequest
+	(*v1.PageResponse)(nil),             // 41: common.v1.PageResponse
 }
 var file_coaching_v1_coaching_proto_depIdxs = []int32{
 	4,  // 0: coaching.v1.CoachingTask.task_type:type_name -> coaching.v1.TaskType
 	6,  // 1: coaching.v1.CoachingWeek.tasks:type_name -> coaching.v1.CoachingTask
-	34, // 2: coaching.v1.CoachingThread.timestamps:type_name -> common.v1.Timestamps
+	38, // 2: coaching.v1.CoachingThread.timestamps:type_name -> common.v1.Timestamps
 	5,  // 3: coaching.v1.CoachingMessage.role:type_name -> coaching.v1.MessageRole
-	34, // 4: coaching.v1.CoachingMessage.timestamps:type_name -> common.v1.Timestamps
+	38, // 4: coaching.v1.CoachingMessage.timestamps:type_name -> common.v1.Timestamps
 	10, // 5: coaching.v1.CoachingProgram.source_assessment:type_name -> coaching.v1.SourceAssessment
 	0,  // 6: coaching.v1.CoachingProgram.status:type_name -> coaching.v1.ProgramStatus
 	1,  // 7: coaching.v1.CoachingProgram.difficulty:type_name -> coaching.v1.Difficulty
 	2,  // 8: coaching.v1.CoachingProgram.curriculum_status:type_name -> coaching.v1.CurriculumStatus
 	7,  // 9: coaching.v1.CoachingProgram.weeks:type_name -> coaching.v1.CoachingWeek
 	8,  // 10: coaching.v1.CoachingProgram.threads:type_name -> coaching.v1.CoachingThread
-	34, // 11: coaching.v1.CoachingProgram.timestamps:type_name -> common.v1.Timestamps
+	38, // 11: coaching.v1.CoachingProgram.timestamps:type_name -> common.v1.Timestamps
 	1,  // 12: coaching.v1.StartProgramRequest.difficulty:type_name -> coaching.v1.Difficulty
-	35, // 13: coaching.v1.StartProgramRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	39, // 13: coaching.v1.StartProgramRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
 	11, // 14: coaching.v1.StartProgramResponse.program:type_name -> coaching.v1.CoachingProgram
 	11, // 15: coaching.v1.GetProgramResponse.program:type_name -> coaching.v1.CoachingProgram
 	11, // 16: coaching.v1.ToggleProgramStatusResponse.program:type_name -> coaching.v1.CoachingProgram
 	6,  // 17: coaching.v1.ToggleTaskStatusResponse.task:type_name -> coaching.v1.CoachingTask
 	3,  // 18: coaching.v1.GetGraduationReportResponse.status:type_name -> coaching.v1.GraduationStatus
-	35, // 19: coaching.v1.StartThreadRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	39, // 19: coaching.v1.StartThreadRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
 	8,  // 20: coaching.v1.StartThreadResponse.thread:type_name -> coaching.v1.CoachingThread
-	36, // 21: coaching.v1.GetThreadRequest.page:type_name -> common.v1.PageRequest
+	40, // 21: coaching.v1.GetThreadRequest.page:type_name -> common.v1.PageRequest
 	8,  // 22: coaching.v1.GetThreadResponse.thread:type_name -> coaching.v1.CoachingThread
 	9,  // 23: coaching.v1.GetThreadResponse.messages:type_name -> coaching.v1.CoachingMessage
-	37, // 24: coaching.v1.GetThreadResponse.page:type_name -> common.v1.PageResponse
+	41, // 24: coaching.v1.GetThreadResponse.page:type_name -> common.v1.PageResponse
 	8,  // 25: coaching.v1.UpdateThreadTitleResponse.thread:type_name -> coaching.v1.CoachingThread
-	35, // 26: coaching.v1.SendThreadMessageRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
+	39, // 26: coaching.v1.SendThreadMessageRequest.idempotency_key:type_name -> common.v1.IdempotencyKey
 	9,  // 27: coaching.v1.SendThreadMessageResponse.message:type_name -> coaching.v1.CoachingMessage
-	12, // 28: coaching.v1.Coaching.StartProgram:input_type -> coaching.v1.StartProgramRequest
-	14, // 29: coaching.v1.Coaching.GetProgram:input_type -> coaching.v1.GetProgramRequest
-	16, // 30: coaching.v1.Coaching.ToggleProgramStatus:input_type -> coaching.v1.ToggleProgramStatusRequest
-	18, // 31: coaching.v1.Coaching.DeleteProgram:input_type -> coaching.v1.DeleteProgramRequest
-	20, // 32: coaching.v1.Coaching.ToggleTaskStatus:input_type -> coaching.v1.ToggleTaskStatusRequest
-	22, // 33: coaching.v1.Coaching.GetGraduationReport:input_type -> coaching.v1.GetGraduationReportRequest
-	24, // 34: coaching.v1.Coaching.StartThread:input_type -> coaching.v1.StartThreadRequest
-	26, // 35: coaching.v1.Coaching.GetThread:input_type -> coaching.v1.GetThreadRequest
-	28, // 36: coaching.v1.Coaching.UpdateThreadTitle:input_type -> coaching.v1.UpdateThreadTitleRequest
-	30, // 37: coaching.v1.Coaching.DeleteThread:input_type -> coaching.v1.DeleteThreadRequest
-	32, // 38: coaching.v1.Coaching.SendThreadMessage:input_type -> coaching.v1.SendThreadMessageRequest
-	13, // 39: coaching.v1.Coaching.StartProgram:output_type -> coaching.v1.StartProgramResponse
-	15, // 40: coaching.v1.Coaching.GetProgram:output_type -> coaching.v1.GetProgramResponse
-	17, // 41: coaching.v1.Coaching.ToggleProgramStatus:output_type -> coaching.v1.ToggleProgramStatusResponse
-	19, // 42: coaching.v1.Coaching.DeleteProgram:output_type -> coaching.v1.DeleteProgramResponse
-	21, // 43: coaching.v1.Coaching.ToggleTaskStatus:output_type -> coaching.v1.ToggleTaskStatusResponse
-	23, // 44: coaching.v1.Coaching.GetGraduationReport:output_type -> coaching.v1.GetGraduationReportResponse
-	25, // 45: coaching.v1.Coaching.StartThread:output_type -> coaching.v1.StartThreadResponse
-	27, // 46: coaching.v1.Coaching.GetThread:output_type -> coaching.v1.GetThreadResponse
-	29, // 47: coaching.v1.Coaching.UpdateThreadTitle:output_type -> coaching.v1.UpdateThreadTitleResponse
-	31, // 48: coaching.v1.Coaching.DeleteThread:output_type -> coaching.v1.DeleteThreadResponse
-	33, // 49: coaching.v1.Coaching.SendThreadMessage:output_type -> coaching.v1.SendThreadMessageResponse
-	39, // [39:50] is the sub-list for method output_type
-	28, // [28:39] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	40, // 28: coaching.v1.ListPatientProgressRequest.page:type_name -> common.v1.PageRequest
+	36, // 29: coaching.v1.ListPatientProgressResponse.programs:type_name -> coaching.v1.ProgramProgress
+	41, // 30: coaching.v1.ListPatientProgressResponse.page:type_name -> common.v1.PageResponse
+	0,  // 31: coaching.v1.ProgramProgress.status:type_name -> coaching.v1.ProgramStatus
+	1,  // 32: coaching.v1.ProgramProgress.difficulty:type_name -> coaching.v1.Difficulty
+	2,  // 33: coaching.v1.ProgramProgress.curriculum_status:type_name -> coaching.v1.CurriculumStatus
+	37, // 34: coaching.v1.ProgramProgress.weeks:type_name -> coaching.v1.WeekProgress
+	12, // 35: coaching.v1.Coaching.StartProgram:input_type -> coaching.v1.StartProgramRequest
+	14, // 36: coaching.v1.Coaching.GetProgram:input_type -> coaching.v1.GetProgramRequest
+	16, // 37: coaching.v1.Coaching.ToggleProgramStatus:input_type -> coaching.v1.ToggleProgramStatusRequest
+	18, // 38: coaching.v1.Coaching.DeleteProgram:input_type -> coaching.v1.DeleteProgramRequest
+	20, // 39: coaching.v1.Coaching.ToggleTaskStatus:input_type -> coaching.v1.ToggleTaskStatusRequest
+	22, // 40: coaching.v1.Coaching.GetGraduationReport:input_type -> coaching.v1.GetGraduationReportRequest
+	24, // 41: coaching.v1.Coaching.StartThread:input_type -> coaching.v1.StartThreadRequest
+	26, // 42: coaching.v1.Coaching.GetThread:input_type -> coaching.v1.GetThreadRequest
+	28, // 43: coaching.v1.Coaching.UpdateThreadTitle:input_type -> coaching.v1.UpdateThreadTitleRequest
+	30, // 44: coaching.v1.Coaching.DeleteThread:input_type -> coaching.v1.DeleteThreadRequest
+	32, // 45: coaching.v1.Coaching.SendThreadMessage:input_type -> coaching.v1.SendThreadMessageRequest
+	34, // 46: coaching.v1.Coaching.ListPatientProgress:input_type -> coaching.v1.ListPatientProgressRequest
+	13, // 47: coaching.v1.Coaching.StartProgram:output_type -> coaching.v1.StartProgramResponse
+	15, // 48: coaching.v1.Coaching.GetProgram:output_type -> coaching.v1.GetProgramResponse
+	17, // 49: coaching.v1.Coaching.ToggleProgramStatus:output_type -> coaching.v1.ToggleProgramStatusResponse
+	19, // 50: coaching.v1.Coaching.DeleteProgram:output_type -> coaching.v1.DeleteProgramResponse
+	21, // 51: coaching.v1.Coaching.ToggleTaskStatus:output_type -> coaching.v1.ToggleTaskStatusResponse
+	23, // 52: coaching.v1.Coaching.GetGraduationReport:output_type -> coaching.v1.GetGraduationReportResponse
+	25, // 53: coaching.v1.Coaching.StartThread:output_type -> coaching.v1.StartThreadResponse
+	27, // 54: coaching.v1.Coaching.GetThread:output_type -> coaching.v1.GetThreadResponse
+	29, // 55: coaching.v1.Coaching.UpdateThreadTitle:output_type -> coaching.v1.UpdateThreadTitleResponse
+	31, // 56: coaching.v1.Coaching.DeleteThread:output_type -> coaching.v1.DeleteThreadResponse
+	33, // 57: coaching.v1.Coaching.SendThreadMessage:output_type -> coaching.v1.SendThreadMessageResponse
+	35, // 58: coaching.v1.Coaching.ListPatientProgress:output_type -> coaching.v1.ListPatientProgressResponse
+	47, // [47:59] is the sub-list for method output_type
+	35, // [35:47] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_coaching_v1_coaching_proto_init() }
@@ -2353,7 +2677,7 @@ func file_coaching_v1_coaching_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coaching_v1_coaching_proto_rawDesc), len(file_coaching_v1_coaching_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   28,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

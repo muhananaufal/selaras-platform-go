@@ -24,6 +24,8 @@ Bergantung keras pada Postgres (skema `coaching`).
 | 409 saat menyelesaikan tugas/mengirim pesan | D4/D5: program tidak `active` (dijeda atau selesai) | bukan bug |
 | Konsumen berputar `rewinding so failed ... are redelivered` | hasil untuk program/thread yang SUDAH DIHAPUS diperlakukan sebagai galat sementara — **sudah diperbaiki** (B22); bila muncul lagi, ada jenis galat baru yang dianggap sementara | log galatnya; `terminal()` di `internal/coaching/adapter/consumer/results.go` |
 | Hari program tidak bertambah | `DayOn(now)` menghitung dari `started_at` dan zona; bukan pekerjaan terjadwal | jam server; tidak ada cron yang bisa "macet" |
+| Klinisi mendapat 503 (`unavailable`, pesan edge `the service is temporarily unavailable`) pada `ListPatientProgress` | OpenFGA tidak terjangkau, `OPENFGA_URL` tidak diisi (dicatat saat start-up), atau outbox tidak ada sehingga pembacaan tidak bisa dicatat. Ketiganya sengaja gagal-tertutup (ADR-030) | log coaching-svc `a clinician's read was refused because access could not be settled` (penyebab aslinya ada di sana); `KAFKA_BROKERS`; `docs/runbook/openfga.md` |
+| Klinisi mendapat 403 padahal pasien sudah memberi consent | proyeksi tuple belum sampai ke OpenFGA (terukur sekitar 200 ms), atau klinisi bukan lagi anggota klinik. Model mensyaratkan keduanya | `clinic.authz_changes` yang belum terproyeksi; keanggotaan di `clinic.clinic_members` |
 
 ## Triase dalam lima menit
 

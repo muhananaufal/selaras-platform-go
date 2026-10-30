@@ -1,8 +1,8 @@
 # Runbook — penghapusan akun
 
-Penghapusan akun adalah **saga** lintas enam unit yang masing-masing memiliki
-basis datanya sendiri. Tidak ada transaksi yang bisa merangkul keenamnya, jadi
-yang menggantikannya adalah satu permintaan, enam konfirmasi, dan catatan
+Penghapusan akun adalah **saga** lintas tujuh unit (`DeletionParticipants`) yang masing-masing memiliki
+basis datanya sendiri. Tidak ada transaksi yang bisa merangkul semuanya, jadi
+yang menggantikannya adalah satu permintaan, satu konfirmasi per unit, dan catatan
 tentang siapa yang belum menjawab.
 
 ## Apa yang terjadi
@@ -19,16 +19,39 @@ POST /edge.v1.Auth/DeleteAccount   { "password": "..." }
         +--> coaching    hapus, konfirmasi   |  masing-masing satu transaksi:
         +--> chat        hapus, konfirmasi   |  penghapusan + konfirmasinya
         +--> nutrition   hapus, konfirmasi   |
-        +--> dashboard   hapus, konfirmasi  /
+        +--> dashboard   hapus, konfirmasi   |
+        +--> clinic      hapus, konfirmasi  /
         |
         v
-  identity: keenam menjawab berhasil -> akun dihapus, saga 'completed'
+  identity: semua menjawab berhasil  -> akun dihapus, saga 'completed'
             satu atau lebih gagal    -> akun DITAHAN,  saga 'failed'
 ```
 
 Jawabannya **202**, bukan 204. Penghapusannya belum selesai saat permintaan
 dijawab, dan mengatakan "sudah hilang" pada saat datanya masih ada di
 mana-mana adalah kebohongan yang akan ditampilkan klien apa adanya.
+
+## Yang dihapus clinic, dan yang sengaja tetap
+
+clinic-svc menyimpan data milik dua orang sekaligus, jadi penghapusannya
+dibedakan menurut peran pengguna yang dihapus (ADR-030, `clinicpg.Erase`).
+
+| Peran pengguna | Yang dihapus | Alasan |
+| :--- | :--- | :--- |
+| Pasien | consent yang ia berikan dan audit siapa yang membaca datanya | datanya sendiri |
+| Klinisi | keanggotaannya di klinik | datanya sendiri |
+| Klinisi | **tidak** dihapus: consent dari pasien lain dan audit bacaannya | riwayat milik pasien lain. Id-nya kini menunjuk akun yang sudah tidak ada |
+
+- **Ledger consent dan audit bersifat append-only.** Trigger menolak DELETE
+  dari peran runtime. Satu-satunya jalan hapus adalah fungsi `forget_patient`
+  (`SECURITY DEFINER`, milik `clinic_owner`). `svc_clinic` hanya boleh
+  memanggil fungsi itu.
+- **Tuple OpenFGA yang masih membuka akses dihapus lewat outbox proyeksi**
+  (`authz_changes`) dalam transaksi yang sama, jadi akses ikut tertutup
+  begitu penghapusannya commit.
+- **`deletion-verify` membaca tabel ber-RLS atas nama pengguna yang dihapus**
+  (`SET LOCAL app.user_id`). Tanpa itu peran runtime tidak melihat baris apa
+  pun, dan tabelnya akan selalu terbaca bersih.
 
 ## Mengapa akun dihapus TERAKHIR
 
@@ -38,7 +61,7 @@ punya siapa pun untuk dilapori, dan datanya tertinggal tanpa `user_id` hidup
 yang bisa menemukannya lagi.
 
 Karena alasan yang sama, **satu unit gagal berarti akunnya ditahan**.
-Penghapusan tidak bisa dibatalkan — data yang sudah hilang di lima unit tidak
+Penghapusan tidak bisa dibatalkan — data yang sudah hilang di unit lain tidak
 kembali — jadi kompensasinya bukan mengembalikan keadaan, melainkan menahan
 satu-satunya kunci yang masih bisa menemukan sisanya.
 
@@ -153,7 +176,7 @@ go run ./cmd/deletion-verify \
   -dsn 'postgres://svc_{schema}:{password}@127.0.0.1:15432/selaras?sslmode=disable'
 ```
 
-Ia menanyai **empat belas tabel di tujuh skema**, masing-masing dengan peran
+Ia menanyai **tujuh belas tabel di delapan skema**, masing-masing dengan peran
 login-nya sendiri. Menanyainya sebagai superuser akan menemukan baris yang tidak
 bisa dilihat service-nya sendiri, dan itu menjawab pertanyaan yang tidak sedang
 diajukan.

@@ -53,6 +53,20 @@ type Request struct {
 
 	// Data fills the template.
 	Data map[string]any
+
+	// weeks is the number of weeks a curriculum request asks the model for;
+	// the answer is checked against it (checkAnswer). Zero for other kinds.
+	weeks int
+}
+
+// checkAnswer holds the answer to the contract its prompt states, for the
+// kinds whose contract a machine can check. The rest pass: their shape is
+// checked by the unit that reads them.
+func (r *Request) checkAnswer(text string) error {
+	if r.Kind == KindCurriculum {
+		return checkCurriculum(text, r.weeks)
+	}
+	return nil
 }
 
 // requestOf reads the request from its envelope.
@@ -139,6 +153,7 @@ func curriculumRequest(req *eventsv1.CurriculumRequested) (*Request, error) {
 			"RiskPercentage": notYetInTheEvent,
 			fieldLanguage:    defaultLanguage,
 		},
+		weeks: defaultCurriculumWeeks,
 	}, nil
 }
 

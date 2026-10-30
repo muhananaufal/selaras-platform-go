@@ -6,14 +6,11 @@ import (
 	"connectrpc.com/connect"
 
 	assessmentv1 "github.com/muhananaufal/selaras-platform-go/gen/assessment/v1"
-	commonv1 "github.com/muhananaufal/selaras-platform-go/gen/common/v1"
 	edgev1 "github.com/muhananaufal/selaras-platform-go/gen/edge/v1"
 	"github.com/muhananaufal/selaras-platform-go/gen/edge/v1/edgev1connect"
 	"github.com/muhananaufal/selaras-platform-go/internal/edge/rpcerr"
+	"github.com/muhananaufal/selaras-platform-go/internal/platform/watchhint"
 )
-
-// historyPageSize is the number of assessments ListAssessments returns.
-const historyPageSize = 20
 
 // Assessment implements edge.v1.Assessment.
 type Assessment struct {
@@ -51,7 +48,7 @@ func (a *Assessment) StartAssessment(
 }
 
 func (a *Assessment) ListAssessments(
-	ctx context.Context, _ *edgev1.ListAssessmentsRequest,
+	ctx context.Context, req *edgev1.ListAssessmentsRequest,
 ) (*edgev1.ListAssessmentsResponse, error) {
 	c, err := claims(ctx)
 	if err != nil {
@@ -59,13 +56,41 @@ func (a *Assessment) ListAssessments(
 	}
 	resp, err := a.assessments.ListAssessments(ctx, &assessmentv1.ListAssessmentsRequest{
 		UserId: c.UserID.String(),
-		Page:   &commonv1.PageRequest{PageSize: historyPageSize},
+		Page:   pageFrom(req.GetPage()),
 	})
 	if err != nil {
 		return nil, rpcerr.FromUpstream(ctx, edgev1connect.AssessmentListAssessmentsProcedure, err)
 	}
 
-	out := &edgev1.ListAssessmentsResponse{}
+	out := &edgev1.ListAssessmentsResponse{Page: pageOut(resp.GetPage())}
+	for _, item := range resp.GetAssessments() {
+		out.Assessments = append(out.Assessments, assessmentView(item))
+	}
+	return out, nil
+}
+
+// ListPatientAssessments is a clinician reading a patient's history under
+// the patient's consent (ADR-030). The clinician is the caller of the token,
+// which is forwarded: assessment-svc reads it from its own verification, not
+// from anything the gateway says. The claims are required here too, so an
+// anonymous request stops at the gateway.
+func (a *Assessment) ListPatientAssessments(
+	ctx context.Context, req *edgev1.ListPatientAssessmentsRequest,
+) (*edgev1.ListPatientAssessmentsResponse, error) {
+	if _, err := claims(ctx); err != nil {
+		return nil, err
+	}
+	if err := invalid(required(field("patientUserId", req.GetPatientUserId()))); err != nil {
+		return nil, err
+	}
+	resp, err := a.assessments.ListPatientAssessments(ctx, &assessmentv1.ListPatientAssessmentsRequest{
+		PatientUserId: req.GetPatientUserId(),
+		Page:          pageFrom(req.GetPage()),
+	})
+	if err != nil {
+		return nil, rpcerr.FromUpstream(ctx, edgev1connect.AssessmentListPatientAssessmentsProcedure, err)
+	}
+	out := &edgev1.ListPatientAssessmentsResponse{Page: pageOut(resp.GetPage())}
 	for _, item := range resp.GetAssessments() {
 		out.Assessments = append(out.Assessments, assessmentView(item))
 	}
@@ -116,17 +141,31 @@ func (a *Assessment) WatchAssessment(
 	if err := invalid(required(field("slug", req.GetSlug()))); err != nil {
 		return err
 	}
-	return watch(ctx, a.watch, stream, func(ctx context.Context) (*edgev1.WatchAssessmentResponse, bool, error) {
-		view, err := a.get(ctx, req.GetSlug(), edgev1connect.AssessmentWatchAssessmentProcedure)
+	type result = watchResult[*edgev1.WatchAssessmentResponse]
+	return watch(ctx, a.watch, stream, func(ctx context.Context) (result, error) {
+		found, err := a.fetch(ctx, req.GetSlug(), edgev1connect.AssessmentWatchAssessmentProcedure)
 		if err != nil {
-			return nil, false, err
+			return result{}, err
 		}
-		done := view.GetPersonalizationStatus() != assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING
-		return &edgev1.WatchAssessmentResponse{Assessment: view}, done, nil
+		view := assessmentView(found)
+		return result{
+			Msg:  &edgev1.WatchAssessmentResponse{Assessment: view},
+			Done: view.GetPersonalizationStatus() != assessmentv1.PersonalizationStatus_PERSONALIZATION_STATUS_PENDING,
+			Key:  watchhint.Key{Type: watchhint.TypeAssessment, ID: found.GetId()},
+		}, nil
 	})
 }
 
 func (a *Assessment) get(ctx context.Context, slug, procedure string) (*edgev1.RiskAssessment, error) {
+	found, err := a.fetch(ctx, slug, procedure)
+	if err != nil {
+		return nil, err
+	}
+	return assessmentView(found), nil
+}
+
+// fetch reads the caller's assessment as assessment-svc returns it.
+func (a *Assessment) fetch(ctx context.Context, slug, procedure string) (*assessmentv1.RiskAssessment, error) {
 	c, err := claims(ctx)
 	if err != nil {
 		return nil, err
@@ -141,7 +180,7 @@ func (a *Assessment) get(ctx context.Context, slug, procedure string) (*edgev1.R
 	if err != nil {
 		return nil, rpcerr.FromUpstream(ctx, procedure, err)
 	}
-	return assessmentView(resp.GetAssessment()), nil
+	return resp.GetAssessment(), nil
 }
 
 func assessmentView(in *assessmentv1.RiskAssessment) *edgev1.RiskAssessment {

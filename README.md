@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/muhananaufal/selaras-platform-go/actions/workflows/ci.yml)
 
-Sembilan unit Go — satu gateway Connect, tujuh service domain, satu worker LLM —
+Sepuluh unit Go — satu gateway Connect, delapan service domain, satu worker LLM —
 hasil migrasi dari monolit Laravel `selaras-backend-api` (32 endpoint, nol
 test). Dibangun seolah produksi sejak baris pertama (ADR-016): setiap klaim
 di halaman ini menunjuk ke berkas yang memuat buktinya, dan yang belum
@@ -38,7 +38,7 @@ flowchart LR
 
 | Lapisan | Pilihan | Alasan tertulis |
 | :--- | :--- | :--- |
-| Batas unit | 9 unit, `profile-svc` berdiri sendiri | [ADR-002](docs/adr/ADR-002-topologi-9-unit-profile-svc-berdiri-sendiri.md) |
+| Batas unit | 10 unit: 9 dari ADR-002 (`profile-svc` berdiri sendiri) + `clinic-svc` dari ADR-030 | [ADR-002](docs/adr/ADR-002-topologi-9-unit-profile-svc-berdiri-sendiri.md), [ADR-030](docs/adr/ADR-030-akses-klinik-lewat-consent-dan-openfga.md) |
 | Konsistensi lintas unit | Outbox transaksional + referensi lunak, tanpa FK lintas skema | [ADR-004](docs/adr/ADR-004-konsistensi-transactional-outbox-referensi-lunak.md), [ADR-006](docs/adr/ADR-006-database-postgresql-schema-per-service-satu-inst.md) |
 | Transport | gRPC di dalam, Connect di tepi (satu kontrak proto, JSON untuk browser, stream untuk hasil LLM), id publik berupa slug | [ADR-005](docs/adr/ADR-005-transport-grpc-internal-rest-di-edge-id-publik-b.md), [ADR-027](docs/adr/ADR-027-kontrak-publik-lewat-connect-bukan-rest.md) |
 | Sesi | JWT EdDSA berumur pendek, pencabutan lewat penghitung generasi di Redis, gagal-tertutup | [ADR-020](docs/adr/ADR-020-token-eddsa-pencabutan-lewat-penghitung-generasi.md) |
@@ -48,7 +48,7 @@ flowchart LR
 | Kuota LLM | Pekerjaan diparkir saat kuota habis, bukan dimatikan | [ADR-025](docs/adr/ADR-025-kuota-penyedia-llm-memarkir-pekerjaan-bukan-mematikannya.md) |
 | Autentikasi antar-service | Setiap service memverifikasi token pengguna dengan kunci publik; `sub` harus sama dengan `user_id` | [ADR-026](docs/adr/ADR-026-setiap-service-memverifikasi-token-pengguna-sendiri.md) |
 
-Dua puluh tujuh ADR, masing-masing dengan **pembatal** — kondisi yang membuat
+Tiga puluh ADR, masing-masing dengan **pembatal** — kondisi yang membuat
 keputusannya gugur: [`docs/adr/`](docs/adr/README.md). Mengapa sistemnya
 dipecah, dan apa yang dijanjikan: [RFC-000](docs/rfc/RFC-000-platform-decomposition.md).
 Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-retrospective.md).
@@ -57,7 +57,7 @@ Apa yang benar-benar terjadi, termasuk yang gagal: [RFC-999](docs/rfc/RFC-999-re
 
 | Klaim | Angka | Bukti |
 | :--- | :--- | :--- |
-| Paritas mesin risiko SCORE2 / SCORE2-OP / SCORE2-Diabetes dengan sistem lama | 288 dari 288 golden vector, selisih terbesar nol — **hanya untuk perokok aktif dengan satu set nilai lab per mode**; jalur bukan-perokok belum dibandingkan (ditemukan lewat mutation testing, lihat laporan) | [`docs/parity-report.md`](docs/parity-report.md) |
+| Paritas mesin risiko SCORE2 / SCORE2-OP / SCORE2-Diabetes dengan sistem lama | 1440 dari 1440 golden vector, selisih terbesar nol — perokok dan bukan perokok, 3 set nilai lab manual dan 2 set jawaban proksi; sebelumnya hanya 288 vektor perokok aktif (celah ditemukan lewat mutation testing, ditutup dengan vektor baru dari sistem lama) | [`docs/parity-report.md`](docs/parity-report.md) |
 | Latensi di bawah beban k6 | REST: p95 baca 4,4 ms · tulis 14,5 ms · campuran 9,7 ms, nol gagal. Connect (ulang 2026-09-25): p50 baca 3,1 ms, p95 8,7–16,6 ms antar-larian, nol gagal; SLO lulus, kenaikan median belum dijelaskan | [`docs/performance-report.md`](docs/performance-report.md) |
 | Satu trace menembus gateway → service → worker | 6 span, 3 unit, utuh di Tempo | [`docs/observability.md`](docs/observability.md) |
 | Broker dimatikan paksa di tengah beban | 18 event tertahan di outbox, 0 hilang, 8/8 pekerjaan selesai setelah broker kembali | [`test/chaos/broker.md`](test/chaos/broker.md) |
@@ -109,7 +109,7 @@ Prasyarat: Go (versi di `go.mod`), Docker, [Task](https://taskfile.dev),
 pun (ADR-016): salin `.env.example` ke `.env` dan isi.
 
 ```bash
-task up:full          # postgres, pgbouncer, replika, kafka, redis, mailpit, 9 unit, observabilitas
+task up:full          # postgres, pgbouncer, replika, kafka, redis, mailpit, 10 unit, observabilitas
 task test:e2e         # suite ujung ke ujung terhadap stack yang menyala
 task k6 -- read       # beban baca; write, mixed
 task down:apps        # unit dimatikan, dependensi tetap

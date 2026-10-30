@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package edge.v1;
+
+import "clinic/v1/clinic.proto";
+import "edge/v1/page.proto";
+
+// Clinic: clinics, their members, and a patient's consent to be read by a
+// clinician (ADR-030). The acting user is always the caller of the token;
+// no request names who is acting.
+service Clinic {
+  // Creates a clinic; the caller becomes its owner.
+  rpc CreateClinic(CreateClinicRequest) returns (CreateClinicResponse);
+
+  // The owner adds admins and clinicians, an admin adds clinicians.
+  rpc AddMember(AddMemberRequest) returns (AddMemberResponse);
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse);
+
+  // The caller, as a patient, lets one clinician of one clinic read their
+  // risk assessments and coaching progress. Never their chat.
+  rpc GrantConsent(GrantConsentRequest) returns (GrantConsentResponse);
+  rpc RevokeConsent(RevokeConsentRequest) returns (RevokeConsentResponse);
+
+  // The caller's consents in force.
+  rpc ListConsents(ListConsentsRequest) returns (ListConsentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Who read the caller's data, and when - newest first.
+  rpc ListAccessAudit(ListAccessAuditRequest) returns (ListAccessAuditResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message CreateClinicRequest {
+  string name = 1;
+}
+
+message CreateClinicResponse {
+  clinic.v1.ClinicView clinic = 1;
+}
+
+message AddMemberRequest {
+  string clinic_id = 1;
+  string member_user_id = 2;
+  clinic.v1.MemberRole role = 3;
+}
+
+message AddMemberResponse {}
+
+message RemoveMemberRequest {
+  string clinic_id = 1;
+  string member_user_id = 2;
+  clinic.v1.MemberRole role = 3;
+}
+
+message RemoveMemberResponse {}
+
+message GrantConsentRequest {
+  string clinic_id = 1;
+  string clinician_user_id = 2;
+}
+
+message GrantConsentResponse {
+  clinic.v1.Consent consent = 1;
+}
+
+message RevokeConsentRequest {
+  string clinic_id = 1;
+  string clinician_user_id = 2;
+}
+
+message RevokeConsentResponse {}
+
+message ListConsentsRequest {}
+
+message ListConsentsResponse {
+  repeated clinic.v1.Consent consents = 1;
+}
+
+message ListAccessAuditRequest {
+  PageRequest page = 1;
+}
+
+message ListAccessAuditResponse {
+  repeated clinic.v1.AccessRecord records = 1;
+  PageResponse page = 2;
+}

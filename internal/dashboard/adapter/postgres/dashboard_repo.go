@@ -100,7 +100,13 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 		return nil, err
 	}
 	dash.History = history
-	dash.Total = len(history)
+
+	// The history is bounded (domain.HistoryLimit); the total is not.
+	if err := r.reader.QueryRow(ctx,
+		`SELECT count(*) FROM dashboard_assessments WHERE user_id = $1`, userID.String(),
+	).Scan(&dash.Total); err != nil {
+		return nil, fmt.Errorf("counting the assessments: %w", err)
+	}
 
 	// Latest and previous are the top two rows of the history, which is
 	// already ordered by ASSESSMENT TIME - not by order of arrival.
@@ -115,15 +121,16 @@ func (r *Repository) Find(ctx context.Context, userID domain.UserID) (*domain.Da
 	return &dash, nil
 }
 
-// history reads the assessment history, newest first.
+// history reads the latest domain.HistoryLimit assessments, newest first.
 func (r *Repository) history(ctx context.Context, userID domain.UserID) ([]*domain.Assessment, error) {
 	const q = `
 		SELECT slug, assessed_at, risk_percentage, risk_category, model_used
 		FROM dashboard_assessments
 		WHERE user_id = $1
-		ORDER BY assessed_at DESC, slug DESC`
+		ORDER BY assessed_at DESC, slug DESC
+		LIMIT $2`
 
-	rows, err := r.reader.Query(ctx, q, userID.String())
+	rows, err := r.reader.Query(ctx, q, userID.String(), domain.HistoryLimit)
 	if err != nil {
 		return nil, fmt.Errorf("querying the assessment history: %w", err)
 	}

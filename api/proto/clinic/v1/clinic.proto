@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package clinic.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Clinics, their members, and patients' consent to be read by a clinician
+// (ADR-030).
+//
+// Every request carries user_id, the acting user, and the service checks it
+// against the token like every other (ADR-026). What that user may do is
+// decided here: a clinic's owner and admins manage its members, and only a
+// patient grants or revokes consent to read their own data.
+service Clinic {
+  // Creates a clinic; the caller becomes its owner.
+  rpc CreateClinic(CreateClinicRequest) returns (CreateClinicResponse);
+
+  // Adds a member. The owner may add admins and clinicians, an admin only
+  // clinicians. There is exactly one owner, set at creation.
+  rpc AddMember(AddMemberRequest) returns (AddMemberResponse);
+
+  // Removes one role of a member. A clinician removed from the clinic loses
+  // every read that needed the membership, whatever consent says.
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse);
+
+  // The patient (user_id) lets one clinician of one clinic read their risk
+  // assessments and coaching progress. Chat is never included.
+  rpc GrantConsent(GrantConsentRequest) returns (GrantConsentResponse);
+
+  // The patient withdraws a consent. A new ledger entry, not a deletion.
+  rpc RevokeConsent(RevokeConsentRequest) returns (RevokeConsentResponse);
+
+  // The patient's consents currently in force.
+  rpc ListConsents(ListConsentsRequest) returns (ListConsentsResponse);
+
+  // Who read the patient's data, and when - newest first.
+  rpc ListAccessAudit(ListAccessAuditRequest) returns (ListAccessAuditResponse);
+}
+
+enum MemberRole {
+  MEMBER_ROLE_UNSPECIFIED = 0;
+  MEMBER_ROLE_OWNER = 1;
+  MEMBER_ROLE_ADMIN = 2;
+  MEMBER_ROLE_CLINICIAN = 3;
+}
+
+// The patient data a consent opens. Chat is not one of them, and never will
+// be: the owner's rule is that chat is not visible to anyone.
+enum Resource {
+  RESOURCE_UNSPECIFIED = 0;
+  RESOURCE_RISK_ASSESSMENTS = 1;
+  RESOURCE_COACHING_PROGRESS = 2;
+}
+
+message ClinicView {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message Consent {
+  string clinic_id = 1;
+  string clinician_user_id = 2;
+  google.protobuf.Timestamp granted_at = 3;
+}
+
+message AccessRecord {
+  string clinician_user_id = 1;
+  Resource resource = 2;
+  google.protobuf.Timestamp accessed_at = 3;
+}
+
+message CreateClinicRequest {
+  string user_id = 1;
+  string name = 2;
+}
+
+message CreateClinicResponse {
+  ClinicView clinic = 1;
+}
+
+message AddMemberRequest {
+  string user_id = 1;
+  string clinic_id = 2;
+  string member_user_id = 3;
+  MemberRole role = 4;
+}
+
+message AddMemberResponse {}
+
+message RemoveMemberRequest {
+  string user_id = 1;
+  string clinic_id = 2;
+  string member_user_id = 3;
+  MemberRole role = 4;
+}
+
+message RemoveMemberResponse {}
+
+message GrantConsentRequest {
+  string user_id = 1;
+  string clinic_id = 2;
+  string clinician_user_id = 3;
+}
+
+message GrantConsentResponse {
+  Consent consent = 1;
+}
+
+message RevokeConsentRequest {
+  string user_id = 1;
+  string clinic_id = 2;
+  string clinician_user_id = 3;
+}
+
+message RevokeConsentResponse {}
+
+message ListConsentsRequest {
+  string user_id = 1;
+}
+
+message ListConsentsResponse {
+  repeated Consent consents = 1;
+}
+
+message ListAccessAuditRequest {
+  string user_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListAccessAuditResponse {
+  repeated AccessRecord records = 1;
+  string next_page_token = 2;
+}

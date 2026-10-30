@@ -39,6 +39,9 @@ const (
 	// AssessmentListAssessmentsProcedure is the fully-qualified name of the Assessment's
 	// ListAssessments RPC.
 	AssessmentListAssessmentsProcedure = "/edge.v1.Assessment/ListAssessments"
+	// AssessmentListPatientAssessmentsProcedure is the fully-qualified name of the Assessment's
+	// ListPatientAssessments RPC.
+	AssessmentListPatientAssessmentsProcedure = "/edge.v1.Assessment/ListPatientAssessments"
 	// AssessmentGetAssessmentProcedure is the fully-qualified name of the Assessment's GetAssessment
 	// RPC.
 	AssessmentGetAssessmentProcedure = "/edge.v1.Assessment/GetAssessment"
@@ -57,6 +60,10 @@ type AssessmentClient interface {
 	StartAssessment(context.Context, *v1.StartAssessmentRequest) (*v1.StartAssessmentResponse, error)
 	// The caller's assessment history, newest first.
 	ListAssessments(context.Context, *v1.ListAssessmentsRequest) (*v1.ListAssessmentsResponse, error)
+	// A clinician reads a patient's assessment history, only under the
+	// patient's consent to that clinician (ADR-030). Every read that returns
+	// data is recorded in the patient's access audit first.
+	ListPatientAssessments(context.Context, *v1.ListPatientAssessmentsRequest) (*v1.ListPatientAssessmentsResponse, error)
 	GetAssessment(context.Context, *v1.GetAssessmentRequest) (*v1.GetAssessmentResponse, error)
 	// Queues the narrative report. Returns immediately: the report comes later,
 	// and personalization_status says when. Honours the Idempotency-Key header,
@@ -93,6 +100,13 @@ func NewAssessmentClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		listPatientAssessments: connect.NewClient[v1.ListPatientAssessmentsRequest, v1.ListPatientAssessmentsResponse](
+			httpClient,
+			baseURL+AssessmentListPatientAssessmentsProcedure,
+			connect.WithSchema(assessmentMethods.ByName("ListPatientAssessments")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		getAssessment: connect.NewClient[v1.GetAssessmentRequest, v1.GetAssessmentResponse](
 			httpClient,
 			baseURL+AssessmentGetAssessmentProcedure,
@@ -120,6 +134,7 @@ func NewAssessmentClient(httpClient connect.HTTPClient, baseURL string, opts ...
 type assessmentClient struct {
 	startAssessment        *connect.Client[v1.StartAssessmentRequest, v1.StartAssessmentResponse]
 	listAssessments        *connect.Client[v1.ListAssessmentsRequest, v1.ListAssessmentsResponse]
+	listPatientAssessments *connect.Client[v1.ListPatientAssessmentsRequest, v1.ListPatientAssessmentsResponse]
 	getAssessment          *connect.Client[v1.GetAssessmentRequest, v1.GetAssessmentResponse]
 	requestPersonalization *connect.Client[v1.RequestPersonalizationRequest, v1.RequestPersonalizationResponse]
 	watchAssessment        *connect.Client[v1.WatchAssessmentRequest, v1.WatchAssessmentResponse]
@@ -137,6 +152,15 @@ func (c *assessmentClient) StartAssessment(ctx context.Context, req *v1.StartAss
 // ListAssessments calls edge.v1.Assessment.ListAssessments.
 func (c *assessmentClient) ListAssessments(ctx context.Context, req *v1.ListAssessmentsRequest) (*v1.ListAssessmentsResponse, error) {
 	response, err := c.listAssessments.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// ListPatientAssessments calls edge.v1.Assessment.ListPatientAssessments.
+func (c *assessmentClient) ListPatientAssessments(ctx context.Context, req *v1.ListPatientAssessmentsRequest) (*v1.ListPatientAssessmentsResponse, error) {
+	response, err := c.listPatientAssessments.CallUnary(ctx, connect.NewRequest(req))
 	if response != nil {
 		return response.Msg, err
 	}
@@ -173,6 +197,10 @@ type AssessmentHandler interface {
 	StartAssessment(context.Context, *v1.StartAssessmentRequest) (*v1.StartAssessmentResponse, error)
 	// The caller's assessment history, newest first.
 	ListAssessments(context.Context, *v1.ListAssessmentsRequest) (*v1.ListAssessmentsResponse, error)
+	// A clinician reads a patient's assessment history, only under the
+	// patient's consent to that clinician (ADR-030). Every read that returns
+	// data is recorded in the patient's access audit first.
+	ListPatientAssessments(context.Context, *v1.ListPatientAssessmentsRequest) (*v1.ListPatientAssessmentsResponse, error)
 	GetAssessment(context.Context, *v1.GetAssessmentRequest) (*v1.GetAssessmentResponse, error)
 	// Queues the narrative report. Returns immediately: the report comes later,
 	// and personalization_status says when. Honours the Idempotency-Key header,
@@ -205,6 +233,13 @@ func NewAssessmentHandler(svc AssessmentHandler, opts ...connect.HandlerOption) 
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	assessmentListPatientAssessmentsHandler := connect.NewUnaryHandlerSimple(
+		AssessmentListPatientAssessmentsProcedure,
+		svc.ListPatientAssessments,
+		connect.WithSchema(assessmentMethods.ByName("ListPatientAssessments")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	assessmentGetAssessmentHandler := connect.NewUnaryHandlerSimple(
 		AssessmentGetAssessmentProcedure,
 		svc.GetAssessment,
@@ -231,6 +266,8 @@ func NewAssessmentHandler(svc AssessmentHandler, opts ...connect.HandlerOption) 
 			assessmentStartAssessmentHandler.ServeHTTP(w, r)
 		case AssessmentListAssessmentsProcedure:
 			assessmentListAssessmentsHandler.ServeHTTP(w, r)
+		case AssessmentListPatientAssessmentsProcedure:
+			assessmentListPatientAssessmentsHandler.ServeHTTP(w, r)
 		case AssessmentGetAssessmentProcedure:
 			assessmentGetAssessmentHandler.ServeHTTP(w, r)
 		case AssessmentRequestPersonalizationProcedure:
@@ -252,6 +289,10 @@ func (UnimplementedAssessmentHandler) StartAssessment(context.Context, *v1.Start
 
 func (UnimplementedAssessmentHandler) ListAssessments(context.Context, *v1.ListAssessmentsRequest) (*v1.ListAssessmentsResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Assessment.ListAssessments is not implemented"))
+}
+
+func (UnimplementedAssessmentHandler) ListPatientAssessments(context.Context, *v1.ListPatientAssessmentsRequest) (*v1.ListPatientAssessmentsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("edge.v1.Assessment.ListPatientAssessments is not implemented"))
 }
 
 func (UnimplementedAssessmentHandler) GetAssessment(context.Context, *v1.GetAssessmentRequest) (*v1.GetAssessmentResponse, error) {

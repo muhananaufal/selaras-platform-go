@@ -34,6 +34,10 @@ type ProgramRepository interface {
 	// error. A new user has no program yet.
 	FindActiveForUser(ctx context.Context, userID UserID) (p *Program, found bool, err error)
 
+	// ListForUser pages a user's programs, newest first by (created_at, id),
+	// starting after the cursor; nil starts at the newest.
+	ListForUser(ctx context.Context, userID UserID, limit int, after *ProgramCursor) ([]*Program, error)
+
 	// Update stores changes to a program.
 	Update(ctx context.Context, p *Program) error
 
@@ -80,6 +84,11 @@ type CurriculumRepository interface {
 	// Counted by the database, not by loading every task into memory and
 	// summing in Go. The graduation report only needs two numbers.
 	CountTasks(ctx context.Context, programID ID) (total, completed int, err error)
+
+	// WeeklyProgress counts the tasks of each week, and how many are done,
+	// for several programs in one query, weeks in order. A program without a
+	// stored curriculum has no entry.
+	WeeklyProgress(ctx context.Context, programIDs []ID) (map[ID][]WeekProgress, error)
 }
 
 // ThreadRepository stores threads and their messages.

@@ -67,13 +67,16 @@ units:
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply.local
       FRONTEND_URL: http://localhost:3000
+      # The WebAuthn relying party (ADR-032): passkeys are bound to it.
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_ORIGINS: http://localhost:3000
       # argon2id 64 MiB x two concurrent derivations, on top of a base RSS of
       # ~30 MiB and the GC's working room. 192 MiB was OOM-killed twice while
       # the e2e suite registered accounts back to back on k3d (the cgroup
       # counts the full RSS, not the Go heap); 320 MiB leaves room, and
       # GOMEMLIMIT makes the GC work well before the ceiling.
       GOMEMLIMIT: 256MiB
-    secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY]
+    secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY, MFA_ENCRYPTION_KEYS]
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 320Mi }
@@ -98,7 +101,9 @@ units:
       ASSESSMENT_GRPC_ADDR: ":9301"
       ASSESSMENT_HEALTH_ADDR: ":9302"
       PROFILE_GRPC_TARGET: profile-svc:9201
-    secretEnv: [ASSESSMENT_DATABASE_DSN, JWT_VERIFY_KEY]
+      # Clinicians' reads of patients are checked here (ADR-030, ADR-031).
+      OPENFGA_URL: http://openfga:8080
+    secretEnv: [ASSESSMENT_DATABASE_DSN, JWT_VERIFY_KEY, OPENFGA_API_TOKEN]
     resources:
       requests: { cpu: 50m, memory: 48Mi }
       limits: { memory: 160Mi }
@@ -110,7 +115,9 @@ units:
     env:
       COACHING_GRPC_ADDR: ":9401"
       COACHING_HEALTH_ADDR: ":9403"
-    secretEnv: [COACHING_DATABASE_DSN, JWT_VERIFY_KEY]
+      # Clinicians' reads of patients are checked here (ADR-030, ADR-031).
+      OPENFGA_URL: http://openfga:8080
+    secretEnv: [COACHING_DATABASE_DSN, JWT_VERIFY_KEY, OPENFGA_API_TOKEN]
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
@@ -151,6 +158,22 @@ units:
     resources:
       requests: { cpu: 25m, memory: 32Mi }
       limits: { memory: 160Mi }
+    autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
+
+  # Clinics, members, consent and the access audit (ADR-030). Its DSN is for
+  # svc_clinic; clinic_owner is used only by the migrate-clinic job.
+  clinic-svc:
+    grpcPort: 9901
+    healthPort: 9902
+    env:
+      CLINIC_GRPC_ADDR: ":9901"
+      CLINIC_HEALTH_ADDR: ":9902"
+      # The consent projection writes tuples here (ADR-030, ADR-031).
+      OPENFGA_URL: http://openfga:8080
+    secretEnv: [CLINIC_DATABASE_DSN, JWT_VERIFY_KEY, OPENFGA_API_TOKEN]
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { memory: 128Mi }
     autoscaling: { enabled: true, minReplicas: 1, maxReplicas: 3, targetCPUUtilizationPercentage: 60 }
 
   llm-worker:
@@ -195,6 +218,7 @@ units:
       CHAT_GRPC_TARGET: chat-svc:9501
       NUTRITION_GRPC_TARGET: nutrition-svc:9601
       DASHBOARD_GRPC_TARGET: dashboard-svc:9701
+      CLINIC_GRPC_TARGET: clinic-svc:9901
     secretEnv: [JWT_VERIFY_KEY]
     resources:
       requests: { cpu: 50m, memory: 32Mi }

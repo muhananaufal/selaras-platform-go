@@ -27,10 +27,19 @@ type Repositories interface {
 	Users() domain.UserRepository
 	PasswordResets() domain.PasswordResetRepository
 
+	// MFA sits in the same unit of work as Users: deciding at sign-in
+	// whether a second factor is required and bumping the generation (or
+	// not) must read one consistent state (ADR-032).
+	MFA() domain.MFARepository
+
+	// Passkeys: WebAuthn credentials and user handles. Its records are the
+	// library's (go-webauthn), so the port lives here and not in domain.
+	Passkeys() PasskeyRepository
+
 	// Sagas and Events are used by account deletion.
 	//
 	// Both sit in the SAME unit of work as the saga write: a saga recorded
-	// without its event hangs forever waiting for six units that were never
+	// without its event hangs forever waiting for units that were never
 	// told, and an event without its saga deletes someone's data without a
 	// single record that it was requested.
 	Sagas() SagaRepository
@@ -67,6 +76,10 @@ type AuthResult struct {
 	UserID        string
 	UserProfileID string
 	AccessToken   string
+
+	// Challenge is set, and AccessToken empty, when the account has a second
+	// factor: the sign-in continues with MFA.Verify (ADR-032).
+	Challenge *Challenge
 }
 
 // ProfileFinder fetches a user's profile id from profile-svc.
