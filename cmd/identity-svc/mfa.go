@@ -4,12 +4,12 @@ import (
 	"crypto/rand"
 	"time"
 
-	"github.com/go-webauthn/webauthn/webauthn"
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/identity"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/crypto"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/mfastore"
+	"github.com/muhananaufal/selaras-platform-go/internal/identity/adapter/webauthn"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/app"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
 )
@@ -55,15 +55,7 @@ func buildMFA(
 	if err != nil {
 		return nil, nil, err
 	}
-	w, err := webauthn.New(&webauthn.Config{
-		RPDisplayName: "Selaras",
-		RPID:          cfg.RPID,
-		RPOrigins:     cfg.RPOrigins,
-		Timeouts: webauthn.TimeoutsConfig{
-			Login:        webauthn.TimeoutConfig{Enforce: true, Timeout: ceremonyTTL, TimeoutUVD: ceremonyTTL},
-			Registration: webauthn.TimeoutConfig{Enforce: true, Timeout: ceremonyTTL, TimeoutUVD: ceremonyTTL},
-		},
-	})
+	w, err := webauthn.New(cfg.RPID, cfg.RPOrigins, ceremonyTTL)
 	if err != nil {
 		return nil, nil, err
 	}

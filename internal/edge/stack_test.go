@@ -133,7 +133,8 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 
 	identityPool := pgtest.Open(t, "identity")
 	profilePool := pgtest.Open(t, "profile")
-	pgtest.Truncate(t, identityPool, "users", "password_reset_tokens")
+	pgtest.Truncate(t, identityPool, "users", "password_reset_tokens",
+		"mfa_totp", "mfa_recovery_codes", "mfa_attempts", "webauthn_user_handles", "webauthn_credentials")
 	pgtest.Truncate(t, profilePool, "user_profiles")
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -194,6 +195,14 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 		t.Fatalf("NewExchangeSocialToken: %v", err)
 	}
 
+	// A real Redis: the state and handoff codes are stored there, and both
+	// depend on GETDEL being atomic - a property an in-memory fake cannot
+	// prove. The MFA tickets and WebAuthn ceremonies live there too.
+	redisClient := redistest.Open(t)
+	mfa, passkeys := buildMFA(t, uow, hasher, issuer, profiles, revocations, redisClient)
+	login.WithMFA(mfa)
+	exchange.WithMFA(mfa)
+
 	identityServer, err := identitygrpc.NewServer(identitygrpc.UseCases{
 		Register:              register,
 		Login:                 login,
@@ -201,6 +210,8 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 		RequestReset:          requestReset,
 		ConfirmReset:          confirmReset,
 		ExchangeSocial:        exchange,
+		MFA:                   mfa,
+		Passkeys:              passkeys,
 		Users:                 identitypg.NewUserRepository(identityPool),
 		Tokens:                verifier,
 		Social:                socialVerifier(t, google),
@@ -212,11 +223,6 @@ func build(t *testing.T, google *fakeGoogle) *stack {
 	identityClient := identityv1.NewIdentityClient(serveGRPC(t, func(s *grpc.Server) {
 		identityv1.RegisterIdentityServer(s, identityServer)
 	}))
-
-	// A real Redis: the state and handoff codes are stored there, and both
-	// depend on GETDEL being atomic - a property an in-memory fake cannot
-	// prove.
-	redisClient := redistest.Open(t)
 
 	probes := httpx.NewHealth()
 	probes.SetReady(true)

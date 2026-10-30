@@ -150,3 +150,25 @@ bash test/mutation/run.sh 4          # 4 worker; butuh jq
 Di Windows, gremlins kadang gagal menghapus folder sementaranya karena
 berkas masih dikunci proses lain. Itu tidak memengaruhi hasil. Runner CI
 berbasis Linux.
+
+## Faktor kedua di `identity/domain` (2026-10-30)
+
+ADR-032 menambah `mfa.go` (TOTP RFC 6238, batas percobaan, recovery code).
+Baseline `identity/domain` naik dari `2 3` menjadi `2 5`. Dua NOT COVERED
+baru adalah ekspresi konstanta, bukan cabang yang tidak diuji:
+
+| Mutan | Kenapa tidak bisa tertutup |
+| :--- | :--- |
+| `identity/domain/mfa.go:35` (`TOTPPeriod = 30 * time.Second`) | Konstanta dihitung saat kompilasi; tidak ada blok coverage yang bisa dijalankan test. Nilainya dibuktikan oleh vektor RFC 6238 (`TestTOTPMatchesTheRFC6238Vectors`) |
+| `identity/domain/mfa.go:136` (`MFALockFor = 15 * time.Minute`) | Idem; panjang lock dibuktikan `TestMFAAttempts` (terkunci sampai detik terakhir, terbuka tepat setelahnya) |
+
+Dua temuan saat menutup paket ini:
+
+- **Loop jendela TOTP berbentuk `for s := now-1; s <= now+1; s++`
+  menghasilkan mutan `s--` yang tidak pernah berhenti.** gremlins mencatatnya
+  TIMED OUT, dan gerbang menolak larian yang tidak tuntas. Loop diganti dengan
+  daftar `[...]int64{now - 1, now, now + 1}` di dalam fungsi: perilakunya
+  sama, dan setiap mutan tanda di sana mematahkan test "one step behind/ahead".
+- **Versi antara dengan offset `{-1, 0, 1}` di level paket lebih buruk.**
+  Inisialisasinya tidak tercakup coverage, dan `now + drift` → `now - drift`
+  menjadi mutan ekuivalen karena jendelanya simetris.

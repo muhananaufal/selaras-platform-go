@@ -3,14 +3,11 @@ package app
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 
 	"github.com/muhananaufal/selaras-platform-go/internal/identity/domain"
@@ -32,8 +29,33 @@ var (
 	errPasskeysNotConfigured = errors.New("passkeys are not configured in this process")
 )
 
-// StoredPasskey is a credential as stored: the go-webauthn record as JSON
-// plus what the owner sees.
+// WebAuthnUser is an account as a WebAuthn ceremony sees it.
+type WebAuthnUser struct {
+	Handle      []byte
+	Name        string
+	Credentials [][]byte // the stored credential records
+}
+
+// VerifiedCredential is a credential that just passed a ceremony: its id and
+// its record to store (public key, sign count, flags).
+type VerifiedCredential struct {
+	ID     []byte
+	Record []byte
+}
+
+// WebAuthn runs the ceremonies (go-webauthn in production, behind an adapter
+// because the library brings net/http). Every Finish* refuses with
+// ErrPasskeyRejected, and requires user verification on the response itself.
+type WebAuthn interface {
+	BeginRegistration(u WebAuthnUser) (options, session []byte, err error)
+	FinishRegistration(u WebAuthnUser, session, response []byte) (VerifiedCredential, error)
+	BeginDiscoverableLogin() (options, session []byte, err error)
+	FinishDiscoverableLogin(session, response []byte, lookup func(handle []byte) (WebAuthnUser, error)) (handle []byte, c VerifiedCredential, err error)
+	BeginLogin(u WebAuthnUser) (options, session []byte, err error)
+	FinishLogin(u WebAuthnUser, session, response []byte) (VerifiedCredential, error)
+}
+
+// StoredPasskey is a credential as stored, plus what the owner sees.
 type StoredPasskey struct {
 	ID           string
 	Name         string
@@ -63,7 +85,7 @@ type Ceremony struct {
 	Kind    CeremonyKind
 	UserID  string // empty for a passwordless sign-in: the user is not known yet
 	Ticket  string // set for a ceremony answering an MFA challenge
-	Session []byte // webauthn.SessionData as JSON
+	Session []byte
 }
 
 type CeremonyKind string
@@ -81,28 +103,16 @@ type CeremonyStore interface {
 	Take(ctx context.Context, id string) (Ceremony, error)
 }
 
-// passkeyUser is webauthn.User for one account.
-type passkeyUser struct {
-	handle []byte
-	name   string
-	creds  []webauthn.Credential
-}
-
-func (u passkeyUser) WebAuthnID() []byte                         { return u.handle }
-func (u passkeyUser) WebAuthnName() string                       { return u.name }
-func (u passkeyUser) WebAuthnDisplayName() string                { return u.name }
-func (u passkeyUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
-
 // Passkeys holds the WebAuthn flows.
 type Passkeys struct {
-	w          *webauthn.WebAuthn
+	w          WebAuthn
 	uow        UnitOfWork
 	ceremonies CeremonyStore
 	mfa        *MFA
 	now        func() time.Time
 }
 
-func NewPasskeys(w *webauthn.WebAuthn, uow UnitOfWork, ceremonies CeremonyStore, mfa *MFA, now func() time.Time) (*Passkeys, error) {
+func NewPasskeys(w WebAuthn, uow UnitOfWork, ceremonies CeremonyStore, mfa *MFA, now func() time.Time) (*Passkeys, error) {
 	switch {
 	case w == nil:
 		return nil, errors.New("nil webauthn")
@@ -120,72 +130,62 @@ func NewPasskeys(w *webauthn.WebAuthn, uow UnitOfWork, ceremonies CeremonyStore,
 	return p, nil
 }
 
-// loadUser reads the account as webauthn sees it, creating its handle on
-// first use.
-func (p *Passkeys) loadUser(ctx context.Context, repos Repositories, id domain.UserID) (passkeyUser, []StoredPasskey, error) {
+// loadUser reads the account as a ceremony sees it, creating its handle on
+// first use. The handle is random, not the user id: it is stored on the
+// authenticator and must carry no personal information (WebAuthn L3 5.4.3).
+func (p *Passkeys) loadUser(ctx context.Context, repos Repositories, id domain.UserID) (WebAuthnUser, error) {
 	user, err := repos.Users().FindByID(ctx, id)
 	if err != nil {
-		return passkeyUser{}, nil, err
+		return WebAuthnUser{}, err
 	}
 	fresh := make([]byte, 32)
 	if _, err := rand.Read(fresh); err != nil {
-		return passkeyUser{}, nil, fmt.Errorf("generating a user handle: %w", err)
+		return WebAuthnUser{}, fmt.Errorf("generating a user handle: %w", err)
 	}
 	handle, err := repos.Passkeys().Handle(ctx, id, fresh)
 	if err != nil {
-		return passkeyUser{}, nil, err
+		return WebAuthnUser{}, err
 	}
 	stored, err := repos.Passkeys().List(ctx, id)
 	if err != nil {
-		return passkeyUser{}, nil, err
+		return WebAuthnUser{}, err
 	}
-	u := passkeyUser{handle: handle, name: user.Email().String()}
+	u := WebAuthnUser{Handle: handle, Name: user.Email().String()}
 	for _, s := range stored {
-		var c webauthn.Credential
-		if err := json.Unmarshal(s.Credential, &c); err != nil {
-			return passkeyUser{}, nil, fmt.Errorf("reading passkey %s: %w", s.ID, err)
-		}
-		u.creds = append(u.creds, c)
+		u.Credentials = append(u.Credentials, s.Credential)
 	}
-	return u, stored, nil
+	return u, nil
 }
 
-func (p *Passkeys) put(ctx context.Context, kind CeremonyKind, userID, ticket string, session *webauthn.SessionData, options any) (string, string, error) {
-	raw, err := json.Marshal(session)
-	if err != nil {
-		return "", "", err
-	}
-	id, err := p.ceremonies.Put(ctx, Ceremony{Kind: kind, UserID: userID, Ticket: ticket, Session: raw})
+func (p *Passkeys) put(ctx context.Context, kind CeremonyKind, userID, ticket string, options, session []byte) (string, string, error) {
+	id, err := p.ceremonies.Put(ctx, Ceremony{Kind: kind, UserID: userID, Ticket: ticket, Session: session})
 	if err != nil {
 		return "", "", fmt.Errorf("storing the ceremony: %w", err)
 	}
-	opts, err := json.Marshal(options)
-	if err != nil {
-		return "", "", err
-	}
-	return id, string(opts), nil
+	return id, string(options), nil
 }
 
 // take returns the ceremony id names if it is of kind, for userID when one
 // is given.
-func (p *Passkeys) take(ctx context.Context, id string, kind CeremonyKind, userID string) (Ceremony, webauthn.SessionData, error) {
+func (p *Passkeys) take(ctx context.Context, id string, kind CeremonyKind, userID string) (Ceremony, error) {
 	c, err := p.ceremonies.Take(ctx, id)
 	if err != nil {
-		return Ceremony{}, webauthn.SessionData{}, err
+		return Ceremony{}, err
 	}
 	if c.Kind != kind || (userID != "" && c.UserID != userID) {
-		return Ceremony{}, webauthn.SessionData{}, ErrPasskeyRejected
+		return Ceremony{}, ErrPasskeyRejected
 	}
-	var s webauthn.SessionData
-	if err := json.Unmarshal(c.Session, &s); err != nil {
-		return Ceremony{}, webauthn.SessionData{}, fmt.Errorf("reading the ceremony: %w", err)
-	}
-	return c, s, nil
+	return c, nil
 }
 
-var requireUV = protocol.AuthenticatorSelection{
-	ResidentKey:      protocol.ResidentKeyRequirementRequired,
-	UserVerification: protocol.VerificationRequired,
+// loggedRejection logs the reason a ceremony failed and returns the one
+// answer the client gets.
+func loggedRejection(ctx context.Context, what string, err error) error {
+	if errors.Is(err, ErrPasskeyRejected) {
+		slog.InfoContext(ctx, what+" rejected", "error", err)
+		return ErrPasskeyRejected
+	}
+	return err
 }
 
 // BeginRegistration starts adding a passkey; proof is checked as for any
@@ -198,22 +198,18 @@ func (p *Passkeys) BeginRegistration(ctx context.Context, rawID string, proof Re
 	if err := p.mfa.reauthenticate(ctx, id, proof); err != nil {
 		return "", "", err
 	}
-	var user passkeyUser
+	var user WebAuthnUser
 	if err := p.uow.Do(ctx, func(repos Repositories) error {
-		user, _, err = p.loadUser(ctx, repos, id)
+		user, err = p.loadUser(ctx, repos, id)
 		return err
 	}); err != nil {
 		return "", "", err
 	}
-	creation, session, err := p.w.BeginRegistration(user,
-		webauthn.WithAuthenticatorSelection(requireUV),
-		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
-		webauthn.WithExclusions(webauthn.Credentials(user.creds).CredentialDescriptors()),
-	)
+	options, session, err := p.w.BeginRegistration(user)
 	if err != nil {
-		return "", "", fmt.Errorf("starting the registration: %w", err)
+		return "", "", err
 	}
-	return p.put(ctx, CeremonyRegister, rawID, "", session, creation)
+	return p.put(ctx, CeremonyRegister, rawID, "", options, session)
 }
 
 // FinishRegistration verifies the browser's attestation and stores the
@@ -223,42 +219,29 @@ func (p *Passkeys) FinishRegistration(ctx context.Context, rawID, ceremonyID, cr
 	if err != nil {
 		return StoredPasskey{}, nil, err
 	}
-	_, session, err := p.take(ctx, ceremonyID, CeremonyRegister, rawID)
+	c, err := p.take(ctx, ceremonyID, CeremonyRegister, rawID)
 	if err != nil {
 		return StoredPasskey{}, nil, err
 	}
-	parsed, err := protocol.ParseCredentialCreationResponseBytes([]byte(credentialJSON))
-	if err != nil {
-		return StoredPasskey{}, nil, ErrPasskeyRejected
-	}
-	if !parsed.Response.AttestationObject.AuthData.Flags.HasUserVerified() {
-		return StoredPasskey{}, nil, ErrPasskeyRejected
-	}
-
 	var (
 		stored StoredPasskey
 		first  bool
 	)
 	err = p.uow.Do(ctx, func(repos Repositories) error {
-		user, _, err := p.loadUser(ctx, repos, id)
+		user, err := p.loadUser(ctx, repos, id)
 		if err != nil {
 			return err
 		}
-		cred, err := p.w.CreateCredential(user, session, parsed)
+		cred, err := p.w.FinishRegistration(user, c.Session, []byte(credentialJSON))
 		if err != nil {
-			slog.InfoContext(ctx, "passkey registration rejected", "error", err)
-			return ErrPasskeyRejected
-		}
-		raw, err := json.Marshal(cred)
-		if err != nil {
-			return err
+			return loggedRejection(ctx, "passkey registration", err)
 		}
 		before, err := factorsOf(ctx, repos.MFA(), id)
 		if err != nil {
 			return err
 		}
 		first = !before.MFARequired()
-		stored = StoredPasskey{ID: uuid.NewString(), Name: name, CredentialID: cred.ID, Credential: raw, CreatedAt: p.now()}
+		stored = StoredPasskey{ID: uuid.NewString(), Name: name, CredentialID: cred.ID, Credential: cred.Record, CreatedAt: p.now()}
 		return repos.Passkeys().Add(ctx, id, stored)
 	})
 	if err != nil {
@@ -275,60 +258,40 @@ func (p *Passkeys) FinishRegistration(ctx context.Context, rawID, ceremonyID, cr
 // offers the passkeys it has for this site and the user is learned from the
 // answer.
 func (p *Passkeys) BeginLogin(ctx context.Context) (string, string, error) {
-	assertion, session, err := p.w.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
+	options, session, err := p.w.BeginDiscoverableLogin()
 	if err != nil {
-		return "", "", fmt.Errorf("starting the passkey sign-in: %w", err)
+		return "", "", err
 	}
-	return p.put(ctx, CeremonyLogin, "", "", session, assertion)
+	return p.put(ctx, CeremonyLogin, "", "", options, session)
 }
 
 // FinishLogin verifies the assertion and signs its owner in. A passkey with
 // user verification is two factors at once: no challenge follows.
 func (p *Passkeys) FinishLogin(ctx context.Context, ceremonyID, credentialJSON string) (AuthResult, error) {
-	_, session, err := p.take(ctx, ceremonyID, CeremonyLogin, "")
+	c, err := p.take(ctx, ceremonyID, CeremonyLogin, "")
 	if err != nil {
 		return AuthResult{}, err
 	}
-	parsed, err := protocol.ParseCredentialRequestResponseBytes([]byte(credentialJSON))
-	if err != nil {
-		return AuthResult{}, ErrPasskeyRejected
-	}
 	var owner domain.UserID
 	err = p.uow.Do(ctx, func(repos Repositories) error {
-		handler := func(_, userHandle []byte) (webauthn.User, error) {
-			id, err := repos.Passkeys().UserByHandle(ctx, userHandle)
+		lookup := func(handle []byte) (WebAuthnUser, error) {
+			id, err := repos.Passkeys().UserByHandle(ctx, handle)
 			if err != nil {
-				return nil, err
+				return WebAuthnUser{}, err
 			}
 			owner = id
-			u, _, err := p.loadUser(ctx, repos, id)
-			return u, err
+			return p.loadUser(ctx, repos, id)
 		}
-		_, cred, err := p.w.ValidatePasskeyLogin(handler, session, parsed)
+		_, cred, err := p.w.FinishDiscoverableLogin(c.Session, []byte(credentialJSON), lookup)
 		if err != nil {
-			slog.InfoContext(ctx, "passkey sign-in rejected", "error", err)
-			return ErrPasskeyRejected
+			return loggedRejection(ctx, "passkey sign-in", err)
 		}
-		return p.touch(ctx, repos, parsed, cred)
+		return repos.Passkeys().Touch(ctx, cred.ID, cred.Record, p.now())
 	})
 	if err != nil {
 		return AuthResult{}, err
 	}
 	return p.mfa.sessions.Issue(ctx, owner)
-}
-
-// touch refuses a credential whose counter went backwards (a cloned
-// authenticator) or whose assertion carries no user verification, and
-// stores the new sign count otherwise.
-func (p *Passkeys) touch(ctx context.Context, repos Repositories, parsed *protocol.ParsedCredentialAssertionData, cred *webauthn.Credential) error {
-	if !parsed.Response.AuthenticatorData.Flags.HasUserVerified() || cred.Authenticator.CloneWarning {
-		return ErrPasskeyRejected
-	}
-	raw, err := json.Marshal(cred)
-	if err != nil {
-		return err
-	}
-	return repos.Passkeys().Touch(ctx, cred.ID, raw, p.now())
 }
 
 // BeginMFA starts the passkey ceremony that answers a challenge. The
@@ -338,28 +301,28 @@ func (p *Passkeys) BeginMFA(ctx context.Context, ticket string) (string, string,
 	if err != nil {
 		return "", "", err
 	}
-	var user passkeyUser
+	var user WebAuthnUser
 	if err := p.uow.Do(ctx, func(repos Repositories) error {
-		user, _, err = p.loadUser(ctx, repos, id)
+		user, err = p.loadUser(ctx, repos, id)
 		return err
 	}); err != nil {
 		return "", "", err
 	}
-	if len(user.creds) == 0 {
+	if len(user.Credentials) == 0 {
 		return "", "", ErrPasskeyRejected
 	}
-	assertion, session, err := p.w.BeginLogin(user, webauthn.WithUserVerification(protocol.VerificationRequired))
+	options, session, err := p.w.BeginLogin(user)
 	if err != nil {
-		return "", "", fmt.Errorf("starting the passkey check: %w", err)
+		return "", "", err
 	}
-	return p.put(ctx, CeremonyMFA, id.String(), ticket, session, assertion)
+	return p.put(ctx, CeremonyMFA, id.String(), ticket, options, session)
 }
 
 // verifier checks a passkey answer to the challenge of ticket, inside
 // MFA.attempt.
 func (p *Passkeys) verifier(id domain.UserID, ticket, ceremonyID, credentialJSON string) verifier {
 	return func(ctx context.Context, repos Repositories) (bool, error) {
-		c, session, err := p.take(ctx, ceremonyID, CeremonyMFA, id.String())
+		c, err := p.take(ctx, ceremonyID, CeremonyMFA, id.String())
 		if errors.Is(err, ErrPasskeyRejected) {
 			return false, nil
 		}
@@ -369,23 +332,19 @@ func (p *Passkeys) verifier(id domain.UserID, ticket, ceremonyID, credentialJSON
 		if c.Ticket != ticket {
 			return false, nil
 		}
-		parsed, err := protocol.ParseCredentialRequestResponseBytes([]byte(credentialJSON))
-		if err != nil {
-			return false, nil
-		}
-		user, _, err := p.loadUser(ctx, repos, id)
+		user, err := p.loadUser(ctx, repos, id)
 		if err != nil {
 			return false, err
 		}
-		cred, err := p.w.ValidateLogin(user, session, parsed)
-		if err != nil {
+		cred, err := p.w.FinishLogin(user, c.Session, []byte(credentialJSON))
+		if errors.Is(err, ErrPasskeyRejected) {
 			slog.InfoContext(ctx, "passkey second factor rejected", "error", err)
 			return false, nil
 		}
-		if err := p.touch(ctx, repos, parsed, cred); err != nil {
-			if errors.Is(err, ErrPasskeyRejected) {
-				return false, nil
-			}
+		if err != nil {
+			return false, err
+		}
+		if err := repos.Passkeys().Touch(ctx, cred.ID, cred.Record, p.now()); err != nil {
 			return false, err
 		}
 		return true, nil

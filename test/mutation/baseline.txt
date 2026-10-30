@@ -12,7 +12,7 @@ internal/assessment/domain 17 25
 internal/coaching/domain 1 14
 internal/chat/domain 2 2
 internal/dashboard/domain 0 9
-internal/identity/domain 2 3
+internal/identity/domain 2 5
 internal/nutrition/domain 2 14
 internal/profile/domain 0 2
 internal/clinic/domain 0 0

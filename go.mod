@@ -4,6 +4,7 @@ go 1.26.10
 
 require (
 	connectrpc.com/connect v1.21.1
+	github.com/descope/virtualwebauthn v1.0.5
 	github.com/go-redis/redis_rate/v10 v10.0.1
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/golang-jwt/jwt/v5 v5.3.1

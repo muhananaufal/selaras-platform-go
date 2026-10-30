@@ -346,7 +346,7 @@ func (m *MFA) checkTOTP(ctx context.Context, mfa domain.MFARepository, id domain
 func (m *MFA) useRecoveryCode(ctx context.Context, mfa domain.MFARepository, id domain.UserID, raw string) (bool, error) {
 	code, err := domain.ParseRecoveryCode(raw)
 	if err != nil {
-		return false, nil
+		return false, nil //nolint:nilerr // A malformed code is a wrong answer, counted as a failed attempt.
 	}
 	stored, err := mfa.FindUnusedRecoveryCode(ctx, id, code.Lookup())
 	if errors.Is(err, domain.ErrInvalidSecondFactor) {
@@ -461,7 +461,7 @@ func (m *MFA) reauthenticate(ctx context.Context, id domain.UserID, proof Reauth
 			}
 			candidate, err := domain.NewPassword(proof.Password)
 			if err != nil {
-				return false, nil
+				return false, nil //nolint:nilerr // A password that cannot be valid is a wrong answer, counted as a failed attempt.
 			}
 			ok, _, err := m.hasher.Verify(user.PasswordHash(), candidate)
 			return ok, err
