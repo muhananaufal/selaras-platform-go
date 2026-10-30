@@ -25,18 +25,18 @@ const maxProjectionLag = 2 * time.Second
 
 func openFGA(t *testing.T, ctx context.Context) *authz.Client {
 	t.Helper()
-	url := os.Getenv("TEST_OPENFGA_URL")
-	if url == "" {
+	srv := authz.Server{URL: os.Getenv("TEST_OPENFGA_URL"), Token: os.Getenv("TEST_OPENFGA_TOKEN")}
+	if srv.URL == "" || srv.Token == "" {
 		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_OPENFGA_URL is not set; integration tests must not be skipped in CI")
+			t.Fatal("TEST_OPENFGA_URL or TEST_OPENFGA_TOKEN is not set; integration tests must not be skipped in CI")
 		}
-		t.Skip("TEST_OPENFGA_URL is not set")
+		t.Skip("TEST_OPENFGA_URL or TEST_OPENFGA_TOKEN is not set")
 	}
 	model, err := os.ReadFile("../../../deploy/openfga/model.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := authz.Bootstrap(ctx, url, "projection-"+strconv.FormatInt(time.Now().UnixNano(), 36), model)
+	c, err := authz.Bootstrap(ctx, srv, "projection-"+strconv.FormatInt(time.Now().UnixNano(), 36), model)
 	if err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}

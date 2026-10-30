@@ -20,13 +20,13 @@ import (
 // patient until the projection runs - the safe direction. With it, a store
 // that cannot be reached stops the start, as any other dependency does.
 func startProjection(ctx context.Context, log *slog.Logger, cfg clinic.Config, repo *clinicpg.Repository) error {
-	if cfg.OpenFGAURL == "" {
+	if cfg.OpenFGA.URL == "" {
 		log.Warn("OPENFGA_URL is not set; consent changes are queued but not projected, and no clinician can read any patient")
 		return nil
 	}
 	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	fga, err := authz.Bootstrap(bootCtx, cfg.OpenFGAURL, cfg.OpenFGAStore, openfgamodel.Model)
+	fga, err := authz.Bootstrap(bootCtx, cfg.OpenFGA, cfg.OpenFGAStore, openfgamodel.Model)
 	if err != nil {
 		return err
 	}
