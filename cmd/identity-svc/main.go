@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	goredis "github.com/redis/go-redis/v9"
 
 	identityv1 "github.com/muhananaufal/selaras-platform-go/gen/identity/v1"
 	"github.com/muhananaufal/selaras-platform-go/internal/identity"
@@ -148,7 +149,7 @@ func run(log *slog.Logger) error {
 	}
 	defer closeProfiles()
 
-	server, deleteAccount, err := buildServer(cfg, pool, issuer, verifier, revocations, profiles, log)
+	server, deleteAccount, err := buildServer(cfg, pool, redisClient, issuer, verifier, revocations, profiles, log)
 	if err != nil {
 		return err
 	}
@@ -261,6 +262,7 @@ func run(log *slog.Logger) error {
 func buildServer(
 	cfg identity.Config,
 	pool *pgxpool.Pool,
+	redisClient *goredis.Client,
 	issuer *token.Issuer,
 	verifier *token.Verifier,
 	revocations domain.RevocationPublisher,
@@ -318,6 +320,15 @@ func buildServer(
 		return nil, nil, err
 	}
 
+	// Second factors (ADR-032): every way in - password and social - ends
+	// in a challenge for an account that has one.
+	mfa, passkeys, err := buildMFA(cfg.MFA, uow, hasher, issuer, profiles, revocations, redisClient, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	login.WithMFA(mfa)
+	exchange.WithMFA(mfa)
+
 	// Account deletion needs the password comparer AND the saga storage.
 	//
 	// It is returned separately because the confirmation consumer uses it too,
@@ -336,6 +347,8 @@ func buildServer(
 		RequestReset:          requestReset,
 		ConfirmReset:          confirmReset,
 		ExchangeSocial:        exchange,
+		MFA:                   mfa,
+		Passkeys:              passkeys,
 		Deletion:              deleteAccount,
 		Users:                 users,
 		Tokens:                verifier,

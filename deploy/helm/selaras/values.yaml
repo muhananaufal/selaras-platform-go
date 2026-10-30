@@ -67,13 +67,16 @@ units:
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply.local
       FRONTEND_URL: http://localhost:3000
+      # The WebAuthn relying party (ADR-032): passkeys are bound to it.
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_ORIGINS: http://localhost:3000
       # argon2id 64 MiB x two concurrent derivations, on top of a base RSS of
       # ~30 MiB and the GC's working room. 192 MiB was OOM-killed twice while
       # the e2e suite registered accounts back to back on k3d (the cgroup
       # counts the full RSS, not the Go heap); 320 MiB leaves room, and
       # GOMEMLIMIT makes the GC work well before the ceiling.
       GOMEMLIMIT: 256MiB
-    secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY]
+    secretEnv: [IDENTITY_DATABASE_DSN, JWT_SIGNING_KEY, MFA_ENCRYPTION_KEYS]
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 320Mi }

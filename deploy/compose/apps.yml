@@ -28,6 +28,11 @@ services:
       PROFILE_GRPC_TARGET: profile-svc:9201
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       KAFKA_BROKERS: kafka:9092
+      # Second factors (ADR-032). The sealing key is a secret with no default;
+      # the WebAuthn relying party follows the local frontend.
+      MFA_ENCRYPTION_KEYS: ${MFA_ENCRYPTION_KEYS:?set MFA_ENCRYPTION_KEYS}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-http://localhost:3000}
 
       # Mailpit inside the compose network. The reset flow can therefore be
       # REALLY run on one's own machine, and the email is read at

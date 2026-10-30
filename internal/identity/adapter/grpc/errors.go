@@ -34,6 +34,23 @@ func toStatus(ctx context.Context, op string, err error) error {
 	case errors.Is(err, app.ErrInvalidCredentials):
 		return status.Error(codes.Unauthenticated, "invalid credentials")
 
+	// Second factors (ADR-032): a wrong code, a used ticket and a rejected
+	// passkey are one answer, like wrong credentials.
+	case errors.Is(err, domain.ErrInvalidSecondFactor), errors.Is(err, app.ErrPasskeyRejected):
+		return status.Error(codes.Unauthenticated, "invalid second factor")
+
+	case errors.Is(err, domain.ErrMFALocked):
+		return status.Error(codes.ResourceExhausted, err.Error())
+
+	case errors.Is(err, app.ErrReauthenticationRequired),
+		errors.Is(err, app.ErrTOTPAlreadyEnabled),
+		errors.Is(err, app.ErrNoPendingTOTP),
+		errors.Is(err, app.ErrMFANotEnabled):
+		return status.Error(codes.FailedPrecondition, err.Error())
+
+	case errors.Is(err, app.ErrPasskeyNotFound):
+		return status.Error(codes.NotFound, err.Error())
+
 	case errors.Is(err, domain.ErrEmailTaken):
 		return status.Error(codes.AlreadyExists, "that email address is already registered")
 

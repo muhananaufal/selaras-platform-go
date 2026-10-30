@@ -38,6 +38,12 @@ type UseCases struct {
 	ConfirmReset   *app.ConfirmPasswordReset
 	ExchangeSocial *app.ExchangeSocialToken
 
+	// MFA and Passkeys serve the second factors (ADR-032). Nil answers their
+	// RPCs Unimplemented; Login and the social exchange then fail closed for
+	// an account that has a factor.
+	MFA      *app.MFA
+	Passkeys *app.Passkeys
+
 	// Deletion may be nil: an environment without an outbox still serves
 	// authentication. Account deletion answers Unimplemented instead of
 	// deleting partially.
@@ -132,6 +138,9 @@ func (s *Server) Login(
 	if err != nil {
 		return nil, toStatus(ctx, "Login", err)
 	}
+	if result.Challenge != nil {
+		return &identityv1.LoginResponse{MfaChallenge: challengeOf(result.Challenge)}, nil
+	}
 
 	user, err := s.loadUser(ctx, result.UserID)
 	if err != nil {
@@ -211,6 +220,9 @@ func (s *Server) ExchangeSocialToken(
 	result, err := s.uc.ExchangeSocial.Execute(ctx, identity)
 	if err != nil {
 		return nil, toStatus(ctx, "ExchangeSocialToken", err)
+	}
+	if result.Challenge != nil {
+		return &identityv1.ExchangeSocialTokenResponse{MfaChallenge: challengeOf(result.Challenge)}, nil
 	}
 
 	user, err := s.loadUser(ctx, result.UserID)

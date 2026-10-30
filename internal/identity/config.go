@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,23 @@ type Config struct {
 	GoogleClientID string
 
 	Mail MailConfig
+
+	// MFA (ADR-032). Required: an identity-svc without it cannot let any
+	// account with a second factor in, and that must fail at start, not on
+	// someone's sign-in.
+	MFA MFAConfig
+}
+
+// MFAConfig is what the second factors need.
+type MFAConfig struct {
+	// EncryptionKeys seal TOTP secrets: "version:base64key[,...]".
+	EncryptionKeys string
+
+	// RPID is the WebAuthn relying party id: the site's registrable domain
+	// ("selaras.app", "localhost"). Passkeys are bound to it.
+	RPID string
+	// RPOrigins are the exact origins a ceremony may come from.
+	RPOrigins []string
 }
 
 // LoadConfig reads the configuration and refuses an incomplete one.
@@ -65,6 +83,21 @@ func LoadConfig() (Config, error) {
 	rawKey := os.Getenv("JWT_SIGNING_KEY")
 	if rawKey == "" {
 		missing = append(missing, "JWT_SIGNING_KEY")
+	}
+	cfg.MFA = MFAConfig{EncryptionKeys: os.Getenv("MFA_ENCRYPTION_KEYS"), RPID: os.Getenv("WEBAUTHN_RP_ID")}
+	for _, o := range strings.Split(os.Getenv("WEBAUTHN_RP_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			cfg.MFA.RPOrigins = append(cfg.MFA.RPOrigins, o)
+		}
+	}
+	if cfg.MFA.EncryptionKeys == "" {
+		missing = append(missing, "MFA_ENCRYPTION_KEYS")
+	}
+	if cfg.MFA.RPID == "" {
+		missing = append(missing, "WEBAUTHN_RP_ID")
+	}
+	if len(cfg.MFA.RPOrigins) == 0 {
+		missing = append(missing, "WEBAUTHN_RP_ORIGINS")
 	}
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required configuration: %v", missing)

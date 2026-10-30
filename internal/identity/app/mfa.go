@@ -189,6 +189,9 @@ type MFA struct {
 	sessions *SessionIssuer
 	random   io.Reader
 	now      func() time.Time
+
+	// passkeys answers a challenge with a passkey; set by NewPasskeys.
+	passkeys *Passkeys
 }
 
 func NewMFA(
@@ -376,6 +379,11 @@ type VerifyCommand struct {
 	Ticket       string
 	TOTPCode     string
 	RecoveryCode string
+
+	// PasskeyCeremonyID and PasskeyCredentialJSON answer with a passkey,
+	// after BeginMFA.
+	PasskeyCeremonyID     string
+	PasskeyCredentialJSON string
 }
 
 // Verify completes a sign-in. The ticket counts one attempt whatever the
@@ -385,7 +393,14 @@ func (m *MFA) Verify(ctx context.Context, cmd VerifyCommand) (AuthResult, error)
 	if err != nil {
 		return AuthResult{}, err
 	}
-	if err := m.attempt(ctx, id, m.codeVerifier(id, cmd.TOTPCode, cmd.RecoveryCode)); err != nil {
+	verify := m.codeVerifier(id, cmd.TOTPCode, cmd.RecoveryCode)
+	if cmd.PasskeyCeremonyID != "" {
+		if m.passkeys == nil {
+			return AuthResult{}, errPasskeysNotConfigured
+		}
+		verify = m.passkeys.verifier(id, cmd.Ticket, cmd.PasskeyCeremonyID, cmd.PasskeyCredentialJSON)
+	}
+	if err := m.attempt(ctx, id, verify); err != nil {
 		return AuthResult{}, err
 	}
 	return m.finish(ctx, cmd.Ticket, id)
